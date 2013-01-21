@@ -6124,6 +6124,13 @@ GST_TYPE_FIND_REGISTER_DEFINE (uri, "text/uri-list", GST_RANK_MARGINAL,
     uri_type_find, "ram", URI_CAPS, NULL, NULL);
 GST_TYPE_FIND_REGISTER_DEFINE (plugin, "application/x-ttf", GST_RANK_PRIMARY,
     ttf_type_find, "ttf", TTF_CAPS, NULL, NULL);
+#if 0
+GST_TYPE_FIND_REGISTER_START_WITH_DEFINE (plugin, "application/x-font-ttf",
+      GST_RANK_SECONDARY, "ttf", "\x00\x01\x00\x00\x00", 5,
+      GST_TYPE_FIND_LIKELY);
+GST_TYPE_FIND_REGISTER_START_WITH_DEFINE (plugin, "application/x-font-otf",
+      GST_RANK_SECONDARY, "otf", "OTTO", 4, GST_TYPE_FIND_LIKELY);
+#endif
 GST_TYPE_FIND_REGISTER_DEFINE (itc, "application/itc", GST_RANK_SECONDARY,
     itc_type_find, "itc", ITC_CAPS, NULL, NULL);
 GST_TYPE_FIND_REGISTER_DEFINE (hls, "application/x-hls", GST_RANK_MARGINAL,
