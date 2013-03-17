@@ -1151,6 +1151,73 @@ gst_asf_demux_pull_indices (GstASFDemux * demux)
 }
 
 static gboolean
+gst_asf_demux_scan_peek_packet_times (GstASFDemux * demux, guint n,
+    GstClockTime * send_time, GstClockTime * duration)
+{
+  GstBuffer *buf = NULL;
+
+  if (!gst_asf_demux_pull_data (demux,
+          demux->data_offset + (n * demux->packet_size), demux->packet_size,
+          &buf, NULL))
+    return FALSE;
+
+  if (!gst_asf_packet_get_packet_times (demux, buf, send_time, duration)) {
+    GST_WARNING_OBJECT (demux, "Couldn't extract send time from packet %u", n);
+    gst_buffer_unref (buf);
+    return FALSE;
+  }
+
+  GST_INFO_OBJECT (demux, "packet %u: send time %" GST_TIME_FORMAT
+      ", duration %" GST_TIME_FORMAT, n, GST_TIME_ARGS (*send_time),
+      GST_TIME_ARGS (*duration));
+
+  gst_buffer_unref (buf);
+  return TRUE;
+}
+
+static gboolean
+gst_asf_demux_scan_for_duration (GstASFDemux * demux)
+{
+  GstClockTime start, stop, duration;
+  gint64 size = 0;
+  guint num_packets, last;
+
+  if (!gst_pad_peer_query_duration (demux->sinkpad, GST_FORMAT_BYTES, &size))
+    return FALSE;
+
+  GST_INFO_OBJECT (demux, "file size   %" G_GINT64_FORMAT, size);
+  GST_INFO_OBJECT (demux, "data offset %" G_GUINT64_FORMAT, demux->data_offset);
+  GST_INFO_OBJECT (demux, "packet size %u", demux->packet_size);
+
+  if (size <= demux->data_offset)
+    return FALSE;
+
+  num_packets = (size - demux->data_offset) / demux->packet_size;
+  GST_INFO_OBJECT (demux, "num_packets = %u (calculated)", num_packets);
+
+  if (num_packets < 10)         /* arbitrary value */
+    return FALSE;
+
+  if (!gst_asf_demux_scan_peek_packet_times (demux, 0, &start, &duration))
+    return FALSE;
+
+  last = num_packets - 1;
+  if (!gst_asf_demux_scan_peek_packet_times (demux, last, &stop, &duration))
+    return FALSE;
+
+  if (GST_CLOCK_TIME_IS_VALID (duration))
+    stop += duration;
+
+  demux->num_packets = num_packets;
+  demux->play_time = stop - start;
+  demux->segment.duration = stop - start;
+  GST_INFO_OBJECT (demux, "scanned duration: %" GST_TIME_FORMAT,
+      GST_TIME_ARGS (demux->play_time));
+  return TRUE;
+}
+
+
+static gboolean
 gst_asf_demux_parse_data_object_start (GstASFDemux * demux, guint8 * data)
 {
   AsfObject obj;
@@ -1182,6 +1249,11 @@ gst_asf_demux_parse_data_object_start (GstASFDemux * demux, guint8 * data)
     demux->num_packets = GST_READ_UINT64_LE (data + (16 + 8) + 16);
   } else {
     demux->num_packets = 0;
+
+    if (!demux->streaming) {
+      if (!gst_asf_demux_scan_for_duration (demux))
+        GST_WARNING_OBJECT (demux, "couldn't determine duration");
+    }
   }
 
   if (demux->num_packets == 0)

@@ -27,6 +27,7 @@
 
 #include <gst/gstutils.h>
 #include <gst/gstinfo.h>
+#include <gst/base/gstbytereader.h>
 #include <string.h>
 
 #define GST_ASF_PAYLOAD_KF_COMPLETE(stream, payload) (stream->is_video && payload->keyframe && payload->buf_filled >= payload->mo_size)
@@ -801,6 +802,64 @@ gst_asf_demux_parse_packet (GstASFDemux * demux, GstBuffer * buf)
       ret = GST_ASF_DEMUX_PARSE_PACKET_ERROR_RECOVERABLE;
     }
   }
+
+done:
+  gst_buffer_unmap (buf, &map);
+  return ret;
+}
+
+gboolean
+gst_asf_packet_get_packet_times (GstASFDemux * demux, GstBuffer * buf,
+    GstClockTime * send_time, GstClockTime * duration)
+{
+  static const guint lens[4] = { 0, 1, 2, 4 };
+  GstByteReader br;
+  GstMapInfo map;
+  gboolean ret = FALSE;
+  guint8 ec_flags, flags1, len;
+
+  gst_buffer_map (buf, &map, GST_MAP_READ);
+
+  gst_byte_reader_init (&br, map.data, map.size);
+
+  /* need at least two payload flag bytes, send time, and duration */
+  if (gst_byte_reader_get_remaining (&br) < 1 + 1 + 4 + 2)
+    goto done;
+
+  ec_flags = gst_byte_reader_get_uint8_unchecked (&br);
+
+  /* skip optional error correction stuff */
+  if ((ec_flags & 0x80) != 0) {
+    guint ec_len_type, ec_len;
+
+    ec_len_type = (ec_flags & 0x60) >> 5;
+    if (ec_len_type == 0) {
+      ec_len = ec_flags & 0x0f;
+    } else {
+      ec_len = 2;
+    }
+    if (!gst_byte_reader_skip (&br, ec_len))
+      goto done;
+  }
+
+  /* parse payload info */
+  if (!gst_byte_reader_get_uint8 (&br, &flags1) ||
+      !gst_byte_reader_skip (&br, 1))
+    goto done;
+
+  len = lens[(flags1 >> 1) & 0x03];     /* sequence len */
+  len += lens[(flags1 >> 3) & 0x03];    /* padding len  */
+  len += lens[(flags1 >> 5) & 0x03];    /* length len   */
+
+  if (!gst_byte_reader_skip (&br, len))
+    goto done;
+
+  if (gst_byte_reader_get_remaining (&br) < 4 + 2)
+    goto done;
+
+  *send_time = gst_byte_reader_get_uint32_le_unchecked (&br) * GST_MSECOND;
+  *duration = gst_byte_reader_get_uint16_le_unchecked (&br) * GST_MSECOND;
+  ret = TRUE;
 
 done:
   gst_buffer_unmap (buf, &map);
