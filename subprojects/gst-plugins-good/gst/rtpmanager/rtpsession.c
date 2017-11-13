@@ -56,6 +56,7 @@ enum
   SIGNAL_ON_NEW_SENDER_SSRC,
   SIGNAL_ON_SENDER_SSRC_ACTIVE,
   SIGNAL_ON_SENDING_NACKS,
+  SIGNAL_ON_RECEIVING_RTCP_XR,
   LAST_SIGNAL
 };
 
@@ -447,6 +448,21 @@ rtp_session_class_init (RTPSessionClass * klass)
       g_signal_accumulator_first_wins, NULL, NULL,
       G_TYPE_UINT, 4, G_TYPE_UINT, G_TYPE_UINT, G_TYPE_ARRAY,
       GST_TYPE_BUFFER | G_SIGNAL_TYPE_STATIC_SCOPE);
+
+  /**
+   * RTPSession::on-receiving-rtcp-xr
+   * @session: the object which received the signal
+   * @blocks: a #GstValueList containing one #GstStructure per XR block
+   *
+   * This signal is emitted when receiving an RTCP Extended Report Packet.
+   *
+   * Since: 1.20
+   */
+  rtp_session_signals[SIGNAL_ON_RECEIVING_RTCP_XR] =
+      g_signal_new ("on-receiving-rtcp-xr", G_TYPE_FROM_CLASS (klass),
+      G_SIGNAL_RUN_LAST, G_STRUCT_OFFSET (RTPSessionClass,
+          on_receiving_rtcp_xr), NULL, NULL, g_cclosure_marshal_VOID__BOXED,
+      G_TYPE_NONE, 1, GST_TYPE_LIST);
 
   g_object_class_install_property (gobject_class, PROP_INTERNAL_SSRC,
       g_param_spec_uint ("internal-ssrc", "Internal SSRC",
@@ -3006,6 +3022,355 @@ rtp_session_process_feedback (RTPSession * sess, GstRTCPPacket * packet,
     g_object_unref (src);
 }
 
+static GstStructure *
+rtp_session_process_xr_rle (RTPSource * source,
+    GstRTCPXRType xr_type, GstRTCPPacket * packet)
+{
+  guint32 ssrc, chunk_count;
+  guint8 thinning;
+  guint16 begin_seq, end_seq;
+  guint i;
+  GstStructure *s;
+  GValue vl = { 0, };
+  GValue v = { 0, };
+
+  if (!gst_rtcp_packet_xr_get_rle_info (packet, &ssrc, &thinning,
+          &begin_seq, &end_seq, &chunk_count))
+    return NULL;
+
+  GST_DEBUG ("got %s, ssrc:%08x, seq:[%02x,%02x], T:%x, count:%d",
+      xr_type == GST_RTCP_XR_TYPE_LRLE ? "Loss RLE" : "Dup-RLE", ssrc,
+      begin_seq, end_seq, thinning, chunk_count);
+
+  g_value_init (&vl, GST_TYPE_LIST);
+
+  for (i = 0; i < chunk_count; i++) {
+    guint16 chunk;
+
+    gst_rtcp_packet_xr_get_rle_nth_chunk (packet, i, &chunk);
+
+    g_value_init (&v, G_TYPE_UINT);
+    g_value_set_uint (&v, chunk);
+    gst_value_list_append_value (&vl, &v);
+    g_value_unset (&v);
+  }
+
+  s = gst_structure_new ("application/x-rtcp-xr",
+      "ssrc", G_TYPE_UINT, ssrc,
+      "type", GST_TYPE_RTCPXR_TYPE, xr_type,
+      "begin-seq", G_TYPE_UINT, begin_seq,
+      "end-seq", G_TYPE_UINT, end_seq,
+      "thinning", G_TYPE_UINT, thinning,
+      "chunk-list", GST_TYPE_LIST, &vl, NULL);
+
+  g_value_unset (&vl);
+
+  return s;
+}
+
+static GstStructure *
+rtp_session_process_xr_prt (RTPSource * source, GstRTCPPacket * packet)
+{
+  guint32 ssrc;
+  guint8 thinning;
+  guint16 begin_seq, end_seq;
+  GstStructure *s;
+  GValue vl = { 0, };
+  GValue v = { 0, };
+  guint16 i;
+
+  if (!gst_rtcp_packet_xr_get_prt_info (packet, &ssrc, &thinning,
+          &begin_seq, &end_seq))
+    return NULL;
+
+  GST_DEBUG ("got Packet Receipt Times, ssrc:%08x, seq:[%02x,%02x], T:%x",
+      ssrc, begin_seq, end_seq, thinning);
+
+  g_value_init (&vl, GST_TYPE_LIST);
+
+  for (i = begin_seq; i < end_seq - begin_seq; i++) {
+    guint32 prt;
+
+    gst_rtcp_packet_xr_get_prt_by_seq (packet, i, &prt);
+
+    g_value_init (&v, G_TYPE_UINT);
+    g_value_set_uint (&v, prt);
+    gst_value_list_append_value (&vl, &v);
+    g_value_unset (&v);
+
+    GST_TRACE (" seq: %04x prt: %08x", i, prt);
+  }
+
+  s = gst_structure_new ("application/x-rtcp-xr",
+      "ssrc", G_TYPE_UINT, ssrc,
+      "type", GST_TYPE_RTCPXR_TYPE, GST_RTCP_XR_TYPE_PRT,
+      "begin-seq", G_TYPE_UINT, begin_seq,
+      "end-seq", G_TYPE_UINT, end_seq,
+      "thinning", G_TYPE_UINT, thinning,
+      "receipt-time-list", GST_TYPE_LIST, &vl, NULL);
+
+  g_value_unset (&vl);
+
+  return s;
+}
+
+static GstStructure *
+rtp_session_process_xr_rrt (RTPSource * source, GstRTCPPacket * packet)
+{
+  guint64 ntptime;
+  GstStructure *s;
+
+  gst_rtcp_packet_xr_get_rrt (packet, &ntptime);
+
+  GST_DEBUG ("got Receiver Reference Times: %" G_GUINT64_FORMAT, ntptime);
+
+  s = gst_structure_new ("application/x-rtcp-xr",
+      "type", GST_TYPE_RTCPXR_TYPE, GST_RTCP_XR_TYPE_RRT,
+      "receiver-reference-time", G_TYPE_UINT64, ntptime, NULL);
+
+  return s;
+}
+
+static GstStructure *
+rtp_session_process_xr_dlrr (RTPSource * source, GstRTCPPacket * packet)
+{
+  GstStructure *s;
+  GValue vl = { 0, };
+  GValue v = { 0, };
+  gint i;
+  guint16 block_len = gst_rtcp_packet_xr_get_block_length (packet);
+
+  GST_DEBUG ("got DLRR, count:%d", block_len / 3);
+
+  g_value_init (&vl, GST_TYPE_LIST);
+  for (i = 0; i < block_len / 3; i++) {
+    GstStructure *sub;
+    guint32 ssrc, last_rr, delay;
+
+    if (!gst_rtcp_packet_xr_get_dlrr_block (packet, i, &ssrc, &last_rr, &delay))
+      return NULL;
+
+    sub = gst_structure_new ("application/x-rtcp-xr-dlrr-rb",
+        "ssrc", G_TYPE_UINT, ssrc,
+        "last-rr", G_TYPE_UINT, last_rr, "delay", G_TYPE_UINT, delay, NULL);
+
+    g_value_init (&v, GST_TYPE_STRUCTURE);
+    gst_value_set_structure (&v, sub);
+    gst_structure_free (sub);
+    gst_value_list_append_value (&vl, &v);
+    g_value_unset (&v);
+
+    GST_TRACE (" ssrc: %08x, last_rr: %08x, delay: %d", ssrc, last_rr, delay);
+  }
+
+  s = gst_structure_new ("application/x-rtcp-xr",
+      "type", GST_TYPE_RTCPXR_TYPE, GST_RTCP_XR_TYPE_DLRR,
+      "dlrr-list", GST_TYPE_LIST, &vl, NULL);
+
+  g_value_unset (&vl);
+
+  return s;
+}
+
+static GstStructure *
+rtp_session_process_xr_ssumm (RTPSource * source, GstRTCPPacket * packet)
+{
+  GstStructure *s;
+  guint32 ssrc, lost_packets, dup_packets;
+  guint16 begin_seq, end_seq;
+  guint32 min_jitter, max_jitter, mean_jitter, dev_jitter;
+  guint8 min_ttl, max_ttl, mean_ttl, dev_ttl;
+  gboolean ipv4;
+
+  if (gst_rtcp_packet_xr_get_summary_info (packet, &ssrc, &begin_seq, &end_seq)
+      || gst_rtcp_packet_xr_get_summary_pkt (packet, &lost_packets,
+          &dup_packets)
+      || gst_rtcp_packet_xr_get_summary_jitter (packet, &min_jitter,
+          &max_jitter, &mean_jitter, &dev_jitter)
+      || gst_rtcp_packet_xr_get_summary_ttl (packet, &ipv4, &min_ttl,
+          &max_ttl, &mean_ttl, &dev_ttl)) {
+    return NULL;
+  }
+
+  GST_DEBUG ("Got statistics Summary: SSRC %08x", ssrc);
+
+  GST_TRACE (" seq[%04x,%04x], lost_pkt:%d, dup_pkt:%d, "
+      "jitter(min:%d, max:%d, avg:%d, dev:%d), "
+      "%s(min:%d, max:%d, avg:%d, dev:%d)",
+      begin_seq, end_seq,
+      lost_packets, dup_packets,
+      min_jitter, max_jitter, mean_jitter, dev_jitter,
+      ipv4 ? "TTL" : "Hop Limit", min_ttl, max_ttl, mean_ttl, dev_ttl);
+
+  s = gst_structure_new ("application/x-rtcp-xr",
+      "type", GST_TYPE_RTCPXR_TYPE, GST_RTCP_XR_TYPE_SSUMM,
+      "ssrc", G_TYPE_UINT, ssrc,
+      "begin-seq", G_TYPE_UINT, begin_seq,
+      "end-seq", G_TYPE_UINT, end_seq,
+      "lost-packets", G_TYPE_UINT, lost_packets,
+      "dup-packets", G_TYPE_UINT, dup_packets,
+      "min-jitter", G_TYPE_UINT, min_jitter,
+      "max-jitter", G_TYPE_UINT, max_jitter,
+      "mean-jitter", G_TYPE_UINT, mean_jitter,
+      "stddev-jitter", G_TYPE_UINT, dev_jitter, NULL);
+
+  if (ipv4) {
+    gst_structure_set (s,
+        "min-ttl", G_TYPE_UINT, min_ttl,
+        "max-ttl", G_TYPE_UINT, max_ttl,
+        "mean-ttl", G_TYPE_UINT, mean_ttl,
+        "stddev-ttl", G_TYPE_UINT, dev_ttl, NULL);
+  } else {
+    gst_structure_set (s,
+        "min-hop-limit", G_TYPE_UINT, min_ttl,
+        "max-hop-limit", G_TYPE_UINT, max_ttl,
+        "mean-hop-limit", G_TYPE_UINT, mean_ttl,
+        "stddev-hop-limit", G_TYPE_UINT, dev_ttl, NULL);
+  }
+
+  return s;
+}
+
+static GstStructure *
+rtp_session_process_xr_voip_metrics (RTPSource * source, GstRTCPPacket * packet)
+{
+  GstStructure *s;
+  guint32 ssrc;
+  guint8 loss_rate, discard_rate, burst_density, gap_density;
+  guint8 signal_level, noise_level, rerl, gmin;
+  guint8 r_factor, ext_r_factor, mos_lq, mos_cq, rx_config;
+  guint16 burst_duration, gap_duration;
+  guint16 roundtrip_delay, end_system_delay;
+  guint16 jb_nominal, jb_maximum, jb_abs_max;
+
+  if (gst_rtcp_packet_xr_get_voip_metrics_ssrc (packet, &ssrc)
+      || gst_rtcp_packet_xr_get_voip_packet_metrics (packet, &loss_rate,
+          &discard_rate)
+      || gst_rtcp_packet_xr_get_voip_burst_metrics (packet,
+          &burst_density, &gap_density, &burst_duration, &gap_duration)
+      || gst_rtcp_packet_xr_get_voip_delay_metrics (packet,
+          &roundtrip_delay, &end_system_delay)
+      || gst_rtcp_packet_xr_get_voip_signal_metrics (packet,
+          &signal_level, &noise_level, &rerl, &gmin)
+      || gst_rtcp_packet_xr_get_voip_quality_metrics (packet, &r_factor,
+          &ext_r_factor, &mos_lq, &mos_cq)
+      || gst_rtcp_packet_xr_get_voip_configuration_params (packet, &gmin,
+          &rx_config)
+      || gst_rtcp_packet_xr_get_voip_jitter_buffer_params (packet,
+          &jb_nominal, &jb_maximum, &jb_abs_max)) {
+    return NULL;
+  }
+
+  GST_DEBUG ("Got VOIP Metrics: SSRC %08x", ssrc);
+
+  GST_TRACE ("  rate(loss:%x,discard:%x),"
+      " density(burst:%x,gap:%x),"
+      " duration(burst:%d,gap:%d),"
+      " delay(round_trip:%d,end_sytem:%d),"
+      " level(signal:%d,noise:%d),"
+      " rerl:%x, gmin:%x, ext_r_factor:%x,"
+      " mos_lq:%d, mos_cq:%d, rx_config:%x,"
+      " jb(nominal:%d,max:%d,abs_max:%d)",
+      loss_rate, discard_rate, burst_density, gap_density, burst_duration,
+      gap_duration, roundtrip_delay, end_system_delay, signal_level,
+      noise_level, rerl, gmin, ext_r_factor, mos_lq, mos_cq, rx_config,
+      jb_nominal, jb_maximum, jb_abs_max);
+
+  s = gst_structure_new ("application/x-rtcp-xr",
+      "type", GST_TYPE_RTCPXR_TYPE, GST_RTCP_XR_TYPE_VOIP_METRICS,
+      "ssrc", G_TYPE_UINT, ssrc,
+      "loss-rate", G_TYPE_UINT, loss_rate,
+      "dicard-rate", G_TYPE_UINT, discard_rate,
+      "burst-density", G_TYPE_UINT, burst_density,
+      "gap-density", G_TYPE_UINT, gap_density,
+      "burst-duration", G_TYPE_UINT, burst_duration,
+      "gap-duration", G_TYPE_UINT, gap_duration,
+      "roundtrip-delay", G_TYPE_UINT, roundtrip_delay,
+      "end-system-delay", G_TYPE_UINT, end_system_delay,
+      "signal-level", G_TYPE_UINT, signal_level,
+      "noise-level", G_TYPE_UINT, noise_level,
+      "rerl", G_TYPE_UINT, rerl,
+      "gmin", G_TYPE_UINT, gmin,
+      "r-factor", G_TYPE_UINT, r_factor,
+      "external-r-factor", G_TYPE_UINT, ext_r_factor,
+      "jb-nominal", G_TYPE_UINT, jb_nominal,
+      "jb-maximum", G_TYPE_UINT, jb_maximum,
+      "jb-abs-max", G_TYPE_UINT, jb_abs_max,
+      "mos-lq", G_TYPE_UINT, mos_lq,
+      "mos-cq", G_TYPE_UINT, mos_cq, "rx-config", G_TYPE_UINT, rx_config, NULL);
+
+  return s;
+}
+
+static void
+rtp_session_process_xr (RTPSession * sess, GstRTCPPacket * packet,
+    RTPPacketInfo * pinfo)
+{
+  guint32 ssrc;
+  RTPSource *source;
+  GValue vl = { 0, };
+  GValue v = { 0, };
+
+  ssrc = gst_rtcp_packet_xr_get_ssrc (packet);
+
+  GST_DEBUG ("Got XR packet: SSRC %08x", ssrc);
+
+  source = find_source (sess, ssrc);
+  if (!source)
+    return;
+
+  if (gst_rtcp_packet_xr_first_rb (packet)) {
+    GST_DEBUG ("No extended report block detected: SSRC %08x", ssrc);
+    return;
+  }
+
+  g_value_init (&vl, GST_TYPE_LIST);
+
+  do {
+    GstStructure *s = NULL;
+    GstRTCPXRType xr_type = gst_rtcp_packet_xr_get_block_type (packet);
+    g_value_init (&v, GST_TYPE_STRUCTURE);
+
+    switch (xr_type) {
+      case GST_RTCP_XR_TYPE_LRLE:
+      case GST_RTCP_XR_TYPE_DRLE:
+        s = rtp_session_process_xr_rle (source, xr_type, packet);
+        break;
+      case GST_RTCP_XR_TYPE_PRT:
+        s = rtp_session_process_xr_prt (source, packet);
+        break;
+      case GST_RTCP_XR_TYPE_RRT:
+        s = rtp_session_process_xr_rrt (source, packet);
+        break;
+      case GST_RTCP_XR_TYPE_DLRR:
+        s = rtp_session_process_xr_dlrr (source, packet);
+        break;
+      case GST_RTCP_XR_TYPE_SSUMM:
+        s = rtp_session_process_xr_ssumm (source, packet);
+        break;
+      case GST_RTCP_XR_TYPE_VOIP_METRICS:
+        s = rtp_session_process_xr_voip_metrics (source, packet);
+        break;
+      default:
+        GST_WARNING ("Got unknown RTCP XR report block: %d", xr_type);
+        break;
+    }
+
+    if (s == NULL)
+      continue;
+
+    gst_value_set_structure (&v, s);
+    gst_structure_free (s);
+    gst_value_list_append_value (&vl, &v);
+    g_value_unset (&v);
+
+  } while (gst_rtcp_packet_xr_next_rb (packet));
+
+  g_signal_emit (sess, rtp_session_signals[SIGNAL_ON_RECEIVING_RTCP_XR], 0,
+      &vl);
+  g_value_unset (&vl);
+}
+
 /**
  * rtp_session_process_rtcp:
  * @sess: and #RTPSession
@@ -3076,10 +3441,7 @@ rtp_session_process_rtcp (RTPSession * sess, GstBuffer * buffer,
         rtp_session_process_feedback (sess, &packet, &pinfo, current_time);
         break;
       case GST_RTCP_TYPE_XR:
-        /* FIXME: This block is added to downgrade warning level.
-         * Once the parser is implemented, it should be replaced with
-         * a proper process function. */
-        GST_DEBUG ("got RTCP XR packet, but ignored");
+        rtp_session_process_xr (sess, &packet, &pinfo);
         break;
       default:
         GST_WARNING ("got unknown RTCP packet type: %d", type);
