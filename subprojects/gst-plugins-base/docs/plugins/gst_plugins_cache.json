@@ -10871,6 +10871,20 @@
                     }
                 },
                 "properties": {
+                    "bg-color": {
+                        "blurb": "Color to use for text background (big-endian ARGB).",
+                        "conditionally-available": false,
+                        "construct": false,
+                        "construct-only": false,
+                        "controllable": true,
+                        "default": "0",
+                        "max": "-1",
+                        "min": "0",
+                        "mutable": "null",
+                        "readable": true,
+                        "type": "guint",
+                        "writable": true
+                    },
                     "font-desc": {
                         "blurb": "Pango font description of font to be used for subtitle rendering",
                         "conditionally-available": false,
