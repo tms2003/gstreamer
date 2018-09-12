@@ -132,6 +132,10 @@ static GstClockTime gst_aggregator_get_latency_unlocked (GstAggregator * self);
 
 static void gst_aggregator_pad_buffer_consumed (GstAggregatorPad * pad);
 
+static gboolean
+gst_aggregator_check_and_update_drained (GstElement * self,
+    GstPad * pad, gpointer user_data);
+
 GST_DEBUG_CATEGORY_STATIC (aggregator_debug);
 #define GST_CAT_DEFAULT aggregator_debug
 
@@ -254,6 +258,7 @@ struct _GstAggregatorPadPrivate
   gboolean negotiated;
 
   gboolean eos;
+  gboolean drained;
 
   GMutex lock;
   GCond event_cond;
@@ -268,6 +273,7 @@ static void
 gst_aggregator_pad_reset_unlocked (GstAggregatorPad * aggpad)
 {
   aggpad->priv->eos = FALSE;
+  aggpad->priv->drained = FALSE;
   aggpad->priv->flow_return = GST_FLOW_OK;
   GST_OBJECT_LOCK (aggpad);
   gst_segment_init (&aggpad->segment, GST_FORMAT_UNDEFINED);
@@ -294,6 +300,18 @@ gst_aggregator_pad_flush (GstAggregatorPad * aggpad, GstAggregator * agg)
     return klass->flush (aggpad, agg);
 
   return TRUE;
+}
+
+static gboolean
+gst_aggregator_pad_has_internal_buffer (GstAggregatorPad * aggpad,
+    GstAggregator * agg)
+{
+  GstAggregatorPadClass *klass = GST_AGGREGATOR_PAD_GET_CLASS (aggpad);
+
+  if (klass->has_internal_buffer)
+    return klass->has_internal_buffer (aggpad, agg);
+
+  return FALSE;
 }
 
 /*************************************
@@ -381,6 +399,14 @@ enum
   PROP_START_TIME,
   PROP_LAST
 };
+
+enum
+{
+  SIGNAL_PAD_DRAINED,
+  LAST_SIGNAL
+};
+
+static guint gst_aggregator_signals[LAST_SIGNAL] = { 0 };
 
 static GstFlowReturn gst_aggregator_pad_chain_internal (GstAggregator * self,
     GstAggregatorPad * aggpad, GstBuffer * buffer, gboolean head);
@@ -1110,6 +1136,7 @@ gst_aggregator_aggregate_func (GstAggregator * self)
   while (priv->send_eos && priv->running) {
     GstFlowReturn flow_return = GST_FLOW_OK;
     DoHandleEventsAndQueriesData events_query_data = { FALSE, GST_FLOW_OK };
+    GList *drained = NULL;
 
     gst_element_foreach_sink_pad (GST_ELEMENT_CAST (self),
         gst_aggregator_do_events_and_queries, &events_query_data);
@@ -1159,6 +1186,23 @@ gst_aggregator_aggregate_func (GstAggregator * self)
       break;
     }
     GST_OBJECT_UNLOCK (self);
+
+    /* check new drained pad, and notify drained signal if any */
+    gst_element_foreach_sink_pad (GST_ELEMENT_CAST (self),
+        gst_aggregator_check_and_update_drained, &drained);
+
+    if (drained) {
+      GList *item;
+      for (item = drained; item; item = g_list_next (item)) {
+        GstAggregatorPad *aggpad = (GstAggregatorPad *) item->data;
+
+        GST_DEBUG_OBJECT (aggpad, "Pad drained");
+        g_signal_emit (self, gst_aggregator_signals[SIGNAL_PAD_DRAINED], 0,
+            aggpad);
+      }
+
+      g_list_free_full (drained, gst_object_unref);
+    }
 
     if (flow_return == GST_FLOW_EOS || flow_return == GST_FLOW_ERROR) {
       gst_aggregator_push_eos (self);
@@ -2403,6 +2447,24 @@ gst_aggregator_class_init (GstAggregatorClass * klass)
           "Start time to use if start-time-selection=set", 0,
           G_MAXUINT64,
           DEFAULT_START_TIME, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  /**
+   * GstAggregator::pad-drained
+   * @aggregator: a #GstAggregator
+   * @pad: a #GstPad
+   *
+   * This signal is emitted when the sinkpad got EOS event and all queued
+   * buffers in the pad have been consumed.
+   *
+   * This signal is emitted from the aggregator thread
+   * (i.e., srcpad's streaming thread).
+   *
+   * Since: 1.16
+   */
+  gst_aggregator_signals[SIGNAL_PAD_DRAINED] =
+      g_signal_new ("pad-drained", G_TYPE_FROM_CLASS (klass),
+      G_SIGNAL_RUN_LAST, 0, NULL, NULL,
+      g_cclosure_marshal_generic, G_TYPE_NONE, 1, GST_TYPE_PAD);
 }
 
 static inline gpointer
@@ -2935,6 +2997,42 @@ gst_aggregator_pad_clip_buffer_unlocked (GstAggregatorPad * pad)
 
   if (self)
     gst_object_unref (self);
+}
+
+/* check wheter the pad is drained or not
+ * in order to prepare "pad-drained" signal */
+static gboolean
+gst_aggregator_check_and_update_drained (GstElement * self,
+    GstPad * pad, gpointer user_data)
+{
+  GstAggregator *agg = GST_AGGREGATOR_CAST (self);
+  GstAggregatorPad *aggpad = GST_AGGREGATOR_PAD_CAST (pad);
+  GList **drained = (GList **) user_data;
+
+  PAD_LOCK (aggpad);
+  /* already updated one */
+  if (aggpad->priv->drained)
+    goto done;
+
+  /* drained means eos + empty queue */
+  if (!aggpad->priv->eos)
+    goto done;
+
+  gst_aggregator_pad_clip_buffer_unlocked (aggpad);
+  if (aggpad->priv->clipped_buffer != NULL)
+    goto done;
+
+  /* ask subclass whether empty or not  */
+  if (gst_aggregator_pad_has_internal_buffer (aggpad, agg))
+    goto done;
+
+  aggpad->priv->drained = TRUE;
+  *drained = g_list_append (*drained, gst_object_ref (aggpad));
+
+done:
+  PAD_UNLOCK (aggpad);
+
+  return TRUE;
 }
 
 /**

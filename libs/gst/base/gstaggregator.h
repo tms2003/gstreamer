@@ -83,6 +83,9 @@ struct _GstAggregatorPad
  * @skip_buffer: Optional
  *               Called before input buffers are queued in the pad, return %TRUE
  *               if the buffer should be skipped.
+ * @has_internal_buffer: Optional
+ *               Called to ask whether subclass buffers are queued in
+ *               subclass's internal storage
  *
  */
 struct _GstAggregatorPadClass
@@ -91,9 +94,10 @@ struct _GstAggregatorPadClass
 
   GstFlowReturn (*flush)       (GstAggregatorPad * aggpad, GstAggregator * aggregator);
   gboolean      (*skip_buffer) (GstAggregatorPad * aggpad, GstAggregator * aggregator, GstBuffer * buffer);
+  gboolean      (*has_internal_buffer)     (GstAggregatorPad * aggpad, GstAggregator * aggregator);
 
   /*< private >*/
-  gpointer      _gst_reserved[GST_PADDING_LARGE];
+  gpointer      _gst_reserved[GST_PADDING_LARGE-1];
 };
 
 GST_BASE_API
