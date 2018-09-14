@@ -1954,8 +1954,10 @@ gst_uri_to_string (const GstUri * uri)
   if (uri->scheme != NULL)
     g_string_append_printf (uri_str, "%s:", uri->scheme);
 
-  if (uri->userinfo != NULL || uri->host != NULL ||
-      uri->port != GST_URI_NO_PORT)
+  if ((uri->userinfo != NULL || uri->host != NULL ||
+          uri->port != GST_URI_NO_PORT) || (uri->userinfo == NULL
+          && uri->host == NULL && uri->port == GST_URI_NO_PORT
+          && uri->scheme != NULL))
     g_string_append (uri_str, "//");
 
   if (uri->userinfo != NULL) {

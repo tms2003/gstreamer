@@ -175,6 +175,17 @@ GST_START_TEST (test_uri_misc)
 
 GST_END_TEST;
 
+GST_START_TEST (test_uri_roundtrip)
+{
+  GstUri *uri = gst_uri_from_string ("file:///path/to/foo.bar");
+  gchar *uri_str = gst_uri_to_string (uri);
+  fail_unless_equals_string (uri_str, "file:///path/to/foo.bar");
+  g_free (uri_str);
+  gst_uri_unref (uri);
+}
+
+GST_END_TEST;
+
 GST_START_TEST (test_element_make_from_uri)
 {
   GstElement *element;
@@ -1123,6 +1134,7 @@ gst_uri_suite (void)
   tcase_add_test (tc_chain, test_gst_uri_construct);
 #endif
   tcase_add_test (tc_chain, test_uri_misc);
+  tcase_add_test (tc_chain, test_uri_roundtrip);
   tcase_add_test (tc_chain, test_element_make_from_uri);
 #ifdef G_OS_WIN32
   tcase_add_test (tc_chain, test_win32_uri);
