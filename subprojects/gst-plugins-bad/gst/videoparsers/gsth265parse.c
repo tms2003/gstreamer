@@ -171,6 +171,9 @@ gst_h265_parse_init (GstH265Parse * h265parse)
   gst_base_parse_set_infer_ts (GST_BASE_PARSE (h265parse), FALSE);
   GST_PAD_SET_ACCEPT_INTERSECT (GST_BASE_PARSE_SINK_PAD (h265parse));
   GST_PAD_SET_ACCEPT_TEMPLATE (GST_BASE_PARSE_SINK_PAD (h265parse));
+
+  h265parse->aud_needed = TRUE;
+  h265parse->aud_insert = TRUE;
 }
 
 
@@ -895,6 +898,8 @@ gst_h265_parse_process_nal (GstH265Parse * h265parse, GstH265NalUnit * nalu)
           h265parse->bidirectional = TRUE;
 
         h265parse->state |= GST_H265_PARSE_STATE_GOT_SLICE;
+        h265parse->temporal_id_plus1 = nalu->temporal_id_plus1;
+        h265parse->layer_id = nalu->layer_id;
       }
       if (slice.first_slice_segment_in_pic_flag == 1)
         GST_DEBUG_OBJECT (h265parse,
@@ -964,6 +969,7 @@ gst_h265_parse_process_nal (GstH265Parse * h265parse, GstH265NalUnit * nalu)
       pres = gst_h265_parser_parse_nal (nalparser, nalu);
       if (pres != GST_H265_PARSER_OK)
         return FALSE;
+      h265parse->aud_needed = FALSE;
       break;
     default:
       /* drop anything before the initial SPS */
@@ -1058,6 +1064,10 @@ gst_h265_parse_handle_frame_packetized (GstBaseParse * parse,
 
   parse_res = gst_h265_parser_identify_nalu_hevc (h265parse->nalparser,
       map.data, 0, map.size, nl, &nalu);
+
+  /* there is no AUD in HVC, always enable insertion, the pre_push function
+   * will only add it once, and will only add it for byte-stream output. */
+  h265parse->aud_insert = TRUE;
 
   while (parse_res == GST_H265_PARSER_OK) {
     GST_DEBUG_OBJECT (h265parse, "HEVC nal offset %d", nalu.offset + nalu.size);
@@ -1302,6 +1312,7 @@ gst_h265_parse_handle_frame (GstBaseParse * parse,
         data, nalu.offset, nalu.size);
 
     if (gst_h265_parse_collect_nal (h265parse, data, size, &nalu)) {
+      h265parse->aud_needed = TRUE;
       /* complete current frame, if it exist */
       if (current_off > 0) {
         nalu.size = 0;
@@ -1323,8 +1334,14 @@ gst_h265_parse_handle_frame (GstBaseParse * parse,
      * our caps are complete, avoiding a renegotiation */
     if (h265parse->align == GST_H265_PARSE_ALIGN_NAL &&
         !GST_H265_PARSE_STATE_VALID (h265parse,
-            GST_H265_PARSE_STATE_VALID_PICTURE_HEADERS))
+            GST_H265_PARSE_STATE_VALID_PICTURE))
       frame->flags |= GST_BASE_PARSE_FRAME_FLAG_QUEUE;
+
+    /* Make sure the next buffer will contain an AUD */
+    if (h265parse->aud_needed) {
+      h265parse->aud_insert = TRUE;
+      h265parse->aud_needed = FALSE;
+    }
 
     if (nonext) {
       /* If there is a marker flag, or input is AU, we know this is complete */
@@ -2833,7 +2850,44 @@ gst_h265_parse_pre_push_frame (GstBaseParse * parse, GstBaseParseFrame * frame)
     h265parse->first_frame = FALSE;
   }
 
-  buffer = frame->buffer;
+  /* In case of byte-stream, insert au delimeter by default
+   * if it doesn't exist */
+  if (h265parse->aud_insert && h265parse->format == GST_H265_PARSE_FORMAT_BYTE) {
+    GstBuffer *aud_buffer;
+    GstMemory *mem_aud;
+    GstMapInfo map;
+    guint8 pic_type;
+
+    GST_DEBUG_OBJECT (h265parse, "Inserting AUD into the stream.");
+    /* For pic_type value, see 7.4.3.5 */
+    pic_type = h265parse->predicted;
+    if (h265parse->bidirectional)
+      pic_type = 2;
+    mem_aud =
+        gst_h265_create_aud_memory (h265parse->layer_id,
+        h265parse->temporal_id_plus1, pic_type, 4);
+
+    if (h265parse->align == GST_H265_PARSE_ALIGN_AU) {
+      frame->out_buffer = gst_buffer_copy (frame->buffer);
+      gst_buffer_prepend_memory (frame->out_buffer, mem_aud);
+      gst_memory_map (mem_aud, &map, GST_MAP_READ);
+      if (h265parse->idr_pos >= 0)
+        h265parse->idr_pos += map.size;
+      gst_memory_unmap (mem_aud, &map);
+      buffer = frame->out_buffer;
+    } else {
+      buffer = frame->buffer;
+      gst_memory_map (mem_aud, &map, GST_MAP_READ);
+      aud_buffer = gst_buffer_new_allocate (NULL, map.size - 4, NULL);
+      gst_buffer_fill (aud_buffer, 0, (guint8 *) (map.data + 4), map.size - 4);
+      gst_memory_unmap (mem_aud, &map);
+      gst_h265_parse_push_codec_buffer (h265parse, aud_buffer, buffer);
+      gst_buffer_unref (aud_buffer);
+    }
+  } else {
+    buffer = frame->buffer;
+  }
+  h265parse->aud_insert = FALSE;
 
   if ((event = check_pending_key_unit_event (h265parse->force_key_unit_event,
               &parse->segment, GST_BUFFER_TIMESTAMP (buffer),

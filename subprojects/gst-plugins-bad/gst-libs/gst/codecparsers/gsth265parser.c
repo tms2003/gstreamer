@@ -4062,6 +4062,37 @@ error:
   return NULL;
 }
 
+static GstMemory *
+gst_h265_create_aud_memory_internal (guint8 layer_id, guint8 temporal_id_plus1,
+    guint8 pic_type, guint nal_prefix_size)
+{
+  NalWriter nw;
+
+  nal_writer_init (&nw, nal_prefix_size, FALSE);
+
+  GST_DEBUG ("Create AUD nal layer_id=%d temporal_id_plus1=%d", layer_id,
+      temporal_id_plus1);
+
+  /* nal header */
+  /* forbidden_zero_bit */
+  WRITE_UINT8 (&nw, 0, 1);
+  /* nal_unit_type */
+  WRITE_UINT8 (&nw, GST_H265_NAL_AUD, 6);
+  /* nuh_layer_id */
+  WRITE_UINT8 (&nw, layer_id, 6);
+  /* nuh_temporal_id_plus1 */
+  WRITE_UINT8 (&nw, temporal_id_plus1, 3);
+
+  WRITE_UINT8 (&nw, pic_type, 3);
+
+  return nal_writer_reset_and_get_memory (&nw);
+
+error:
+  nal_writer_reset (&nw);
+
+  return NULL;
+}
+
 /**
  * gst_h265_create_sei_memory:
  * @layer_id: a nal unit layer id
@@ -4108,6 +4139,30 @@ gst_h265_create_sei_memory_hevc (guint8 layer_id, guint8 temporal_id_plus1,
 {
   return gst_h265_create_sei_memory_internal (layer_id, temporal_id_plus1,
       nal_length_size, TRUE, messages);
+}
+
+/**
+ * gst_h265_create_aud_memory:
+ * @layer_id: a nal unit layer id
+ * @temporal_id_plus1: a nal unit temporal identifier
+ * @pic_type: slice_type values that may be present in the coded picture
+ * @start_code_prefix_length: a length of start code prefix, must be 3 or 4
+ *
+ * Creates raw byte-stream format AUD nal unit data, see 7.4.3.5.
+ *
+ * Returns: a #GstMemory containing a AUD nal unit
+ *
+ * Since: 1.20
+ */
+GstMemory *
+gst_h265_create_aud_memory (guint8 layer_id, guint8 temporal_id_plus1,
+    guint8 pic_type, guint8 start_code_prefix_length)
+{
+  g_return_val_if_fail (start_code_prefix_length == 3
+      || start_code_prefix_length == 4, NULL);
+
+  return gst_h265_create_aud_memory_internal (layer_id, temporal_id_plus1,
+      pic_type, start_code_prefix_length);
 }
 
 static GstBuffer *
