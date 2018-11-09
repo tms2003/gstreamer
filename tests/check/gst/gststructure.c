@@ -221,6 +221,22 @@ GST_START_TEST (test_from_string)
 
 GST_END_TEST;
 
+GST_START_TEST (test_from_string_uri_encoded)
+{
+  GstStructure *structure;
+  const gchar *s;
+
+  /* test url:    http://host/?name= with.a.space
+   * encoded uri: http%3A%2F%2Fhost%2F%3Fname%3D%20with.a.space */
+  s = "foo, s=(string)http%3A%2F%2Fhost%2F%3Fname%3D%20with.a.space";
+  structure = gst_structure_from_string (s, NULL);
+  fail_unless_equals_string (gst_structure_get_string (structure, "s"),
+      "http%3A%2F%2Fhost%2F%3Fname%3D%20with.a.space");
+  gst_structure_free (structure);
+}
+
+GST_END_TEST;
+
 
 GST_START_TEST (test_to_string)
 {
@@ -947,6 +963,7 @@ gst_structure_suite (void)
   tcase_add_test (tc_chain, test_from_string_int);
   tcase_add_test (tc_chain, test_from_string_uint);
   tcase_add_test (tc_chain, test_from_string);
+  tcase_add_test (tc_chain, test_from_string_uri_encoded);
   tcase_add_test (tc_chain, test_to_string);
   tcase_add_test (tc_chain, test_to_from_string);
   tcase_add_test (tc_chain, test_to_from_string_tag_event);
