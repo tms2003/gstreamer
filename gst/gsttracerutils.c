@@ -62,9 +62,61 @@ static const gchar *_quark_strings[] = {
 GQuark _priv_gst_tracer_quark_table[GST_TRACER_QUARK_MAX];
 
 /* tracing helpers */
+G_LOCK_DEFINE_STATIC (tracer_lock);
 
 gboolean _priv_tracer_enabled = FALSE;
 GHashTable *_priv_tracers = NULL;
+typedef struct
+{
+  gchar *name;
+  gchar *params;
+} TracerEntry;
+
+static GArray *_priv_pending_entries = NULL;
+
+static void
+_free_tracer_entry (TracerEntry * entry)
+{
+  g_free (entry->name);
+  g_free (entry->params);
+}
+
+/* Must be called with lock taken */
+static gboolean
+_load_tracer (GstRegistry * registry, const gchar * name, const gchar * params)
+{
+  GstPluginFeature *feature;
+  GstTracerFactory *factory;
+  gboolean ret = FALSE;
+
+  if ((feature = gst_registry_lookup_feature (registry, name))) {
+    factory = GST_TRACER_FACTORY (gst_plugin_feature_load (feature));
+    if (factory) {
+      GstTracer *tracer;
+
+      GST_INFO_OBJECT (factory, "creating tracer: type-id=%u",
+          (guint) factory->type);
+
+      tracer = g_object_new (factory->type, "params", params, NULL);
+
+      /* Clear floating flag */
+      gst_object_ref_sink (tracer);
+
+      /* tracers register them self to the hooks */
+      gst_object_unref (tracer);
+
+      gst_object_unref (factory);
+
+      ret = TRUE;
+    } else {
+      GST_WARNING_OBJECT (feature,
+          "loading plugin containing feature %s failed!", name);
+    }
+    gst_object_unref (feature);
+  }
+
+  return ret;
+}
 
 /* Initialize the tracing system */
 void
@@ -77,7 +129,12 @@ _priv_gst_tracing_init (void)
    * user did not activate it through the env variable
    * so that external tools can use it anyway */
   GST_DEBUG ("Initializing GstTracer");
+
+  G_LOCK (tracer_lock);
   _priv_tracers = g_hash_table_new (NULL, NULL);
+  _priv_pending_entries = g_array_new (FALSE, FALSE, sizeof (TracerEntry));
+  g_array_set_clear_func (_priv_pending_entries,
+      (GDestroyNotify) _free_tracer_entry);
 
   if (G_N_ELEMENTS (_quark_strings) != GST_TRACER_QUARK_MAX)
     g_warning ("the quark table is not consistent! %d != %d",
@@ -90,8 +147,6 @@ _priv_gst_tracing_init (void)
 
   if (env != NULL && *env != '\0') {
     GstRegistry *registry = gst_registry_get ();
-    GstPluginFeature *feature;
-    GstTracerFactory *factory;
     gchar **t = g_strsplit_set (env, ";", 0);
     gchar *params;
 
@@ -111,32 +166,22 @@ _priv_gst_tracing_init (void)
 
       GST_INFO ("checking tracer: '%s'", t[i]);
 
-      if ((feature = gst_registry_lookup_feature (registry, t[i]))) {
-        factory = GST_TRACER_FACTORY (gst_plugin_feature_load (feature));
-        if (factory) {
-          GstTracer *tracer;
+      if (!_load_tracer (registry, t[i], params)) {
+        TracerEntry entry;
 
-          GST_INFO_OBJECT (factory, "creating tracer: type-id=%u",
-              (guint) factory->type);
+        GST_WARNING ("no tracer named '%s', try on plugin loaded again", t[i]);
 
-          tracer = g_object_new (factory->type, "params", params, NULL);
+        entry.name = g_strdup (t[i]);
+        entry.params = g_strdup (params);
 
-          /* Clear floating flag */
-          gst_object_ref_sink (tracer);
-
-          /* tracers register them self to the hooks */
-          gst_object_unref (tracer);
-        } else {
-          GST_WARNING_OBJECT (feature,
-              "loading plugin containing feature %s failed!", t[i]);
-        }
-      } else {
-        GST_WARNING ("no tracer named '%s'", t[i]);
+        g_array_append_val (_priv_pending_entries, entry);
       }
+
       i++;
     }
     g_strfreev (t);
   }
+  G_UNLOCK (tracer_lock);
 }
 
 void
@@ -145,9 +190,12 @@ _priv_gst_tracing_deinit (void)
   GList *h_list, *h_node, *t_node;
   GstTracerHook *hook;
 
+  G_LOCK (tracer_lock);
   _priv_tracer_enabled = FALSE;
-  if (!_priv_tracers)
+  if (!_priv_tracers) {
+    G_UNLOCK (tracer_lock);
     return;
+  }
 
   /* shutdown tracers for final reports */
   h_list = g_hash_table_get_values (_priv_tracers);
@@ -161,7 +209,28 @@ _priv_gst_tracing_deinit (void)
   }
   g_list_free (h_list);
   g_hash_table_destroy (_priv_tracers);
+  g_array_free (_priv_pending_entries, TRUE);
   _priv_tracers = NULL;
+  _priv_pending_entries = NULL;
+  G_UNLOCK (tracer_lock);
+}
+
+void
+_priv_gst_tracer_register_internal (const gchar * name)
+{
+  gint i;
+
+  G_LOCK (tracer_lock);
+  for (i = 0; i < _priv_pending_entries->len; i++) {
+    TracerEntry *entry = &g_array_index (_priv_pending_entries, TracerEntry, i);
+    if (g_strcmp0 (entry->name, name) == 0) {
+      if (_load_tracer (gst_registry_get (), entry->name, entry->params)) {
+        g_array_remove_index (_priv_pending_entries, i);
+      }
+      break;
+    }
+  }
+  G_UNLOCK (tracer_lock);
 }
 
 static void
@@ -201,6 +270,11 @@ gst_tracing_register_hook (GstTracer * tracer, const gchar * detail,
 void
 gst_tracing_register_hook (GstTracer * tracer, const gchar * detail,
     GCallback func)
+{
+}
+
+void
+_priv_gst_tracer_register_internal (const gchar * name)
 {
 }
 

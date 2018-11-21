@@ -192,5 +192,9 @@ gst_tracer_register (GstPlugin * plugin, const gchar * name, GType type)
   gst_registry_add_feature (gst_registry_get (),
       GST_PLUGIN_FEATURE_CAST (factory));
 
+#ifndef GST_DISABLE_GST_DEBUG
+  _priv_gst_tracer_register_internal (name);
+#endif
+
   return TRUE;
 }

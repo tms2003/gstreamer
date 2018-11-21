@@ -37,6 +37,7 @@ G_BEGIN_DECLS
 
 void _priv_gst_tracing_init (void);
 void _priv_gst_tracing_deinit (void);
+void _priv_gst_tracer_register_internal (const gchar *name);
 
 /* tracer quarks */
 
