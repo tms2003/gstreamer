@@ -60,6 +60,8 @@ G_BEGIN_DECLS
  * @GST_AUDIO_CHANNEL_POSITION_WIDE_RIGHT: Wide right (between front right and side right)
  * @GST_AUDIO_CHANNEL_POSITION_SURROUND_LEFT: Surround left (between rear left and side left)
  * @GST_AUDIO_CHANNEL_POSITION_SURROUND_RIGHT: Surround right (between rear right and side right)
+ * @GST_AUDIO_CHANNEL_POSITION_REAR_LEFT_OF_CENTER: Rear left of center (between rear left and rear center)
+ * @GST_AUDIO_CHANNEL_POSITION_REAR_RIGHT_OF_CENTER: Rear right of center (between rear right and rear center)
  * @GST_AUDIO_CHANNEL_POSITION_NONE: used for position-less channels, e.g.
  *     from a sound card that records 1024 channels; mutually exclusive with
  *     any other channel position
@@ -89,7 +91,26 @@ G_BEGIN_DECLS
  * As another special case it is allowed to have two channels without a channel mask.
  * This implicitly means that this is a stereo stream with a front left and front right
  * channel.
+ *
+ * There can be some ambiguity in the use of @GST_AUDIO_CHANNEL_POSITION_REAR_LEFT,
+ * @GST_AUDIO_CHANNEL_POSITION_REAR_RIGHT, and
+ * @GST_AUDIO_CHANNEL_POSITION_SURROUND_LEFT and
+ * GST_AUDIO_CHANNEL_POSITION_SURROUND_RIGHT. Some technical specifications
+ * refer to the non-front channels in a 5.1 configuration as "Rear Left/Right" whereas
+ * others refer to the same channels as "Left/Right Surround". This can become
+ * more confusing still in 7.1 configurations with 4 rear channels, which may
+ * be referred to as either "Rear Left/Right, Rear Left/Right Center" or,
+ * equivalently "Left/Right Surround, Rear Left/Right". While the latter is
+ * now more common, for backward-compatibility, it is recommended that the
+ * former be used.
+ *
+ * To summarise:
+ *  * 5.1 is "Front Left, Front Right, Front Center, Rear Left, Rear Right, LFE"
+ *  * 7.1 is "Front Left, Front Right, Front Center, Rear Left, Rear Right,
+ *    Rear Left of Center, Rear Right of Center, LFE" (for 3 front, 4 rear
+ *    setups)
  */
+/* FIXME: In 2.0, rename "Surround" to "Rear", and "Rear X-of-Center" to "Rear" */
 typedef enum {
   /* These get negative indices to allow to use
    * the enum values of the normal cases for the
@@ -126,7 +147,9 @@ typedef enum {
   GST_AUDIO_CHANNEL_POSITION_WIDE_LEFT,
   GST_AUDIO_CHANNEL_POSITION_WIDE_RIGHT,
   GST_AUDIO_CHANNEL_POSITION_SURROUND_LEFT,
-  GST_AUDIO_CHANNEL_POSITION_SURROUND_RIGHT
+  GST_AUDIO_CHANNEL_POSITION_SURROUND_RIGHT,
+  GST_AUDIO_CHANNEL_POSITION_REAR_LEFT_OF_CENTER,
+  GST_AUDIO_CHANNEL_POSITION_REAR_RIGHT_OF_CENTER,
 } GstAudioChannelPosition;
 
 #define GST_AUDIO_CHANNEL_POSITION_MASK(pos) (G_GUINT64_CONSTANT(1)<< GST_AUDIO_CHANNEL_POSITION_ ## pos)
