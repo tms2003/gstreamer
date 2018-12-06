@@ -481,6 +481,186 @@ GST_START_TEST (test_parse_bin_from_description)
 }
 
 GST_END_TEST;
+
+#define GST_TYPE_REUSE_TEST_ELEMENT (gst_reuse_test_element_get_type ())
+static GType gst_reuse_test_element_get_type (void);
+
+static GstElement *pipeline = NULL;
+static GstPad *ghost_pad = NULL;
+static guint eos_count = 0;
+static guint data_receive_count = 0;
+static gulong handoff_signal_id = 0;
+
+typedef struct _GstReuseTestElement
+{
+  GstBin parent;
+  GstElement *fakesrc;
+} GstReuseTestElement;
+
+typedef struct _GstReuseTestElementClass
+{
+  GstBinClass parent;
+} GstReuseTestElementClass;
+
+static GstStaticPadTemplate reuse_test_element_pad_template =
+GST_STATIC_PAD_TEMPLATE ("src",
+    GST_PAD_SRC,
+    GST_PAD_SOMETIMES,
+    GST_STATIC_CAPS ("application/x-test-caps"));
+
+#define gst_reuse_test_element_parent_class parent_class
+G_DEFINE_TYPE (GstReuseTestElement, gst_reuse_test_element, GST_TYPE_BIN);
+
+static GstStateChangeReturn
+gst_reuse_test_element_change_state (GstElement * element,
+    GstStateChange transition);
+
+static void
+gst_reuse_test_element_class_init (GstReuseTestElementClass * klass)
+{
+  GstElementClass *gstelement_class = GST_ELEMENT_CLASS (klass);
+
+  gst_element_class_add_static_pad_template (gstelement_class,
+      &reuse_test_element_pad_template);
+
+  gst_element_class_set_metadata (gstelement_class,
+      "Test element for reuse bin tests", "Source",
+      "Test element for reuse bin tests in core",
+      "GStreamer Devel <gstreamer-devel@lists.sf.net>");
+
+  gstelement_class->change_state = gst_reuse_test_element_change_state;
+}
+
+static void
+gst_reuse_test_element_init (GstReuseTestElement * src)
+{
+  src->fakesrc = gst_element_factory_make ("fakesrc", NULL);
+  fail_if (src->fakesrc == NULL, "Failed to create fakesrc");
+  gst_bin_add (GST_BIN (src), src->fakesrc);
+  g_object_set (src->fakesrc, "num-buffers", 100, NULL);
+}
+
+static GstStateChangeReturn
+gst_reuse_test_element_change_state (GstElement * element,
+    GstStateChange transition)
+{
+  GstReuseTestElement *src = (GstReuseTestElement *) element;
+  GstStateChangeReturn ret;
+  GstPad *pad = NULL;
+  GstPadTemplate *templ = NULL;
+
+  switch (transition) {
+    case GST_STATE_CHANGE_READY_TO_PAUSED:
+      if (src->fakesrc == NULL) {
+        return GST_STATE_CHANGE_FAILURE;
+      }
+
+      pad = gst_element_get_static_pad (src->fakesrc, "src");
+      if (pad == NULL) {
+        return GST_STATE_CHANGE_FAILURE;
+      }
+
+      templ = gst_static_pad_template_get (&reuse_test_element_pad_template);
+      ghost_pad = gst_ghost_pad_new_from_template ("src", pad, templ);
+      fail_if (ghost_pad == NULL, "Failed to create ghost pad");
+
+      gst_pad_set_active (ghost_pad, TRUE);
+      gst_element_add_pad (GST_ELEMENT (src), ghost_pad);
+      gst_element_no_more_pads (GST_ELEMENT (src));
+      gst_object_unref (templ);
+      gst_object_unref (pad);
+      break;
+    default:
+      break;
+  }
+
+  ret = GST_ELEMENT_CLASS (parent_class)->change_state (element, transition);
+
+  switch (transition) {
+    case GST_STATE_CHANGE_PAUSED_TO_READY:
+      gst_pad_set_active (ghost_pad, FALSE);
+      gst_element_remove_pad (GST_ELEMENT (src), ghost_pad);
+      break;
+    default:
+      break;
+  }
+
+  return ret;
+}
+
+static gboolean
+_bus_call (GstBus * bus, GstMessage * msg, gpointer data)
+{
+  GMainLoop *loop = (GMainLoop *) data;
+  switch (GST_MESSAGE_TYPE (msg)) {
+    case GST_MESSAGE_EOS:
+      eos_count++;
+      if (eos_count == 1) {
+        data_receive_count = 0;
+        gst_element_set_state (pipeline, GST_STATE_NULL);
+        gst_element_set_state (pipeline, GST_STATE_PLAYING);
+      } else if (eos_count == 2) {
+        g_main_loop_quit (loop);
+      }
+      break;
+    case GST_MESSAGE_ERROR:
+      fail_unless (FALSE);
+      g_main_loop_quit (loop);
+      break;
+    default:
+      break;
+  }
+  return TRUE;
+}
+
+static void
+_fakesink_hand_off (GstElement * object, GstBuffer * buffer, GstPad * pad,
+    gpointer user_data)
+{
+  data_receive_count++;
+}
+
+GST_START_TEST (test_reuse_bin_from_description)
+{
+  GMainLoop *loop = NULL;
+  GstElement *sink = NULL;
+  GstBus *bus = NULL;
+  guint bus_watch_id = 0;
+  const gchar desc[] =
+      "reusetestelement ! fakesink name=sink signal-handoffs=1";
+  GError *err = NULL;
+
+  fail_unless (gst_element_register (NULL, "reusetestelement",
+          GST_RANK_NONE, GST_TYPE_REUSE_TEST_ELEMENT));
+
+  loop = g_main_loop_new (NULL, FALSE);
+
+  pipeline = gst_parse_launch (desc, &err);
+  fail_unless (pipeline && err == NULL);
+
+  bus = gst_pipeline_get_bus (GST_PIPELINE (pipeline));
+  bus_watch_id = gst_bus_add_watch (bus, _bus_call, loop);
+  gst_object_unref (bus);
+
+  sink = gst_bin_get_by_name (GST_BIN (pipeline), "sink");
+  fail_unless (sink != NULL);
+  handoff_signal_id = g_signal_connect (sink, "handoff",
+      G_CALLBACK (_fakesink_hand_off), NULL);
+  fail_unless (handoff_signal_id != 0);
+
+  gst_element_set_state (pipeline, GST_STATE_PLAYING);
+  g_main_loop_run (loop);
+
+  /* Got EOS event. */
+  fail_unless_equals_int (data_receive_count, 100);
+  g_signal_handler_disconnect (sink, handoff_signal_id);
+  gst_element_set_state (pipeline, GST_STATE_NULL);
+  gst_object_unref (pipeline);
+  g_source_remove (bus_watch_id);
+  g_main_loop_unref (loop);
+}
+
+GST_END_TEST;
 #endif
 
 GST_START_TEST (test_element_found_tags)
@@ -1978,6 +2158,7 @@ gst_utils_suite (void)
   tcase_add_test (tc_chain, test_gdouble_to_guint64);
 #ifndef GST_DISABLE_PARSE
   tcase_add_test (tc_chain, test_parse_bin_from_description);
+  tcase_add_test (tc_chain, test_reuse_bin_from_description);
 #endif
   tcase_add_test (tc_chain, test_element_found_tags);
   tcase_add_test (tc_chain, test_element_link);
