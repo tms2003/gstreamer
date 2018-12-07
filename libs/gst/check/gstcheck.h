@@ -689,9 +689,13 @@ fail_unless (gst_element_set_state (GST_ELEMENT(element),       \
   "could not change state to " #state);
 
 #define GST_CHECK_MAIN(name)                                    \
+        GST_CHECK_MAIN_WITH_CODE(name, {})
+
+#define GST_CHECK_MAIN_WITH_CODE(name, _C_)                     \
 int main (int argc, char **argv)                                \
 {                                                               \
   Suite *s;                                                     \
+  {_C_;}                                                        \
   gst_check_init (&argc, &argv);                                \
   s = name ## _suite ();                                        \
   return gst_check_run_suite (s, # name, __FILE__);             \
