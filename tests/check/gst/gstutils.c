@@ -410,11 +410,14 @@ GST_START_TEST (test_parse_bin_from_description)
     const gchar *pad_names;
   } bin_tests[] = {
     {
-    "identity", "identity0/sink,identity0/src"}, {
-    "identity ! identity ! identity", "identity1/sink,identity3/src"}, {
-    "identity ! fakesink", "identity4/sink"}, {
-    "fakesrc ! identity", "identity5/src"}, {
-    "fakesrc ! fakesink", ""}
+        "identity", "identity0/sink,identity0/src"}, {
+        "identity ! identity ! identity", "identity1/sink,identity3/src"}, {
+        "identity ! fakesink", "identity4/sink"}, {
+        "fakesrc ! identity", "identity5/src"}, {
+        "fakesrc ! fakesink", ""}, {
+        "fakesrc ! fakesink ! video/x-raw,height=668", ""}, {
+        "fakesrc ! video/x-raw,height=668 ! fakesink", ""}, {
+        "video/x-raw,height=668 ! fakesrc ! fakesink", ""}
   };
   gint i;
 
