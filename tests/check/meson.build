@@ -165,3 +165,23 @@ foreach t : core_tests
     test(test_name, exe, env: env, timeout : 3 * 60)
   endif
 endforeach
+
+valgrind = find_program('valgrind', required : false)
+if valgrind.found()
+  env = environment()
+  # each test will overwrite CK_DEFAULT_TIMEOUT.
+  # Set CK_TIMEOUT_MULTIPLIER to make timeout 3 * 60 sec
+  env.set('CK_TIMEOUT_MULTIPLIER', '18')
+
+  add_test_setup('valgrind', env : env,
+    exe_wrapper : [valgrind,
+      '--tool=memcheck',
+      '--leak-check=full',
+      '--trace-children=yes',
+      '--show-possibly-lost=no',
+      '--leak-resolution=high',
+      '--num-callers=20',
+      '--error-exitcode=1',
+      '--suppressions=@0@'.format(join_paths(meson.current_source_dir(), 'gstreamer.supp')),
+      ])
+endif
