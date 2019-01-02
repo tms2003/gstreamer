@@ -232,7 +232,7 @@ typedef struct {
   gchar *sink_pad;
   GstElement *sink;
   GstCaps *caps;
-  gulong pad_added_signal_id, no_more_pads_signal_id;
+  gulong pad_added_signal_id, pad_removed_signal_id, no_more_pads_signal_id;
   gboolean all_pads;
 } DelayedLink;
 
@@ -241,6 +241,11 @@ typedef struct {
   gchar *value_str;
   gulong signal_id;
 } DelayedSet;
+
+typedef struct {
+  gint num_delayed_links;
+  gint num_linked_links;
+} DelayedLinkCtx;
 
 static int  gst_resolve_reference(reference_t *rr, GstElement *pipeline){
   GstBin *bin;
@@ -496,6 +501,30 @@ static void gst_parse_free_delayed_link (DelayedLink *link)
   (pad_name ? "pad " : "some"), (pad_name ? pad_name : "pad"), \
   G_OBJECT_TYPE_NAME(elem), GST_STR_NULL (GST_ELEMENT_NAME (elem))
 
+
+static DelayedLinkCtx *gst_parse_get_delayed_link_context (GstElement *element)
+{
+  GstElement *parent = NULL;
+  GstContext *context = NULL;
+  GstStructure *s = NULL;
+  DelayedLinkCtx *delayed_link_ctx = NULL;
+
+  parent = (GstElement *) gst_element_get_parent (element);
+  if (parent != NULL) {
+    context = gst_element_get_context (parent, "gst.parse.delayedlink");
+    if (context != NULL) {
+      context = (GstContext *) gst_context_make_writable (context);
+      s = gst_context_writable_structure (context);
+      gst_structure_get (s, "delayed-link-context", &delayed_link_ctx, NULL);
+      gst_context_unref (context);
+    }
+    gst_object_unref (parent);
+  }
+
+  return delayed_link_ctx;
+}
+
+
 static void gst_parse_no_more_pads (GstElement *src, gpointer data)
 {
   DelayedLink *link = data;
@@ -503,11 +532,16 @@ static void gst_parse_no_more_pads (GstElement *src, gpointer data)
   /* Don't warn for all-pads links, as we expect those to
    * still be active at no-more-pads */
   if (!link->all_pads) {
-    GST_ELEMENT_WARNING(src, PARSE, DELAYED_LINK,
-      (_("Delayed linking failed.")),
-      ("failed delayed linking " PRETTY_PAD_NAME_FMT " to " PRETTY_PAD_NAME_FMT,
-          PRETTY_PAD_NAME_ARGS (src, link->src_pad),
-          PRETTY_PAD_NAME_ARGS (link->sink, link->sink_pad)));
+    DelayedLinkCtx *delayed_link_ctx = NULL;
+    delayed_link_ctx = gst_parse_get_delayed_link_context (src);
+    if (delayed_link_ctx == NULL ||
+        delayed_link_ctx->num_delayed_links != delayed_link_ctx->num_linked_links) {
+      GST_ELEMENT_WARNING(src, PARSE, DELAYED_LINK,
+        (_("Delayed linking failed.")),
+        ("failed delayed linking " PRETTY_PAD_NAME_FMT " to " PRETTY_PAD_NAME_FMT,
+            PRETTY_PAD_NAME_ARGS (src, link->src_pad),
+            PRETTY_PAD_NAME_ARGS (link->sink, link->sink_pad)));
+    }
   }
   /* we keep the handlers connected, so that in case an element still adds a pad
    * despite no-more-pads, we will consider it for pending delayed links */
@@ -516,6 +550,7 @@ static void gst_parse_no_more_pads (GstElement *src, gpointer data)
 static void gst_parse_found_pad (GstElement *src, GstPad *pad, gpointer data)
 {
   DelayedLink *link = data;
+  DelayedLinkCtx *delayed_link_ctx = NULL;
 
   GST_CAT_INFO (GST_CAT_PIPELINE,
                 "trying delayed linking %s " PRETTY_PAD_NAME_FMT " to " PRETTY_PAD_NAME_FMT,
@@ -532,7 +567,18 @@ static void gst_parse_found_pad (GstElement *src, GstPad *pad, gpointer data)
 		               link->all_pads ? "all pads" : "one pad",
                	   PRETTY_PAD_NAME_ARGS (src, link->src_pad),
                    PRETTY_PAD_NAME_ARGS (link->sink, link->sink_pad));
+    delayed_link_ctx = gst_parse_get_delayed_link_context (src);
+    if (delayed_link_ctx != NULL)
+      delayed_link_ctx->num_linked_links++;
   }
+}
+
+static void gst_parse_remove_pad (GstElement *src, GstPad *pad, gpointer data)
+{
+  DelayedLinkCtx *delayed_link_ctx = NULL;
+  delayed_link_ctx = gst_parse_get_delayed_link_context (src);
+  if (delayed_link_ctx != NULL)
+    delayed_link_ctx->num_linked_links--;
 }
 
 /* both padnames and the caps may be NULL */
@@ -550,6 +596,7 @@ gst_parse_perform_delayed_link (GstElement *src, const gchar *src_pad,
         (GST_PAD_TEMPLATE_PRESENCE(templ) == GST_PAD_SOMETIMES))
     {
       DelayedLink *data = g_slice_new (DelayedLink);
+      DelayedLinkCtx *delayed_link_ctx = NULL;
 
       data->all_pads = all_pads;
 
@@ -571,8 +618,15 @@ gst_parse_perform_delayed_link (GstElement *src, const gchar *src_pad,
       data->pad_added_signal_id = g_signal_connect_data (src, "pad-added",
           G_CALLBACK (gst_parse_found_pad), data,
           (GClosureNotify) gst_parse_free_delayed_link, (GConnectFlags) 0);
+      data->pad_removed_signal_id = g_signal_connect (src, "pad-removed",
+          G_CALLBACK (gst_parse_remove_pad), data);
       data->no_more_pads_signal_id = g_signal_connect (src, "no-more-pads",
           G_CALLBACK (gst_parse_no_more_pads), data);
+
+	  delayed_link_ctx = gst_parse_get_delayed_link_context (src);
+	  if (delayed_link_ctx != NULL)
+	    delayed_link_ctx->num_delayed_links++;
+
       return TRUE;
     }
   }
@@ -668,7 +722,7 @@ gst_parse_perform_link (link_t *link, graph_t *graph)
     if (gst_parse_perform_delayed_link (src,
           srcs ? (const gchar *) srcs->data : NULL,
           sink, sinks ? (const gchar *) sinks->data : NULL, link->caps,
-	  link->all_pads) || link->all_pads) {
+	      link->all_pads) || link->all_pads) {
       goto success;
     } else {
       goto error;
@@ -1144,6 +1198,9 @@ priv_gst_parse_launch (const gchar *str, GError **error, GstParseContext *ctx,
   GSList *walk;
   GstElement *ret;
   yyscan_t scanner;
+  GstContext *context = NULL;
+  GstStructure *s = NULL;
+  DelayedLinkCtx *delayed_link_ctx = NULL;
 
   g_return_val_if_fail (str != NULL, NULL);
   g_return_val_if_fail (error == NULL || *error == NULL, NULL);
@@ -1225,6 +1282,15 @@ priv_gst_parse_launch (const gchar *str, GError **error, GstParseContext *ctx,
   gst_parse_free_chain (g.chain);
   g.chain = NULL;
 
+  if (GST_IS_BIN (ret) == TRUE) {
+    delayed_link_ctx = (DelayedLinkCtx *) g_malloc (sizeof (DelayedLinkCtx));
+    delayed_link_ctx->num_delayed_links = 0;
+    delayed_link_ctx->num_linked_links = 0;
+    context = gst_context_new ("gst.parse.delayedlink", TRUE);
+    s = gst_context_writable_structure (context);
+    gst_structure_set (s, "delayed-link-context", G_TYPE_POINTER, delayed_link_ctx, NULL);
+    gst_element_set_context (ret, context);
+  }
 
   /* resolve and perform links */
   for (walk = g.links; walk; walk = walk->next) {
