@@ -57,7 +57,9 @@ struct _GstFileSrc {
   /*< private >*/
   gchar *filename;			/* filename */
   gchar *uri;				/* caching the URI */
+  gboolean loop;			/* true if we should continually loop this file */
   gint fd;				/* open file descriptor */
+  guint64 fsize;			/* size of file in bytes */
   guint64 read_position;		/* position of fd */
 
   gboolean seekable;                    /* whether the file is seekable */

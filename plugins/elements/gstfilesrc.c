@@ -144,7 +144,8 @@ enum
 enum
 {
   PROP_0,
-  PROP_LOCATION
+  PROP_LOCATION,
+  PROP_LOOP,
 };
 
 static void gst_file_src_finalize (GObject * object);
@@ -191,6 +192,11 @@ gst_file_src_class_init (GstFileSrcClass * klass)
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
           GST_PARAM_MUTABLE_READY));
 
+  g_object_class_install_property (gobject_class, PROP_LOOP,
+      g_param_spec_boolean ("loop", "Loop",
+          "Whether to repeat from the beginning when file has been read.",
+          FALSE, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
   gobject_class->finalize = gst_file_src_finalize;
 
   gst_element_class_set_static_metadata (gstelement_class,
@@ -218,6 +224,7 @@ gst_file_src_init (GstFileSrc * src)
   src->filename = NULL;
   src->fd = 0;
   src->uri = NULL;
+  src->loop = FALSE;
 
   src->is_regular = FALSE;
 
@@ -298,6 +305,9 @@ gst_file_src_set_property (GObject * object, guint prop_id,
     case PROP_LOCATION:
       gst_file_src_set_location (src, g_value_get_string (value), NULL);
       break;
+    case PROP_LOOP:
+      src->loop = g_value_get_boolean (value);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -317,6 +327,9 @@ gst_file_src_get_property (GObject * object, guint prop_id, GValue * value,
   switch (prop_id) {
     case PROP_LOCATION:
       g_value_set_string (value, src->filename);
+      break;
+    case PROP_LOOP:
+      g_value_set_boolean (value, src->loop);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -348,9 +361,10 @@ gst_file_src_fill (GstBaseSrc * basesrc, guint64 offset, guint length,
 
   if (G_UNLIKELY (offset != -1 && src->read_position != offset)) {
     off_t res;
+    off_t adjusted_off = src->loop ? (offset % src->fsize) : offset;
 
-    res = lseek (src->fd, offset, SEEK_SET);
-    if (G_UNLIKELY (res < 0 || res != offset))
+    res = lseek (src->fd, adjusted_off, SEEK_SET);
+    if (G_UNLIKELY (res < 0 || res != adjusted_off))
       goto seek_failed;
 
     src->read_position = offset;
@@ -375,10 +389,16 @@ gst_file_src_fill (GstBaseSrc * basesrc, guint64 offset, guint length,
 
     /* files should eos if they read 0 and more was requested */
     if (G_UNLIKELY (ret == 0)) {
-      /* .. but first we should return any remaining data */
-      if (bytes_read > 0)
-        break;
-      goto eos;
+      if (G_UNLIKELY (src->loop)) {
+        off_t res = lseek (src->fd, 0, SEEK_SET);
+        if (G_UNLIKELY (res < 0 || res != 0))
+          goto seek_failed;
+      } else {
+        /* .. but first we should return any remaining data */
+        if (bytes_read > 0)
+          break;
+        goto eos;
+      }
     }
 
     to_read -= ret;
@@ -439,9 +459,10 @@ gst_file_src_get_size (GstBaseSrc * basesrc, guint64 * size)
 
   src = GST_FILE_SRC (basesrc);
 
-  if (!src->seekable) {
+  if (!src->seekable || src->loop) {
     /* If it isn't seekable, we won't know the length (but fstat will still
-     * succeed, and wrongly say our length is zero. */
+     * succeed, and wrongly say our length is zero. 
+     * If we're looping, don't report size, treat as infinite stream. */
     return FALSE;
   }
 
@@ -488,6 +509,7 @@ gst_file_src_start (GstBaseSrc * basesrc)
     goto was_socket;
 
   src->read_position = 0;
+  src->fsize = stat_results.st_size;
 
   /* record if it's a regular (hence seekable and lengthable) file */
   if (S_ISREG (stat_results.st_mode))
@@ -517,6 +539,12 @@ gst_file_src_start (GstBaseSrc * basesrc)
   /* We can only really do seeking on regular files - for other file types, we
    * don't know their length, so seeking isn't useful/meaningful */
   src->seekable = src->seekable && src->is_regular;
+
+  /* If we've been asked to loop but can't seek then we're stuck - we need to 
+   * be able to seek back to the start of the file in order to loop */
+  if (src->loop && !src->seekable) {
+    goto loop_needs_seek;
+  }
 
   gst_base_src_set_dynamic_size (basesrc, src->seekable);
 
@@ -569,6 +597,13 @@ lseek_wonky:
             src->filename));
     goto error_close;
   }
+loop_needs_seek:
+  {
+    GST_ELEMENT_ERROR (src, RESOURCE, OPEN_READ, (NULL),
+        ("Seek not supported so cannot loop in file \"%s\"", src->filename));
+    goto error_close;
+  }
+
 error_close:
   close (src->fd);
 error_exit:
