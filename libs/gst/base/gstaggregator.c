@@ -774,8 +774,13 @@ gst_aggregator_do_events_and_queries (GstElement * self, GstPad * epad,
           gst_event_unref (g_queue_pop_tail (&pad->priv->data));
         gst_event_unref (event);
       } else if (query) {
-        GST_LOG_OBJECT (pad, "Processing %" GST_PTR_FORMAT, query);
-        ret = klass->sink_query (aggregator, pad, query);
+        if (GST_QUERY_TYPE (query) == GST_QUERY_DRAIN) {
+          GST_LOG_OBJECT (pad, "Drained, not draining downstream");
+          ret = TRUE;
+        } else {
+          GST_LOG_OBJECT (pad, "Processing %" GST_PTR_FORMAT, query);
+          ret = klass->sink_query (aggregator, pad, query);
+        }
 
         PAD_LOCK (pad);
         if (g_queue_peek_tail (&pad->priv->data) == query) {
