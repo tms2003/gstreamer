@@ -314,10 +314,10 @@ gst_rtp_ulpfec_enc_stream_ctx_free_packets_buf (GstRtpUlpFecEncStreamCtx * ctx)
 
 static void
 gst_rtp_ulpfec_enc_stream_ctx_prepend_to_fec_buffer (GstRtpUlpFecEncStreamCtx *
-    ctx, GstRTPBuffer * rtp, guint buf_max_size)
+    ctx, GstRTPBuffer * rtp)
 {
   GList *new_head;
-  if (ctx->packets_buf.length == buf_max_size) {
+  if (ctx->packets_buf.length == PACKETS_BUF_MAX_LENGTH) {
     new_head = g_queue_pop_tail_link (&ctx->packets_buf);
   } else {
     new_head = g_list_alloc ();
@@ -326,7 +326,7 @@ gst_rtp_ulpfec_enc_stream_ctx_prepend_to_fec_buffer (GstRtpUlpFecEncStreamCtx *
   gst_buffer_replace ((GstBuffer **) & new_head->data, rtp->buffer);
   g_queue_push_head_link (&ctx->packets_buf, new_head);
 
-  g_assert_cmpint (ctx->packets_buf.length, <=, buf_max_size);
+  g_assert_cmpint (ctx->packets_buf.length, <=, PACKETS_BUF_MAX_LENGTH);
 }
 
 static GstFlowReturn
@@ -377,17 +377,15 @@ gst_rtp_ulpfec_enc_stream_ctx_cache_packet (GstRtpUlpFecEncStreamCtx * ctx,
     GstRTPBuffer * rtp, gboolean * dst_empty_packet_buffer,
     gboolean * dst_push_fec)
 {
+  gst_rtp_ulpfec_enc_stream_ctx_prepend_to_fec_buffer (ctx, rtp);
+
   if (ctx->multipacket) {
-    gst_rtp_ulpfec_enc_stream_ctx_prepend_to_fec_buffer (ctx, rtp,
-        PACKETS_BUF_MAX_LENGTH);
     gst_rtp_ulpfec_enc_stream_ctx_increment_budget (ctx, rtp->buffer);
 
     *dst_empty_packet_buffer = gst_rtp_buffer_get_marker (rtp);
     *dst_push_fec = *dst_empty_packet_buffer;
   } else {
     gboolean push_fec;
-
-    gst_rtp_ulpfec_enc_stream_ctx_prepend_to_fec_buffer (ctx, rtp, 1);
 
     push_fec = ctx->fec_nth == 0 ? FALSE :
         0 == (ctx->num_packets_received % ctx->fec_nth);
@@ -396,7 +394,7 @@ gst_rtp_ulpfec_enc_stream_ctx_cache_packet (GstRtpUlpFecEncStreamCtx * ctx,
     ctx->budget_important = 0;
 
     *dst_push_fec = push_fec;
-    *dst_empty_packet_buffer = FALSE;
+    *dst_empty_packet_buffer = push_fec;
   }
 }
 
