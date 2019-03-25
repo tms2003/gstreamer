@@ -223,6 +223,7 @@ struct _GstBaseSinkPrivate
 
   /* the last buffer we prerolled or rendered. Useful for making snapshots */
   gint enable_last_sample;      /* atomic */
+  gint notify_last_sample;
   GstBuffer *last_buffer;
   GstCaps *last_caps;
   GstBufferList *last_buffer_list;
@@ -304,6 +305,7 @@ struct _GstBaseSinkPrivate
 #define DEFAULT_BLOCKSIZE           4096
 #define DEFAULT_RENDER_DELAY        0
 #define DEFAULT_ENABLE_LAST_SAMPLE  TRUE
+#define DEFAULT_NOTIFY_LAST_SAMPLE  FALSE
 #define DEFAULT_THROTTLE_TIME       0
 #define DEFAULT_MAX_BITRATE         0
 #define DEFAULT_DROP_OUT_OF_SEGMENT TRUE
@@ -325,6 +327,7 @@ enum
   PROP_MAX_BITRATE,
   PROP_PROCESSING_DEADLINE,
   PROP_STATS,
+  PROP_NOTIFY_LAST_SAMPLE,
   PROP_LAST
 };
 
@@ -514,6 +517,23 @@ gst_base_sink_class_init (GstBaseSinkClass * klass)
       g_param_spec_boxed ("last-sample", "Last Sample",
       "The last sample received in the sink", GST_TYPE_SAMPLE,
       G_PARAM_READABLE | G_PARAM_STATIC_STRINGS);
+
+  /**
+   * GstBaseSink:notify-last-sample:
+   *
+   * Enabled emitting the `notify::last-sample` signal whenever 'last-sample' is
+   * updated. This is disabled by default for performance reason.
+   *
+   * NOTE: This property won't have any effect if #GstBaseSink:enable-last-sample
+   * is %FALSE
+   *
+   * Since: 1.22
+   */
+  properties[PROP_NOTIFY_LAST_SAMPLE] =
+      g_param_spec_boolean ("notify-last-sample", "Enable Last Buffer",
+      "Enable the last-sample property", DEFAULT_NOTIFY_LAST_SAMPLE,
+      G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS);
+
   /**
    * GstBaseSink:blocksize:
    *
@@ -589,10 +609,11 @@ gst_base_sink_class_init (GstBaseSinkClass * klass)
    *
    * Since: 1.18
    */
-  properties[PROP_PROCESSING_DEADLINE] =
+  properties[PROP_STATS] =
       g_param_spec_boxed ("stats", "Statistics",
       "Sink Statistics", GST_TYPE_STRUCTURE,
       G_PARAM_READABLE | G_PARAM_STATIC_STRINGS);
+
   g_object_class_install_properties (gobject_class, PROP_LAST, properties);
 
   gstelement_class->change_state =
@@ -1102,12 +1123,18 @@ gst_base_sink_set_last_buffer_list_unlocked (GstBaseSink * sink,
 static void
 gst_base_sink_set_last_buffer (GstBaseSink * sink, GstBuffer * buffer)
 {
+  gboolean notify;
+
   if (!g_atomic_int_get (&sink->priv->enable_last_sample))
     return;
 
   GST_OBJECT_LOCK (sink);
   gst_base_sink_set_last_buffer_unlocked (sink, buffer);
+  notify = sink->priv->notify_last_sample;
   GST_OBJECT_UNLOCK (sink);
+
+  if (notify)
+    g_object_notify_by_pspec (G_OBJECT (sink), properties[PROP_LAST_SAMPLE]);
 }
 
 static void
@@ -1601,6 +1628,11 @@ gst_base_sink_set_property (GObject * object, guint prop_id,
     case PROP_PROCESSING_DEADLINE:
       gst_base_sink_set_processing_deadline (sink, g_value_get_uint64 (value));
       break;
+    case PROP_NOTIFY_LAST_SAMPLE:
+      GST_OBJECT_LOCK (sink);
+      sink->priv->notify_last_sample = g_value_get_boolean (value);
+      GST_OBJECT_UNLOCK (sink);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -1652,6 +1684,9 @@ gst_base_sink_get_property (GObject * object, guint prop_id, GValue * value,
       break;
     case PROP_STATS:
       g_value_take_boxed (value, gst_base_sink_get_stats (sink));
+      break;
+    case PROP_NOTIFY_LAST_SAMPLE:
+      g_value_set_boolean (value, sink->priv->notify_last_sample);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
