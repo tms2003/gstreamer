@@ -41,6 +41,20 @@
 #   include <sys/wait.h>
 #endif
 
+#ifdef G_OS_WIN32
+#include <io.h>
+#define close _close
+#define dup2 _dup2
+#define isatty _isatty
+#endif
+
+#ifndef STDOUT_FILENO
+#define STDOUT_FILENO 1
+#endif
+
+#ifndef STDERR_FILENO
+#define STDERR_FILENO 2
+#endif
 
 /* "R" : support color
  * "X" : do not clear the screen when leaving the pager
@@ -50,10 +64,8 @@
 
 gboolean colored_output = TRUE;
 
-#ifdef G_OS_UNIX
 static const gchar DEFAULT_PAGER[] = "less";
-GPid child_pid = -1;
-#endif
+GPid child_pid;
 GMainLoop *loop = NULL;
 
 /* Console colors */
@@ -1876,7 +1888,6 @@ print_all_plugin_automatic_install_info (void)
   gst_plugin_list_free (orig_plugins);
 }
 
-#ifdef G_OS_UNIX
 static gboolean
 redirect_stdout (void)
 {
@@ -1884,7 +1895,7 @@ redirect_stdout (void)
   gchar **argv;
   const gchar *pager;
   gint stdin_fd;
-  gchar **envp;
+  gchar **envp = NULL;
 
   pager = g_getenv ("PAGER");
   if (pager == NULL)
@@ -1892,8 +1903,15 @@ redirect_stdout (void)
 
   argv = g_strsplit (pager, " ", 0);
 
+#ifdef G_OS_WIN32
+  /* FIXME: _wspawnvpe() which is called by GLib internally seems to be
+   * problematic since it causes crash with long env
+   * Need to investigate and remove this ifdef if possible */
+  g_setenv ("LESS", DEFAULT_LESS_OPTS, TRUE);
+#else
   envp = g_get_environ ();
   envp = g_environ_setenv (envp, "LESS", DEFAULT_LESS_OPTS, TRUE);
+#endif
 
   if (!g_spawn_async_with_pipes (NULL, argv, envp,
           G_SPAWN_DO_NOT_REAP_CHILD | G_SPAWN_SEARCH_PATH,
@@ -1929,7 +1947,6 @@ child_exit_cb (GPid child_pid, gint status, gpointer user_data)
   g_spawn_close_pid (child_pid);
   g_main_loop_quit (loop);
 }
-#endif
 
 int
 main (int argc, char *argv[])
@@ -2068,22 +2085,19 @@ main (int argc, char *argv[])
   /* We only support truecolor */
   colored_output &= (no_colors == NULL);
 
-#ifdef G_OS_UNIX
   if (isatty (STDOUT_FILENO)) {
+#ifdef G_OS_WIN32
+    /* On Windows 10, g_log_writer_supports_color will also setup the console
+     * so that it correctly interprets ANSI VT sequences if it's supported */
+    if (!g_log_writer_supports_color (STDOUT_FILENO)) {
+      colored_output = FALSE;
+    }
+#endif
     if (redirect_stdout ())
       loop = g_main_loop_new (NULL, FALSE);
   } else {
     colored_output = FALSE;
   }
-#elif defined(G_OS_WIN32)
-  {
-    gint fd = _fileno (stdout);
-    /* On Windows 10, g_log_writer_supports_color will also setup the console
-     * so that it correctly interprets ANSI VT sequences if it's supported */
-    if (!_isatty (fd) || !g_log_writer_supports_color (fd))
-      colored_output = FALSE;
-  }
-#endif
 
   /* if no arguments, print out list of elements */
   if (uri_handlers) {
@@ -2148,7 +2162,6 @@ main (int argc, char *argv[])
 
 done:
 
-#ifdef G_OS_UNIX
   if (loop) {
     fflush (stdout);
     fflush (stderr);
@@ -2159,7 +2172,6 @@ done:
     g_main_loop_run (loop);
     g_main_loop_unref (loop);
   }
-#endif
 
   return exit_code;
 }
