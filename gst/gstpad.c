@@ -4764,9 +4764,12 @@ probe_stopped:
 
     switch (ret) {
       case GST_FLOW_CUSTOM_SUCCESS:
-      case GST_FLOW_CUSTOM_SUCCESS_1:
-        GST_DEBUG_OBJECT (pad, "dropped or handled buffer");
+        GST_DEBUG_OBJECT (pad, "dropped buffer, returning GST_FLOW_OK");
         ret = GST_FLOW_OK;
+        break;
+      case GST_FLOW_CUSTOM_SUCCESS_1:
+        GST_DEBUG_OBJECT (pad, "buffer handled in probe, returning '%s'",
+            gst_flow_get_name (ret));
         break;
       default:
         GST_DEBUG_OBJECT (pad, "an error occurred %s", gst_flow_get_name (ret));
