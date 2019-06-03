@@ -294,6 +294,92 @@ _add_signals (GString * json, GObject * object)
     g_string_append (json, "}");
 }
 
+static gboolean
+print_field (GQuark field, const GValue * value, GString * jcaps)
+{
+  gchar *tmp, *str = gst_value_serialize (value);
+
+  if (!g_strcmp0 (g_quark_to_string (field), "format") ||
+      !g_strcmp0 (g_quark_to_string (field), "rate")) {
+    if (!cleanup_caps_field)
+      cleanup_caps_field = g_regex_new ("\\(string\\)|\\(rate\\)", 0, 0, NULL);
+
+    tmp = str;
+    str = g_regex_replace (cleanup_caps_field, str, -1, 0, "", 0, NULL);;
+    g_free (tmp);
+  }
+
+  g_string_append_printf (jcaps, "%15s: %s\n", g_quark_to_string (field), str);
+  g_free (str);
+  return TRUE;
+}
+
+static gchar *
+_append_structure (GString * str, const GstStructure * structure, gint i,
+    gchar * features_string)
+{
+  gchar *res = NULL;
+  GString *nstr = str;
+
+  if (!str)
+    nstr = g_string_new (NULL);
+
+  if (features_string) {
+    g_string_append_printf (nstr, "%s%s(%s):\n",
+        i ? "\n" : "", gst_structure_get_name (structure), features_string);
+  } else {
+    g_string_append_printf (nstr, "%s:\n", gst_structure_get_name (structure));
+  }
+  g_free (features_string);
+  gst_structure_foreach (structure, (GstStructureForeachFunc) print_field,
+      nstr);
+
+  if (str)
+    return NULL;
+
+  res = json_strescape (nstr->str);
+  g_string_free (str, TRUE);
+
+  return res;
+}
+
+
+static gchar *
+_build_caps (const GstCaps * caps)
+{
+  guint i;
+  gchar *res;
+  GString *jcaps = g_string_new (NULL);
+
+  if (gst_caps_is_any (caps)) {
+    g_string_append (jcaps, "ANY");
+    return g_string_free (jcaps, FALSE);
+  }
+
+  if (gst_caps_is_empty (caps)) {
+    g_string_append (jcaps, "EMPTY");
+    return g_string_free (jcaps, FALSE);
+  }
+
+  for (i = 0; i < gst_caps_get_size (caps); i++) {
+    gchar *features_string = NULL;
+    GstStructure *structure = gst_caps_get_structure (caps, i);
+    GstCapsFeatures *features = gst_caps_get_features (caps, i);
+
+    if (features && (gst_caps_features_is_any (features) ||
+            !gst_caps_features_is_equal (features,
+                GST_CAPS_FEATURES_MEMORY_SYSTEM_MEMORY))) {
+      features_string = gst_caps_features_to_string (features);
+    }
+    _append_structure (jcaps, structure, i, features_string);
+  }
+
+  res = json_strescape (jcaps->str);
+  g_string_free (jcaps, TRUE);
+
+  return res;
+}
+
 static void
 _add_properties (GString * json, GObject * object, GObjectClass * klass)
 {
@@ -467,11 +553,9 @@ _add_properties (GString * json, GObject * object, GObjectClass * klass)
           const GstCaps *caps = gst_value_get_caps (&value);
 
           if (caps) {
-            gchar *capsstr = gst_caps_to_string (caps);
-            gchar *tmpcapsstr = json_strescape (capsstr);
+            gchar *tmpcapsstr = _build_caps (caps);
 
             g_string_append_printf (json, ",\"default\": \"%s\"", tmpcapsstr);
-            g_free (capsstr);
             g_free (tmpcapsstr);
           }
         } else if (G_IS_PARAM_SPEC_ENUM (spec)) {
@@ -482,12 +566,9 @@ _add_properties (GString * json, GObject * object, GObjectClass * klass)
           if (spec->value_type == GST_TYPE_STRUCTURE) {
             const GstStructure *s = gst_value_get_structure (&value);
             if (s) {
-              gchar *str = gst_structure_to_string (s);
-              gchar *tmpstr = json_strescape (str);
-
-              g_string_append_printf (json, ",\"default\": \"%s\"", tmpstr);
-              g_free (str);
-              g_free (tmpstr);
+              gchar *structstr = _append_structure (NULL, s, 0, NULL);
+              g_string_append_printf (json, ",\"default\": \"%s\"", structstr);
+              g_free (structstr);
             }
           }
         } else if (GST_IS_PARAM_SPEC_FRACTION (spec)) {
@@ -505,6 +586,10 @@ _add_properties (GString * json, GObject * object, GObjectClass * klass)
         break;
     }
 
+    if (spec->owner_type == GST_TYPE_DEVICE && (!g_strcmp0 (spec->name, "caps")
+            || !g_strcmp0 (spec->name, "properties")))
+      g_string_append (json, ",\"unstable-values\": [\"default\"]");
+
     g_string_append_c (json, '}');
 
 
@@ -514,69 +599,6 @@ _add_properties (GString * json, GObject * object, GObjectClass * klass)
   if (opened)
     g_string_append (json, "}");
 
-}
-
-static gboolean
-print_field (GQuark field, const GValue * value, GString * jcaps)
-{
-  gchar *tmp, *str = gst_value_serialize (value);
-
-  if (!g_strcmp0 (g_quark_to_string (field), "format") ||
-      !g_strcmp0 (g_quark_to_string (field), "rate")) {
-    if (!cleanup_caps_field)
-      cleanup_caps_field = g_regex_new ("\\(string\\)|\\(rate\\)", 0, 0, NULL);
-
-    tmp = str;
-    str = g_regex_replace (cleanup_caps_field, str, -1, 0, "", 0, NULL);;
-    g_free (tmp);
-  }
-
-  g_string_append_printf (jcaps, "%15s: %s\n", g_quark_to_string (field), str);
-  g_free (str);
-  return TRUE;
-}
-
-static gchar *
-_build_caps (const GstCaps * caps)
-{
-  guint i;
-  gchar *res;
-  GString *jcaps = g_string_new (NULL);
-
-  if (gst_caps_is_any (caps)) {
-    g_string_append (jcaps, "ANY");
-    return g_string_free (jcaps, FALSE);
-  }
-
-  if (gst_caps_is_empty (caps)) {
-    g_string_append (jcaps, "EMPTY");
-    return g_string_free (jcaps, FALSE);
-  }
-
-  for (i = 0; i < gst_caps_get_size (caps); i++) {
-    GstStructure *structure = gst_caps_get_structure (caps, i);
-    GstCapsFeatures *features = gst_caps_get_features (caps, i);
-
-    if (features && (gst_caps_features_is_any (features) ||
-            !gst_caps_features_is_equal (features,
-                GST_CAPS_FEATURES_MEMORY_SYSTEM_MEMORY))) {
-      gchar *features_string = gst_caps_features_to_string (features);
-
-      g_string_append_printf (jcaps, "%s%s(%s):\n",
-          i ? "\n" : "", gst_structure_get_name (structure), features_string);
-      g_free (features_string);
-    } else {
-      g_string_append_printf (jcaps, "%s:\n",
-          gst_structure_get_name (structure));
-    }
-    gst_structure_foreach (structure, (GstStructureForeachFunc) print_field,
-        jcaps);
-  }
-
-  res = json_strescape (jcaps->str);
-  g_string_free (jcaps, TRUE);
-
-  return res;
 }
 
 static void
@@ -663,19 +685,23 @@ get_rank_name (char *s, gint rank)
   return s;
 }
 
+typedef gchar **(*GetMetadataKeys) (gpointer * obj);
+typedef const gchar *(*GetMetadata) (gpointer * obj, const gchar * key);
+
 static void
-_add_factory_details (GString * json, GstElementFactory * factory)
+_add_factory_details (GString * json, gpointer * factory,
+    GetMetadataKeys get_keys, GetMetadata get_meta)
 {
   gchar **keys, **k;
   gboolean f = TRUE;
 
-  keys = gst_element_factory_get_metadata_keys (factory);
+  keys = get_keys ((gpointer) factory);
   if (keys != NULL) {
     for (k = keys; *k != NULL; ++k) {
       gchar *val;
       gchar *key = *k;
 
-      val = json_strescape (gst_element_factory_get_metadata (factory, key));
+      val = json_strescape (get_meta ((gpointer) factory, key));
       g_string_append_printf (json, "%s\"%s\": \"%s\"", f ? "" : ",", key, val);
       f = FALSE;
       g_free (val);
@@ -719,10 +745,36 @@ _add_element_details (GString * json, GstPluginFeature * feature)
       GST_OBJECT_NAME (feature),
       get_rank_name (s, gst_plugin_feature_get_rank (feature)));
 
-  _add_factory_details (json, GST_ELEMENT_FACTORY (feature));
+  _add_factory_details (json, (gpointer) feature,
+      (GetMetadataKeys) gst_element_factory_get_metadata_keys,
+      (GetMetadata) gst_element_factory_get_metadata);
   _add_object_details (json, G_OBJECT (element));
 
   _add_element_pad_templates (json, element, GST_ELEMENT_FACTORY (feature));
+
+  g_string_append (json, "}");
+}
+
+static void
+_add_provider_details (GString * json, GstPluginFeature * feature)
+{
+  GstDeviceProvider *provider =
+      gst_device_provider_factory_get (GST_DEVICE_PROVIDER_FACTORY (feature));
+  GList *devices;
+
+  g_string_append_printf (json, "\"%s\": {", GST_OBJECT_NAME (feature));
+
+  _add_factory_details (json, (gpointer) feature,
+      (GetMetadataKeys) gst_device_provider_factory_get_metadata_keys,
+      (GetMetadata) gst_device_provider_factory_get_metadata);
+
+  g_string_append (json, "\"device-example\":");
+  devices = gst_device_provider_get_devices (provider);
+  if (devices) {
+    g_string_append (json, "{");
+    _add_object_details (json, G_OBJECT (devices->data));
+    g_string_append (json, "}");
+  }
 
   g_string_append (json, "}");
 }
@@ -804,13 +856,9 @@ main (int argc, char *argv[])
         f = FALSE;
       }
     }
-    g_string_append (json, "}, \"tracers\": {");
-    gst_plugin_feature_list_free (features);
 
     f = TRUE;
-    features =
-        gst_registry_get_feature_list_by_plugin (gst_registry_get (),
-        gst_plugin_get_name (plugin));
+    g_string_append (json, "}, \"tracers\": {");
     for (tmp = features; tmp; tmp = tmp->next) {
       GstPluginFeature *feature = tmp->data;
 
@@ -818,6 +866,18 @@ main (int argc, char *argv[])
         if (!f)
           g_string_append_printf (json, ",");
         g_string_append_printf (json, "\"%s\": {}", GST_OBJECT_NAME (feature));
+        f = FALSE;
+      }
+    }
+    f = TRUE;
+    g_string_append (json, "}, \"device-providers\": {");
+    for (tmp = features; tmp; tmp = tmp->next) {
+      GstPluginFeature *feature = tmp->data;
+
+      if (GST_IS_DEVICE_PROVIDER_FACTORY (feature)) {
+        if (!f)
+          g_string_append_printf (json, ",");
+        _add_provider_details (json, feature);
         f = FALSE;
       }
     }

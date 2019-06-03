@@ -1,6 +1,7 @@
 {
     "coreelements": {
         "description": "GStreamer core elements",
+        "device-providers": {},
         "elements": {
             "capsfilter": {
                 "author": "David Schleef <ds@schleef.org>",
@@ -564,7 +565,7 @@
                         "blurb": "Sink Statistics",
                         "construct": false,
                         "construct-only": false,
-                        "default": "application/x-gst-base-sink-stats, average-rate=(double)0, dropped=(guint64)0, rendered=(guint64)0;",
+                        "default": "application/x-gst-base-sink-stats:\n   average-rate: 0\n        dropped: 0\n       rendered: 0\n",
                         "type-name": "GstStructure",
                         "writable": false
                     },
@@ -1066,7 +1067,7 @@
                         "blurb": "Sink Statistics",
                         "construct": false,
                         "construct-only": false,
-                        "default": "application/x-gst-base-sink-stats, average-rate=(double)0, dropped=(guint64)0, rendered=(guint64)0;",
+                        "default": "application/x-gst-base-sink-stats:\n   average-rate: 0\n        dropped: 0\n       rendered: 0\n",
                         "type-name": "GstStructure",
                         "writable": false
                     },
@@ -1393,7 +1394,7 @@
                         "blurb": "Sink Statistics",
                         "construct": false,
                         "construct-only": false,
-                        "default": "application/x-gst-base-sink-stats, average-rate=(double)0, dropped=(guint64)0, rendered=(guint64)0;",
+                        "default": "application/x-gst-base-sink-stats:\n   average-rate: 0\n        dropped: 0\n       rendered: 0\n",
                         "type-name": "GstStructure",
                         "writable": false
                     },
@@ -3054,6 +3055,7 @@
     },
     "coretracers": {
         "description": "GStreamer core tracers",
+        "device-providers": {},
         "elements": {},
         "filename": "gstcoretracers",
         "license": "LGPL",
