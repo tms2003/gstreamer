@@ -626,7 +626,7 @@ test_headers_outalign_nal (GstHarness * h)
   fail_unless_equals_int (gst_harness_buffers_in_queue (h), 5);
 
   /* parser must have inserted AUD before the headers, with the same PTS */
-  pull_and_check (h, h265_aud, 10, 0);
+  pull_and_check (h, h265_aud, 10, GST_BUFFER_FLAG_DELTA_UNIT);
   pull_and_check (h, h265_128x128_vps, 10, 0);
   pull_and_check (h, h265_128x128_sps, 10, 0);
   pull_and_check (h, h265_128x128_pps, 10, 0);
@@ -1014,7 +1014,7 @@ GST_START_TEST (test_parse_skip_to_4bytes_sc)
   /* The parser will deliver VPS, SPS, PPS as it now have complete caps */
   fail_unless_equals_int (gst_harness_buffers_in_queue (h), 5);
 
-  pull_and_check (h, h265_aud, 100, 0);
+  pull_and_check (h, h265_aud, 100, GST_BUFFER_FLAG_DELTA_UNIT);
 
   gst_harness_teardown (h);
 }
@@ -1044,7 +1044,7 @@ GST_START_TEST (test_parse_sc_with_half_header)
   /* The parser will deliver VPS, SPS, PPS as it now have complete cpas */
   fail_unless_equals_int (gst_harness_buffers_in_queue (h), 5);
 
-  pull_and_check (h, h265_aud, 100, 0);
+  pull_and_check (h, h265_aud, 100, GST_BUFFER_FLAG_DELTA_UNIT);
 
   gst_harness_teardown (h);
 }
