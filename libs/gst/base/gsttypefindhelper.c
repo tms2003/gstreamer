@@ -64,7 +64,24 @@ typedef struct
   GstObject *obj;               /* for logging */
   GstObject *parent;
   GstFlowReturn flow_ret;
+  gboolean at_eos;
 } GstTypeFindHelper;
+
+/*
+ * helper_is_eos:
+ * @data: helper data struct
+ *
+ * Returns whether an EOS has been received.
+ */
+static gboolean
+helper_is_eos (gpointer data)
+{
+  GstTypeFindHelper *helper;
+
+  helper = (GstTypeFindHelper *) data;
+
+  return helper->at_eos;
+}
 
 /*
  * helper_find_peek:
@@ -143,6 +160,9 @@ helper_find_peek (gpointer data, gint64 offset, guint size)
   helper->flow_ret =
       helper->func (helper->obj, helper->parent, offset, MAX (size, 4096),
       &buffer);
+
+  if (helper->flow_ret == GST_FLOW_EOS)
+    helper->at_eos = TRUE;
 
   if (helper->flow_ret != GST_FLOW_OK)
     goto error;
@@ -382,6 +402,7 @@ gst_type_find_helper_get_range_full (GstObject * obj, GstObject * parent,
   GSList *walk;
   GList *l, *type_list;
   GstCaps *result = NULL;
+  gboolean last_chance = FALSE;
 
   g_return_val_if_fail (GST_IS_OBJECT (obj), GST_FLOW_ERROR);
   g_return_val_if_fail (func != NULL, GST_FLOW_ERROR);
@@ -398,9 +419,11 @@ gst_type_find_helper_get_range_full (GstObject * obj, GstObject * parent,
   helper.obj = obj;
   helper.parent = parent;
   helper.flow_ret = GST_FLOW_OK;
+  helper.at_eos = FALSE;
 
   find.data = &helper;
   find.peek = helper_find_peek;
+  find.is_eos = helper_is_eos;
   find.suggest = helper_find_suggest;
 
   if (size == 0 || size == (guint64) - 1) {
@@ -412,6 +435,7 @@ gst_type_find_helper_get_range_full (GstObject * obj, GstObject * parent,
   type_list = gst_type_find_factory_get_list ();
   type_list = prioritize_extension (obj, type_list, extension);
 
+again:
   for (l = type_list; l; l = l->next) {
     helper.factory = GST_TYPE_FIND_FACTORY (l->data);
     gst_type_find_factory_call_function (helper.factory, &find);
@@ -420,8 +444,17 @@ gst_type_find_helper_get_range_full (GstObject * obj, GstObject * parent,
        * something before any error with highest probability */
       helper.flow_ret = GST_FLOW_OK;
       break;
-    } else if (helper.flow_ret != GST_FLOW_OK
-        && helper.flow_ret != GST_FLOW_EOS) {
+    } else if (helper.flow_ret == GST_FLOW_EOS) {
+      /* Since we are at eos and there hasn't been a match, don't
+       * try the remainder of functions. Instead, start over (at_eos
+       * should have been set already) to give all of them an equal
+       * last chance. */
+      g_assert (helper.at_eos == TRUE);
+      if (!last_chance) {
+        last_chance = TRUE;
+        goto again;
+      }
+    } else if (helper.flow_ret != GST_FLOW_OK) {
       /* We had less than maximum probability and an error, don't return
        * any caps as they might be with a lower probability than what
        * we would've gotten when continuing if there was no error */
@@ -497,7 +530,24 @@ typedef struct
   GstCaps *caps;
   GstTypeFindFactory *factory;  /* for logging */
   GstObject *obj;               /* for logging */
+  gboolean at_eos;
 } GstTypeFindBufHelper;
+
+/*
+ * buf_helper_is_eos:
+ * @data: helper data struct
+ *
+ * Returns whether an EOS has been received.
+ */
+static gboolean
+buf_helper_is_eos (gpointer data)
+{
+  GstTypeFindBufHelper *helper;
+
+  helper = (GstTypeFindBufHelper *) data;
+
+  return helper->at_eos;
+}
 
 /*
  * buf_helper_find_peek:
@@ -595,8 +645,44 @@ GstCaps *
 gst_type_find_helper_for_data (GstObject * obj, const guint8 * data, gsize size,
     GstTypeFindProbability * prob)
 {
-  return gst_type_find_helper_for_data_with_extension (obj, data, size, NULL,
-      prob);
+  return gst_type_find_helper_for_data_with_extension_full (obj, data, size,
+      FALSE, NULL, prob);
+}
+
+/**
+ * gst_type_find_helper_for_data_full:
+ * @obj: (allow-none): object doing the typefinding, or %NULL (used for logging)
+ * @data: (transfer none) (array length=size): * a pointer with data to typefind
+ * @size: the size of @data
+ * @at_eos (in): whether this is the last attempt
+ * @prob: (out) (allow-none): location to store the probability of the found
+ *     caps, or %NULL
+ *
+ * Tries to find what type of data is contained in the given @data, the
+ * assumption being that the data represents the beginning of the stream or
+ * file.
+ *
+ * All available typefinders will be called on the data in order of rank. If
+ * a typefinding function returns a probability of %GST_TYPE_FIND_MAXIMUM,
+ * typefinding is stopped immediately and the found caps will be returned
+ * right away. Otherwise, all available typefind functions will the tried,
+ * and the caps with the highest probability will be returned, or %NULL if
+ * the content of @data could not be identified.
+ *
+ * Free-function: gst_caps_unref
+ *
+ * Returns: (transfer full) (nullable): the #GstCaps corresponding to the data,
+ *     or %NULL if no type could be found. The caller should free the caps
+ *     returned with gst_caps_unref().
+ *
+ * Since: 1.18
+ */
+GstCaps *
+gst_type_find_helper_for_data_full (GstObject * obj, const guint8 * data,
+    gsize size, gboolean at_eos, GstTypeFindProbability * prob)
+{
+  return gst_type_find_helper_for_data_with_extension_full (obj, data, size,
+      at_eos, NULL, prob);
 }
 
 /**
@@ -637,6 +723,48 @@ gst_type_find_helper_for_data_with_extension (GstObject * obj,
     const guint8 * data, gsize size, const gchar * extension,
     GstTypeFindProbability * prob)
 {
+  return gst_type_find_helper_for_data_with_extension_full (obj,
+      data, size, FALSE, extension, prob);
+}
+
+/**
+ * gst_type_find_helper_for_data_with_extension_full:
+ * @obj: (allow-none): object doing the typefinding, or %NULL (used for logging)
+ * @data: (transfer none) (array length=size): * a pointer with data to typefind
+ * @size: the size of @data
+ * @at_eos (in): whether this is the last attempt
+ * @extension: (allow-none): extension of the media, or %NULL
+ * @prob: (out) (allow-none): location to store the probability of the found
+ *     caps, or %NULL
+ *
+ * Tries to find what type of data is contained in the given @data, the
+ * assumption being that the data represents the beginning of the stream or
+ * file.
+ *
+ * All available typefinders will be called on the data in order of rank. If
+ * a typefinding function returns a probability of %GST_TYPE_FIND_MAXIMUM,
+ * typefinding is stopped immediately and the found caps will be returned
+ * right away. Otherwise, all available typefind functions will the tried,
+ * and the caps with the highest probability will be returned, or %NULL if
+ * the content of @data could not be identified.
+ *
+ * When @extension is not %NULL, this function will first try the typefind
+ * functions for the given extension, which might speed up the typefinding
+ * in many cases.
+ *
+ * Free-function: gst_caps_unref
+ *
+ * Returns: (transfer full) (nullable): the #GstCaps corresponding to the data,
+ *     or %NULL if no type could be found. The caller should free the caps
+ *     returned with gst_caps_unref().
+ *
+ * Since: 1.18
+ */
+GstCaps *
+gst_type_find_helper_for_data_with_extension_full (GstObject * obj,
+    const guint8 * data, gsize size, gboolean at_eos,
+    const gchar * extension, GstTypeFindProbability * prob)
+{
   GstTypeFindBufHelper helper;
   GstTypeFind find;
   GList *l, *type_list;
@@ -649,12 +777,14 @@ gst_type_find_helper_for_data_with_extension (GstObject * obj,
   helper.best_probability = GST_TYPE_FIND_NONE;
   helper.caps = NULL;
   helper.obj = obj;
+  helper.at_eos = at_eos;
 
   if (helper.data == NULL || helper.size == 0)
     return NULL;
 
   find.data = &helper;
   find.peek = buf_helper_find_peek;
+  find.is_eos = buf_helper_is_eos;
   find.suggest = buf_helper_find_suggest;
   find.get_length = NULL;
 
@@ -709,7 +839,8 @@ GstCaps *
 gst_type_find_helper_for_buffer (GstObject * obj, GstBuffer * buf,
     GstTypeFindProbability * prob)
 {
-  return gst_type_find_helper_for_buffer_with_extension (obj, buf, NULL, prob);
+  return gst_type_find_helper_for_buffer_with_extension_full (obj, buf, TRUE,
+      NULL, prob);
 }
 
 /**
@@ -759,8 +890,63 @@ gst_type_find_helper_for_buffer_with_extension (GstObject * obj,
   if (!gst_buffer_map (buf, &info, GST_MAP_READ))
     return NULL;
   result =
-      gst_type_find_helper_for_data_with_extension (obj, info.data, info.size,
-      extension, prob);
+      gst_type_find_helper_for_data_with_extension_full (obj, info.data,
+      info.size, TRUE, extension, prob);
+  gst_buffer_unmap (buf, &info);
+
+  return result;
+}
+
+/**
+ * gst_type_find_helper_for_buffer_with_extension_full:
+ * @obj: (allow-none): object doing the typefinding, or %NULL (used for logging)
+ * @buf: (in) (transfer none): a #GstBuffer with data to typefind
+ * @at_eos (in): whether this is the last attempt
+ * @extension: (allow-none): extension of the media, or %NULL
+ * @prob: (out) (allow-none): location to store the probability of the found
+ *     caps, or %NULL
+ *
+ * Tries to find what type of data is contained in the given #GstBuffer, the
+ * assumption being that the buffer represents the beginning of the stream or
+ * file.
+ *
+ * All available typefinders will be called on the data in order of rank. If
+ * a typefinding function returns a probability of %GST_TYPE_FIND_MAXIMUM,
+ * typefinding is stopped immediately and the found caps will be returned
+ * right away. Otherwise, all available typefind functions will the tried,
+ * and the caps with the highest probability will be returned, or %NULL if
+ * the content of the buffer could not be identified.
+ *
+ * When @extension is not %NULL, this function will first try the typefind
+ * functions for the given extension, which might speed up the typefinding
+ * in many cases.
+ *
+ * Free-function: gst_caps_unref
+ *
+ * Returns: (transfer full) (nullable): the #GstCaps corresponding to the data,
+ *     or %NULL if no type could be found. The caller should free the caps
+ *     returned with gst_caps_unref().
+ *
+ * Since: 1.18
+ */
+GstCaps *
+gst_type_find_helper_for_buffer_with_extension_full (GstObject * obj,
+    GstBuffer * buf, gboolean at_eos, const gchar * extension,
+    GstTypeFindProbability * prob)
+{
+  GstCaps *result;
+  GstMapInfo info;
+
+  g_return_val_if_fail (buf != NULL, NULL);
+  g_return_val_if_fail (GST_IS_BUFFER (buf), NULL);
+  g_return_val_if_fail (GST_BUFFER_OFFSET (buf) == 0 ||
+      GST_BUFFER_OFFSET (buf) == GST_BUFFER_OFFSET_NONE, NULL);
+
+  if (!gst_buffer_map (buf, &info, GST_MAP_READ))
+    return NULL;
+  result =
+      gst_type_find_helper_for_data_with_extension_full (obj, info.data,
+      info.size, TRUE, extension, prob);
   gst_buffer_unmap (buf, &info);
 
   return result;

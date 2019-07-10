@@ -949,8 +949,9 @@ gst_type_find_element_chain_do_typefinding (GstTypeFindElement * typefind,
     ext = gst_type_find_get_extension (typefind, typefind->sink);
     /* map all available data */
     data = gst_adapter_map (typefind->adapter, avail);
-    caps = gst_type_find_helper_for_data_with_extension (GST_OBJECT (typefind),
-        data, avail, ext, &probability);
+    caps =
+        gst_type_find_helper_for_data_with_extension_full (GST_OBJECT
+        (typefind), data, avail, at_eos, ext, &probability);
     gst_adapter_unmap (typefind->adapter);
     g_free (ext);
 

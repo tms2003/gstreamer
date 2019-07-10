@@ -87,8 +87,10 @@ struct _GstTypeFind {
   /* optional */
   guint64         (* get_length) (gpointer data);
 
+  gboolean        ( *is_eos) (gpointer data);
+
   /* <private> */
-  gpointer _gst_reserved[GST_PADDING];
+  gpointer _gst_reserved[GST_PADDING - 1];
 };
 
 /**
@@ -114,6 +116,9 @@ void            gst_type_find_suggest_simple (GstTypeFind * find,
                                               const char  * fieldname, ...);
 GST_API
 guint64   gst_type_find_get_length (GstTypeFind   * find);
+
+GST_API
+gboolean  gst_type_find_is_eos (GstTypeFind * find);
 
 /* registration interface */
 

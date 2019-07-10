@@ -213,3 +213,22 @@ gst_type_find_get_length (GstTypeFind * find)
 
   return find->get_length (find->data);
 }
+
+/**
+ * gst_type_find_is_eos:
+ * @find: The #GstTypeFind the function was called with
+ *
+ * Returns whether the end of the data stream has been reached
+ *
+ * Returns: %TRUE if the end of the data stream has been reached, %FALSE otherwise
+ *
+ * Since: 1.18
+ */
+gboolean
+gst_type_find_is_eos (GstTypeFind * find)
+{
+  if (find->is_eos == NULL)
+    return FALSE;
+
+  return find->is_eos (find->data);
+}

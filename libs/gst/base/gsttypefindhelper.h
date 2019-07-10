@@ -39,11 +39,26 @@ GstCaps * gst_type_find_helper_for_data   (GstObject              *obj,
                                            GstTypeFindProbability *prob);
 
 GST_BASE_API
+GstCaps * gst_type_find_helper_for_data_full (GstObject              *obj,
+                                              const guint8           *data,
+                                              gsize                   size,
+                                              gboolean                at_eos,
+                                              GstTypeFindProbability *prob);
+
+GST_BASE_API
 GstCaps * gst_type_find_helper_for_data_with_extension (GstObject              *obj,
                                                         const guint8           *data,
                                                         gsize                   size,
                                                         const gchar            *extension,
                                                         GstTypeFindProbability *prob);
+
+GST_BASE_API
+GstCaps * gst_type_find_helper_for_data_with_extension_full (GstObject              *obj,
+                                                             const guint8           *data,
+                                                             gsize                   size,
+                                                             gboolean                at_eos,
+                                                             const gchar            *extension,
+                                                             GstTypeFindProbability *prob);
 
 GST_BASE_API
 GstCaps * gst_type_find_helper_for_buffer (GstObject              *obj,
@@ -55,6 +70,13 @@ GstCaps * gst_type_find_helper_for_buffer_with_extension (GstObject             
                                                           GstBuffer              *buf,
                                                           const gchar            *extension,
                                                           GstTypeFindProbability *prob);
+
+GST_BASE_API
+GstCaps * gst_type_find_helper_for_buffer_with_extension_full (GstObject              *obj,
+                                                               GstBuffer              *buf,
+                                                               gboolean                at_eos,
+                                                               const gchar            *extension,
+                                                               GstTypeFindProbability *prob);
 
 GST_BASE_API
 GstCaps * gst_type_find_helper_for_extension (GstObject * obj,
