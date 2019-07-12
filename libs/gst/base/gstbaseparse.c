@@ -2543,10 +2543,12 @@ gst_base_parse_push_frame (GstBaseParse * parse, GstBaseParseFrame * frame)
   parse->priv->seen_keyframe |= parse->priv->is_video &&
       !GST_BUFFER_FLAG_IS_SET (buffer, GST_BUFFER_FLAG_DELTA_UNIT);
 
-  if (frame->flags & GST_BASE_PARSE_FRAME_FLAG_CLIP) {
-    if (GST_BUFFER_TIMESTAMP_IS_VALID (buffer) &&
-        GST_CLOCK_TIME_IS_VALID (parse->segment.stop) &&
-        GST_BUFFER_TIMESTAMP (buffer) >
+  if (frame->flags & GST_BASE_PARSE_FRAME_FLAG_CLIP
+      && (parse->priv->disable_passthrough || !parse->priv->passthrough)
+      && GST_CLOCK_TIME_IS_VALID (parse->priv->frame_duration)) {
+    if (GST_BUFFER_TIMESTAMP_IS_VALID (buffer)
+        && GST_CLOCK_TIME_IS_VALID (parse->segment.stop)
+        && GST_BUFFER_TIMESTAMP (buffer) >
         parse->segment.stop + parse->priv->lead_out_ts) {
       GST_LOG_OBJECT (parse, "Dropped frame, after segment");
       ret = GST_FLOW_EOS;
