@@ -121,6 +121,8 @@ typedef struct _GstMessage GstMessage;
  *     response is received with a non-HTTP URL inside. (Since: 1.10)
  * @GST_MESSAGE_DEVICE_CHANGED: Message indicating a #GstDevice was changed
  *     a #GstDeviceProvider (Since: 1.16)
+ * @GST_MESSAGE_NEED_CONTEXT_ALL: Message indicating that an element wants
+ *     all contexts having a specific context type (Since: 1.18)
  * @GST_MESSAGE_ANY: mask for all of the above messages.
  *
  * The different message types that are available.
@@ -174,6 +176,7 @@ typedef enum
   GST_MESSAGE_STREAMS_SELECTED  = GST_MESSAGE_EXTENDED + 5,
   GST_MESSAGE_REDIRECT          = GST_MESSAGE_EXTENDED + 6,
   GST_MESSAGE_DEVICE_CHANGED    = GST_MESSAGE_EXTENDED + 6,
+  GST_MESSAGE_NEED_CONTEXT_ALL  = GST_MESSAGE_EXTENDED + 8,
   GST_MESSAGE_ANY               = (gint) (0xffffffff)
 } GstMessageType;
 
@@ -788,6 +791,11 @@ GstMessage *    gst_message_new_need_context    (GstObject * src, const gchar * 
 
 GST_API
 gboolean        gst_message_parse_context_type  (GstMessage * message, const gchar ** context_type);
+
+/* NEED_CONTEXT_ALL */
+
+GST_API
+GstMessage *    gst_message_new_need_context_all (GstObject * src, const gchar * context_type) G_GNUC_MALLOC;
 
 /* HAVE_CONTEXT */
 

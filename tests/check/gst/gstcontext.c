@@ -59,9 +59,12 @@ typedef struct
   GstElement parent;
   gboolean set_before_ready;
   gboolean set_from_need_context;
+  gboolean set_from_need_context_all;
   gboolean create_self;
 
   gboolean have_foobar;
+  gboolean have_other_foobar[2];
+  gint foobar_id[3];
 } GstContextElement;
 
 typedef struct
@@ -76,8 +79,28 @@ G_DEFINE_TYPE (GstContextElement, gst_context_element, GST_TYPE_ELEMENT);
 static void
 gst_context_element_set_context (GstElement * element, GstContext * context)
 {
-  if (strcmp (gst_context_get_context_type (context), "foobar") == 0)
-    ((GstContextElement *) element)->have_foobar = TRUE;
+  GstContextElement *self = (GstContextElement *) element;
+
+  if (strcmp (gst_context_get_context_type (context), "foobar") == 0) {
+    self->have_foobar = TRUE;
+  } else if (strcmp (gst_context_get_context_type (context), "foobar-all") == 0) {
+    const GstStructure *s;
+    gint id;
+
+    s = gst_context_get_structure (context);
+    fail_unless (gst_structure_get_int (s, "id", &id));
+
+    if (!self->have_foobar) {
+      self->have_foobar = TRUE;
+      self->foobar_id[0] = id;
+    } else if (!self->have_other_foobar[0]) {
+      self->have_other_foobar[0] = TRUE;
+      self->foobar_id[1] = id;
+    } else {
+      self->have_other_foobar[1] = TRUE;
+      self->foobar_id[2] = id;
+    }
+  }
 
   GST_ELEMENT_CLASS (gst_context_element_parent_class)->set_context (element,
       context);
@@ -99,12 +122,20 @@ gst_context_element_change_state (GstElement * element,
     else if (celement->set_before_ready)
       goto chain_up;
 
-    if (celement->set_from_need_context && have_foobar)
+    if ((celement->set_from_need_context || celement->set_from_need_context_all)
+        && have_foobar)
       return GST_STATE_CHANGE_FAILURE;
 
     if (!have_foobar) {
       /* Here we would first query downstream for a context but we have no pads */
-      msg = gst_message_new_need_context (GST_OBJECT (element), "foobar");
+      if (celement->set_from_need_context_all) {
+        msg =
+            gst_message_new_need_context_all (GST_OBJECT (element),
+            "foobar-all");
+      } else {
+        msg = gst_message_new_need_context (GST_OBJECT (element), "foobar");
+      }
+
       gst_element_post_message (element, msg);
 
       have_foobar = celement->have_foobar;
@@ -114,6 +145,14 @@ gst_context_element_change_state (GstElement * element,
       return GST_STATE_CHANGE_FAILURE;
     else if (celement->set_from_need_context)
       goto chain_up;
+
+    if (celement->set_from_need_context_all) {
+      if (!have_foobar || celement->have_other_foobar[0] != TRUE ||
+          celement->have_other_foobar[1] == TRUE)
+        return GST_STATE_CHANGE_FAILURE;
+
+      goto chain_up;
+    }
 
     if (celement->create_self && have_foobar)
       return GST_STATE_CHANGE_FAILURE;
@@ -203,6 +242,22 @@ sync_handler (GstBus * bus, GstMessage * message, gpointer user_data)
     context = gst_context_new ("foobar", FALSE);
     gst_element_set_context (element, context);
     gst_context_unref (context);
+  } else if (GST_MESSAGE_TYPE (message) == GST_MESSAGE_NEED_CONTEXT_ALL) {
+    const gchar *type;
+    GstElement *element = GST_ELEMENT (GST_MESSAGE_SRC (message));
+    GstContext *context;
+    GstStructure *s;
+    gint i;
+
+    fail_unless (gst_message_parse_context_type (message, &type));
+    fail_unless_equals_string (type, "foobar-all");
+    for (i = 0; i < 2; i++) {
+      context = gst_context_new ("foobar-all", TRUE);
+      s = gst_context_writable_structure (context);
+      gst_structure_set (s, "id", G_TYPE_INT, i + 1, NULL);
+      gst_element_set_context (element, context);
+      gst_context_unref (context);
+    }
   }
 
   return GST_BUS_PASS;
@@ -432,6 +487,46 @@ GST_START_TEST (test_add_element_to_bin_collision)
 
 GST_END_TEST;
 
+GST_START_TEST (test_need_context_all)
+{
+  GstBus *bus;
+  GstElement *element;
+  GstMessage *msg;
+
+  element = g_object_new (gst_context_element_get_type (), NULL);
+  bus = gst_bus_new ();
+  gst_bus_set_sync_handler (bus, sync_handler, NULL, NULL);
+  gst_element_set_bus (element, bus);
+
+  ((GstContextElement *) element)->set_from_need_context_all = TRUE;
+
+  fail_unless (gst_element_set_state (element,
+          GST_STATE_READY) == GST_STATE_CHANGE_SUCCESS);
+  fail_unless ((msg =
+          gst_bus_pop_filtered (bus, GST_MESSAGE_NEED_CONTEXT_ALL)) != NULL);
+  gst_message_unref (msg);
+  fail_unless ((msg =
+          gst_bus_pop_filtered (bus, GST_MESSAGE_STATE_CHANGED)) != NULL);
+  gst_message_unref (msg);
+  fail_if (gst_bus_pop (bus) != NULL);
+
+  fail_unless (((GstContextElement *) element)->have_foobar);
+  fail_unless (((GstContextElement *) element)->have_other_foobar[0]);
+  fail_if (((GstContextElement *) element)->have_other_foobar[1]);
+
+  fail_unless (((GstContextElement *) element)->foobar_id[0] == 1);
+  fail_unless (((GstContextElement *) element)->foobar_id[1] == 2);
+
+  gst_element_set_bus (element, NULL);
+  fail_unless (gst_element_set_state (element,
+          GST_STATE_NULL) == GST_STATE_CHANGE_SUCCESS);
+
+  gst_object_unref (bus);
+  gst_object_unref (element);
+}
+
+GST_END_TEST;
+
 static Suite *
 gst_context_suite (void)
 {
@@ -448,6 +543,7 @@ gst_context_suite (void)
   tcase_add_test (tc_chain, test_element_bin_caching);
   tcase_add_test (tc_chain, test_add_element_to_bin);
   tcase_add_test (tc_chain, test_add_element_to_bin_collision);
+  tcase_add_test (tc_chain, test_need_context_all);
 
   return s;
 }

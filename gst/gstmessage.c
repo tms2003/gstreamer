@@ -104,6 +104,7 @@ static GstMessageQuarks message_quarks[] = {
   {GST_MESSAGE_RESET_TIME, "reset-time", 0},
   {GST_MESSAGE_STREAM_START, "stream-start", 0},
   {GST_MESSAGE_NEED_CONTEXT, "need-context", 0},
+  {GST_MESSAGE_NEED_CONTEXT_ALL, "need-context-all", 0},
   {GST_MESSAGE_HAVE_CONTEXT, "have-context", 0},
   {GST_MESSAGE_DEVICE_ADDED, "device-added", 0},
   {GST_MESSAGE_DEVICE_REMOVED, "device-removed", 0},
@@ -2508,7 +2509,7 @@ gst_message_new_need_context (GstObject * src, const gchar * context_type)
 
 /**
  * gst_message_parse_context_type:
- * @message: a GST_MESSAGE_NEED_CONTEXT type message
+ * @message: a GST_MESSAGE_NEED_CONTEXT or GST_MESSAGE_NEED_CONTEXT_ALL type message
  * @context_type: (out) (transfer none) (allow-none): the context type, or %NULL
  *
  * Parse a context type from an existing GST_MESSAGE_NEED_CONTEXT message.
@@ -2524,8 +2525,8 @@ gst_message_parse_context_type (GstMessage * message,
   GstStructure *structure;
   const GValue *value;
 
-  g_return_val_if_fail (GST_MESSAGE_TYPE (message) == GST_MESSAGE_NEED_CONTEXT,
-      FALSE);
+  g_return_val_if_fail ((GST_MESSAGE_TYPE (message) == GST_MESSAGE_NEED_CONTEXT)
+      || (GST_MESSAGE_TYPE (message) == GST_MESSAGE_NEED_CONTEXT_ALL), FALSE);
 
   structure = GST_MESSAGE_STRUCTURE (message);
 
@@ -2535,6 +2536,35 @@ gst_message_parse_context_type (GstMessage * message,
   }
 
   return TRUE;
+}
+
+/**
+ * gst_message_new_need_context_all:
+ * @src: (transfer none) (allow-none): The object originating the message.
+ * @context_type: The context type that is needed
+ *
+ * This message is posted when an element needs all specific #GstContext.
+ *
+ * Returns: (transfer full): The new need-context-all message.
+ *
+ * MT safe.
+ *
+ * Since: 1.18
+ */
+GstMessage *
+gst_message_new_need_context_all (GstObject * src, const gchar * context_type)
+{
+  GstMessage *message;
+  GstStructure *structure;
+
+  g_return_val_if_fail (context_type != NULL, NULL);
+
+  structure = gst_structure_new_id (GST_QUARK (MESSAGE_NEED_CONTEXT_ALL),
+      GST_QUARK (CONTEXT_TYPE), G_TYPE_STRING, context_type, NULL);
+  message =
+      gst_message_new_custom (GST_MESSAGE_NEED_CONTEXT_ALL, src, structure);
+
+  return message;
 }
 
 /**

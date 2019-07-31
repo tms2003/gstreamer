@@ -4004,9 +4004,12 @@ gst_bin_handle_message_func (GstBin * bin, GstMessage * message)
 
       break;
     }
-    case GST_MESSAGE_NEED_CONTEXT:{
+    case GST_MESSAGE_NEED_CONTEXT:
+    case GST_MESSAGE_NEED_CONTEXT_ALL:
+    {
       const gchar *context_type;
       GList *l, *contexts;
+      gboolean find_all = (type == GST_MESSAGE_NEED_CONTEXT_ALL);
 
       gst_message_parse_context_type (message, &context_type);
       GST_OBJECT_LOCK (bin);
@@ -4018,12 +4021,14 @@ gst_bin_handle_message_func (GstBin * bin, GstMessage * message)
 
         if (strcmp (context_type, tmp_type) == 0) {
           gst_element_set_context (GST_ELEMENT (src), l->data);
-          break;
+          if (!find_all)
+            break;
         }
       }
       GST_OBJECT_UNLOCK (bin);
 
-      /* Forward if we couldn't answer the message */
+      /* Forward if we couldn't answer the message or
+       * in case of GST_MESSAGE_NEED_CONTEXT_ALL  */
       if (l == NULL) {
         goto forward;
       } else {
