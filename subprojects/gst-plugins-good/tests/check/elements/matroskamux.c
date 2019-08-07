@@ -65,13 +65,14 @@ fail_unless (gst_buffer_memcmp (buffer, 0, data, data_size) == 0);  \
 
 static void
 test_ebml_header_with_version (gint version,
-    gconstpointer data, gsize data_size)
+    gint opt_version, gconstpointer data, gsize data_size)
 {
   GstHarness *h;
   GstBuffer *inbuffer, *outbuffer;
 
   h = setup_matroskamux_harness (AC3_CAPS_STRING);
   g_object_set (h->element, "version", version, NULL);
+  g_object_set (h->element, "optional-version", opt_version, NULL);
 
   inbuffer = gst_harness_create_buffer (h, 1);
   fail_unless_equals_int (GST_FLOW_OK, gst_harness_push (h, inbuffer));
@@ -100,7 +101,7 @@ GST_START_TEST (test_ebml_header_v1)
     0x01,                       /* 1 */
   };
 
-  test_ebml_header_with_version (1, data_v1, sizeof (data_v1));
+  test_ebml_header_with_version (1, 1, data_v1, sizeof (data_v1));
 }
 
 GST_END_TEST;
@@ -115,13 +116,13 @@ GST_START_TEST (test_ebml_header_v2)
     0x6d, 0x61, 0x74, 0x72, 0x6f, 0x73, 0x6b, 0x61, 0x00,       /* "matroska" */
     0x42, 0x87,                 /* doctypeversion */
     0x81,                       /* 1 byte */
-    0x02,                       /* 2 */
+    0x04,                       /* 4 */
     0x42, 0x85,                 /* doctypereadversion */
     0x81,                       /* 1 byte */
     0x02,                       /* 2 */
   };
 
-  test_ebml_header_with_version (2, data_v2, sizeof (data_v2));
+  test_ebml_header_with_version (2, 4, data_v2, sizeof (data_v2));
 }
 
 GST_END_TEST;
