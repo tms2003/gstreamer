@@ -86,7 +86,8 @@ enum
 };
 
 #define CSP_VIDEO_CAPS GST_VIDEO_CAPS_MAKE (GST_VIDEO_FORMATS_ALL) ";" \
-    GST_VIDEO_CAPS_MAKE_WITH_FEATURES ("ANY", GST_VIDEO_FORMATS_ALL)
+    GST_VIDEO_CAPS_MAKE_WITH_FEATURES ("ANY", GST_VIDEO_FORMATS_ALL) ";" \
+    GST_VIDEO_CAPS_MAKE_WITH_FEATURES ("ANY", "ENCODED")
 
 static GstStaticPadTemplate gst_video_convert_src_template =
 GST_STATIC_PAD_TEMPLATE ("src",
@@ -123,7 +124,13 @@ gst_video_convert_caps_remove_format_info (GstCaps * caps)
   GstStructure *st;
   GstCapsFeatures *f;
   gint i, n;
-  GstCaps *res;
+  GstCaps *ourcaps, *res;
+  const GValue *format_list_no_encoded;
+
+  /* Borrow our caps for the format list without ENCODED */
+  ourcaps = gst_static_pad_template_get_caps (&gst_video_convert_src_template);
+  format_list_no_encoded =
+      gst_structure_get_value (gst_caps_get_structure (ourcaps, 0), "format");
 
   res = gst_caps_new_empty ();
 
@@ -145,13 +152,17 @@ gst_video_convert_caps_remove_format_info (GstCaps * caps)
             || gst_caps_features_is_equal (f, features_format_interlaced)
             || gst_caps_features_is_equal (f,
                 features_format_interlaced_sysmem))) {
-      gst_structure_remove_fields (st, "format", "colorimetry", "chroma-site",
-          NULL);
+      gst_structure_remove_fields (st, "colorimetry", "chroma-site", NULL);
+
+      /* Instead of just remove the format info, set it to the list of all formats
+         without ENCODED. */
+      gst_structure_set_value (st, "format", format_list_no_encoded);
     }
 
     gst_caps_append_structure_full (res, st, gst_caps_features_copy (f));
   }
 
+  gst_caps_unref (ourcaps);
   return res;
 }
 
