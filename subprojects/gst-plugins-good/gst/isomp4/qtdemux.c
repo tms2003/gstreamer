@@ -2614,10 +2614,12 @@ gst_qtdemux_stream_unref (QtDemuxStream * stream)
     gst_tag_list_unref (stream->stream_tags);
     if (stream->pad) {
       GstQTDemux *demux = stream->demux;
-      gst_element_remove_pad (GST_ELEMENT_CAST (demux), stream->pad);
+
+      gst_pad_set_active (stream->pad, FALSE);
       GST_OBJECT_LOCK (demux);
       gst_flow_combiner_remove_pad (demux->flowcombiner, stream->pad);
       GST_OBJECT_UNLOCK (demux);
+      gst_element_remove_pad (GST_ELEMENT_CAST (demux), stream->pad);
     }
     g_free (stream->stream_id);
     g_free (stream);

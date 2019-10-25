@@ -327,6 +327,7 @@ gst_deinterleave_remove_pads (GstDeinterleave * self)
   for (l = self->srcpads; l; l = l->next) {
     GstPad *pad = GST_PAD (l->data);
 
+    gst_pad_set_active (pad, FALSE);
     gst_element_remove_pad (GST_ELEMENT_CAST (self), pad);
     gst_object_unref (pad);
   }
