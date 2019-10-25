@@ -149,6 +149,7 @@ static void
 gst_mxf_demux_remove_pad (GstMXFDemuxPad * pad, GstMXFDemux * demux)
 {
   gst_flow_combiner_remove_pad (demux->flowcombiner, GST_PAD_CAST (pad));
+  gst_pad_set_active (GST_PAD_CAST (pad), FALSE);
   gst_element_remove_pad (GST_ELEMENT (demux), GST_PAD_CAST (pad));
 }
 

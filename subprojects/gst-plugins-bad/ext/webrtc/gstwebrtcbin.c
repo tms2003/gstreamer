@@ -797,6 +797,7 @@ _remove_pad (GstWebRTCBin * webrtc, GstWebRTCBinPad * pad)
 {
   _remove_pending_pad (webrtc, pad);
 
+  gst_pad_set_active (GST_PAD (pad), FALSE);
   gst_element_remove_pad (GST_ELEMENT (webrtc), GST_PAD (pad));
 }
 

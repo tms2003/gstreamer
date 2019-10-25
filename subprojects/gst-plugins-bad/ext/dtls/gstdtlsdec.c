@@ -418,6 +418,7 @@ gst_dtls_dec_release_pad (GstElement * element, GstPad * pad)
 
   GST_DEBUG_OBJECT (self, "releasing src pad");
 
+  gst_pad_set_active (pad, FALSE);
   gst_element_remove_pad (element, pad);
 }
 

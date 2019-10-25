@@ -778,6 +778,7 @@ dvb_base_bin_release_pad (GstElement * element, GstPad * pad)
           (element)->tsparse), target);
   gst_object_unref (target);
 
+  gst_pad_set_active (pad, FALSE);
   gst_element_remove_pad (element, pad);
 }
 
