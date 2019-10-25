@@ -532,6 +532,7 @@ gst_gl_mixer_bin_release_pad (GstElement * element, GstPad * pad)
       GST_OBJECT_UNLOCK (element);
 
       _free_input_chain (chain);
+      gst_pad_set_active (pad, FALSE);
       gst_element_remove_pad (element, pad);
       released = TRUE;
       break;

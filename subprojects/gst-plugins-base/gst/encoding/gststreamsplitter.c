@@ -569,6 +569,7 @@ gst_stream_splitter_release_pad (GstElement * element, GstPad * pad)
       stream_splitter->current = NULL;
     }
 
+    gst_pad_set_active (pad, FALSE);
     gst_element_remove_pad (element, pad);
   }
   STREAMS_UNLOCK (stream_splitter);

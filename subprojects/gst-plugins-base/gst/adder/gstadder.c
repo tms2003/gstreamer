@@ -1050,6 +1050,7 @@ gst_adder_release_pad (GstElement * element, GstPad * pad)
       GST_OBJECT_NAME (pad));
   if (adder->collect)
     gst_collect_pads_remove_pad (adder->collect, pad);
+  gst_pad_set_active (pad, FALSE);
   gst_element_remove_pad (element, pad);
 }
 

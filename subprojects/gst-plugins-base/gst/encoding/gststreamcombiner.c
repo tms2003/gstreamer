@@ -325,6 +325,7 @@ gst_stream_combiner_release_pad (GstElement * element, GstPad * pad)
       stream_combiner->current = NULL;
     }
     GST_DEBUG_OBJECT (element, "Removing pad from ourself");
+    gst_pad_set_active (pad, FALSE);
     gst_element_remove_pad (element, pad);
   }
   STREAMS_UNLOCK (stream_combiner);
