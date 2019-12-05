@@ -3968,6 +3968,13 @@ typedef struct
    */
   gboolean was_eos;
 
+  /* If TRUE we were ignoring/dropping at least
+   * one event and will have to resend the events
+   * *later* and not now. The PENDING_EVENTS flag
+   * will be set but we must not immediately retry
+   * or we will end up in an infinite loop */
+  gboolean retry_later;
+
   /* If called for an event this is
    * the event that would be pushed
    * next. Don't forward sticky events
@@ -3998,8 +4005,10 @@ push_sticky (GstPad * pad, PadEvent * ev, gpointer user_data)
   } else {
     data->ret = gst_pad_push_event_unchecked (pad, gst_event_ref (event),
         GST_PAD_PROBE_TYPE_EVENT_DOWNSTREAM);
-    if (data->ret == GST_FLOW_CUSTOM_SUCCESS_1)
+    if (data->ret == GST_FLOW_CUSTOM_SUCCESS_1) {
       data->ret = GST_FLOW_OK;
+      data->retry_later = TRUE;
+    }
   }
 
   switch (data->ret) {
@@ -4012,14 +4021,14 @@ push_sticky (GstPad * pad, PadEvent * ev, gpointer user_data)
       /* we can't assume the event is received when it was dropped */
       GST_DEBUG_OBJECT (pad, "event %s was dropped, mark pending",
           GST_EVENT_TYPE_NAME (event));
-      GST_OBJECT_FLAG_SET (pad, GST_PAD_FLAG_PENDING_EVENTS);
+      data->retry_later = TRUE;
       data->ret = GST_FLOW_OK;
       break;
     case GST_FLOW_CUSTOM_SUCCESS_1:
       /* event was ignored and should be sent later */
       GST_DEBUG_OBJECT (pad, "event %s was ignored, mark pending",
           GST_EVENT_TYPE_NAME (event));
-      GST_OBJECT_FLAG_SET (pad, GST_PAD_FLAG_PENDING_EVENTS);
+      data->retry_later = TRUE;
       data->ret = GST_FLOW_OK;
       break;
     case GST_FLOW_NOT_LINKED:
@@ -4034,7 +4043,6 @@ push_sticky (GstPad * pad, PadEvent * ev, gpointer user_data)
     default:
       GST_DEBUG_OBJECT (pad, "result %s, mark pending events",
           gst_flow_get_name (data->ret));
-      GST_OBJECT_FLAG_SET (pad, GST_PAD_FLAG_PENDING_EVENTS);
       break;
   }
 
@@ -4062,14 +4070,25 @@ push_sticky_if_before (GstPad * pad, PadEvent * ev, gpointer user_data)
 static inline GstFlowReturn
 check_sticky (GstPad * pad, GstEvent * event, gboolean only_previous_events)
 {
-  PushStickyData data = { GST_FLOW_OK, FALSE, event };
+  PushStickyData data = { GST_FLOW_OK, FALSE, FALSE, event };
 
-  if (G_UNLIKELY (GST_PAD_HAS_PENDING_EVENTS (pad))) {
+  /* Pushing the sticky events below might cause relinking from pad probes,
+   * which then would set this flag again and we would again have to check
+   * if/what sticky events we have to forward.
+   */
+  while (G_UNLIKELY (GST_PAD_HAS_PENDING_EVENTS (pad) && !data.retry_later
+          && data.ret == GST_FLOW_OK)) {
     GST_OBJECT_FLAG_UNSET (pad, GST_PAD_FLAG_PENDING_EVENTS);
 
     GST_DEBUG_OBJECT (pad, "pushing all sticky events");
     events_foreach (pad,
         only_previous_events ? push_sticky_if_before : push_sticky, &data);
+
+    /* If we should retry later or an error happened, recheck pending events
+     * in the future but don't loop again here and instead return the error
+     */
+    if (data.retry_later || data.ret != GST_FLOW_OK)
+      GST_OBJECT_FLAG_SET (pad, GST_PAD_FLAG_PENDING_EVENTS);
 
     /* If there's an EOS event we must push it downstream
      * even if sending a previous sticky event failed.
