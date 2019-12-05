@@ -2195,6 +2195,276 @@ GST_START_TEST (test_pad_probe_handled_and_drop)
 
 GST_END_TEST;
 
+static GMutex test_pad_probe_and_relink_lock;
+static GCond test_pad_probe_and_relink_cond;
+static gboolean test_pad_probe_and_relink_unblock;
+static gboolean test_pad_probe_and_relink_blocked;
+static guint test_pad_probe_and_relink_sink1_buffers = 0;
+static guint test_pad_probe_and_relink_sink1_events = 0;
+static guint test_pad_probe_and_relink_sink2_buffers = 0;
+static guint test_pad_probe_and_relink_sink2_events = 0;
+
+static GstFlowReturn
+test_pad_probe_and_relink_chain (GstPad * pad, GstObject * parent,
+    GstBuffer * buffer)
+{
+  gst_buffer_unref (buffer);
+
+  g_mutex_lock (&test_pad_probe_and_relink_lock);
+  test_pad_probe_and_relink_blocked = TRUE;
+  if (strcmp (GST_OBJECT_NAME (pad), "sink_1") == 0)
+    test_pad_probe_and_relink_sink1_buffers++;
+  else
+    test_pad_probe_and_relink_sink2_buffers++;
+
+  g_cond_broadcast (&test_pad_probe_and_relink_cond);
+  while (!test_pad_probe_and_relink_unblock) {
+    g_cond_wait (&test_pad_probe_and_relink_cond,
+        &test_pad_probe_and_relink_lock);
+  }
+  test_pad_probe_and_relink_blocked = FALSE;
+  g_mutex_unlock (&test_pad_probe_and_relink_lock);
+
+  return GST_FLOW_OK;
+}
+
+static gboolean
+test_pad_probe_and_relink_event (GstPad * pad, GstObject * parent,
+    GstEvent * event)
+{
+  gst_event_unref (event);
+
+  g_mutex_lock (&test_pad_probe_and_relink_lock);
+  test_pad_probe_and_relink_blocked = TRUE;
+  if (strcmp (GST_OBJECT_NAME (pad), "sink_1") == 0)
+    test_pad_probe_and_relink_sink1_events++;
+  else
+    test_pad_probe_and_relink_sink2_events++;
+
+  g_cond_broadcast (&test_pad_probe_and_relink_cond);
+  while (!test_pad_probe_and_relink_unblock) {
+    g_cond_wait (&test_pad_probe_and_relink_cond,
+        &test_pad_probe_and_relink_lock);
+  }
+  test_pad_probe_and_relink_blocked = FALSE;
+  g_mutex_unlock (&test_pad_probe_and_relink_lock);
+
+  return TRUE;
+}
+
+static GstPadProbeReturn
+idle_probe_relink (GstPad * pad, GstPadProbeInfo * info, gpointer user_data)
+{
+  GstPad *old_sink;
+  GstPad *new_sink = user_data;
+
+  /* Make sure we're not called accidentally directly */
+  g_mutex_lock (&test_pad_probe_and_relink_lock);
+  g_mutex_unlock (&test_pad_probe_and_relink_lock);
+
+  old_sink = gst_pad_get_peer (pad);
+  fail_unless (old_sink);
+  gst_pad_unlink (pad, old_sink);
+  gst_object_unref (old_sink);
+
+  fail_unless_equals_int (gst_pad_link (pad, new_sink), GST_PAD_LINK_OK);
+
+  return GST_PAD_PROBE_REMOVE;
+}
+
+static gpointer
+push_buffer_thread_func (gpointer pad)
+{
+  fail_unless_equals_int (gst_pad_push (pad, gst_buffer_new ()), GST_FLOW_OK);
+
+  return NULL;
+}
+
+typedef struct
+{
+  GstPad *pad;
+  GstEvent *event;
+} RelinkPushEventData;
+
+static gpointer
+push_event_thread_func (gpointer user_data)
+{
+  RelinkPushEventData *data = user_data;
+
+  fail_unless (gst_pad_push_event (data->pad, data->event));
+
+  return NULL;
+}
+
+GST_START_TEST (test_pad_probe_idle_and_relink)
+{
+  GstPad *src, *sink1, *sink2;
+  GstCaps *caps;
+  GThread *thread;
+  RelinkPushEventData push_event_data;
+  GstPadTemplate *src_template, *sink_template;
+
+  caps = gst_caps_new_any ();
+  src_template = gst_pad_template_new ("src", GST_PAD_SRC,
+      GST_PAD_ALWAYS, caps);
+  sink_template = gst_pad_template_new ("sink_%d", GST_PAD_SINK,
+      GST_PAD_SOMETIMES, caps);
+  gst_caps_unref (caps);
+
+  src = gst_pad_new_from_template (src_template, "src");
+  gst_pad_set_active (src, TRUE);
+  sink1 = gst_pad_new_from_template (sink_template, "sink_1");
+  gst_pad_set_chain_function (sink1, test_pad_probe_and_relink_chain);
+  gst_pad_set_event_function (sink1, test_pad_probe_and_relink_event);
+  gst_pad_set_active (sink1, TRUE);
+  sink2 = gst_pad_new_from_template (sink_template, "sink_2");
+  gst_pad_set_chain_function (sink2, test_pad_probe_and_relink_chain);
+  gst_pad_set_event_function (sink2, test_pad_probe_and_relink_event);
+  gst_pad_set_active (sink2, TRUE);
+
+  g_mutex_lock (&test_pad_probe_and_relink_lock);
+  test_pad_probe_and_relink_unblock = TRUE;
+  g_mutex_unlock (&test_pad_probe_and_relink_lock);
+
+  fail_unless (gst_pad_push_event (src,
+          gst_event_new_stream_start ("test")) == TRUE);
+  caps = gst_caps_new_empty_simple ("foo/bar-1");
+  fail_unless (gst_pad_push_event (src, gst_event_new_caps (caps)) == TRUE);
+  gst_caps_unref (caps);
+  fail_unless (gst_pad_push_event (src,
+          gst_event_new_segment (&dummy_segment)) == TRUE);
+
+  fail_unless_equals_int (gst_pad_link (src, sink1), GST_PAD_LINK_OK);
+
+  /*** 1: Check if re-linking right after the stream-start event works
+   *      correctly and the first buffer is sent to sink2 after all the
+   *      events were forwarded
+   */
+  g_mutex_lock (&test_pad_probe_and_relink_lock);
+  test_pad_probe_and_relink_unblock = FALSE;
+  test_pad_probe_and_relink_blocked = FALSE;
+  thread = g_thread_new (NULL, push_buffer_thread_func, src);
+
+  /* Wait until we're blocked in sink1 so that the probe is not called
+   * immediately */
+  while (!test_pad_probe_and_relink_blocked) {
+    g_cond_wait (&test_pad_probe_and_relink_cond,
+        &test_pad_probe_and_relink_lock);
+  }
+
+  fail_unless_equals_int (test_pad_probe_and_relink_sink1_events, 1);
+  fail_unless_equals_int (test_pad_probe_and_relink_sink2_events, 0);
+  fail_unless_equals_int (test_pad_probe_and_relink_sink1_buffers, 0);
+  fail_unless_equals_int (test_pad_probe_and_relink_sink2_buffers, 0);
+
+  /* Then actually add the IDLE probe, at this moment the pad is busy forwarding
+   * the stream-start event to sink1 before even handling the buffer. We would
+   * relink directly after the stream-start event was handled by sink1 and
+   * then all events and the buffer should go to sink2 */
+  gst_pad_add_probe (src, GST_PAD_PROBE_TYPE_IDLE,
+      (GstPadProbeCallback) idle_probe_relink, sink2, NULL);
+
+  /* And unblock */
+  test_pad_probe_and_relink_unblock = TRUE;
+  g_cond_broadcast (&test_pad_probe_and_relink_cond);
+  g_mutex_unlock (&test_pad_probe_and_relink_lock);
+
+  /* Wait until the push thread is done */
+  g_thread_join (g_steal_pointer (&thread));
+
+  /* Now we should have received the buffer on sink2 and all events, but only
+   * the stream-start event and no buffers on sink1 */
+  fail_unless_equals_int (test_pad_probe_and_relink_sink1_events, 1);
+  fail_unless_equals_int (test_pad_probe_and_relink_sink2_events, 3);
+  fail_unless_equals_int (test_pad_probe_and_relink_sink1_buffers, 0);
+  fail_unless_equals_int (test_pad_probe_and_relink_sink2_buffers, 1);
+
+  caps = gst_pad_get_current_caps (sink2);
+  fail_unless (caps);
+  fail_unless (gst_structure_has_name (gst_caps_get_structure (caps, 0),
+          "foo/bar-1"));
+  gst_caps_unref (caps);
+
+  /*** 2: Now send a new CAPS event and block in that, then add and IDLE probe
+   *      and relink from that IDLE probe. At latest after pushing a buffer
+   *      now the new CAPS should be known by **both** pads.
+   */
+  g_mutex_lock (&test_pad_probe_and_relink_lock);
+  test_pad_probe_and_relink_unblock = FALSE;
+  test_pad_probe_and_relink_blocked = FALSE;
+
+  caps = gst_caps_new_empty_simple ("foo/bar-2");
+  push_event_data.event = gst_event_new_caps (caps);
+  gst_caps_unref (caps);
+  push_event_data.pad = src;
+
+  thread = g_thread_new (NULL, push_event_thread_func, &push_event_data);
+
+  /* Wait until we're blocked in sink2 so that the probe is not called
+   * immediately */
+  while (!test_pad_probe_and_relink_blocked) {
+    g_cond_wait (&test_pad_probe_and_relink_cond,
+        &test_pad_probe_and_relink_lock);
+  }
+
+  /* Now we should have received the new caps event on sink2 but not sink1 yet */
+  fail_unless_equals_int (test_pad_probe_and_relink_sink1_events, 1);
+  fail_unless_equals_int (test_pad_probe_and_relink_sink2_events, 4);
+  fail_unless_equals_int (test_pad_probe_and_relink_sink1_buffers, 0);
+  fail_unless_equals_int (test_pad_probe_and_relink_sink2_buffers, 1);
+
+  /* Then actually add the IDLE probe, at this moment the pad is busy
+   * forwarding the caps event to sink2. We would relink directly after the
+   * caps event was handled by sink2 and then all following events/buffers and
+   * the caps event would go to sink1 afterwards. */
+  gst_pad_add_probe (src, GST_PAD_PROBE_TYPE_IDLE,
+      (GstPadProbeCallback) idle_probe_relink, sink1, NULL);
+
+  /* And unblock */
+  test_pad_probe_and_relink_unblock = TRUE;
+  g_cond_broadcast (&test_pad_probe_and_relink_cond);
+  g_mutex_unlock (&test_pad_probe_and_relink_lock);
+
+  /* Wait until the push thread is done */
+  g_thread_join (g_steal_pointer (&thread));
+
+  /* Now we should have received the new caps event on sink2 and sink1 but not
+   * the following segment event from the very beginning */
+  fail_unless_equals_int (test_pad_probe_and_relink_sink1_events, 2);
+  fail_unless_equals_int (test_pad_probe_and_relink_sink2_events, 4);
+  fail_unless_equals_int (test_pad_probe_and_relink_sink1_buffers, 0);
+  fail_unless_equals_int (test_pad_probe_and_relink_sink2_buffers, 1);
+
+  caps = gst_pad_get_current_caps (sink2);
+  fail_unless (caps);
+  fail_unless (gst_structure_has_name (gst_caps_get_structure (caps, 0),
+          "foo/bar-2"));
+  gst_caps_unref (caps);
+
+  /* Push a buffer now, this should forward the segment event from long before */
+  fail_unless_equals_int (gst_pad_push (src, gst_buffer_new ()), GST_FLOW_OK);
+
+  fail_unless_equals_int (test_pad_probe_and_relink_sink1_events, 3);
+  fail_unless_equals_int (test_pad_probe_and_relink_sink2_events, 4);
+  fail_unless_equals_int (test_pad_probe_and_relink_sink1_buffers, 1);
+  fail_unless_equals_int (test_pad_probe_and_relink_sink2_buffers, 1);
+
+  caps = gst_pad_get_current_caps (sink1);
+  fail_unless (caps);
+  fail_unless (gst_structure_has_name (gst_caps_get_structure (caps, 0),
+          "foo/bar-2"));
+  gst_caps_unref (caps);
+
+  gst_object_unref (src);
+  gst_object_unref (sink1);
+  gst_object_unref (sink2);
+
+  gst_object_unref (src_template);
+  gst_object_unref (sink_template);
+}
+
+GST_END_TEST;
+
 static gboolean got_notify;
 
 static void
@@ -3358,6 +3628,7 @@ gst_pad_suite (void)
   tcase_add_test (tc_chain, test_pad_probe_flush_events_only);
   tcase_add_test (tc_chain, test_pad_probe_call_order);
   tcase_add_test (tc_chain, test_pad_probe_handled_and_drop);
+  tcase_add_test (tc_chain, test_pad_probe_idle_and_relink);
   tcase_add_test (tc_chain, test_events_query_unlinked);
   tcase_add_test (tc_chain, test_queue_src_caps_notify_linked);
   tcase_add_test (tc_chain, test_queue_src_caps_notify_not_linked);
