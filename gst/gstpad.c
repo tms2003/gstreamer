@@ -190,7 +190,7 @@ static GstFlowReturn gst_pad_chain_list_default (GstPad * pad,
 static GstFlowReturn gst_pad_send_event_unchecked (GstPad * pad,
     GstEvent * event, GstPadProbeType type);
 static GstFlowReturn gst_pad_push_event_unchecked (GstPad * pad,
-    GstEvent * event, GstPadProbeType type);
+    GstEvent * event, GstPadProbeType type, gboolean forwarding_sticky);
 
 static gboolean activate_mode_internal (GstPad * pad, GstObject * parent,
     GstPadMode mode, gboolean active);
@@ -4004,7 +4004,7 @@ push_sticky (GstPad * pad, PadEvent * ev, gpointer user_data)
     data->ret = GST_FLOW_CUSTOM_SUCCESS_1;
   } else {
     data->ret = gst_pad_push_event_unchecked (pad, gst_event_ref (event),
-        GST_PAD_PROBE_TYPE_EVENT_DOWNSTREAM);
+        GST_PAD_PROBE_TYPE_EVENT_DOWNSTREAM, TRUE);
     if (data->ret == GST_FLOW_CUSTOM_SUCCESS_1) {
       data->ret = GST_FLOW_OK;
       data->retry_later = TRUE;
@@ -4102,7 +4102,7 @@ check_sticky (GstPad * pad, GstEvent * event, gboolean only_previous_events)
 
       if (ev && !ev->received) {
         data.ret = gst_pad_push_event_unchecked (pad, gst_event_ref (ev->event),
-            GST_PAD_PROBE_TYPE_EVENT_DOWNSTREAM);
+            GST_PAD_PROBE_TYPE_EVENT_DOWNSTREAM, TRUE);
         /* the event could have been dropped. Because this can only
          * happen if the user asked for it, it's not an error */
         if (data.ret == GST_FLOW_CUSTOM_SUCCESS)
@@ -5392,7 +5392,7 @@ gst_pad_store_sticky_event (GstPad * pad, GstEvent * event)
 /* should be called with pad LOCK */
 static GstFlowReturn
 gst_pad_push_event_unchecked (GstPad * pad, GstEvent * event,
-    GstPadProbeType type)
+    GstPadProbeType type, gboolean forwarding_sticky)
 {
   GstFlowReturn ret;
   GstPad *peerpad;
@@ -5451,12 +5451,18 @@ gst_pad_push_event_unchecked (GstPad * pad, GstEvent * event,
       PROBE_PUSH (pad, type | GST_PAD_PROBE_TYPE_PUSH |
           GST_PAD_PROBE_TYPE_BLOCK, event, probe_stopped);
       /* recheck sticky events because the probe might have cause a relink */
-      if (GST_PAD_IS_SRC (pad)
-          && (GST_EVENT_IS_SERIALIZED (event)
+      if (GST_PAD_IS_SRC (pad) && (GST_EVENT_IS_SERIALIZED (event)
               || GST_EVENT_IS_STICKY (event))) {
-        /* Push all sticky events before our current one
-         * that have changed */
-        check_sticky (pad, event, TRUE);
+        if (!forwarding_sticky) {
+          /* Push all sticky events before our current one
+           * that have changed */
+          check_sticky (pad, event, TRUE);
+        } else if (GST_PAD_HAS_PENDING_EVENTS (pad)) {
+          /* If sticky events need to be resent but we're already in the
+           * process of doing so, don't recurse but let the caller handle
+           * this instead */
+          goto sticky_changed;
+        }
       }
       break;
     }
@@ -5466,12 +5472,18 @@ gst_pad_push_event_unchecked (GstPad * pad, GstEvent * event,
   PROBE_PUSH (pad, type | GST_PAD_PROBE_TYPE_PUSH, event, probe_stopped);
 
   /* recheck sticky events because the probe might have cause a relink */
-  if (GST_PAD_IS_SRC (pad)
-      && (GST_EVENT_IS_SERIALIZED (event)
+  if (GST_PAD_IS_SRC (pad) && (GST_EVENT_IS_SERIALIZED (event)
           || GST_EVENT_IS_STICKY (event))) {
-    /* Push all sticky events before our current one
-     * that have changed */
-    check_sticky (pad, event, TRUE);
+    if (!forwarding_sticky) {
+      /* Push all sticky events before our current one
+       * that have changed */
+      check_sticky (pad, event, TRUE);
+    } else if (GST_PAD_HAS_PENDING_EVENTS (pad)) {
+      /* If sticky events need to be resent but we're already in the
+       * process of doing so, don't recurse but let the caller handle
+       * this instead */
+      goto sticky_changed;
+    }
   }
 
   /* the pad offset might've been changed by any of the probes above. It
@@ -5564,6 +5576,13 @@ idle_probe_stopped:
     GST_DEBUG_OBJECT (pad, "Idle probe returned %s", gst_flow_get_name (ret));
     return ret;
   }
+sticky_changed:
+  {
+    GST_DEBUG_OBJECT (pad, "Sticky events need to be resent while handling "
+        "sticky events, returning early");
+    gst_event_unref (event);
+    return GST_FLOW_OK;
+  }
 }
 
 /**
@@ -5632,7 +5651,7 @@ gst_pad_push_event (GstPad * pad, GstEvent * event)
     GstFlowReturn ret;
 
     /* other events are pushed right away */
-    ret = gst_pad_push_event_unchecked (pad, event, type);
+    ret = gst_pad_push_event_unchecked (pad, event, type, FALSE);
     /* dropped events by a probe are not an error */
     res = (ret == GST_FLOW_OK || ret == GST_FLOW_CUSTOM_SUCCESS
         || ret == GST_FLOW_CUSTOM_SUCCESS_1);
