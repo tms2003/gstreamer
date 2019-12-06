@@ -5461,7 +5461,8 @@ gst_pad_push_event_unchecked (GstPad * pad, GstEvent * event,
         if (!forwarding_sticky) {
           /* Push all sticky events before our current one
            * that have changed */
-          check_sticky (pad, event, TRUE);
+          if ((ret = check_sticky (pad, event, TRUE)) != GST_FLOW_OK)
+            goto sticky_error;
         } else if (GST_PAD_HAS_PENDING_EVENTS (pad)) {
           /* If sticky events need to be resent but we're already in the
            * process of doing so, don't recurse but let the caller handle
@@ -5482,7 +5483,8 @@ gst_pad_push_event_unchecked (GstPad * pad, GstEvent * event,
     if (!forwarding_sticky) {
       /* Push all sticky events before our current one
        * that have changed */
-      check_sticky (pad, event, TRUE);
+      if ((ret = check_sticky (pad, event, TRUE)) != GST_FLOW_OK)
+        goto sticky_error;
     } else if (GST_PAD_HAS_PENDING_EVENTS (pad)) {
       /* If sticky events need to be resent but we're already in the
        * process of doing so, don't recurse but let the caller handle
@@ -5592,6 +5594,13 @@ sticky_changed:
         "sticky events, returning early");
     gst_event_unref (event);
     return GST_FLOW_OK;
+  }
+sticky_error:
+  {
+    GST_WARNING_OBJECT (pad, "Forwarding sticky events failed: %s",
+        gst_flow_get_name (ret));
+    gst_event_unref (event);
+    return ret;
   }
 }
 
