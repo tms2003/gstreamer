@@ -554,8 +554,7 @@ gst_ogg_mux_buffer_from_page (GstOggMux * mux, ogg_page * page, gboolean delta)
 }
 
 static GstFlowReturn
-gst_ogg_mux_push_buffer (GstOggMux * mux, GstBuffer * buffer,
-    GstOggPadData * oggpad)
+gst_ogg_mux_push_buffer (GstOggMux * mux, GstBuffer * buffer)
 {
   /* fix up OFFSET and OFFSET_END again */
   GST_BUFFER_OFFSET (buffer) = mux->offset;
@@ -640,7 +639,7 @@ gst_ogg_mux_dequeue_page (GstOggMux * mux, GstFlowReturn * flowret)
       GST_LOG_OBJECT (pad, "[gp        -1] pushing page");
       g_queue_pop_head (pad->pagebuffers);
       /* FIXME: can't really do this with the object lock held, let's do it later! (tpm) */
-      *flowret = gst_ogg_mux_push_buffer (mux, buf, pad);
+      *flowret = gst_ogg_mux_push_buffer (mux, buf);
       buf = g_queue_peek_head (pad->pagebuffers);
       ret = TRUE;
     }
@@ -676,7 +675,7 @@ gst_ogg_mux_dequeue_page (GstOggMux * mux, GstFlowReturn * flowret)
         GST_GP_FORMAT " pushing oldest page buffer %p (granulepos time %"
         GST_TIME_FORMAT ")", GST_BUFFER_OFFSET_END (buf), buf,
         GST_TIME_ARGS (GST_BUFFER_OFFSET (buf)));
-    *flowret = gst_ogg_mux_push_buffer (mux, buf, opad);
+    *flowret = gst_ogg_mux_push_buffer (mux, buf);
     ret = TRUE;
   }
 
@@ -1612,7 +1611,7 @@ gst_ogg_mux_send_headers (GstOggMux * mux)
 
     hbufs = g_list_delete_link (hbufs, hbufs);
 
-    if ((ret = gst_ogg_mux_push_buffer (mux, buf, NULL)) != GST_FLOW_OK)
+    if ((ret = gst_ogg_mux_push_buffer (mux, buf)) != GST_FLOW_OK)
       break;
   }
   /* free any remaining nodes/buffers in case we couldn't push them */
