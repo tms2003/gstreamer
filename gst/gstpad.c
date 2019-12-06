@@ -4013,9 +4013,16 @@ push_sticky (GstPad * pad, PadEvent * ev, gpointer user_data)
 
   switch (data->ret) {
     case GST_FLOW_OK:
-      ev->received = TRUE;
-      GST_DEBUG_OBJECT (pad, "event %s marked received",
-          GST_EVENT_TYPE_NAME (event));
+      if (!GST_PAD_HAS_PENDING_EVENTS (pad)) {
+        ev->received = TRUE;
+        GST_DEBUG_OBJECT (pad, "event %s marked received",
+            GST_EVENT_TYPE_NAME (event));
+      } else {
+        ev->received = FALSE;
+        GST_DEBUG_OBJECT (pad,
+            "event %s marked not received because new sticky events are pending",
+            GST_EVENT_TYPE_NAME (event));
+      }
       break;
     case GST_FLOW_CUSTOM_SUCCESS:
       /* we can't assume the event is received when it was dropped */
@@ -4049,7 +4056,9 @@ push_sticky (GstPad * pad, PadEvent * ev, gpointer user_data)
   if (data->ret != GST_FLOW_OK && GST_EVENT_TYPE (event) == GST_EVENT_EOS)
     data->was_eos = TRUE;
 
-  return data->ret == GST_FLOW_OK;
+  /* Return here directly if the pad has pending events again. The caller
+   * will start the sticky event sending from the beginning. */
+  return data->ret == GST_FLOW_OK && !GST_PAD_HAS_PENDING_EVENTS (pad);
 }
 
 static gboolean
