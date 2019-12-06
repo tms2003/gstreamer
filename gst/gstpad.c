@@ -4697,6 +4697,11 @@ gst_pad_push_data (GstPad * pad, GstPadProbeType type, void *data)
     /* pad is not active anymore, trigger idle callbacks */
     PROBE_NO_DATA (pad, GST_PAD_PROBE_TYPE_PUSH | GST_PAD_PROBE_TYPE_IDLE,
         probe_stopped, ret);
+    /* Don't check here if the IDLE probe caused a situation where we have
+     * to send the sticky events again. We already handled the data above
+     * and sticky events will be checked again on the next opportunity before
+     * handling a serialized event or data.
+     */
   }
   GST_OBJECT_UNLOCK (pad);
 
@@ -5523,6 +5528,11 @@ gst_pad_push_event_unchecked (GstPad * pad, GstEvent * event,
     /* pad is not active anymore, trigger idle callbacks */
     PROBE_NO_DATA (pad, GST_PAD_PROBE_TYPE_PUSH | GST_PAD_PROBE_TYPE_IDLE,
         idle_probe_stopped, ret);
+    /* Don't check here if the IDLE probe caused a situation where we have
+     * to send the sticky events again. We already handled the event above
+     * and sticky events will be checked again on the next opportunity before
+     * handling a serialized event or data.
+     */
   }
   return ret;
 
