@@ -190,7 +190,8 @@ static GstFlowReturn gst_pad_chain_list_default (GstPad * pad,
 static GstFlowReturn gst_pad_send_event_unchecked (GstPad * pad,
     GstEvent * event, GstPadProbeType type);
 static GstFlowReturn gst_pad_push_event_unchecked (GstPad * pad,
-    GstEvent * event, GstPadProbeType type, gboolean forwarding_sticky);
+    GstEvent * event, GstPadProbeType type, gboolean forwarding_sticky,
+    gboolean force_eos);
 
 static gboolean activate_mode_internal (GstPad * pad, GstObject * parent,
     GstPadMode mode, gboolean active);
@@ -4004,7 +4005,7 @@ push_sticky (GstPad * pad, PadEvent * ev, gpointer user_data)
     data->ret = GST_FLOW_CUSTOM_SUCCESS_1;
   } else {
     data->ret = gst_pad_push_event_unchecked (pad, gst_event_ref (event),
-        GST_PAD_PROBE_TYPE_EVENT_DOWNSTREAM, TRUE);
+        GST_PAD_PROBE_TYPE_EVENT_DOWNSTREAM, TRUE, FALSE);
     if (data->ret == GST_FLOW_CUSTOM_SUCCESS_1) {
       data->ret = GST_FLOW_OK;
       data->retry_later = TRUE;
@@ -4110,13 +4111,19 @@ check_sticky (GstPad * pad, GstEvent * event, gboolean only_previous_events)
       PadEvent *ev = find_event_by_type (pad, GST_EVENT_EOS, 0);
 
       if (ev && !ev->received) {
+        GST_OBJECT_FLAG_UNSET (pad, GST_PAD_FLAG_PENDING_EVENTS);
+
         data.ret = gst_pad_push_event_unchecked (pad, gst_event_ref (ev->event),
-            GST_PAD_PROBE_TYPE_EVENT_DOWNSTREAM, TRUE);
+            GST_PAD_PROBE_TYPE_EVENT_DOWNSTREAM, TRUE, TRUE);
         /* the event could have been dropped. Because this can only
          * happen if the user asked for it, it's not an error */
         if (data.ret == GST_FLOW_CUSTOM_SUCCESS
             || data.ret == GST_FLOW_CUSTOM_SUCCESS_1)
           data.ret = GST_FLOW_OK;
+
+        /* Break here: We were forcing EOS to be sent regardless of other errors
+         * so just get out of this ASAP as the stream is finished now */
+        break;
       }
     }
   }
@@ -5410,7 +5417,7 @@ gst_pad_store_sticky_event (GstPad * pad, GstEvent * event)
 /* should be called with pad LOCK */
 static GstFlowReturn
 gst_pad_push_event_unchecked (GstPad * pad, GstEvent * event,
-    GstPadProbeType type, gboolean forwarding_sticky)
+    GstPadProbeType type, gboolean forwarding_sticky, gboolean force_eos)
 {
   GstFlowReturn ret;
   GstPad *peerpad;
@@ -5476,7 +5483,7 @@ gst_pad_push_event_unchecked (GstPad * pad, GstEvent * event,
            * that have changed */
           if ((ret = check_sticky (pad, event, TRUE)) != GST_FLOW_OK)
             goto sticky_error;
-        } else if (GST_PAD_HAS_PENDING_EVENTS (pad)) {
+        } else if (!force_eos && GST_PAD_HAS_PENDING_EVENTS (pad)) {
           /* If sticky events need to be resent but we're already in the
            * process of doing so, don't recurse but let the caller handle
            * this instead */
@@ -5498,7 +5505,7 @@ gst_pad_push_event_unchecked (GstPad * pad, GstEvent * event,
        * that have changed */
       if ((ret = check_sticky (pad, event, TRUE)) != GST_FLOW_OK)
         goto sticky_error;
-    } else if (GST_PAD_HAS_PENDING_EVENTS (pad)) {
+    } else if (!force_eos && GST_PAD_HAS_PENDING_EVENTS (pad)) {
       /* If sticky events need to be resent but we're already in the
        * process of doing so, don't recurse but let the caller handle
        * this instead */
@@ -5683,7 +5690,7 @@ gst_pad_push_event (GstPad * pad, GstEvent * event)
     GstFlowReturn ret;
 
     /* other events are pushed right away */
-    ret = gst_pad_push_event_unchecked (pad, event, type, FALSE);
+    ret = gst_pad_push_event_unchecked (pad, event, type, FALSE, FALSE);
     /* dropped events by a probe are not an error */
     res = (ret == GST_FLOW_OK || ret == GST_FLOW_CUSTOM_SUCCESS
         || ret == GST_FLOW_CUSTOM_SUCCESS_1);
