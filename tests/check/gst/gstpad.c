@@ -3862,6 +3862,46 @@ GST_START_TEST (test_pad_offset_src)
 
 GST_END_TEST;
 
+GST_START_TEST (test_not_negotiated_and_eos)
+{
+  GstPad *src, *sink;
+  GstCaps *caps;
+
+  src = gst_pad_new ("src", GST_PAD_SRC);
+  gst_pad_set_active (src, TRUE);
+  sink = gst_pad_new ("sink", GST_PAD_SINK);
+  gst_pad_set_chain_function (sink, gst_check_chain_func);
+  gst_pad_set_active (sink, TRUE);
+
+  fail_unless (gst_pad_push_event (src,
+          gst_event_new_stream_start ("test")) == TRUE);
+  caps = gst_caps_new_empty_simple ("foo/bar-1");
+  fail_unless (gst_pad_push_event (src, gst_event_new_caps (caps)) == TRUE);
+  gst_caps_unref (caps);
+  fail_unless (gst_pad_push_event (src,
+          gst_event_new_segment (&dummy_segment)) == TRUE);
+
+  fail_unless_equals_int (gst_pad_link (src, sink), GST_PAD_LINK_OK);
+
+  fail_unless_equals_int (gst_pad_push (src, gst_buffer_new ()), GST_FLOW_OK);
+
+  caps = gst_caps_new_empty_simple ("foo/bar-2");
+  fail_unless (gst_pad_push_event (src, gst_event_new_caps (caps)) == TRUE);
+  gst_caps_unref (caps);
+
+  fail_unless_equals_int (gst_pad_push (src, gst_buffer_new ()),
+      GST_FLOW_NOT_NEGOTIATED);
+
+  fail_unless (gst_pad_push_event (src, gst_event_new_eos ()) == TRUE);
+
+  fail_unless (GST_PAD_IS_EOS (sink));
+
+  gst_object_unref (src);
+  gst_object_unref (sink);
+}
+
+GST_END_TEST;
+
 static Suite *
 gst_pad_suite (void)
 {
@@ -3925,6 +3965,7 @@ gst_pad_suite (void)
   tcase_add_test (tc_chain, test_proxy_accept_caps_with_proxy);
   tcase_add_test (tc_chain, test_proxy_accept_caps_with_incompatible_proxy);
   tcase_add_test (tc_chain, test_pad_offset_src);
+  tcase_add_test (tc_chain, test_not_negotiated_and_eos);
 
   return s;
 }
