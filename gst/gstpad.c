@@ -4114,7 +4114,8 @@ check_sticky (GstPad * pad, GstEvent * event, gboolean only_previous_events)
             GST_PAD_PROBE_TYPE_EVENT_DOWNSTREAM, TRUE);
         /* the event could have been dropped. Because this can only
          * happen if the user asked for it, it's not an error */
-        if (data.ret == GST_FLOW_CUSTOM_SUCCESS)
+        if (data.ret == GST_FLOW_CUSTOM_SUCCESS
+            || data.ret == GST_FLOW_CUSTOM_SUCCESS_1)
           data.ret = GST_FLOW_OK;
       }
     }
