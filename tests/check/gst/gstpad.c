@@ -2379,6 +2379,9 @@ GST_START_TEST (test_pad_probe_idle_and_relink)
   fail_unless_equals_int (test_pad_probe_and_relink_sink1_buffers, 0);
   fail_unless_equals_int (test_pad_probe_and_relink_sink2_buffers, 1);
 
+  caps = gst_pad_get_current_caps (sink1);
+  fail_if (caps);
+
   caps = gst_pad_get_current_caps (sink2);
   fail_unless (caps);
   fail_unless (gst_structure_has_name (gst_caps_get_structure (caps, 0),
@@ -2445,6 +2448,280 @@ GST_START_TEST (test_pad_probe_idle_and_relink)
   fail_unless_equals_int (gst_pad_push (src, gst_buffer_new ()), GST_FLOW_OK);
 
   fail_unless_equals_int (test_pad_probe_and_relink_sink1_events, 3);
+  fail_unless_equals_int (test_pad_probe_and_relink_sink2_events, 4);
+  fail_unless_equals_int (test_pad_probe_and_relink_sink1_buffers, 1);
+  fail_unless_equals_int (test_pad_probe_and_relink_sink2_buffers, 1);
+
+  caps = gst_pad_get_current_caps (sink1);
+  fail_unless (caps);
+  fail_unless (gst_structure_has_name (gst_caps_get_structure (caps, 0),
+          "foo/bar-2"));
+  gst_caps_unref (caps);
+
+  gst_object_unref (src);
+  gst_object_unref (sink1);
+  gst_object_unref (sink2);
+
+  gst_object_unref (src_template);
+  gst_object_unref (sink_template);
+}
+
+GST_END_TEST;
+
+static GstPadProbeReturn
+event_probe_relink (GstPad * pad, GstPadProbeInfo * info, gpointer user_data)
+{
+  GstPad *old_sink;
+  GstPad *new_sink = user_data;
+
+  if (!GST_EVENT_IS_SERIALIZED (info->data))
+    return GST_PAD_PROBE_OK;
+
+  /* Make sure we're not called accidentally directly */
+  g_mutex_lock (&test_pad_probe_and_relink_lock);
+  g_mutex_unlock (&test_pad_probe_and_relink_lock);
+
+  old_sink = gst_pad_get_peer (pad);
+  fail_unless (old_sink);
+  gst_pad_unlink (pad, old_sink);
+  gst_object_unref (old_sink);
+
+  fail_unless_equals_int (gst_pad_link (pad, new_sink), GST_PAD_LINK_OK);
+
+  return GST_PAD_PROBE_REMOVE;
+}
+
+GST_START_TEST (test_pad_probe_event_and_relink)
+{
+  GstPad *src, *sink1, *sink2;
+  GstCaps *caps;
+  GstPadTemplate *src_template, *sink_template;
+
+  caps = gst_caps_new_any ();
+  src_template = gst_pad_template_new ("src", GST_PAD_SRC,
+      GST_PAD_ALWAYS, caps);
+  sink_template = gst_pad_template_new ("sink_%d", GST_PAD_SINK,
+      GST_PAD_SOMETIMES, caps);
+  gst_caps_unref (caps);
+
+  src = gst_pad_new_from_template (src_template, "src");
+  gst_pad_set_active (src, TRUE);
+  sink1 = gst_pad_new_from_template (sink_template, "sink_1");
+  gst_pad_set_chain_function (sink1, test_pad_probe_and_relink_chain);
+  gst_pad_set_event_function (sink1, test_pad_probe_and_relink_event);
+  gst_pad_set_active (sink1, TRUE);
+  sink2 = gst_pad_new_from_template (sink_template, "sink_2");
+  gst_pad_set_chain_function (sink2, test_pad_probe_and_relink_chain);
+  gst_pad_set_event_function (sink2, test_pad_probe_and_relink_event);
+  gst_pad_set_active (sink2, TRUE);
+
+  /* Don't block in the event/chain function in this test */
+  g_mutex_lock (&test_pad_probe_and_relink_lock);
+  test_pad_probe_and_relink_unblock = TRUE;
+  g_mutex_unlock (&test_pad_probe_and_relink_lock);
+
+  fail_unless (gst_pad_push_event (src,
+          gst_event_new_stream_start ("test")) == TRUE);
+  caps = gst_caps_new_empty_simple ("foo/bar-1");
+  fail_unless (gst_pad_push_event (src, gst_event_new_caps (caps)) == TRUE);
+  gst_caps_unref (caps);
+  fail_unless (gst_pad_push_event (src,
+          gst_event_new_segment (&dummy_segment)) == TRUE);
+
+  fail_unless_equals_int (gst_pad_link (src, sink1), GST_PAD_LINK_OK);
+
+  /*** 1: Check if re-linking right while handling the stream-start event
+   *      in sink1 works, and all other sticky events and the buffer are
+   *      correctly forwarded to sink2.
+   */
+  gst_pad_add_probe (src, GST_PAD_PROBE_TYPE_EVENT_DOWNSTREAM,
+      (GstPadProbeCallback) event_probe_relink, sink2, NULL);
+  fail_unless_equals_int (gst_pad_push (src, gst_buffer_new ()), GST_FLOW_OK);
+
+  /* Now the stream-start event shouldn't have arrived on sink1 as we
+   * re-linked before handling it, all events on sink2 and the buffer on sink2
+   */
+  fail_unless_equals_int (test_pad_probe_and_relink_sink1_events, 0);
+  fail_unless_equals_int (test_pad_probe_and_relink_sink2_events, 3);
+  fail_unless_equals_int (test_pad_probe_and_relink_sink1_buffers, 0);
+  fail_unless_equals_int (test_pad_probe_and_relink_sink2_buffers, 1);
+
+  caps = gst_pad_get_current_caps (sink1);
+  fail_if (caps);
+
+  caps = gst_pad_get_current_caps (sink2);
+  fail_unless (caps);
+  fail_unless (gst_structure_has_name (gst_caps_get_structure (caps, 0),
+          "foo/bar-1"));
+  gst_caps_unref (caps);
+
+  /*** 2: Now send a new CAPS event and when handling the CAPS event relink.
+   *      Now sink2 should've received the new CAPS event and sink1 should've
+   *      received the new caps event too, but not yet the segment event from
+   *      long ago.
+   */
+  gst_pad_add_probe (src, GST_PAD_PROBE_TYPE_EVENT_DOWNSTREAM,
+      (GstPadProbeCallback) event_probe_relink, sink1, NULL);
+  caps = gst_caps_new_empty_simple ("foo/bar-2");
+  fail_unless (gst_pad_push_event (src, gst_event_new_caps (caps)));
+  gst_caps_unref (caps);
+
+  /* Now we should have received the new caps event on sink1 only but
+   * not yet the segment event from before */
+  fail_unless_equals_int (test_pad_probe_and_relink_sink1_events, 2);
+  fail_unless_equals_int (test_pad_probe_and_relink_sink2_events, 3);
+  fail_unless_equals_int (test_pad_probe_and_relink_sink1_buffers, 0);
+  fail_unless_equals_int (test_pad_probe_and_relink_sink2_buffers, 1);
+
+  caps = gst_pad_get_current_caps (sink1);
+  fail_unless (caps);
+  fail_unless (gst_structure_has_name (gst_caps_get_structure (caps, 0),
+          "foo/bar-2"));
+  gst_caps_unref (caps);
+
+  caps = gst_pad_get_current_caps (sink2);
+  fail_unless (caps);
+  fail_unless (gst_structure_has_name (gst_caps_get_structure (caps, 0),
+          "foo/bar-1"));
+  gst_caps_unref (caps);
+
+  /* Push a buffer now, this should forward the segment event from long before */
+  fail_unless_equals_int (gst_pad_push (src, gst_buffer_new ()), GST_FLOW_OK);
+
+  fail_unless_equals_int (test_pad_probe_and_relink_sink1_events, 3);
+  fail_unless_equals_int (test_pad_probe_and_relink_sink2_events, 3);
+  fail_unless_equals_int (test_pad_probe_and_relink_sink1_buffers, 1);
+  fail_unless_equals_int (test_pad_probe_and_relink_sink2_buffers, 1);
+
+  gst_object_unref (src);
+  gst_object_unref (sink1);
+  gst_object_unref (sink2);
+
+  gst_object_unref (src_template);
+  gst_object_unref (sink_template);
+}
+
+GST_END_TEST;
+
+static GstPadProbeReturn
+buffer_probe_relink (GstPad * pad, GstPadProbeInfo * info, gpointer user_data)
+{
+  GstPad *old_sink;
+  GstPad *new_sink = user_data;
+
+  /* Make sure we're not called accidentally directly */
+  g_mutex_lock (&test_pad_probe_and_relink_lock);
+  g_mutex_unlock (&test_pad_probe_and_relink_lock);
+
+  old_sink = gst_pad_get_peer (pad);
+  fail_unless (old_sink);
+  gst_pad_unlink (pad, old_sink);
+  gst_object_unref (old_sink);
+
+  fail_unless_equals_int (gst_pad_link (pad, new_sink), GST_PAD_LINK_OK);
+
+  return GST_PAD_PROBE_REMOVE;
+}
+
+GST_START_TEST (test_pad_probe_buffer_and_relink)
+{
+  GstPad *src, *sink1, *sink2;
+  GstCaps *caps;
+  GstPadTemplate *src_template, *sink_template;
+
+  caps = gst_caps_new_any ();
+  src_template = gst_pad_template_new ("src", GST_PAD_SRC,
+      GST_PAD_ALWAYS, caps);
+  sink_template = gst_pad_template_new ("sink_%d", GST_PAD_SINK,
+      GST_PAD_SOMETIMES, caps);
+  gst_caps_unref (caps);
+
+  src = gst_pad_new_from_template (src_template, "src");
+  gst_pad_set_active (src, TRUE);
+  sink1 = gst_pad_new_from_template (sink_template, "sink_1");
+  gst_pad_set_chain_function (sink1, test_pad_probe_and_relink_chain);
+  gst_pad_set_event_function (sink1, test_pad_probe_and_relink_event);
+  gst_pad_set_active (sink1, TRUE);
+  sink2 = gst_pad_new_from_template (sink_template, "sink_2");
+  gst_pad_set_chain_function (sink2, test_pad_probe_and_relink_chain);
+  gst_pad_set_event_function (sink2, test_pad_probe_and_relink_event);
+  gst_pad_set_active (sink2, TRUE);
+
+  /* Don't block in the event/chain function in this test */
+  g_mutex_lock (&test_pad_probe_and_relink_lock);
+  test_pad_probe_and_relink_unblock = TRUE;
+  g_mutex_unlock (&test_pad_probe_and_relink_lock);
+
+  fail_unless (gst_pad_push_event (src,
+          gst_event_new_stream_start ("test")) == TRUE);
+  caps = gst_caps_new_empty_simple ("foo/bar-1");
+  fail_unless (gst_pad_push_event (src, gst_event_new_caps (caps)) == TRUE);
+  gst_caps_unref (caps);
+  fail_unless (gst_pad_push_event (src,
+          gst_event_new_segment (&dummy_segment)) == TRUE);
+
+  fail_unless_equals_int (gst_pad_link (src, sink1), GST_PAD_LINK_OK);
+
+  /*** 1: Check if re-linking while handling the buffer in sink1 works, and
+   * all other sticky events and the buffer are correctly forwarded to sink2.
+   */
+  gst_pad_add_probe (src, GST_PAD_PROBE_TYPE_BUFFER,
+      (GstPadProbeCallback) buffer_probe_relink, sink2, NULL);
+  fail_unless_equals_int (gst_pad_push (src, gst_buffer_new ()), GST_FLOW_OK);
+
+  /* All events should've arrived on sink1 because we re-linked when handling
+   * the buffer, but the buffer should not have arrived on sink1. All events
+   * on sink2 and the buffer should have arrived on sink2.
+   */
+  fail_unless_equals_int (test_pad_probe_and_relink_sink1_events, 3);
+  fail_unless_equals_int (test_pad_probe_and_relink_sink2_events, 3);
+  fail_unless_equals_int (test_pad_probe_and_relink_sink1_buffers, 0);
+  fail_unless_equals_int (test_pad_probe_and_relink_sink2_buffers, 1);
+
+  caps = gst_pad_get_current_caps (sink1);
+  fail_unless (caps);
+  fail_unless (gst_structure_has_name (gst_caps_get_structure (caps, 0),
+          "foo/bar-1"));
+  gst_caps_unref (caps);
+
+  caps = gst_pad_get_current_caps (sink2);
+  fail_unless (caps);
+  fail_unless (gst_structure_has_name (gst_caps_get_structure (caps, 0),
+          "foo/bar-1"));
+  gst_caps_unref (caps);
+
+  /*** 2: Now send a new CAPS event. It should only arrive on sink2 at this
+   *      point and nothing else should happen.
+   */
+  caps = gst_caps_new_empty_simple ("foo/bar-2");
+  fail_unless (gst_pad_push_event (src, gst_event_new_caps (caps)));
+  gst_caps_unref (caps);
+
+  /* Now we should have received the new caps event on sink2 */
+  fail_unless_equals_int (test_pad_probe_and_relink_sink1_events, 3);
+  fail_unless_equals_int (test_pad_probe_and_relink_sink2_events, 4);
+  fail_unless_equals_int (test_pad_probe_and_relink_sink1_buffers, 0);
+  fail_unless_equals_int (test_pad_probe_and_relink_sink2_buffers, 1);
+
+  caps = gst_pad_get_current_caps (sink1);
+  fail_unless (caps);
+  fail_unless (gst_structure_has_name (gst_caps_get_structure (caps, 0),
+          "foo/bar-1"));
+  gst_caps_unref (caps);
+
+  caps = gst_pad_get_current_caps (sink2);
+  fail_unless (caps);
+  fail_unless (gst_structure_has_name (gst_caps_get_structure (caps, 0),
+          "foo/bar-2"));
+  gst_caps_unref (caps);
+
+  /* Push a buffer now, this should forward the new caps and the buffer to
+   * sink1 */
+  gst_pad_add_probe (src, GST_PAD_PROBE_TYPE_BUFFER,
+      (GstPadProbeCallback) buffer_probe_relink, sink1, NULL);
+  fail_unless_equals_int (gst_pad_push (src, gst_buffer_new ()), GST_FLOW_OK);
+
+  fail_unless_equals_int (test_pad_probe_and_relink_sink1_events, 4);
   fail_unless_equals_int (test_pad_probe_and_relink_sink2_events, 4);
   fail_unless_equals_int (test_pad_probe_and_relink_sink1_buffers, 1);
   fail_unless_equals_int (test_pad_probe_and_relink_sink2_buffers, 1);
@@ -3629,6 +3906,8 @@ gst_pad_suite (void)
   tcase_add_test (tc_chain, test_pad_probe_call_order);
   tcase_add_test (tc_chain, test_pad_probe_handled_and_drop);
   tcase_add_test (tc_chain, test_pad_probe_idle_and_relink);
+  tcase_add_test (tc_chain, test_pad_probe_event_and_relink);
+  tcase_add_test (tc_chain, test_pad_probe_buffer_and_relink);
   tcase_add_test (tc_chain, test_events_query_unlinked);
   tcase_add_test (tc_chain, test_queue_src_caps_notify_linked);
   tcase_add_test (tc_chain, test_queue_src_caps_notify_not_linked);
