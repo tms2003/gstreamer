@@ -1637,7 +1637,6 @@ gst_ogg_mux_send_headers (GstOggMux * mux)
 static GstFlowReturn
 gst_ogg_mux_process_best_pad (GstOggMux * ogg_mux, GstOggPadData * best)
 {
-  GstPad *srcpad = GST_AGGREGATOR_SRC_PAD (ogg_mux);
   GstFlowReturn ret = GST_FLOW_OK;
   gboolean delta_unit;
   gint64 granulepos = 0;
@@ -1651,6 +1650,9 @@ gst_ogg_mux_process_best_pad (GstOggMux * ogg_mux, GstOggPadData * best)
    * look one buffer ahead (FIXME: maybe we can just check the new eos bool
    * via gst_aggregator_pad_is_eos() or add API whether a buffer is pending
    * instead) */
+  /* FIXME: with aggregator in live mode we can no longer assume that a pad
+   * is EOS if there is no data. Worst case the last page won't have the eos
+   * flag set, such is life. */
   if (ogg_mux->pulling) {
     next_buf =
         gst_aggregator_pad_peek_buffer (GST_AGGREGATOR_PAD (ogg_mux->pulling));
@@ -1723,11 +1725,7 @@ gst_ogg_mux_process_best_pad (GstOggMux * ogg_mux, GstOggPadData * best)
           GST_TIME_FORMAT, GST_TIME_ARGS (ogg_mux->next_ts));
     } else {
       GST_LOG_OBJECT (ogg_mux, "sending EOS");
-      /* FIXME: GstAggregator sends an EOS event when we return GST_FLOW_EOS,
-       * and we should probably not return FLOW_FLUSHING here in any case? (tpm) */
-      /* no pad to pull on, send EOS */
-      gst_pad_push_event (srcpad, gst_event_new_eos ());
-      return GST_FLOW_FLUSHING;
+      return GST_FLOW_EOS;
     }
   }
 
@@ -2015,7 +2013,7 @@ gst_ogg_mux_aggregate (GstAggregator * aggregator, gboolean timeout)
     return GST_FLOW_OK;
 
   if (best == NULL) {
-    /* No data, assume EOS */
+    /* No data, assume EOS *//* FIXME: is this accurate in live mode?! */
     goto eos;
   }
 
@@ -2040,8 +2038,6 @@ gst_ogg_mux_aggregate (GstAggregator * aggregator, gboolean timeout)
 eos:
   {
     GST_DEBUG_OBJECT (ogg_mux, "no data available, must be EOS");
-    /* FIXME: doesn't aggregator do this for us? yes it does! */
-    gst_pad_push_event (aggregator->srcpad, gst_event_new_eos ());
     return GST_FLOW_EOS;
   }
 }
