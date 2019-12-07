@@ -113,9 +113,6 @@ struct _GstOggMux
 {
   GstAggregator aggregator;
 
-  /* source pad */
-  GstPad *srcpad;  // FIXME (tpm)
-
   /* number of pads which have not received EOS */
   gint active_pads;
 

@@ -237,8 +237,6 @@ gst_ogg_mux_clear (GstOggMux * ogg_mux)
 static void
 gst_ogg_mux_init (GstOggMux * ogg_mux)
 {
-  ogg_mux->srcpad = GST_AGGREGATOR_CAST (ogg_mux)->srcpad;
-
   /* seed random number generator for creation of serial numbers */
   srand (time (NULL));
 
@@ -556,6 +554,8 @@ gst_ogg_mux_buffer_from_page (GstOggMux * mux, ogg_page * page, gboolean delta)
 static GstFlowReturn
 gst_ogg_mux_push_buffer (GstOggMux * mux, GstBuffer * buffer)
 {
+  GstAggregator *agg = GST_AGGREGATOR_CAST (mux);
+
   /* fix up OFFSET and OFFSET_END again */
   GST_BUFFER_OFFSET (buffer) = mux->offset;
   mux->offset += gst_buffer_get_size (buffer);
@@ -570,7 +570,7 @@ gst_ogg_mux_push_buffer (GstOggMux * mux, GstBuffer * buffer)
       mux->last_ts = run_time;
   }
 
-  GST_LOG_OBJECT (mux->srcpad, "pushing %p, last_ts=%" GST_TIME_FORMAT,
+  GST_LOG_OBJECT (agg->srcpad, "pushing %p, last_ts=%" GST_TIME_FORMAT,
       buffer, GST_TIME_ARGS (mux->last_ts));
 
   return gst_aggregator_finish_buffer (GST_AGGREGATOR_CAST (mux), buffer);
@@ -1391,6 +1391,7 @@ gst_ogg_mux_make_fistail (GstOggMux * mux, ogg_stream_state * os)
 static GstFlowReturn
 gst_ogg_mux_send_headers (GstOggMux * mux)
 {
+  GstAggregator *agg = GST_AGGREGATOR_CAST (mux);
   /* FIXME: use a GQueue here for hbufs (tpm) */
   GList *walk;
   GList *hbufs, *hwalk;
@@ -1586,7 +1587,7 @@ gst_ogg_mux_send_headers (GstOggMux * mux)
   /* FIXME: should prefer media type audio/ogg, video/ogg, etc. depending on
    * what we create, if acceptable downstream (instead of defaulting to
    * application/ogg because that's the first in the template caps) */
-  caps = gst_pad_get_allowed_caps (mux->srcpad);
+  caps = gst_pad_get_allowed_caps (agg->srcpad);
   if (caps) {
     if (!gst_caps_is_fixed (caps))
       caps = gst_caps_fixate (caps);
@@ -1595,14 +1596,14 @@ gst_ogg_mux_send_headers (GstOggMux * mux)
     caps = gst_caps_new_empty_simple ("application/ogg");
 
   caps = gst_ogg_mux_set_header_on_caps (caps, hbufs);
-  gst_aggregator_set_src_caps (GST_AGGREGATOR (mux), caps);
+  gst_aggregator_set_src_caps (agg, caps);
   gst_caps_unref (caps);
 
-  /* Send segment event */
+  /* Send segment event (FIXME: use new API) */
   {
     GstSegment segment;
     gst_segment_init (&segment, GST_FORMAT_TIME);
-    gst_pad_push_event (mux->srcpad, gst_event_new_segment (&segment));
+    gst_pad_push_event (agg->srcpad, gst_event_new_segment (&segment));
   }
 
   /* and send the buffers */
@@ -1643,6 +1644,7 @@ gst_ogg_mux_send_headers (GstOggMux * mux)
 static GstFlowReturn
 gst_ogg_mux_process_best_pad (GstOggMux * ogg_mux, GstOggPadData * best)
 {
+  GstPad *srcpad = GST_AGGREGATOR_SRC_PAD (ogg_mux);
   GstFlowReturn ret = GST_FLOW_OK;
   gboolean delta_unit;
   gint64 granulepos = 0;
@@ -1727,11 +1729,11 @@ gst_ogg_mux_process_best_pad (GstOggMux * ogg_mux, GstOggPadData * best)
       GST_LOG_OBJECT (ogg_mux->pulling, "updated times, next ts %"
           GST_TIME_FORMAT, GST_TIME_ARGS (ogg_mux->next_ts));
     } else {
-      GST_LOG_OBJECT (ogg_mux->srcpad, "sending EOS");
+      GST_LOG_OBJECT (ogg_mux, "sending EOS");
       /* FIXME: GstAggregator sends an EOS event when we return GST_FLOW_EOS,
        * and we should probably not return FLOW_FLUSHING here in any case? (tpm) */
       /* no pad to pull on, send EOS */
-      gst_pad_push_event (ogg_mux->srcpad, gst_event_new_eos ());
+      gst_pad_push_event (srcpad, gst_event_new_eos ());
       return GST_FLOW_FLUSHING;
     }
   }
@@ -2045,7 +2047,8 @@ gst_ogg_mux_aggregate (GstAggregator * aggregator, gboolean timeout)
 eos:
   {
     GST_DEBUG_OBJECT (ogg_mux, "no data available, must be EOS");
-    gst_pad_push_event (ogg_mux->srcpad, gst_event_new_eos ());
+    /* FIXME: doesn't aggregator do this for us? yes it does! */
+    gst_pad_push_event (aggregator->srcpad, gst_event_new_eos ());
     return GST_FLOW_EOS;
   }
 }
