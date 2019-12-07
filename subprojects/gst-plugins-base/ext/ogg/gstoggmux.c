@@ -1599,13 +1599,6 @@ gst_ogg_mux_send_headers (GstOggMux * mux)
   gst_aggregator_set_src_caps (agg, caps);
   gst_caps_unref (caps);
 
-  /* Send segment event (FIXME: use new API) */
-  {
-    GstSegment segment;
-    gst_segment_init (&segment, GST_FORMAT_TIME);
-    gst_pad_push_event (agg->srcpad, gst_event_new_segment (&segment));
-  }
-
   /* and send the buffers */
   while (hbufs != NULL) {
     GstBuffer *buf = GST_BUFFER (hbufs->data);
