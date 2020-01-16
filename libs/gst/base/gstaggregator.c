@@ -1893,13 +1893,134 @@ gst_aggregator_request_new_pad (GstElement * element,
 
 /* Must be called with SRC_LOCK held */
 
+/* Modified copy of default latency handling: we ignore failing queries here
+ * and start nonetheless with the streams that actually answered the query */
+typedef struct
+{
+  gboolean live;
+  GstClockTime min, max;
+} LatencyFoldData;
+
+static gboolean
+query_latency_default_fold (const GValue * item, GValue * ret,
+    gpointer user_data)
+{
+  GstPad *pad = g_value_get_object (item), *peer;
+  LatencyFoldData *fold_data = user_data;
+  GstQuery *query;
+  gboolean res = FALSE;
+
+  query = gst_query_new_latency ();
+
+  peer = gst_pad_get_peer (pad);
+  if (peer) {
+    res = gst_pad_peer_query (pad, query);
+  } else {
+    GST_LOG_OBJECT (pad, "No peer pad found, ignoring this pad");
+  }
+
+  if (res) {
+    gboolean live;
+    GstClockTime min, max;
+
+    gst_query_parse_latency (query, &live, &min, &max);
+
+    GST_LOG_OBJECT (pad, "got latency live:%s min:%" G_GINT64_FORMAT
+        " max:%" G_GINT64_FORMAT, live ? "true" : "false", min, max);
+
+    /* If at least one query succeeds we consider the latency
+     * query successful */
+    g_value_set_boolean (ret, TRUE);
+
+    if (live) {
+      if (min > fold_data->min)
+        fold_data->min = min;
+
+      if (fold_data->max == GST_CLOCK_TIME_NONE)
+        fold_data->max = max;
+      else if (max < fold_data->max)
+        fold_data->max = max;
+
+      fold_data->live = TRUE;
+    }
+  } else if (peer) {
+    GST_DEBUG_OBJECT (pad, "latency query failed");
+  }
+
+  gst_query_unref (query);
+  if (peer)
+    gst_object_unref (peer);
+
+  return TRUE;
+}
+
+static gboolean
+gst_aggregator_query_upstream_latency (GstAggregator * agg, GstQuery * query)
+{
+  GstIterator *it;
+  GstIteratorResult res;
+  GValue ret = G_VALUE_INIT;
+  gboolean query_ret;
+  LatencyFoldData fold_data;
+
+  it = gst_element_iterate_sink_pads (GST_ELEMENT_CAST (agg));
+  if (!it) {
+    GST_DEBUG_OBJECT (agg, "Can't iterate sink pads");
+    return FALSE;
+  }
+
+  g_value_init (&ret, G_TYPE_BOOLEAN);
+
+retry:
+  fold_data.live = FALSE;
+  fold_data.min = 0;
+  fold_data.max = GST_CLOCK_TIME_NONE;
+
+  g_value_set_boolean (&ret, FALSE);
+  res = gst_iterator_fold (it, query_latency_default_fold, &ret, &fold_data);
+  switch (res) {
+    case GST_ITERATOR_OK:
+      g_assert_not_reached ();
+      break;
+    case GST_ITERATOR_DONE:
+      break;
+    case GST_ITERATOR_ERROR:
+      g_value_set_boolean (&ret, FALSE);
+      break;
+    case GST_ITERATOR_RESYNC:
+      gst_iterator_resync (it);
+      goto retry;
+    default:
+      g_assert_not_reached ();
+      break;
+  }
+  gst_iterator_free (it);
+
+  query_ret = g_value_get_boolean (&ret);
+  if (query_ret) {
+    GST_LOG_OBJECT (agg, "got latency live:%s min:%" G_GINT64_FORMAT
+        " max:%" G_GINT64_FORMAT, fold_data.live ? "true" : "false",
+        fold_data.min, fold_data.max);
+
+    if (fold_data.min > fold_data.max) {
+      GST_ERROR_OBJECT (agg, "minimum latency bigger than maximum latency");
+    }
+
+    gst_query_set_latency (query, fold_data.live, fold_data.min, fold_data.max);
+  } else {
+    GST_LOG_OBJECT (agg, "latency query failed");
+  }
+
+  return query_ret;
+}
+
 static gboolean
 gst_aggregator_query_latency_unlocked (GstAggregator * self, GstQuery * query)
 {
   gboolean query_ret, live;
   GstClockTime our_latency, min, max;
 
-  query_ret = gst_pad_query_default (self->srcpad, GST_OBJECT (self), query);
+  query_ret = gst_aggregator_query_upstream_latency (self, query);
 
   if (!query_ret) {
     GST_WARNING_OBJECT (self, "Latency query failed");
