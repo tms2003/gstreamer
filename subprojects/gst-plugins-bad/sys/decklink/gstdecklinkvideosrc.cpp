@@ -135,6 +135,7 @@
 #include "config.h"
 #endif
 
+#include <cmath>
 #include "gstdecklinkvideosrc.h"
 #include <string.h>
 
@@ -185,6 +186,9 @@ typedef struct
   BMDPixelFormat format;
   GstVideoTimeCode *tc;
   gboolean no_signal;
+  gboolean has_hdr_metadata;
+  GstVideoMasteringDisplayInfo mdi;
+  GstVideoContentLightLevel cll;
 } CaptureFrame;
 
 static void
@@ -783,6 +787,93 @@ gst_decklink_video_src_update_time_mapping (GstDecklinkVideoSrc * self,
 }
 
 static void
+gst_decklink_video_src_extract_frame_metadata (GstDecklinkVideoSrc * self,
+    CaptureFrame *f)
+{
+  IDeckLinkVideoFrameMetadataExtensions *meta;
+  HRESULT ret;
+
+  ret = f->frame->QueryInterface (IID_IDeckLinkVideoFrameMetadataExtensions,
+      (void **) &meta);
+  if (ret != S_OK) {
+    GST_WARNING_OBJECT (self, "frame does not have metadata extension: 0x%08lx",
+        (unsigned long) ret);
+    return;
+  }
+
+  f->has_hdr_metadata = FALSE;
+
+  if (f->frame->GetFlags() & bmdFrameContainsHDRMetadata) {
+    GstVideoMasteringDisplayInfo *mdi = &f->mdi;
+    GstVideoContentLightLevel *cll = &f->cll;
+    double val;
+
+#define HDRMETA_GET_FLOAT(ID) \
+  if (meta->GetFloat (ID, &val) != S_OK) { \
+    GST_WARNING_OBJECT (self, "could not read " #ID); \
+    goto invalid_hdrmeta; \
+  }
+
+    HDRMETA_GET_FLOAT (bmdDeckLinkFrameMetadataHDRDisplayPrimariesRedX)
+    mdi->display_primaries[0].x = round (val / 0.00002);
+
+    HDRMETA_GET_FLOAT (bmdDeckLinkFrameMetadataHDRDisplayPrimariesRedY)
+    mdi->display_primaries[0].y = round (val / 0.00002);
+
+    HDRMETA_GET_FLOAT (bmdDeckLinkFrameMetadataHDRDisplayPrimariesGreenX)
+    mdi->display_primaries[1].x = round (val / 0.00002);
+
+    HDRMETA_GET_FLOAT (bmdDeckLinkFrameMetadataHDRDisplayPrimariesGreenY)
+    mdi->display_primaries[1].y = round (val / 0.00002);
+
+    HDRMETA_GET_FLOAT (bmdDeckLinkFrameMetadataHDRDisplayPrimariesBlueX)
+    mdi->display_primaries[2].x = round (val / 0.00002);
+
+    HDRMETA_GET_FLOAT (bmdDeckLinkFrameMetadataHDRDisplayPrimariesBlueY)
+    mdi->display_primaries[2].y = round (val / 0.00002);
+
+    HDRMETA_GET_FLOAT (bmdDeckLinkFrameMetadataHDRWhitePointX)
+    mdi->white_point.x = round (val / 0.00002);
+
+    HDRMETA_GET_FLOAT (bmdDeckLinkFrameMetadataHDRWhitePointY)
+    mdi->white_point.y = round (val / 0.00002);
+
+    HDRMETA_GET_FLOAT (bmdDeckLinkFrameMetadataHDRMaxDisplayMasteringLuminance)
+    mdi->max_display_mastering_luminance = round (val / 0.0001);
+
+    HDRMETA_GET_FLOAT (bmdDeckLinkFrameMetadataHDRMinDisplayMasteringLuminance)
+    mdi->min_display_mastering_luminance = round (val / 0.0001);
+
+    HDRMETA_GET_FLOAT (bmdDeckLinkFrameMetadataHDRMaximumContentLightLevel)
+    cll->max_content_light_level = val;
+
+    HDRMETA_GET_FLOAT (bmdDeckLinkFrameMetadataHDRMaximumFrameAverageLightLevel)
+    cll->max_frame_average_light_level = val;
+
+    f->has_hdr_metadata = TRUE;
+
+    if (GST_LEVEL_TRACE <= gst_debug_category_get_threshold (GST_CAT_DEFAULT)) {
+      GST_TRACE_OBJECT (self, "frame HDR metadata:\n"
+          "R: x=%f y=%f, G: x=%f y=%f, B: x=%f y=%f\n"
+          "White point: x=%f y=%f\n"
+          "Mastering display luminance: min=%f cd/m² max=%f cd/m²\n"
+          "Max light level: content=%d cd/m² frame_avg=%d cd/m²",
+          mdi->display_primaries[0].x * 0.00002, mdi->display_primaries[0].y * 0.00002,
+          mdi->display_primaries[1].x * 0.00002, mdi->display_primaries[1].y * 0.00002,
+          mdi->display_primaries[2].x * 0.00002, mdi->display_primaries[2].y * 0.00002,
+          mdi->white_point.x * 0.00002, mdi->white_point.y * 0.00002,
+          mdi->min_display_mastering_luminance * 0.0001, mdi->max_display_mastering_luminance * 0.0001,
+          cll->max_content_light_level, cll->max_frame_average_light_level);
+    }
+  } else {
+    GST_TRACE_OBJECT (self, "frame has no HDR metadata");
+  }
+
+invalid_hdrmeta:
+  meta->Release ();
+}
+
+static void
 gst_decklink_video_src_got_frame (GstElement * element,
     IDeckLinkVideoInputFrame * frame, GstDecklinkModeEnum mode,
     GstClockTime capture_time, GstClockTime stream_time,
@@ -933,6 +1024,8 @@ gst_decklink_video_src_got_frame (GstElement * element,
     } else {
       f.tc = NULL;
     }
+
+    gst_decklink_video_src_extract_frame_metadata (self, &f);
 
     frame->AddRef ();
     gst_queue_array_push_tail_struct (self->current_frames, &f);
@@ -1349,6 +1442,24 @@ retry:
       return GST_FLOW_NOT_NEGOTIATED;
     }
   }
+  if (self->caps_has_hdr_metadata != f.has_hdr_metadata) {
+    GST_DEBUG_OBJECT (self, "HDR metadata flag changed to %d",
+        f.has_hdr_metadata);
+    caps_changed = TRUE;
+    self->caps_has_hdr_metadata = f.has_hdr_metadata;
+  }
+  if (f.has_hdr_metadata) {
+    if (!gst_video_mastering_display_info_is_equal (&self->caps_mdi, &f.mdi)) {
+      GST_DEBUG_OBJECT (self, "Mastering display info changed");
+      caps_changed = TRUE;
+      self->caps_mdi = f.mdi;
+    }
+    if (!gst_video_content_light_level_is_equal (&self->caps_cll, &f.cll)) {
+      GST_DEBUG_OBJECT (self, "Content light level changed");
+      caps_changed = TRUE;
+      self->caps_cll = f.cll;
+    }
+  }
 
   /* 1 ns error can be just a rounding error, so that's OK. The Decklink
    * drivers give us a really steady stream time, so anything above 1 ns can't
@@ -1383,6 +1494,10 @@ retry:
     self->last_afd_bar_vbi_line_field2 = -1;
     caps = gst_decklink_mode_get_caps (f.mode, f.format, TRUE);
     gst_video_info_from_caps (&self->info, caps);
+    if (self->caps_has_hdr_metadata) {
+      gst_video_mastering_display_info_add_to_caps (&f.mdi, caps);
+      gst_video_content_light_level_add_to_caps (&f.cll, caps);
+    }
     gst_base_src_set_caps (GST_BASE_SRC_CAST (bsrc), caps);
     gst_element_post_message (GST_ELEMENT_CAST (self),
         gst_message_new_latency (GST_OBJECT_CAST (self)));

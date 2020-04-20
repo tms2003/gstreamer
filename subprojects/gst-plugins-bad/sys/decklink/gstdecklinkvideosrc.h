@@ -60,6 +60,9 @@ struct _GstDecklinkVideoSrc
   GstDecklinkModeEnum caps_mode;
   gint aspect_ratio_flag; /* -1 when unknown, 0 not set, 1 set */
   BMDPixelFormat caps_format;
+  gboolean caps_has_hdr_metadata;
+  GstVideoMasteringDisplayInfo caps_mdi;
+  GstVideoContentLightLevel caps_cll;
   GstDecklinkConnectionEnum connection;
   gint device_number;
   gboolean output_stream_time;
