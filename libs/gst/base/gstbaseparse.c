@@ -2188,16 +2188,18 @@ static GstBaseParseFrame *
 gst_base_parse_prepare_frame (GstBaseParse * parse, GstBuffer * buffer)
 {
   GstBaseParseFrame *frame = NULL;
+  gsize buffer_size = gst_buffer_get_size (buffer);
 
   buffer = gst_buffer_make_writable (buffer);
 
+  GST_BUFFER_OFFSET (buffer) = parse->priv->offset;
+  GST_BUFFER_OFFSET_END (buffer) = parse->priv->offset + buffer_size;
+
   GST_LOG_OBJECT (parse,
       "preparing frame at offset %" G_GUINT64_FORMAT
-      " (%#" G_GINT64_MODIFIER "x) of size %" G_GSIZE_FORMAT,
-      GST_BUFFER_OFFSET (buffer), GST_BUFFER_OFFSET (buffer),
-      gst_buffer_get_size (buffer));
-
-  GST_BUFFER_OFFSET (buffer) = parse->priv->offset;
+      " (%#" G_GINT64_MODIFIER "x) end (%" G_GUINT64_FORMAT ") of size %"
+      G_GSIZE_FORMAT, GST_BUFFER_OFFSET (buffer), GST_BUFFER_OFFSET (buffer),
+      GST_BUFFER_OFFSET_END (buffer), buffer_size);
 
   gst_base_parse_update_flags (parse);
 
@@ -2472,9 +2474,9 @@ gst_base_parse_push_frame (GstBaseParse * parse, GstBaseParseFrame * frame)
   buffer = frame->buffer;
 
   GST_LOG_OBJECT (parse,
-      "processing buffer of size %" G_GSIZE_FORMAT " with dts %" GST_TIME_FORMAT
-      ", pts %" GST_TIME_FORMAT ", duration %" GST_TIME_FORMAT,
-      gst_buffer_get_size (buffer),
+      "processing buffer %" GST_PTR_FORMAT " of size %" G_GSIZE_FORMAT
+      " with dts %" GST_TIME_FORMAT ", pts %" GST_TIME_FORMAT ", duration %"
+      GST_TIME_FORMAT, buffer, gst_buffer_get_size (buffer),
       GST_TIME_ARGS (GST_BUFFER_DTS (buffer)),
       GST_TIME_ARGS (GST_BUFFER_PTS (buffer)),
       GST_TIME_ARGS (GST_BUFFER_DURATION (buffer)));
@@ -2717,7 +2719,12 @@ gst_base_parse_finish_frame (GstBaseParse * parse, GstBaseParseFrame * frame,
     GST_BUFFER_DTS (dest) = GST_BUFFER_DTS (src);
     GST_BUFFER_OFFSET (dest) = GST_BUFFER_OFFSET (src);
     GST_BUFFER_DURATION (dest) = GST_BUFFER_DURATION (src);
-    GST_BUFFER_OFFSET_END (dest) = GST_BUFFER_OFFSET_END (src);
+    /* Update the buffer end offset to match the size we're taking */
+    if (GST_BUFFER_OFFSET (dest) != GST_BUFFER_OFFSET_NONE)
+      GST_BUFFER_OFFSET_END (dest) = GST_BUFFER_OFFSET (dest) + size;
+    else
+      GST_BUFFER_OFFSET_END (dest) = GST_BUFFER_OFFSET_NONE;
+
     GST_MINI_OBJECT_FLAGS (dest) = GST_MINI_OBJECT_FLAGS (src);
   } else {
     gst_adapter_flush (parse->priv->adapter, size);
@@ -3353,6 +3360,7 @@ gst_base_parse_pull_range (GstBaseParse * parse, guint size,
       *buffer = gst_buffer_copy_region (parse->priv->cache, GST_BUFFER_COPY_ALL,
           parse->priv->offset - cache_offset, size);
       GST_BUFFER_OFFSET (*buffer) = parse->priv->offset;
+      GST_BUFFER_OFFSET_END (*buffer) = parse->priv->offset + size;
       GST_LOG_OBJECT (parse,
           "Satisfying read request of %u bytes from cached buffer with offset %"
           G_GINT64_FORMAT, size, cache_offset);
@@ -3376,8 +3384,8 @@ gst_base_parse_pull_range (GstBaseParse * parse, guint size,
     return ret;
   }
 
-  if (gst_buffer_get_size (parse->priv->cache) < size) {
-    GST_DEBUG_OBJECT (parse, "Returning short buffer at offset %"
+  if (gst_buffer_get_size (parse->priv->cache) <= size) {
+    GST_DEBUG_OBJECT (parse, "Returning short (or exact) buffer at offset %"
         G_GUINT64_FORMAT ": wanted %u bytes, got %" G_GSIZE_FORMAT " bytes",
         parse->priv->offset, size, gst_buffer_get_size (parse->priv->cache));
 
@@ -3387,11 +3395,15 @@ gst_base_parse_pull_range (GstBaseParse * parse, guint size,
     return GST_FLOW_OK;
   }
 
+  /* Make sure the buffer we just read has offsets set, in case
+   * upstream didn't do it */
   GST_BUFFER_OFFSET (parse->priv->cache) = parse->priv->offset;
+  GST_BUFFER_OFFSET_END (parse->priv->cache) = parse->priv->offset + read_size;
 
   *buffer =
       gst_buffer_copy_region (parse->priv->cache, GST_BUFFER_COPY_ALL, 0, size);
   GST_BUFFER_OFFSET (*buffer) = parse->priv->offset;
+  GST_BUFFER_OFFSET_END (*buffer) = parse->priv->offset + size;
 
   return GST_FLOW_OK;
 }
