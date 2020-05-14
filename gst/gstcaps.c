@@ -2452,7 +2452,7 @@ gst_caps_from_string_inplace (GstCaps * caps, const gchar * string)
       goto append;
     }
 
-    if (!priv_gst_structure_parse_fields (s, &s, structure)) {
+    if (!priv_gst_structure_parse_fields (s, &s, structure, TRUE)) {
       gst_structure_free (structure);
       if (features)
         gst_caps_features_free (features);

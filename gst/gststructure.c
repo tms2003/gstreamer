@@ -2105,7 +2105,7 @@ gst_structure_to_string (const GstStructure * structure)
 
 static gboolean
 gst_structure_parse_field (gchar * str,
-    gchar ** after, GstStructureField * field)
+    gchar ** after, GstStructureField * field, gboolean intern_string)
 {
   gchar *name;
   gchar *name_end;
@@ -2139,7 +2139,7 @@ gst_structure_parse_field (gchar * str,
   *name_end = c;
 
   if (G_UNLIKELY (!_priv_gst_value_parse_value (s, &s, &field->value,
-              G_TYPE_INVALID))) {
+              G_TYPE_INVALID, intern_string))) {
     GST_WARNING ("failed to parse value %s", str);
     return FALSE;
   }
@@ -2177,7 +2177,7 @@ priv_gst_structure_parse_name (gchar * str, gchar ** start, gchar ** end,
 
 gboolean
 priv_gst_structure_parse_fields (gchar * str, gchar ** end,
-    GstStructure * structure)
+    GstStructure * structure, gboolean intern_string)
 {
   gchar *r;
   GstStructureField field;
@@ -2207,7 +2207,7 @@ priv_gst_structure_parse_fields (gchar * str, gchar ** end,
       r++;
 
     memset (&field, 0, sizeof (field));
-    if (G_UNLIKELY (!gst_structure_parse_field (r, &r, &field))) {
+    if (G_UNLIKELY (!gst_structure_parse_field (r, &r, &field, intern_string))) {
       GST_WARNING ("Failed to parse field, r=%s", r);
       return FALSE;
     }
@@ -2285,7 +2285,7 @@ gst_structure_from_string (const gchar * string, gchar ** end)
   if (G_UNLIKELY (structure == NULL))
     goto error;
 
-  if (!priv_gst_structure_parse_fields (r, &r, structure))
+  if (!priv_gst_structure_parse_fields (r, &r, structure, FALSE))
     goto error;
 
   if (end)

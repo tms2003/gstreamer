@@ -171,7 +171,8 @@ G_GNUC_INTERNAL const char * _priv_gst_value_gtype_to_abbr (GType type);
 
 G_GNUC_INTERNAL gboolean _priv_gst_value_parse_string (gchar * s, gchar ** end, gchar ** next, gboolean unescape);
 G_GNUC_INTERNAL gboolean _priv_gst_value_parse_simple_string (gchar * str, gchar ** end);
-G_GNUC_INTERNAL gboolean _priv_gst_value_parse_value (gchar * str, gchar ** after, GValue * value, GType default_type);
+G_GNUC_INTERNAL gboolean _priv_gst_value_parse_value (gchar * str, gchar ** after, GValue * value,
+						      GType default_type, gboolean intern_string);
 G_GNUC_INTERNAL gchar * _priv_gst_value_serialize_any_list (const GValue * value, const gchar * begin, const gchar * end, gboolean print_type);
 
 /* Used in GstBin for manual state handling */
@@ -196,7 +197,8 @@ void priv_gst_caps_features_append_to_gstring (const GstCapsFeatures * features,
 G_GNUC_INTERNAL
 gboolean priv_gst_structure_parse_name (gchar * str, gchar **start, gchar ** end, gchar ** next);
 G_GNUC_INTERNAL
-gboolean priv_gst_structure_parse_fields (gchar *str, gchar ** end, GstStructure *structure);
+gboolean priv_gst_structure_parse_fields (gchar *str, gchar ** end, GstStructure *structure,
+					  gboolean intern_string);
 
 /* used in gstvalue.c and gststructure.c */
 

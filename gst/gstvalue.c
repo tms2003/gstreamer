@@ -192,6 +192,13 @@ static void _gst_value_list_append_and_take_value (GValue * value,
 static void _gst_value_array_append_and_take_value (GValue * value,
     GValue * append_value);
 
+static gboolean priv_gst_value_deserialize_full (GValue * dest,
+    const gchar * src, gboolean intern_string);
+
+#if !GLIB_CHECK_VERSION(2,65,1)
+#define G_VALUE_INTERNED_STRING (1 << 28)
+#endif
+
 static inline GstValueTable *
 gst_value_hash_lookup_type (GType type)
 {
@@ -2469,7 +2476,7 @@ _priv_gst_value_parse_range (gchar * s, gchar ** after, GValue * value,
     return FALSE;
   s++;
 
-  ret = _priv_gst_value_parse_value (s, &s, &value1, type);
+  ret = _priv_gst_value_parse_value (s, &s, &value1, type, FALSE);
   if (!ret)
     return FALSE;
 
@@ -2483,7 +2490,7 @@ _priv_gst_value_parse_range (gchar * s, gchar ** after, GValue * value,
   while (g_ascii_isspace (*s))
     s++;
 
-  ret = _priv_gst_value_parse_value (s, &s, &value2, type);
+  ret = _priv_gst_value_parse_value (s, &s, &value2, type, FALSE);
   if (!ret)
     return FALSE;
 
@@ -2499,7 +2506,7 @@ _priv_gst_value_parse_range (gchar * s, gchar ** after, GValue * value,
       while (g_ascii_isspace (*s))
         s++;
 
-      ret = _priv_gst_value_parse_value (s, &s, &value3, type);
+      ret = _priv_gst_value_parse_value (s, &s, &value3, type, FALSE);
       if (!ret)
         return FALSE;
 
@@ -2588,7 +2595,8 @@ _priv_gst_value_parse_any_list (gchar * s, gchar ** after, GValue * value,
     }
 
     memset (&list_value, 0, sizeof (list_value));
-    ret = _priv_gst_value_parse_value (s, &s, &list_value, type);
+    /* Arrays and lists in structures are always in caps, force interning of strings */
+    ret = _priv_gst_value_parse_value (s, &s, &list_value, type, TRUE);
     if (!ret)
       return FALSE;
 
@@ -2637,7 +2645,7 @@ _priv_gst_value_parse_simple_string (gchar * str, gchar ** end)
 
 gboolean
 _priv_gst_value_parse_value (gchar * str,
-    gchar ** after, GValue * value, GType default_type)
+    gchar ** after, GValue * value, GType default_type, gboolean intern_string)
 {
   gchar *type_name;
   gchar *type_end;
@@ -2710,7 +2718,7 @@ _priv_gst_value_parse_value (gchar * str,
 
       for (i = 0; i < G_N_ELEMENTS (try_types); i++) {
         g_value_init (value, try_types[i]);
-        ret = gst_value_deserialize (value, value_s);
+        ret = priv_gst_value_deserialize_full (value, value_s, intern_string);
         if (ret)
           break;
         g_value_unset (value);
@@ -2725,7 +2733,7 @@ _priv_gst_value_parse_value (gchar * str,
       c = *value_end;
       *value_end = '\0';
 
-      ret = gst_value_deserialize (value, value_s);
+      ret = priv_gst_value_deserialize_full (value, value_s, intern_string);
       if (G_UNLIKELY (!ret))
         g_value_unset (value);
     }
@@ -3619,18 +3627,29 @@ gst_value_deserialize_float (GValue * dest, const gchar * s)
 static gint
 gst_value_compare_string (const GValue * value1, const GValue * value2)
 {
+  gint x;
+
   if (G_UNLIKELY (!value1->data[0].v_pointer || !value2->data[0].v_pointer)) {
     /* if only one is NULL, no match - otherwise both NULL == EQUAL */
     if (value1->data[0].v_pointer != value2->data[0].v_pointer)
       return GST_VALUE_UNORDERED;
-  } else {
-    gint x = strcmp (value1->data[0].v_pointer, value2->data[0].v_pointer);
-
-    if (x < 0)
-      return GST_VALUE_LESS_THAN;
-    if (x > 0)
-      return GST_VALUE_GREATER_THAN;
+    return GST_VALUE_EQUAL;
   }
+
+  /* Fast-path for interned strings */
+  if (value1->data[1].v_uint & G_VALUE_INTERNED_STRING &&
+      value2->data[1].v_uint & G_VALUE_INTERNED_STRING) {
+    return (value1->data[0].v_pointer ==
+        value2->data[0].v_pointer ? GST_VALUE_EQUAL : GST_VALUE_UNORDERED);
+  }
+
+
+  x = strcmp (value1->data[0].v_pointer, value2->data[0].v_pointer);
+
+  if (x < 0)
+    return GST_VALUE_LESS_THAN;
+  if (x > 0)
+    return GST_VALUE_GREATER_THAN;
 
   return GST_VALUE_EQUAL;
 }
@@ -3814,8 +3833,18 @@ gst_value_serialize_string (const GValue * value)
   return gst_string_wrap (value->data[0].v_pointer);
 }
 
+#if !GLIB_CHECK_VERSION(2,65,1)
+static void
+g_value_set_interned_string (GValue * dest, const gchar * s)
+{
+  dest->data[0].v_pointer = (void *) s;
+  dest->data[1].v_uint = G_VALUE_NOCOPY_CONTENTS | G_VALUE_INTERNED_STRING;
+}
+#endif
+
 static gboolean
-gst_value_deserialize_string (GValue * dest, const gchar * s)
+gst_value_deserialize_string_full (GValue * dest, const gchar * s,
+    gboolean intern_string)
 {
   if (G_UNLIKELY (strcmp (s, "NULL") == 0)) {
     g_value_set_string (dest, NULL);
@@ -3823,17 +3852,32 @@ gst_value_deserialize_string (GValue * dest, const gchar * s)
   } else if (G_LIKELY (*s != '"' || s[strlen (s) - 1] != '"')) {
     if (!g_utf8_validate (s, -1, NULL))
       return FALSE;
-    g_value_set_string (dest, s);
+    if (intern_string)
+      g_value_set_interned_string (dest, g_intern_string (s));
+    else
+      g_value_set_string (dest, s);
     return TRUE;
   } else {
+    /* FIXME : Modify gst_string_unwrap() to return interned string directly if needed */
     /* strings delimited with double quotes should be unwrapped */
     gchar *str = gst_string_unwrap (s);
     if (G_UNLIKELY (!str))
       return FALSE;
-    g_value_take_string (dest, str);
+    if (intern_string) {
+      g_value_set_interned_string (dest, g_intern_string (str));
+      g_free (str);
+    } else {
+      g_value_take_string (dest, str);
+    }
   }
 
   return TRUE;
+}
+
+static gboolean
+gst_value_deserialize_string (GValue * dest, const gchar * s)
+{
+  return gst_value_deserialize_string_full (dest, s, FALSE);
 }
 
 /********
@@ -6348,6 +6392,23 @@ gst_value_init_and_copy (GValue * dest, const GValue * src)
     return;
   }
 
+  /* For strings we *always* end up making them interned strings if we're doing
+   * copies */
+  if (type == G_TYPE_STRING) {
+    dest->g_type = type;
+
+    /* If already interned, copy over */
+    if (src->data[1].v_uint & G_VALUE_INTERNED_STRING) {
+      dest->data[0].v_pointer = src->data[0].v_pointer;
+      dest->data[1].v_uint = src->data[1].v_uint;
+    } else {
+      g_value_set_interned_string (dest,
+          g_intern_string (src->data[0].v_pointer));
+    }
+
+    return;
+  }
+
   g_value_init (dest, type);
   g_value_copy (src, dest);
 }
@@ -6415,19 +6476,15 @@ gst_value_serialize (const GValue * value)
   return s;
 }
 
-/**
- * gst_value_deserialize:
- * @dest: (out caller-allocates): #GValue to fill with contents of
- *     deserialization
- * @src: string to deserialize
+/* Deserialize 'src' into 'dest'
  *
- * Tries to deserialize a string into the type specified by the given GValue.
- * If the operation succeeds, %TRUE is returned, %FALSE otherwise.
- *
- * Returns: %TRUE on success
+ * If intern_string is TRUE, then strings from 'src' will not be copied, but an
+ * interned version will be stored (avoids copies and allows fast-equality
+ * checks)
  */
-gboolean
-gst_value_deserialize (GValue * dest, const gchar * src)
+static gboolean
+priv_gst_value_deserialize_full (GValue * dest, const gchar * src,
+    gboolean intern_string)
 {
   GstValueTable *table, *best;
   guint i, len;
@@ -6437,6 +6494,9 @@ gst_value_deserialize (GValue * dest, const gchar * src)
   g_return_val_if_fail (G_IS_VALUE (dest), FALSE);
 
   type = G_VALUE_TYPE (dest);
+
+  if (intern_string && type == G_TYPE_STRING)
+    return gst_value_deserialize_string_full (dest, src, intern_string);
 
   best = gst_value_hash_lookup_type (type);
   if (G_UNLIKELY (!best || !best->deserialize)) {
@@ -6454,6 +6514,24 @@ gst_value_deserialize (GValue * dest, const gchar * src)
     return best->deserialize (dest, src);
 
   return FALSE;
+
+}
+
+/**
+ * gst_value_deserialize:
+ * @dest: (out caller-allocates): #GValue to fill with contents of
+ *     deserialization
+ * @src: string to deserialize
+ *
+ * Tries to deserialize a string into the type specified by the given GValue.
+ * If the operation succeeds, %TRUE is returned, %FALSE otherwise.
+ *
+ * Returns: %TRUE on success
+ */
+gboolean
+gst_value_deserialize (GValue * dest, const gchar * src)
+{
+  return priv_gst_value_deserialize_full (dest, src, FALSE);
 }
 
 static gboolean
