@@ -3508,6 +3508,51 @@ GST_START_TEST (test_deserialize_array)
 
 GST_END_TEST;
 
+GST_START_TEST (test_value_list)
+{
+  GValue list = { 0 };
+  GValue int1 = { 0 };
+  GValue int2 = { 0 };
+  GValue str1 = { 0 };
+  GValue str2 = { 0 };
+
+  /* List creation */
+  gst_value_list_init (&list, 0);
+  fail_unless_equals_int (gst_value_list_get_size (&list), 0);
+
+  /* Append value and check */
+  g_value_init (&int1, G_TYPE_INT);
+  g_value_set_int (&int1, 42);
+  gst_value_list_append_value (&list, &int1);
+  fail_unless_equals_int (gst_value_list_get_size (&list), 1);
+  g_value_unset (&list);
+
+  /* Try creating a list from a merge of int */
+  g_value_init (&int2, G_TYPE_INT);
+  g_value_set_int (&int2, 60);
+  gst_value_list_merge (&list, &int1, &int2);
+  fail_unless_equals_int (G_VALUE_TYPE (&list), GST_TYPE_LIST);
+  fail_unless_equals_int (gst_value_list_get_size (&list), 2);
+  g_value_unset (&list);
+
+  /* Try creating a list from a merge of strings */
+  g_value_init (&str1, G_TYPE_STRING);
+  g_value_set_string (&str1, "Hello");
+  g_value_init (&str2, G_TYPE_STRING);
+  g_value_set_string (&str2, "World");
+  gst_value_list_merge (&list, &str1, &str2);
+  fail_unless_equals_int (G_VALUE_TYPE (&list), GST_TYPE_LIST);
+  fail_unless_equals_int (gst_value_list_get_size (&list), 2);
+
+  g_value_unset (&list);
+  g_value_unset (&int1);
+  g_value_unset (&int2);
+  g_value_unset (&str1);
+  g_value_unset (&str2);
+}
+
+GST_END_TEST;
+
 static Suite *
 gst_value_suite (void)
 {
@@ -3562,6 +3607,7 @@ gst_value_suite (void)
   tcase_add_test (tc_chain, test_transform_array);
   tcase_add_test (tc_chain, test_transform_list);
   tcase_add_test (tc_chain, test_serialize_null_aray);
+  tcase_add_test (tc_chain, test_value_list);
 
   return s;
 }
