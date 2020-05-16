@@ -127,6 +127,9 @@ typedef enum
  * @GST_RESOURCE_ERROR_NOT_AUTHORIZED: used when the resource can't be opened
  *                                     due to missing authorization.
  *                                     (Since: 1.2.4)
+ * @GST_RESOURCE_ERROR_DEVICE_LOST: used when the resource could not be used
+ *                                  because of lost access to the device.
+ *                                  (Since: 1.26)
  * @GST_RESOURCE_ERROR_NUM_ERRORS: the number of resource error types.
  *
  * Resource errors are for any resource used by an element:
@@ -150,6 +153,7 @@ typedef enum
   GST_RESOURCE_ERROR_SETTINGS,
   GST_RESOURCE_ERROR_NO_SPACE_LEFT,
   GST_RESOURCE_ERROR_NOT_AUTHORIZED,
+  GST_RESOURCE_ERROR_DEVICE_LOST,
   GST_RESOURCE_ERROR_NUM_ERRORS
 } GstResourceError;
 

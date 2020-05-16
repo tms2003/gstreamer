@@ -229,6 +229,8 @@ gst_error_get_resource_error (GstResourceError code)
       return _("No space left on the resource.");
     case GST_RESOURCE_ERROR_NOT_AUTHORIZED:
       return _("Not authorized to access resource.");
+    case GST_RESOURCE_ERROR_DEVICE_LOST:
+      return _("Resource is no longer available, lost access to the device.");
     case GST_RESOURCE_ERROR_NUM_ERRORS:
     default:
       break;
