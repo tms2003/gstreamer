@@ -32,6 +32,7 @@
 #include <gst/gst.h>
 
 #include "gstcapsfilter.h"
+#include "gstcapssetter.h"
 #include "gstclocksync.h"
 #include "gstconcat.h"
 #include "gstdataurisrc.h"
@@ -59,6 +60,9 @@ plugin_init (GstPlugin * plugin)
 {
   if (!gst_element_register (plugin, "capsfilter", GST_RANK_NONE,
           gst_capsfilter_get_type ()))
+    return FALSE;
+  if (!gst_element_register (plugin, "capssetter", GST_RANK_NONE,
+          gst_caps_setter_get_type ()))
     return FALSE;
   if (!gst_element_register (plugin, "clocksync", GST_RANK_NONE,
           gst_clock_sync_get_type ()))
