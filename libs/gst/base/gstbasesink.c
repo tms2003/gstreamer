@@ -3210,7 +3210,8 @@ gst_base_sink_update_start_time (GstBaseSink * basesink)
 }
 
 static void
-gst_base_sink_flush_start (GstBaseSink * basesink, GstPad * pad)
+gst_base_sink_flush_start (GstBaseSink * basesink, GstPad * pad,
+    gboolean live_flush)
 {
   /* make sure we are not blocked on the clock also clear any pending
    * eos state. */
@@ -3224,7 +3225,7 @@ gst_base_sink_flush_start (GstBaseSink * basesink, GstPad * pad)
   /* and we need to commit our state again on the next
    * prerolled buffer */
   basesink->playing_async = TRUE;
-  if (basesink->priv->async_enabled) {
+  if (basesink->priv->async_enabled && !live_flush) {
     gst_base_sink_update_start_time (basesink);
     gst_element_lost_state (GST_ELEMENT_CAST (basesink));
   } else {
@@ -3319,8 +3320,11 @@ gst_base_sink_default_event (GstBaseSink * basesink, GstEvent * event)
   switch (GST_EVENT_TYPE (event)) {
     case GST_EVENT_FLUSH_START:
     {
-      GST_DEBUG_OBJECT (basesink, "flush-start %p", event);
-      gst_base_sink_flush_start (basesink, basesink->sinkpad);
+      gboolean live_flush;
+      gst_event_parse_flush_start (event, &live_flush);
+      GST_DEBUG_OBJECT (basesink, "flush-start (live_flush:%d) %p", live_flush,
+          event);
+      gst_base_sink_flush_start (basesink, basesink->sinkpad, live_flush);
       break;
     }
     case GST_EVENT_FLUSH_STOP:
@@ -4242,7 +4246,7 @@ gst_base_sink_perform_seek (GstBaseSink * sink, GstPad * pad, GstEvent * event)
   if (flush) {
     GST_DEBUG_OBJECT (sink, "flushing upstream");
     gst_pad_push_event (pad, gst_event_new_flush_start ());
-    gst_base_sink_flush_start (sink, pad);
+    gst_base_sink_flush_start (sink, pad, FALSE);
   } else {
     GST_DEBUG_OBJECT (sink, "pausing pulling thread");
   }

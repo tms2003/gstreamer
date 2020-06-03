@@ -549,12 +549,68 @@ gst_event_set_running_time_offset (GstEvent * event, gint64 offset)
  * This event is typically generated after a seek to flush out all queued data
  * in the pipeline so that the new media is played as soon as possible.
  *
+ * If the element emitting that event is a live element, you should set the
+ * live field appropriately with gst_event_set_flush_start_live().
+ *
  * Returns: (transfer full): a new flush start event.
  */
 GstEvent *
 gst_event_new_flush_start (void)
 {
   return gst_event_new_custom (GST_EVENT_FLUSH_START, NULL);
+}
+
+/**
+ * gst_event_set_flush_start_live:
+ * @event: a #GST_EVENT_FLUSH_START event
+ * @live: whether the flush start is from live sources or not
+ *
+ * Set the @live status of a #GST_EVENT_FLUSH_START. Setting it to %TRUE will
+ * cause sinks to not lose state. This should only be used and sent from live
+ * sources (i.e. elements which return #GST_STATE_CHANGE_NO_PREROLL).
+ *
+ * Since: 1.20
+ */
+void
+gst_event_set_flush_start_live (GstEvent * event, gboolean live)
+{
+  g_return_if_fail (GST_IS_EVENT (event));
+  g_return_if_fail (GST_EVENT_TYPE (event) == GST_EVENT_FLUSH_START);
+
+  if (GST_EVENT_STRUCTURE (event))
+    gst_structure_set (GST_EVENT_STRUCTURE (event), "live", G_TYPE_BOOLEAN,
+        live, NULL);
+  else {
+    GST_EVENT_STRUCTURE (event) =
+        gst_structure_new_id (GST_QUARK (EVENT_FLUSH_START), GST_QUARK (LIVE),
+        G_TYPE_BOOLEAN, live, NULL);
+    gst_structure_set_parent_refcount (GST_EVENT_STRUCTURE (event),
+        &event->mini_object.refcount);
+  }
+}
+
+/**
+ * gst_event_parse_flush_start:
+ * @event: The event to parse
+ * @live: (out): if the flush start is for live scenarios
+ *
+ * Parse the FLUSH_START event and retrieve the @live member.
+ *
+ * Since: 1.20
+ */
+void
+gst_event_parse_flush_start (GstEvent * event, gboolean * live)
+{
+  g_return_if_fail (GST_IS_EVENT (event));
+  g_return_if_fail (GST_EVENT_TYPE (event) == GST_EVENT_FLUSH_START);
+
+  if (live) {
+    if (GST_EVENT_STRUCTURE (event))
+      gst_structure_get (GST_EVENT_STRUCTURE (event), "live", G_TYPE_BOOLEAN,
+          live, NULL);
+    else
+      *live = FALSE;
+  }
 }
 
 /**
