@@ -330,6 +330,8 @@ gst_download_buffer_init (GstDownloadBuffer * dlbuf)
   dlbuf->temp_template = NULL;
   dlbuf->temp_location = NULL;
   dlbuf->temp_remove = DEFAULT_TEMP_REMOVE;
+
+  dlbuf->eos_sinkpad = FALSE;
 }
 
 /* called only once, as opposed to dispose */
@@ -359,6 +361,7 @@ reset_positions (GstDownloadBuffer * dlbuf)
   dlbuf->buffering_percent = 0;
   dlbuf->is_buffering = TRUE;
   dlbuf->seeking = FALSE;
+  dlbuf->eos_sinkpad = FALSE;
   GST_DOWNLOAD_BUFFER_CLEAR_LEVEL (dlbuf->cur_level);
 }
 
@@ -1078,6 +1081,7 @@ gst_download_buffer_handle_sink_event (GstPad * pad, GstObject * parent,
             update_levels (dlbuf, dlbuf->max_level.bytes);
             /* update the buffering */
             msg = update_buffering (dlbuf);
+            dlbuf->eos_sinkpad = TRUE;
             /* wakeup the waiter and let it recheck */
             GST_DOWNLOAD_BUFFER_SIGNAL_ADD (dlbuf, -1);
             break;
@@ -1086,6 +1090,7 @@ gst_download_buffer_handle_sink_event (GstPad * pad, GstObject * parent,
             /* a new segment allows us to accept more buffers if we got EOS
              * from downstream */
             dlbuf->unexpected = FALSE;
+            dlbuf->eos_sinkpad = FALSE;
             break;
           case GST_EVENT_STREAM_START:
             gst_event_replace (&dlbuf->stream_start_event, event);
@@ -1311,13 +1316,31 @@ gst_download_buffer_loop (GstPad * pad)
   GstFlowReturn ret;
   GstBuffer *buffer = NULL;
   GstMessage *msg = NULL;
+  guint64 offset;
+  guint length;
 
   dlbuf = GST_DOWNLOAD_BUFFER (GST_PAD_PARENT (pad));
 
   /* have to lock for thread-safety */
   GST_DOWNLOAD_BUFFER_MUTEX_LOCK_CHECK (dlbuf, dlbuf->srcresult, out_flushing);
 
-  ret = gst_download_buffer_read_buffer (dlbuf, -1, -1, &buffer);
+  offset = dlbuf->read_pos;
+  length = DEFAULT_BUFFER_SIZE;
+  if (dlbuf->eos_sinkpad) {
+    /* If we get EOS on sinkpad write_pos will be pointing to end of file */
+    if (offset >= dlbuf->write_pos) {
+      dlbuf->srcresult = GST_FLOW_EOS;
+      goto out_flushing;
+    }
+    if (offset + length > dlbuf->write_pos) {
+      /* If we get EOS on sinkpad we adjust length here, so we won't get
+       * blocked when reading last bytes from file */
+      length = dlbuf->write_pos - offset;
+      GST_DEBUG_OBJECT (dlbuf, "adjusting reading length down to %u", length);
+    }
+  }
+
+  ret = gst_download_buffer_read_buffer (dlbuf, offset, length, &buffer);
   if (ret != GST_FLOW_OK)
     goto out_flushing;
 
@@ -1361,8 +1384,6 @@ out_flushing:
     GST_LOG_OBJECT (dlbuf, "pause task, reason:  %s", gst_flow_get_name (ret));
     /* let app know about us giving up if upstream is not expected to do so */
     if (ret == GST_FLOW_EOS) {
-      /* FIXME perform EOS logic, this is really a basesrc operating on a
-       * file. */
       gst_pad_push_event (dlbuf->srcpad, gst_event_new_eos ());
     } else if ((ret == GST_FLOW_NOT_LINKED || ret < GST_FLOW_EOS)) {
       GST_ELEMENT_FLOW_ERROR (dlbuf, ret);
