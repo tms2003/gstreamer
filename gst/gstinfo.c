@@ -367,7 +367,7 @@ void
 _priv_gst_debug_init (void)
 {
   const gchar *env;
-  FILE *log_file;
+  FILE *log_file = NULL;
 
   if (add_default_log_func) {
     env = g_getenv ("GST_DEBUG_FILE");
@@ -478,6 +478,17 @@ _priv_gst_debug_init (void)
   env = g_getenv ("GST_DEBUG_COLOR_MODE");
   if (env)
     gst_debug_set_color_mode_from_string (env);
+
+#ifdef G_OS_WIN32
+#if GLIB_CHECK_VERSION(2,50,0)
+  if (log_file && gst_debug_is_colored ()) {
+    /* On Windows 10, g_log_writer_supports_color will also setup the console
+     * so that it correctly interprets ANSI VT sequences if it's supported */
+    if (g_log_writer_supports_color (_fileno (log_file)))
+      gst_debug_set_color_mode (GST_DEBUG_COLOR_MODE_UNIX);
+  }
+#endif /* GLIB_CHECK_VERSION */
+#endif /* G_OS_WIN32 */
 
   env = g_getenv ("GST_DEBUG");
   if (env)
