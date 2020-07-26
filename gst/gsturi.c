@@ -251,84 +251,6 @@ escape_string_internal (const gchar * string, UnsafeCharacterSet mask)
 }
 #endif
 
-static int
-hex_to_int (gchar c)
-{
-  return c >= '0' && c <= '9' ? c - '0'
-      : c >= 'A' && c <= 'F' ? c - 'A' + 10
-      : c >= 'a' && c <= 'f' ? c - 'a' + 10 : -1;
-}
-
-static int
-unescape_character (const char *scanner)
-{
-  int first_digit;
-  int second_digit;
-
-  first_digit = hex_to_int (*scanner++);
-  if (first_digit < 0) {
-    return -1;
-  }
-
-  second_digit = hex_to_int (*scanner);
-  if (second_digit < 0) {
-    return -1;
-  }
-
-  return (first_digit << 4) | second_digit;
-}
-
-/* unescape_string:
- * @escaped_string: an escaped URI, path, or other string
- * @illegal_characters: a string containing a sequence of characters
- * considered "illegal", '\0' is automatically in this list.
- *
- * Decodes escaped characters (i.e. PERCENTxx sequences) in @escaped_string.
- * Characters are encoded in PERCENTxy form, where xy is the ASCII hex code
- * for character 16x+y.
- *
- * Return value: (nullable): a newly allocated string with the
- * unescaped equivalents, or %NULL if @escaped_string contained one of
- * the characters in @illegal_characters.
- **/
-static char *
-unescape_string (const gchar * escaped_string, const gchar * illegal_characters)
-{
-  const gchar *in;
-  gchar *out, *result;
-  gint character;
-
-  if (escaped_string == NULL) {
-    return NULL;
-  }
-
-  result = g_malloc (strlen (escaped_string) + 1);
-
-  out = result;
-  for (in = escaped_string; *in != '\0'; in++) {
-    character = *in;
-    if (*in == HEX_ESCAPE) {
-      character = unescape_character (in + 1);
-
-      /* Check for an illegal character. We consider '\0' illegal here. */
-      if (character <= 0
-          || (illegal_characters != NULL
-              && strchr (illegal_characters, (char) character) != NULL)) {
-        g_free (result);
-        return NULL;
-      }
-      in += 2;
-    }
-    *out++ = (char) character;
-  }
-
-  *out = '\0';
-  g_assert ((gsize) (out - result) <= strlen (escaped_string));
-  return result;
-
-}
-
-
 static void
 gst_uri_protocol_check_internal (const gchar * uri, gchar ** endptr)
 {
@@ -466,7 +388,7 @@ gst_uri_get_location (const gchar * uri)
   if (!colon)
     return NULL;
 
-  unescaped = unescape_string (colon + 3, "/");
+  unescaped = g_uri_unescape_string (colon + 3, "/");
 
   /* On Windows an URI might look like file:///c:/foo/bar.txt or
    * file:///c|/foo/bar.txt (some Netscape versions) and we want to
