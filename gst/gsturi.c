@@ -155,102 +155,6 @@ gst_uri_error_quark (void)
   return g_quark_from_static_string ("gst-uri-error-quark");
 }
 
-#define HEX_ESCAPE '%'
-
-#ifndef GST_REMOVE_DEPRECATED
-static const guchar acceptable[96] = {  /* X0   X1   X2   X3   X4   X5   X6   X7   X8   X9   XA   XB   XC   XD   XE   XF */
-  0x00, 0x3F, 0x20, 0x20, 0x20, 0x00, 0x2C, 0x3F, 0x3F, 0x3F, 0x3F, 0x22, 0x20, 0x3F, 0x3F, 0x1C,       /* 2X  !"#$%&'()*+,-./   */
-  0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x38, 0x20, 0x20, 0x2C, 0x20, 0x2C,       /* 3X 0123456789:;<=>?   */
-  0x30, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F,       /* 4X @ABCDEFGHIJKLMNO   */
-  0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x20, 0x20, 0x20, 0x20, 0x3F,       /* 5X PQRSTUVWXYZ[\]^_   */
-  0x20, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F,       /* 6X `abcdefghijklmno   */
-  0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x20, 0x20, 0x20, 0x3F, 0x20        /* 7X pqrstuvwxyz{|}~DEL */
-};
-
-typedef enum
-{
-  UNSAFE_ALL = 0x1,             /* Escape all unsafe characters   */
-  UNSAFE_ALLOW_PLUS = 0x2,      /* Allows '+'  */
-  UNSAFE_PATH = 0x4,            /* Allows '/' and '?' and '&' and '='  */
-  UNSAFE_DOS_PATH = 0x8,        /* Allows '/' and '?' and '&' and '=' and ':' */
-  UNSAFE_HOST = 0x10,           /* Allows '/' and ':' and '@' */
-  UNSAFE_SLASHES = 0x20         /* Allows all characters except for '/' and '%' */
-} UnsafeCharacterSet;
-
-/*  Escape undesirable characters using %
- *  -------------------------------------
- *
- * This function takes a pointer to a string in which
- * some characters may be unacceptable unescaped.
- * It returns a string which has these characters
- * represented by a '%' character followed by two hex digits.
- *
- * This routine returns a g_malloced string.
- */
-
-static const gchar hex[16] = "0123456789ABCDEF";
-
-static gchar *
-escape_string_internal (const gchar * string, UnsafeCharacterSet mask)
-{
-#define ACCEPTABLE_CHAR(a) ((a)>=32 && (a)<128 && (acceptable[(a)-32] & use_mask))
-
-  const gchar *p;
-  gchar *q;
-  gchar *result;
-  guchar c;
-  gint unacceptable;
-  UnsafeCharacterSet use_mask;
-
-  g_return_val_if_fail (mask == UNSAFE_ALL
-      || mask == UNSAFE_ALLOW_PLUS
-      || mask == UNSAFE_PATH
-      || mask == UNSAFE_DOS_PATH
-      || mask == UNSAFE_HOST || mask == UNSAFE_SLASHES, NULL);
-
-  if (string == NULL) {
-    return NULL;
-  }
-
-  unacceptable = 0;
-  use_mask = mask;
-  for (p = string; *p != '\0'; p++) {
-    c = *p;
-    if (!ACCEPTABLE_CHAR (c)) {
-      unacceptable++;
-    }
-    if ((use_mask == UNSAFE_HOST) && (unacceptable || (c == '/'))) {
-      /* when escaping a host, if we hit something that needs to be escaped, or we finally
-       * hit a path separator, revert to path mode (the host segment of the url is over).
-       */
-      use_mask = UNSAFE_PATH;
-    }
-  }
-
-  result = g_malloc (p - string + unacceptable * 2 + 1);
-
-  use_mask = mask;
-  for (q = result, p = string; *p != '\0'; p++) {
-    c = *p;
-
-    if (!ACCEPTABLE_CHAR (c)) {
-      *q++ = HEX_ESCAPE;        /* means hex coming */
-      *q++ = hex[c >> 4];
-      *q++ = hex[c & 15];
-    } else {
-      *q++ = c;
-    }
-    if ((use_mask == UNSAFE_HOST) && (!ACCEPTABLE_CHAR (c) || (c == '/'))) {
-      use_mask = UNSAFE_PATH;
-    }
-  }
-
-  *q = '\0';
-
-  return result;
-}
-#endif
-
 static void
 gst_uri_protocol_check_internal (const gchar * uri, gchar ** endptr)
 {
@@ -434,7 +338,7 @@ gst_uri_construct (const gchar * protocol, const gchar * location)
   g_return_val_if_fail (location != NULL, NULL);
 
   proto_lowercase = g_ascii_strdown (protocol, -1);
-  escaped = escape_string_internal (location, UNSAFE_PATH);
+  escaped = g_uri_escape_string (location, "/?&=", FALSE);
   retval = g_strdup_printf ("%s://%s", proto_lowercase, escaped);
   g_free (escaped);
   g_free (proto_lowercase);
