@@ -1307,6 +1307,42 @@ gst_uri_new_with_base (GstUri * base, const gchar * scheme,
 static GstUri *
 _gst_uri_from_string_internal (const gchar * uri, gboolean unescape)
 {
+#if GLIB_CHECK_VERSION(2,66,0)
+  GstUri *gsturi;
+
+  gsturi = _gst_uri_new ();
+  if (gsturi && uri) {
+    GError *err = NULL;
+    char *path = NULL, *query = NULL;
+    gint port;
+
+    /* for compatibility with gsturi, ignore initial spaces */
+    while (*uri == '\v' || g_ascii_isspace (*uri))
+      uri++;
+
+    if (!g_uri_split (uri,
+            unescape ? G_URI_FLAGS_ENCODED_PATH | G_URI_FLAGS_ENCODED_QUERY :
+            G_URI_FLAGS_ENCODED | G_URI_FLAGS_PARSE_RELAXED, &gsturi->scheme,
+            &gsturi->userinfo, &gsturi->host, &port, &path, &query,
+            &gsturi->fragment, &err)) {
+      GST_DEBUG ("Unable to parse URI: %s", err->message);
+      g_error_free (err);
+      gst_uri_unref (gsturi);
+      return NULL;
+    }
+    /* for compatibility with gsturi, don't capture empty host */
+    if (!g_strcmp0 (gsturi->host, "")) {
+      g_clear_pointer (&gsturi->host, g_free);
+    }
+    gsturi->port = port > 0 ? port : 0;
+    gsturi->path = _gst_uri_path_to_list (path, TRUE);
+    gsturi->query = _gst_uri_query_to_table (query, TRUE);
+    g_free (path);
+    g_free (query);
+  }
+
+  return gsturi;
+#else
   const gchar *orig_uri = uri;
   GstUri *uri_obj;
 
@@ -1428,6 +1464,7 @@ _gst_uri_from_string_internal (const gchar * uri, gboolean unescape)
   }
 
   return uri_obj;
+#endif
 }
 
 /**
