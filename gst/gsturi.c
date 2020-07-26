@@ -202,7 +202,12 @@ gst_uri_protocol_is_valid (const gchar * protocol)
  * Tests if the given string is a valid URI identifier. URIs start with a valid
  * scheme followed by ":" and maybe a string identifying the location.
  *
+ * Note that this function doesn't check if the URI can be succesfully parsed
+ * and decoded. It merely checks the scheme is valid, followed by ':'.
+ *
  * Returns: %TRUE if the string is a valid URI
+ *
+ * Deprecated: 1.20: Use g_uri_is_valid() instead.
  */
 gboolean
 gst_uri_is_valid (const gchar * uri)
