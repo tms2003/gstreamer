@@ -255,19 +255,29 @@ gst_uri_get_protocol (const gchar * uri)
 gboolean
 gst_uri_has_protocol (const gchar * uri, const gchar * protocol)
 {
-  gchar *colon;
-
   g_return_val_if_fail (uri != NULL, FALSE);
   g_return_val_if_fail (protocol != NULL, FALSE);
   g_return_val_if_fail (gst_uri_is_valid (uri), FALSE);
 
-  colon = strstr (uri, ":");
+#if GLIB_CHECK_VERSION(2,66,0)
+  {
+    char *scheme = g_uri_parse_scheme (uri);
+    gboolean matches =
+        scheme ? g_ascii_strcasecmp (scheme, protocol) == 0 : FALSE;
+    g_free (scheme);
+    return matches;
+  }
+#else
+  {
+    gchar *colon = strstr (uri, ":");
 
-  if (colon == NULL)
-    return FALSE;
+    if (colon == NULL)
+      return FALSE;
 
-  return (colon - uri) == strlen (protocol)
-      && g_ascii_strncasecmp (uri, protocol, (gsize) (colon - uri)) == 0;
+    return (colon - uri) == strlen (protocol)
+        && g_ascii_strncasecmp (uri, protocol, (gsize) (colon - uri)) == 0;
+  }
+#endif
 }
 
 /**
