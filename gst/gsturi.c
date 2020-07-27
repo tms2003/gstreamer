@@ -1058,6 +1058,7 @@ _remove_dot_segments (GList * path)
   return out;
 }
 
+#if !GLIB_CHECK_VERSION(2,66,0)
 static gchar *
 _gst_uri_escape_userinfo (const gchar * userinfo)
 {
@@ -1080,6 +1081,14 @@ _gst_uri_escape_host_colon (const gchar * host)
 }
 
 static gchar *
+_gst_uri_escape_fragment (const gchar * fragment)
+{
+  return g_uri_escape_string (fragment,
+      G_URI_RESERVED_CHARS_ALLOWED_IN_PATH "?", FALSE);
+}
+#endif
+
+static gchar *
 _gst_uri_escape_path_segment (const gchar * segment)
 {
   return g_uri_escape_string (segment,
@@ -1096,13 +1105,6 @@ _gst_uri_escape_http_query_element (const gchar * element)
     if (*c == ' ')
       *c = '+';
   return ret;
-}
-
-static gchar *
-_gst_uri_escape_fragment (const gchar * fragment)
-{
-  return g_uri_escape_string (fragment,
-      G_URI_RESERVED_CHARS_ALLOWED_IN_PATH "?", FALSE);
 }
 
 static GList *
@@ -1813,6 +1815,21 @@ gst_uri_make_writable (GstUri * uri)
 gchar *
 gst_uri_to_string (const GstUri * uri)
 {
+#if GLIB_CHECK_VERSION(2,66,0)
+  char *path = NULL, *query = NULL, *str;
+
+  g_return_val_if_fail (GST_IS_URI (uri), NULL);
+
+  path = gst_uri_get_path_string (uri);
+  query = gst_uri_get_query_string (uri);
+  str = g_uri_join (G_URI_FLAGS_ENCODED_PATH | G_URI_FLAGS_ENCODED_QUERY,
+      uri->scheme, uri->userinfo, uri->host, uri->port ? uri->port : -1,
+      path, query, uri->fragment);
+
+  g_free (path);
+  g_free (query);
+  return str;
+#else
   GString *uri_str;
   gchar *escaped;
 
@@ -1868,6 +1885,7 @@ gst_uri_to_string (const GstUri * uri)
   }
 
   return g_string_free (uri_str, FALSE);
+#endif
 }
 
 /**
