@@ -1306,7 +1306,7 @@ _gst_uri_path_to_list (const gchar * str, gboolean unescape)
 
 static GHashTable *
 _gst_uri_string_to_table (const gchar * str, const gchar * part_sep,
-    const gchar * kv_sep, gboolean convert, gboolean unescape)
+    const gchar * kv_sep, gboolean unescape)
 {
   GHashTable *new_table = NULL;
 
@@ -1316,7 +1316,7 @@ _gst_uri_string_to_table (const gchar * str, const gchar * part_sep,
 
     new_table = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, g_free);
 
-    if (convert && !unescape) {
+    if (!unescape) {
       pct_part_sep = g_strdup_printf ("%%%2.2X", (guint) (*part_sep));
       pct_kv_sep = g_strdup_printf ("%%%2.2X", (guint) (*kv_sep));
     }
@@ -1330,7 +1330,7 @@ _gst_uri_string_to_table (const gchar * str, const gchar * part_sep,
         gchar *key, *value;
         /* if we are converting percent encoded versions of separators then
          *  substitute the part separator now. */
-        if (convert && !unescape) {
+        if (!unescape) {
           gchar *next_sep;
           for (next_sep = strcasestr (part, pct_part_sep); next_sep;
               next_sep = strcasestr (next_sep + 1, pct_part_sep)) {
@@ -1358,7 +1358,7 @@ _gst_uri_string_to_table (const gchar * str, const gchar * part_sep,
         }
         /* if we are converting percent encoded versions of separators then
          *  substitute the key/value separator in both key and value now. */
-        if (convert && !unescape) {
+        if (!unescape) {
           gchar *next_sep;
           for (next_sep = strcasestr (key, pct_kv_sep); next_sep;
               next_sep = strcasestr (next_sep + 1, pct_kv_sep)) {
@@ -1379,7 +1379,7 @@ _gst_uri_string_to_table (const gchar * str, const gchar * part_sep,
     }
     /* tidy up */
     g_strfreev (split_parts);
-    if (convert && !unescape) {
+    if (!unescape) {
       g_free (pct_part_sep);
       g_free (pct_kv_sep);
     }
@@ -1427,7 +1427,7 @@ gst_uri_new (const gchar * scheme, const gchar * userinfo, const gchar * host,
     new_uri->host = g_strdup (host);
     new_uri->port = port;
     new_uri->path = _gst_uri_path_to_list (path, FALSE);
-    new_uri->query = _gst_uri_string_to_table (query, "&", "=", TRUE, FALSE);
+    new_uri->query = _gst_uri_string_to_table (query, "&", "=", FALSE);
     new_uri->fragment = g_strdup (fragment);
   }
 
@@ -1576,13 +1576,12 @@ _gst_uri_from_string_internal (const gchar * uri, gboolean unescape)
       gchar *eoq;
       eoq = strchr (++uri, '#');
       if (eoq == NULL) {
-        uri_obj->query = _gst_uri_string_to_table (uri, "&", "=", TRUE, TRUE);
+        uri_obj->query = _gst_uri_string_to_table (uri, "&", "=", TRUE);
         uri = NULL;
       } else {
         if (eoq != uri) {
           gchar *query_str = g_strndup (uri, eoq - uri);
-          uri_obj->query = _gst_uri_string_to_table (query_str, "&", "=", TRUE,
-              TRUE);
+          uri_obj->query = _gst_uri_string_to_table (query_str, "&", "=", TRUE);
           g_free (query_str);
         }
         uri = eoq;
@@ -2574,7 +2573,7 @@ gst_uri_set_query_string (GstUri * uri, const gchar * query)
 
   if (uri->query)
     g_hash_table_unref (uri->query);
-  uri->query = _gst_uri_string_to_table (query, "&", "=", TRUE, TRUE);
+  uri->query = _gst_uri_string_to_table (query, "&", "=", TRUE);
 
   return TRUE;
 }
@@ -2847,5 +2846,5 @@ gst_uri_get_media_fragment_table (const GstUri * uri)
 
   if (!uri->fragment)
     return NULL;
-  return _gst_uri_string_to_table (uri->fragment, "&", "=", TRUE, TRUE);
+  return _gst_uri_string_to_table (uri->fragment, "&", "=", TRUE);
 }
