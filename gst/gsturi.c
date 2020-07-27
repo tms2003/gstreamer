@@ -1280,15 +1280,14 @@ _gst_uri_escape_fragment (const gchar * fragment)
 }
 
 static GList *
-_gst_uri_string_to_list (const gchar * str, const gchar * sep,
-    gboolean unescape)
+_gst_uri_path_to_list (const gchar * str, gboolean unescape)
 {
   GList *new_list = NULL;
 
   if (str) {
     gchar **split_str;
 
-    split_str = g_strsplit (str, sep, -1);
+    split_str = g_strsplit (str, "/", -1);
     if (split_str) {
       gchar **next_elem;
       for (next_elem = split_str; *next_elem; next_elem += 1) {
@@ -1433,7 +1432,7 @@ gst_uri_new (const gchar * scheme, const gchar * userinfo, const gchar * host,
     new_uri->userinfo = g_strdup (userinfo);
     new_uri->host = g_strdup (host);
     new_uri->port = port;
-    new_uri->path = _gst_uri_string_to_list (path, "/", FALSE);
+    new_uri->path = _gst_uri_path_to_list (path, FALSE);
     new_uri->query = _gst_uri_string_to_table (query, "&", "=", TRUE, FALSE);
     new_uri->fragment = g_strdup (fragment);
   }
@@ -1567,12 +1566,12 @@ _gst_uri_from_string_internal (const gchar * uri, gboolean unescape)
       size_t len;
       len = strcspn (uri, "?#");
       if (uri[len] == '\0') {
-        uri_obj->path = _gst_uri_string_to_list (uri, "/", TRUE);
+        uri_obj->path = _gst_uri_path_to_list (uri, TRUE);
         uri = NULL;
       } else {
         if (len > 0) {
           gchar *path_str = g_strndup (uri, len);
-          uri_obj->path = _gst_uri_string_to_list (path_str, "/", TRUE);
+          uri_obj->path = _gst_uri_path_to_list (path_str, TRUE);
           g_free (path_str);
         }
         uri += len;
@@ -2323,7 +2322,7 @@ gst_uri_set_path (GstUri * uri, const gchar * path)
   g_return_val_if_fail (GST_IS_URI (uri) && gst_uri_is_writable (uri), FALSE);
 
   g_list_free_full (uri->path, g_free);
-  uri->path = _gst_uri_string_to_list (path, "/", FALSE);
+  uri->path = _gst_uri_path_to_list (path, FALSE);
 
   return TRUE;
 }
@@ -2389,7 +2388,7 @@ gst_uri_set_path_string (GstUri * uri, const gchar * path)
   g_return_val_if_fail (GST_IS_URI (uri) && gst_uri_is_writable (uri), FALSE);
 
   g_list_free_full (uri->path, g_free);
-  uri->path = _gst_uri_string_to_list (path, "/", TRUE);
+  uri->path = _gst_uri_path_to_list (path, TRUE);
   return TRUE;
 }
 
@@ -2478,7 +2477,7 @@ gst_uri_append_path (GstUri * uri, const gchar * relative_path)
       uri->path = g_list_delete_link (uri->path, last_elem);
     }
   }
-  rel_path_list = _gst_uri_string_to_list (relative_path, "/", FALSE);
+  rel_path_list = _gst_uri_path_to_list (relative_path, FALSE);
   /* if path was absolute, make it relative by removing initial NULL element */
   if (rel_path_list && rel_path_list->data == NULL) {
     rel_path_list = g_list_delete_link (rel_path_list, rel_path_list);
