@@ -1291,17 +1291,11 @@ _gst_uri_path_to_list (const gchar * str, gboolean unescape)
     if (split_str) {
       gchar **next_elem;
       for (next_elem = split_str; *next_elem; next_elem += 1) {
-        gchar *elem = *next_elem;
-        if (*elem == '\0') {
-          new_list = g_list_append (new_list, NULL);
-        } else {
-          if (unescape) {
-            *next_elem = g_uri_unescape_string (elem, NULL);
-            g_free (elem);
-            elem = *next_elem;
-          }
-          new_list = g_list_append (new_list, g_strdup (elem));
-        }
+        gchar *elem = **next_elem ? *next_elem : NULL;
+
+        elem = unescape ? g_uri_unescape_string (elem, NULL) : g_strdup (elem);
+
+        new_list = g_list_append (new_list, elem);
       }
     }
     g_strfreev (split_str);
