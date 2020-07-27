@@ -997,22 +997,6 @@ _gst_uri_normalize_path (GList ** path)
   return FALSE;
 }
 
-static gboolean
-_gst_uri_normalize_str_noop (gchar * str)
-{
-  return FALSE;
-}
-
-static gboolean
-_gst_uri_normalize_table_noop (GHashTable * table)
-{
-  return FALSE;
-}
-
-#define _gst_uri_normalize_userinfo _gst_uri_normalize_str_noop
-#define _gst_uri_normalize_query _gst_uri_normalize_table_noop
-#define _gst_uri_normalize_fragment _gst_uri_normalize_str_noop
-
 /* RFC 3986 functions */
 
 static GList *
@@ -1954,11 +1938,8 @@ gst_uri_normalize (GstUri * uri)
   g_return_val_if_fail (GST_IS_URI (uri) && gst_uri_is_writable (uri), FALSE);
 
   return _gst_uri_normalize_scheme (uri->scheme) |
-      _gst_uri_normalize_userinfo (uri->userinfo) |
       _gst_uri_normalize_hostname (uri->host) |
-      _gst_uri_normalize_path (&uri->path) |
-      _gst_uri_normalize_query (uri->query) |
-      _gst_uri_normalize_fragment (uri->fragment);
+      _gst_uri_normalize_path (&uri->path);
 }
 
 /**
