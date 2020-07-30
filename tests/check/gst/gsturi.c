@@ -1198,7 +1198,7 @@ GST_START_TEST (test_uri_has_protocol)
   g_assert_true (gst_uri_has_protocol ("foo://blah", "foo"));
   g_assert_true (gst_uri_has_protocol ("Foo://blah", "fOo"));
   g_assert_false (gst_uri_has_protocol ("bar://blah", "fOo"));
-  g_assert_true (gst_uri_has_protocol ("scheme://blah", "schemefoo"));
+  g_assert_false (gst_uri_has_protocol ("scheme://blah", "schemefoo"));
 }
 
 GST_END_TEST;

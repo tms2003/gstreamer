@@ -266,7 +266,8 @@ gst_uri_has_protocol (const gchar * uri, const gchar * protocol)
   if (colon == NULL)
     return FALSE;
 
-  return (g_ascii_strncasecmp (uri, protocol, (gsize) (colon - uri)) == 0);
+  return (colon - uri) == strlen (protocol)
+      && g_ascii_strncasecmp (uri, protocol, (gsize) (colon - uri)) == 0;
 }
 
 /**
