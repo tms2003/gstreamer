@@ -1193,6 +1193,16 @@ GST_START_TEST (test_url_unescape_equals_in_http_query)
 
 GST_END_TEST;
 
+GST_START_TEST (test_uri_has_protocol)
+{
+  g_assert_true (gst_uri_has_protocol ("foo://blah", "foo"));
+  g_assert_true (gst_uri_has_protocol ("Foo://blah", "fOo"));
+  g_assert_false (gst_uri_has_protocol ("bar://blah", "fOo"));
+  g_assert_true (gst_uri_has_protocol ("scheme://blah", "schemefoo"));
+}
+
+GST_END_TEST;
+
 static Suite *
 gst_uri_suite (void)
 {
@@ -1222,6 +1232,7 @@ gst_uri_suite (void)
   tcase_add_test (tc_chain, test_url_get_set);
   tcase_add_test (tc_chain, test_url_get_media_fragment_table);
   tcase_add_test (tc_chain, test_url_unescape_equals_in_http_query);
+  tcase_add_test (tc_chain, test_uri_has_protocol);
 
   return s;
 }
