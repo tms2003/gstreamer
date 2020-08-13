@@ -1215,6 +1215,7 @@ main (int argc, char *argv[])
 #endif
   gboolean no_position = FALSE;
   gboolean force_position = FALSE;
+  gint i, repeat = 1;
 #ifndef GST_DISABLE_OPTION_PARSING
   GOptionEntry options[] = {
     {"tags", 't', 0, G_OPTION_ARG_NONE, &tags,
@@ -1251,6 +1252,9 @@ main (int argc, char *argv[])
               "stdout is not a TTY. This option has no effect if "
               "the \"no-position\" option is specified"),
         NULL},
+    {"repeat", 'r', 0, G_OPTION_ARG_INT, &repeat,
+          N_("Run pipeline N times in succession"),
+        "N"},
     {NULL}
   };
   GOptionContext *ctx;
@@ -1299,8 +1303,10 @@ main (int argc, char *argv[])
     fault_setup ();
 #endif
 
-  if (run_pipeline (argc, argv, verbose) == 1)
-    return 1;
+  for (i = 0; i < repeat; ++i) {
+    if (run_pipeline (argc, argv, verbose) == 1)
+      return 1;
+  }
 
   gst_deinit ();
 
