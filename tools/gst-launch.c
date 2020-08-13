@@ -1030,107 +1030,17 @@ query_pipeline_position (gpointer user_data)
   return G_SOURCE_CONTINUE;
 }
 
-int
-main (int argc, char *argv[])
+static int
+run_pipeline (int argc, char *argv[], gboolean verbose)
 {
-  /* options */
-  gboolean verbose = FALSE;
-  gboolean no_fault = FALSE;
-#if 0
-  gboolean check_index = FALSE;
-#endif
-  gchar *savefile = NULL;
-  gboolean no_position = FALSE;
-  gboolean force_position = FALSE;
-#ifndef GST_DISABLE_OPTION_PARSING
-  GOptionEntry options[] = {
-    {"tags", 't', 0, G_OPTION_ARG_NONE, &tags,
-        N_("Output tags (also known as metadata)"), NULL},
-    {"toc", 'c', 0, G_OPTION_ARG_NONE, &toc,
-        N_("Output TOC (chapters and editions)"), NULL},
-    {"verbose", 'v', 0, G_OPTION_ARG_NONE, &verbose,
-        N_("Output status information and property notifications"), NULL},
-    {"quiet", 'q', 0, G_OPTION_ARG_NONE, &quiet,
-        N_("Do not print any progress information"), NULL},
-    {"messages", 'm', 0, G_OPTION_ARG_NONE, &messages,
-        N_("Output messages"), NULL},
-    {"exclude", 'X', 0, G_OPTION_ARG_STRING_ARRAY, &exclude_args,
-          N_("Do not output status information for the specified property "
-              "if verbose output is enabled (can be used multiple times)"),
-        N_("PROPERTY-NAME")},
-    {"no-fault", 'f', 0, G_OPTION_ARG_NONE, &no_fault,
-        N_("Do not install a fault handler"), NULL},
-    {"eos-on-shutdown", 'e', 0, G_OPTION_ARG_NONE, &eos_on_shutdown,
-        N_("Force EOS on sources before shutting the pipeline down"), NULL},
-#if 0
-    {"index", 'i', 0, G_OPTION_ARG_NONE, &check_index,
-        N_("Gather and print index statistics"), NULL},
-#endif
-    GST_TOOLS_GOPTION_VERSION,
-    {"no-position", '\0', 0, G_OPTION_ARG_NONE, &no_position,
-        N_("Do not print current position of pipeline. "
-              "If this option is unspecified, the position will be printed "
-              "when stdout is a TTY. "
-              "To enable printing position when stdout is not a TTY, "
-              "use \"force-position\" option"), NULL},
-    {"force-position", '\0', 0, G_OPTION_ARG_NONE, &force_position,
-          N_("Allow printing current position of pipeline even if "
-              "stdout is not a TTY. This option has no effect if "
-              "the \"no-position\" option is specified"),
-        NULL},
-    {NULL}
-  };
-  GOptionContext *ctx;
-  GError *err = NULL;
-#endif
-#if 0
-  GstIndex *index;
-  GPtrArray *index_stats = NULL;
-#endif
   gchar **argvn;
   GError *error = NULL;
   gulong deep_notify_id = 0;
   guint bus_watch_id = 0;
   GSource *position_source = NULL;
-
-  free (malloc (8));            /* -lefence */
-
-  setlocale (LC_ALL, "");
-
-#ifdef ENABLE_NLS
-  bindtextdomain (GETTEXT_PACKAGE, LOCALEDIR);
-  bind_textdomain_codeset (GETTEXT_PACKAGE, "UTF-8");
-  textdomain (GETTEXT_PACKAGE);
-#endif
-
-  g_set_prgname ("gst-launch-" GST_API_VERSION);
-  /* Ensure XInitThreads() is called if/when needed */
-  g_setenv ("GST_GL_XINITTHREADS", "1", TRUE);
-
-#ifndef GST_DISABLE_OPTION_PARSING
-  ctx = g_option_context_new ("PIPELINE-DESCRIPTION");
-  g_option_context_add_main_entries (ctx, options, GETTEXT_PACKAGE);
-  g_option_context_add_group (ctx, gst_init_get_option_group ());
-  if (!g_option_context_parse (ctx, &argc, &argv, &err)) {
-    if (err)
-      gst_printerr ("Error initializing: %s\n", GST_STR_NULL (err->message));
-    else
-      gst_printerr ("Error initializing: Unknown error!\n");
-    g_clear_error (&err);
-    g_option_context_free (ctx);
-    exit (1);
-  }
-  g_option_context_free (ctx);
-#else
-  gst_init (&argc, &argv);
-#endif
-
-  gst_tools_print_version ();
-
-#ifdef G_OS_UNIX
-  if (!no_fault)
-    fault_setup ();
-#endif
+  gchar *savefile = NULL;
+  gboolean no_position = FALSE;
+  gboolean force_position = FALSE;
 
   /* make a null-terminated version of argv */
   argvn = g_new0 (char *, argc);
@@ -1289,6 +1199,108 @@ main (int argc, char *argv[])
 
   PRINT (_("Freeing pipeline ...\n"));
   gst_object_unref (pipeline);
+  pipeline = NULL;
+
+  return 0;
+}
+
+int
+main (int argc, char *argv[])
+{
+  /* options */
+  gboolean verbose = FALSE;
+  gboolean no_fault = FALSE;
+#if 0
+  gboolean check_index = FALSE;
+#endif
+  gboolean no_position = FALSE;
+  gboolean force_position = FALSE;
+#ifndef GST_DISABLE_OPTION_PARSING
+  GOptionEntry options[] = {
+    {"tags", 't', 0, G_OPTION_ARG_NONE, &tags,
+        N_("Output tags (also known as metadata)"), NULL},
+    {"toc", 'c', 0, G_OPTION_ARG_NONE, &toc,
+        N_("Output TOC (chapters and editions)"), NULL},
+    {"verbose", 'v', 0, G_OPTION_ARG_NONE, &verbose,
+        N_("Output status information and property notifications"), NULL},
+    {"quiet", 'q', 0, G_OPTION_ARG_NONE, &quiet,
+        N_("Do not print any progress information"), NULL},
+    {"messages", 'm', 0, G_OPTION_ARG_NONE, &messages,
+        N_("Output messages"), NULL},
+    {"exclude", 'X', 0, G_OPTION_ARG_STRING_ARRAY, &exclude_args,
+          N_("Do not output status information for the specified property "
+              "if verbose output is enabled (can be used multiple times)"),
+        N_("PROPERTY-NAME")},
+    {"no-fault", 'f', 0, G_OPTION_ARG_NONE, &no_fault,
+        N_("Do not install a fault handler"), NULL},
+    {"eos-on-shutdown", 'e', 0, G_OPTION_ARG_NONE, &eos_on_shutdown,
+        N_("Force EOS on sources before shutting the pipeline down"), NULL},
+#if 0
+    {"index", 'i', 0, G_OPTION_ARG_NONE, &check_index,
+        N_("Gather and print index statistics"), NULL},
+#endif
+    GST_TOOLS_GOPTION_VERSION,
+    {"no-position", '\0', 0, G_OPTION_ARG_NONE, &no_position,
+        N_("Do not print current position of pipeline. "
+              "If this option is unspecified, the position will be printed "
+              "when stdout is a TTY. "
+              "To enable printing position when stdout is not a TTY, "
+              "use \"force-position\" option"), NULL},
+    {"force-position", '\0', 0, G_OPTION_ARG_NONE, &force_position,
+          N_("Allow printing current position of pipeline even if "
+              "stdout is not a TTY. This option has no effect if "
+              "the \"no-position\" option is specified"),
+        NULL},
+    {NULL}
+  };
+  GOptionContext *ctx;
+  GError *err = NULL;
+#endif
+#if 0
+  GstIndex *index;
+  GPtrArray *index_stats = NULL;
+#endif
+  free (malloc (8));            /* -lefence */
+
+  setlocale (LC_ALL, "");
+
+#ifdef ENABLE_NLS
+  bindtextdomain (GETTEXT_PACKAGE, LOCALEDIR);
+  bind_textdomain_codeset (GETTEXT_PACKAGE, "UTF-8");
+  textdomain (GETTEXT_PACKAGE);
+#endif
+
+  g_set_prgname ("gst-launch-" GST_API_VERSION);
+  /* Ensure XInitThreads() is called if/when needed */
+  g_setenv ("GST_GL_XINITTHREADS", "1", TRUE);
+
+#ifndef GST_DISABLE_OPTION_PARSING
+  ctx = g_option_context_new ("PIPELINE-DESCRIPTION");
+  g_option_context_add_main_entries (ctx, options, GETTEXT_PACKAGE);
+  g_option_context_add_group (ctx, gst_init_get_option_group ());
+  if (!g_option_context_parse (ctx, &argc, &argv, &err)) {
+    if (err)
+      gst_printerr ("Error initializing: %s\n", GST_STR_NULL (err->message));
+    else
+      gst_printerr ("Error initializing: Unknown error!\n");
+    g_clear_error (&err);
+    g_option_context_free (ctx);
+    exit (1);
+  }
+  g_option_context_free (ctx);
+#else
+  gst_init (&argc, &argv);
+#endif
+
+  gst_tools_print_version ();
+
+#ifdef G_OS_UNIX
+  if (!no_fault)
+    fault_setup ();
+#endif
+
+  if (run_pipeline (argc, argv, verbose) == 1)
+    return 1;
 
   gst_deinit ();
 
