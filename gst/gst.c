@@ -315,7 +315,13 @@ gst_init_get_option_group (void)
 
   return group;
 #else
-  return NULL;
+  /*
+   * GST_DISABLE_OPTION_PARSING breaks the semantics of
+   * gst_init_get_options_group() in a way that will likely leave GStreamer
+   * uninitialized. Thus no application should call gst_init_get_options_group()
+   * under this condition.
+   */
+  g_assert_not_reached ();
 #endif
 }
 
