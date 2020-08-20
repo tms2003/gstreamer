@@ -337,6 +337,11 @@ struct _GstAggregatorPrivate
   /* Our state is >= PAUSED */
   gboolean running;             /* protected by src_lock */
 
+  /* Set by subclasses if want to running on live mode */
+  gboolean is_live;
+  gboolean live_running;
+  gboolean update_live_start_time;
+
   /* seqnum from last seek or common seqnum to flush start events received
    * on all pads, for flushing without a seek */
   guint32 next_seqnum;
@@ -750,14 +755,17 @@ gst_aggregator_wait_and_check (GstAggregator * self, gboolean * timeout)
   GstClockTime start;
   gboolean res;
   gboolean have_event_or_query = FALSE;
+  gboolean wait_playing = FALSE;
 
   *timeout = FALSE;
 
   SRC_LOCK (self);
 
-  latency = gst_aggregator_get_latency_unlocked (self);
+  if (self->priv->is_live && !self->priv->live_running)
+    wait_playing = TRUE;
 
-  if (gst_aggregator_check_pads_ready (self, &have_event_or_query)) {
+  if (gst_aggregator_check_pads_ready (self, &have_event_or_query) &&
+      !wait_playing) {
     GST_DEBUG_OBJECT (self, "all pads have data");
     SRC_UNLOCK (self);
 
@@ -777,6 +785,33 @@ gst_aggregator_wait_and_check (GstAggregator * self, gboolean * timeout)
     SRC_UNLOCK (self);
 
     return FALSE;
+  }
+
+  if (wait_playing) {
+    GST_DEBUG_OBJECT (self, "Live mode, wait PLAYING state");
+    SRC_WAIT (self);
+    if (!self->priv->live_running) {
+      SRC_UNLOCK (self);
+      GST_DEBUG_OBJECT (self, "Still not in PLAYING state");
+
+      return FALSE;
+    }
+  }
+
+  latency = gst_aggregator_get_latency_unlocked (self);
+  if (!GST_CLOCK_TIME_IS_VALID (latency) && self->priv->is_live) {
+    GST_DEBUG_OBJECT (self,
+        "peer latency is not valid, use internal latency value");
+    latency = 0;
+    if (GST_CLOCK_TIME_IS_VALID (self->priv->peer_latency_min))
+      latency += self->priv->peer_latency_min;
+    if (GST_CLOCK_TIME_IS_VALID (self->priv->latency))
+      latency += self->priv->latency;
+    if (GST_CLOCK_TIME_IS_VALID (self->priv->sub_latency_min))
+      latency += self->priv->sub_latency_min;
+
+    GST_DEBUG_OBJECT (self, "calculated latency %" GST_TIME_FORMAT,
+        GST_TIME_ARGS (latency));
   }
 
   start = gst_aggregator_get_next_time (self);
@@ -1314,6 +1349,37 @@ gst_aggregator_aggregate_func (GstAggregator * self)
       }
     }
 
+    if (self->priv->is_live && self->priv->update_live_start_time) {
+      GstClockTime start_time = GST_CLOCK_TIME_NONE;
+      GstAggregatorPad *srcpad = GST_AGGREGATOR_PAD (self->srcpad);
+
+      if (srcpad->segment.format == GST_FORMAT_TIME) {
+        GstClockTime base_time, now;
+        GstClock *clock = GST_ELEMENT_CLOCK (self);
+
+
+        base_time = GST_ELEMENT_CAST (self)->base_time;
+        now = gst_clock_get_time (clock);
+        start_time = now - base_time;
+
+        start_time = MAX (start_time, srcpad->segment.start);
+        start_time =
+            gst_segment_to_running_time (&srcpad->segment,
+            GST_FORMAT_TIME, start_time);
+      } else {
+        start_time = srcpad->segment.start;
+        GST_WARNING_OBJECT (self,
+            "Ignoring request of selecting the \"now\" start time "
+            "as the segment is a %s segment instead of a time segment",
+            gst_format_get_name (srcpad->segment.format));
+      }
+
+      GST_DEBUG_OBJECT (self, "New start time %" GST_TIME_FORMAT,
+          GST_TIME_ARGS (start_time));
+      srcpad->segment.position = start_time;
+      self->priv->update_live_start_time = FALSE;
+    }
+
     if (timeout || flow_return >= GST_FLOW_OK) {
       GST_TRACE_OBJECT (self, "Actually aggregating!");
       flow_return = klass->aggregate (self, timeout);
@@ -1377,6 +1443,7 @@ gst_aggregator_start (GstAggregator * self)
 
   self->priv->send_stream_start = TRUE;
   self->priv->send_segment = TRUE;
+  self->priv->update_live_start_time = TRUE;
   self->priv->send_eos = TRUE;
   self->priv->srccaps = NULL;
 
@@ -1822,18 +1889,35 @@ gst_aggregator_stop (GstAggregator * agg)
   return result;
 }
 
+static gboolean
+gst_aggregator_set_playing (GstAggregator * self, gboolean running)
+{
+  SRC_LOCK (self);
+  self->priv->live_running = running;
+  /* And unschedule clock */
+  SRC_BROADCAST (self);
+  SRC_UNLOCK (self);
+
+  return TRUE;
+}
+
 /* GstElement vmethods implementations */
 static GstStateChangeReturn
 gst_aggregator_change_state (GstElement * element, GstStateChange transition)
 {
   GstStateChangeReturn ret;
   GstAggregator *self = GST_AGGREGATOR (element);
+  gboolean no_preroll = FALSE;
 
   switch (transition) {
     case GST_STATE_CHANGE_READY_TO_PAUSED:
       if (!gst_aggregator_start (self))
         goto error_start;
+      no_preroll = gst_aggregator_is_live (self);
       break;
+    case GST_STATE_CHANGE_PAUSED_TO_PLAYING:
+      if (gst_aggregator_is_live (self))
+        gst_aggregator_set_playing (self, TRUE);
     default:
       break;
   }
@@ -1845,6 +1929,12 @@ gst_aggregator_change_state (GstElement * element, GstStateChange transition)
 
 
   switch (transition) {
+    case GST_STATE_CHANGE_PLAYING_TO_PAUSED:
+      if (gst_aggregator_is_live (self)) {
+        gst_aggregator_set_playing (self, FALSE);
+        no_preroll = TRUE;
+      }
+      break;
     case GST_STATE_CHANGE_PAUSED_TO_READY:
       if (!gst_aggregator_stop (self)) {
         /* What to do in this case? Error out? */
@@ -1854,6 +1944,9 @@ gst_aggregator_change_state (GstElement * element, GstStateChange transition)
     default:
       break;
   }
+
+  if (no_preroll && ret == GST_STATE_CHANGE_SUCCESS)
+    ret = GST_STATE_CHANGE_NO_PREROLL;
 
   return ret;
 
@@ -2634,6 +2727,12 @@ gst_aggregator_get_property (GObject * object, guint prop_id,
   }
 }
 
+static GstClock *
+gst_aggregator_provide_clock (GstElement * element)
+{
+  return gst_system_clock_obtain ();
+}
+
 /* GObject vmethods implementations */
 static void
 gst_aggregator_class_init (GstAggregatorClass * klass)
@@ -2675,6 +2774,8 @@ gst_aggregator_class_init (GstAggregatorClass * klass)
       GST_DEBUG_FUNCPTR (gst_aggregator_release_pad);
   gstelement_class->change_state =
       GST_DEBUG_FUNCPTR (gst_aggregator_change_state);
+  gstelement_class->provide_clock =
+      GST_DEBUG_FUNCPTR (gst_aggregator_provide_clock);
 
   gobject_class->set_property = gst_aggregator_set_property;
   gobject_class->get_property = gst_aggregator_get_property;
@@ -2958,7 +3059,7 @@ gst_aggregator_pad_chain_internal (GstAggregator * self,
     PAD_UNLOCK (aggpad);
   }
 
-  if (self->priv->first_buffer) {
+  if (self->priv->first_buffer && !self->priv->is_live) {
     GstClockTime start_time;
     GstAggregatorPad *srcpad = GST_AGGREGATOR_PAD (self->srcpad);
 
@@ -3611,6 +3712,7 @@ gst_aggregator_update_segment (GstAggregator * self, const GstSegment * segment)
   GST_OBJECT_LOCK (self);
   GST_AGGREGATOR_PAD (self->srcpad)->segment = *segment;
   self->priv->send_segment = TRUE;
+  self->priv->update_live_start_time = TRUE;
   GST_OBJECT_UNLOCK (self);
 }
 
@@ -3645,4 +3747,28 @@ gst_aggregator_selected_samples (GstAggregator * self,
   }
 
   self->priv->selected_samples_called_or_warned = TRUE;
+}
+
+void
+gst_aggregator_set_live (GstAggregator * self, gboolean live)
+{
+  g_return_if_fail (GST_IS_AGGREGATOR (self));
+
+  GST_OBJECT_LOCK (self);
+  self->priv->is_live = live;
+  GST_OBJECT_UNLOCK (self);
+}
+
+gboolean
+gst_aggregator_is_live (GstAggregator * self)
+{
+  gboolean result;
+
+  g_return_val_if_fail (GST_IS_AGGREGATOR (self), FALSE);
+
+  GST_OBJECT_LOCK (self);
+  result = self->priv->is_live;
+  GST_OBJECT_UNLOCK (self);
+
+  return result;
 }

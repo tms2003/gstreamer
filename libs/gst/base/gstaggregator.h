@@ -424,6 +424,13 @@ void            gst_aggregator_selected_samples     (GstAggregator              
                                                      GstClockTime                   duration,
                                                      GstStructure                 * info);
 
+GST_BASE_API
+void            gst_aggregator_set_live             (GstAggregator                * self,
+                                                     gboolean                       live);
+
+GST_BASE_API
+gboolean        gst_aggregator_is_live              (GstAggregator                * self);
+
 /**
  * GstAggregatorStartTimeSelection:
  * @GST_AGGREGATOR_START_TIME_SELECTION_ZERO: Start at running time 0.
