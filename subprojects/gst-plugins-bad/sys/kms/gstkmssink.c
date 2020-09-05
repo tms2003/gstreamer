@@ -71,10 +71,57 @@
 #define GST_PLUGIN_NAME "kmssink"
 #define GST_PLUGIN_DESC "Video sink using the Linux kernel mode setting API"
 
+#define cache_drm_properties(TYPE, filed, drm_fd)                       \
+  do {                                                                  \
+    drmModeObjectProperties *props; gint i;                             \
+    props = drmModeObjectGetProperties (drm_fd, filed##_id,             \
+      DRM_MODE_OBJECT_##TYPE);                                          \
+    g_return_val_if_fail (props, FALSE);                                \
+    for (i = 0; i < props->count_props; i++) {                          \
+      GQuark key_id; drmModePropertyRes *prop;                          \
+      prop = drmModeGetProperty (drm_fd, props->props[i]);              \
+      if (!prop)                                                        \
+        continue;                                                       \
+      key_id = g_quark_from_static_string (prop->name);                 \
+      g_datalist_id_set_data_full (&(filed##_props), key_id, prop,      \
+                      destroy_drm_prop);                                \
+    }                                                                   \
+    drmModeFreeObjectProperties(props);                                 \
+  } while (0)
+
+#define add_drm_property(TYPE, req, _name, value)                       \
+  do {                                                                  \
+    GQuark key_id; drmModePropertyRes *prop;                            \
+    key_id = g_quark_try_string (_name);                                \
+    if (!key_id) {                                                      \
+      return  -1;                                                       \
+    }                                                                   \
+    prop = g_datalist_id_get_data (&(TYPE##_props), key_id);            \
+    if (!prop) {                                                        \
+      return -1;                                                        \
+    }                                                                   \
+    ret = drmModeAtomicAddProperty (req, TYPE##_id,                     \
+                                    prop->prop_id, value);              \
+  } while (0)
+
+#define get_drm_property(TYPE, _name, _value)                           \
+  do {                                                                  \
+    GQuark key_id;                                                      \
+    key_id = g_quark_try_string (_name);                                \
+    if (!key_id) {                                                      \
+      return FALSE;                                                     \
+    }                                                                   \
+    _value = g_datalist_id_get_data (&(TYPE##_props), key_id);          \
+    if (!_value) {                                                      \
+      return FALSE;                                                     \
+    }                                                                   \
+  } while (0)
+
 GST_DEBUG_CATEGORY_STATIC (gst_kms_sink_debug);
 GST_DEBUG_CATEGORY_STATIC (CAT_PERFORMANCE);
 #define GST_CAT_DEFAULT gst_kms_sink_debug
 
+static gboolean gst_kms_sink_wait_event (GstKMSSink * self);
 static GstFlowReturn gst_kms_sink_show_frame (GstVideoSink * vsink,
     GstBuffer * buf);
 static void gst_kms_sink_video_overlay_init (GstVideoOverlayInterface * iface);
@@ -105,10 +152,9 @@ enum
   PROP_PLANE_PROPS,
   PROP_FD,
   PROP_SKIP_VSYNC,
+  PROP_FORCE_LEGACY,
   PROP_N,
 };
-
-static GParamSpec *g_properties[PROP_N] = { NULL, };
 
 #ifdef HAVE_DRM_HDR
 enum hdmi_metadata_type
@@ -122,7 +168,144 @@ enum hdmi_eotf
   HDMI_EOTF_SMPTE_ST2084,
   HDMI_EOTF_BT_2100_HLG,
 };
+#endif
 
+static GParamSpec *g_properties[PROP_N] = { NULL, };
+
+static void
+destroy_drm_prop (gpointer data)
+{
+  drmModeFreeProperty ((drmModePropertyPtr) data);
+}
+
+static gboolean
+cache_conn_properties (GstKMSSink * self)
+{
+  gboolean ret = TRUE;
+  gint conn_id = self->conn_id;
+  GData *conn_props = self->conn_props;
+
+  cache_drm_properties (CONNECTOR, conn, self->fd);
+  return ret;
+}
+
+static gboolean
+cache_crtc_properties (GstKMSSink * self)
+{
+  gboolean ret = TRUE;
+  gint crtc_id = self->crtc_id;
+  GData *crtc_props = self->conn_props;
+
+  cache_drm_properties (CRTC, crtc, self->fd);
+  return ret;
+}
+
+static gboolean
+cache_plane_properties (GstKMSSink * self, gint plane_id)
+{
+  GData *plane_props = NULL;
+  g_datalist_init (&plane_props);
+
+  cache_drm_properties (PLANE, plane, self->fd);
+
+  g_hash_table_insert (self->plane_res, GUINT_TO_POINTER (plane_id),
+      plane_props);
+
+  return TRUE;
+}
+
+static void
+destroy_fmt_slist (gpointer data)
+{
+  g_slist_free ((GSList *) data);
+}
+
+static gboolean
+cache_planes_properties (GstKMSSink * self, drmModePlaneRes * pres)
+{
+  int i;
+
+  self->plane_res = g_hash_table_new (g_direct_hash, g_direct_equal);
+
+  for (i = 0; i < pres->count_planes; i++) {
+    GData *props = NULL;
+    GSList *formats = NULL;
+    drmModePlane *plane = NULL;
+    int j;
+
+    plane = drmModeGetPlane (self->fd, pres->planes[i]);
+    if (!plane)
+      continue;
+
+    cache_plane_properties (self, plane->plane_id);
+
+    props = g_hash_table_lookup (self->plane_res,
+        GUINT_TO_POINTER (plane->plane_id));
+    if (!props) {
+      drmModeFreePlane (plane);
+      continue;
+    }
+
+    /*
+     * TODO: store drm modifier in the future, the below way only for
+     * those platform without a modifier in FB
+     */
+    for (j = 0; j < plane->count_formats; j++)
+      formats = g_slist_prepend (formats, GUINT_TO_POINTER (plane->formats[j]));
+
+    g_datalist_id_set_data_full (&props,
+        g_quark_from_static_string ("fmt"), formats, destroy_fmt_slist);
+    g_datalist_id_set_data (&props,
+        g_quark_from_static_string ("possible_crtcs"),
+        GUINT_TO_POINTER (plane->possible_crtcs));
+
+    drmModeFreePlane (plane);
+  }
+
+  return TRUE;
+}
+
+static gint
+add_connection_property (GstKMSSink * self, drmModeAtomicReq * req,
+    const gchar * name, guint64 value)
+{
+  gint ret = 0;
+  gint conn_id = self->conn_id;
+  GData *conn_props = self->conn_props;
+
+  add_drm_property (conn, req, name, value);
+  return ret;
+}
+
+static gint
+add_crtc_property (GstKMSSink * self, drmModeAtomicReq * req,
+    const gchar * name, guint64 value)
+{
+  gint ret = 0;
+  gint crtc_id = self->crtc_id;
+  GData *crtc_props = self->conn_props;
+
+  add_drm_property (crtc, req, name, value);
+  return ret;
+}
+
+static gint
+add_plane_property (GstKMSSink * self, drmModeAtomicReq * req, gint plane_id,
+    const gchar * name, guint64 value)
+{
+  gint ret = 0;
+  GData *plane_props = g_hash_table_lookup (self->plane_res,
+      GUINT_TO_POINTER (plane_id));
+
+  add_drm_property (plane, req, name, value);
+  return ret;
+}
+
+static gboolean
+set_drm_property (GstKMSSink * self, guint32 object, guint32 object_type,
+    const gchar * prop_name, guint64 value);
+
+#ifdef HAVE_DRM_HDR
 static void
 gst_kms_populate_infoframe (struct hdr_output_metadata *pinfo_frame,
     GstVideoMasteringDisplayInfo * p_hdr_minfo,
@@ -173,108 +356,65 @@ gst_kms_populate_infoframe (struct hdr_output_metadata *pinfo_frame,
 }
 
 static void
-gst_kms_push_hdr_infoframe (GstKMSSink * self, gboolean clear_it_out)
+gst_kms_push_hdr_infoframe (GstKMSSink * self, drmModeAtomicReq * req)
 {
   struct hdr_output_metadata info_frame;
-  drmModeObjectPropertiesPtr props;
-  uint32_t hdrBlobID;
   int drm_fd = self->fd;
-  uint32_t conn_id = self->conn_id;
   int ret = 0;
 
-  if (self->no_infoframe || !self->has_hdr_info || (!clear_it_out
+  if (!self->has_hdr_prop || !self->has_hdr_info)
+    return;
+
+  if (!self->hdr_blob_id) {
+    gst_kms_populate_infoframe (&info_frame, &self->hdr_minfo, &self->hdr_cll,
+        self->colorimetry, FALSE);
+
+    ret = drmModeCreatePropertyBlob (drm_fd, &info_frame,
+        sizeof (struct hdr_output_metadata), &self->hdr_blob_id);
+    if (ret) {
+      GST_ERROR_OBJECT (self, "Failed to drmModeCreatePropertyBlob %d %s",
+          errno, g_strerror (errno));
+      return;
+    }
+  }
+
+  add_connection_property (self, req, "HDR_OUTPUT_METADATA", self->hdr_blob_id);
+}
+
+static void
+gst_kms_push_hdr_infoframe_legacy (GstKMSSink * self, gboolean clear_it_out)
+{
+  struct hdr_output_metadata info_frame;
+  int drm_fd = self->fd;
+  uint32_t conn_id = self->conn_id;
+  uint32_t hdr_blob_id;
+  int ret = 0;
+
+
+  if (!self->has_hdr_prop || !self->has_hdr_info || (!clear_it_out
           && self->has_sent_hdrif)) {
     return;
   }
 
-  /* Check to see if the connection has the HDR_OUTPUT_METADATA property if
-   * we haven't already found it */
-  if (self->hdrPropID == 0 || self->edidPropID == 0) {
-    props =
-        drmModeObjectGetProperties (drm_fd, conn_id, DRM_MODE_OBJECT_CONNECTOR);
-
-    if (!props) {
-      GST_ERROR_OBJECT (self, "Error on drmModeObjectGetProperties %d %s",
-          errno, g_strerror (errno));
-      return;
-    }
-
-    struct gst_kms_hdr_static_metadata hdr_edid_info = { 0, 0, 0, 0, 0 };
-    for (uint32_t i = 0;
-        i < props->count_props && (self->hdrPropID == 0
-            || self->edidPropID == 0); i++) {
-      drmModePropertyPtr pprop = drmModeGetProperty (drm_fd, props->props[i]);
-
-      if (pprop) {
-        /* 7 16 DRM_MODE_PROP_BLOB HDR_OUTPUT_METADATA */
-        if (!strncmp ("HDR_OUTPUT_METADATA", pprop->name,
-                strlen ("HDR_OUTPUT_METADATA"))) {
-          self->hdrPropID = pprop->prop_id;
-          GST_DEBUG_OBJECT (self, "HDR prop ID = %d", self->hdrPropID);
-        }
-
-        if (!strncmp ("EDID", pprop->name, strlen ("EDID"))) {
-          self->edidPropID = pprop->prop_id;
-
-          /* Check if EDID indicates device supports HDR */
-          drmModePropertyBlobPtr blob;
-          blob = drmModeGetPropertyBlob (drm_fd, props->prop_values[i]);
-          if (blob) {
-            int res =
-                gst_kms_edid_parse (&hdr_edid_info, blob->data, blob->length);
-            if (res != 0) {
-              hdr_edid_info.eotf = 0;
-              hdr_edid_info.metadata_type = 0;
-            }
-          }
-
-          drmModeFreePropertyBlob (blob);
-
-          GST_DEBUG_OBJECT (self, "EDID prop ID = %d", self->edidPropID);
-          /* only these two values are guaranteed to be populated for HDR */
-          GST_DEBUG_OBJECT (self, "EDID EOTF = %u, metadata type = %u",
-              hdr_edid_info.eotf, hdr_edid_info.metadata_type);
-        }
-
-        drmModeFreeProperty (pprop);
-      } else {
-        GST_ERROR_OBJECT (self, "Error on drmModeGetProperty(%d)", i);
-      }
-    }
-
-    drmModeFreeObjectProperties (props);
-
-    if (self->hdrPropID == 0 || self->edidPropID == 0
-        || hdr_edid_info.eotf == 0) {
-      GST_DEBUG_OBJECT (self, "No HDR support on target display");
-      self->no_infoframe = TRUE;
-      /* FIXME: maybe not the right flag here... */
-      self->has_sent_hdrif = TRUE;
-      return;
-    }
-  }
-
   if (clear_it_out)
-    GST_INFO ("Clearing HDR Infoframe on connector %d", self->conn_id);
+    GST_INFO ("Clearing HDR Infoframe on connector %d", conn_id);
   else
-    GST_INFO ("Setting HDR Infoframe, if available on connector %d",
-        self->conn_id);
+    GST_INFO ("Setting HDR Infoframe, if available on connector %d", conn_id);
 
   gst_kms_populate_infoframe (&info_frame, &self->hdr_minfo, &self->hdr_cll,
       self->colorimetry, clear_it_out);
 
-  /* Use non-atomic property setting */
   ret = drmModeCreatePropertyBlob (drm_fd, &info_frame,
-      sizeof (struct hdr_output_metadata), &hdrBlobID);
+      sizeof (struct hdr_output_metadata), &hdr_blob_id);
   if (!ret) {
-    ret =
-        drmModeObjectSetProperty (drm_fd, conn_id, DRM_MODE_OBJECT_CONNECTOR,
-        self->hdrPropID, hdrBlobID);
+    /* Use non-atomic property setting */
+    ret = set_drm_property (self, conn_id, DRM_MODE_OBJECT_CONNECTOR,
+        "HDR_OUTPUT_METADATA", hdr_blob_id);
     if (ret) {
       GST_ERROR_OBJECT (self, "drmModeObjectSetProperty result %d %d %s", ret,
           errno, g_strerror (errno));
     }
-    drmModeDestroyPropertyBlob (drm_fd, hdrBlobID);
+    drmModeDestroyPropertyBlob (drm_fd, hdr_blob_id);
   } else {
     GST_ERROR_OBJECT (self, "Failed to drmModeCreatePropertyBlob %d %s", errno,
         g_strerror (errno));
@@ -285,7 +425,6 @@ gst_kms_push_hdr_infoframe (GstKMSSink * self, gboolean clear_it_out)
     self->has_sent_hdrif = TRUE;        // Hooray!
   }
 }
-
 
 /* From an HDR10 stream caps:
  *
@@ -331,7 +470,6 @@ gst_kms_sink_set_hdr10_caps (GstKMSSink * self, GstCaps * caps)
         /* not an HDMI and/or HDR colorimetry, we will ignore */
         GST_DEBUG ("Unsupported transfer function, no HDR: %u",
             colorimetry.transfer);
-        self->no_infoframe = TRUE;
         self->has_hdr_info = FALSE;
         break;
     }
@@ -341,7 +479,6 @@ gst_kms_sink_set_hdr10_caps (GstKMSSink * self, GstCaps * caps)
     if (!gst_video_mastering_display_info_is_equal (&hdr_minfo,
             &self->hdr_minfo)) {
       self->hdr_minfo = hdr_minfo;
-      self->no_infoframe = FALSE;
       self->has_hdr_info = TRUE;
       /* to send again */
       self->has_sent_hdrif = FALSE;
@@ -363,7 +500,6 @@ gst_kms_sink_set_hdr10_caps (GstKMSSink * self, GstCaps * caps)
     if (self->has_hdr_info == TRUE) {
       GST_WARNING ("Missing mastering display info");
     } else {
-      self->no_infoframe = TRUE;
       self->has_hdr_info = FALSE;
     }
 
@@ -376,7 +512,6 @@ gst_kms_sink_set_hdr10_caps (GstKMSSink * self, GstCaps * caps)
 
     if (!gst_video_content_light_level_is_equal (&hdr_cll, &self->hdr_cll)) {
       self->hdr_cll = hdr_cll;
-      self->no_infoframe = FALSE;
       self->has_hdr_info = TRUE;
       /* to send again */
       self->has_sent_hdrif = FALSE;
@@ -390,7 +525,6 @@ gst_kms_sink_set_hdr10_caps (GstKMSSink * self, GstCaps * caps)
       GST_WARNING ("Missing content light level info");
     }
 
-    self->no_infoframe = TRUE;
     self->has_hdr_info = FALSE;
   }
 
@@ -400,11 +534,51 @@ gst_kms_sink_set_hdr10_caps (GstKMSSink * self, GstCaps * caps)
         ("Stream doesn't have all HDR components needed"),
         ("Check stream caps"));
 
-    self->no_infoframe = TRUE;
     self->has_hdr_info = FALSE;
   }
 }
 
+static gboolean
+gst_kms_sink_check_hdr_props (GstKMSSink * self)
+{
+  struct gst_kms_hdr_static_metadata hdr_edid_info;
+  GData *conn_props = self->conn_props;
+  drmModePropertyPtr property = NULL;
+  drmModePropertyBlobPtr blob;
+  int res;
+
+  get_drm_property (conn, "HDR_OUTPUT_METADATA", property);
+
+  /* check the connected screen */
+  get_drm_property (conn, "EDID", property);
+  if (!(property->flags & DRM_MODE_PROP_BLOB))
+    return FALSE;
+  if (!property->count_blobs)
+    return FALSE;
+
+  memset (&hdr_edid_info, 0, sizeof (hdr_edid_info));
+  blob = drmModeGetPropertyBlob (self->fd, property->blob_ids[0]);
+  if (blob) {
+    res = gst_kms_edid_parse (&hdr_edid_info, blob->data, blob->length);
+    if (res) {
+      hdr_edid_info.eotf = 0;
+      hdr_edid_info.metadata_type = 0;
+    }
+    drmModeFreePropertyBlob (blob);
+
+    GST_DEBUG_OBJECT (self, "EDID prop ID = %d", property->prop_id);
+    /* only these two values are guaranteed to be populated for HDR */
+    GST_DEBUG_OBJECT (self, "EDID EOTF = %u, metadata type = %u",
+        hdr_edid_info.eotf, hdr_edid_info.metadata_type);
+  } else {
+    return FALSE;
+  }
+
+  if (hdr_edid_info.eotf && hdr_edid_info.metadata_type)
+    return TRUE;
+
+  return FALSE;
+}
 #endif /* HAVE_DRM_HDR */
 
 static void
@@ -499,14 +673,12 @@ kms_open (gchar ** driver)
   return fd;
 }
 
-static drmModePlane *
-find_plane_for_crtc (int fd, drmModeRes * res, drmModePlaneRes * pres,
-    int crtc_id)
+static gint
+find_plane_for_crtc (GHashTable * plane_res, drmModeRes * res,
+    drmModePlaneRes * pres, int crtc_id)
 {
-  drmModePlane *plane;
   int i, pipe;
 
-  plane = NULL;
   pipe = -1;
   for (i = 0; i < res->count_crtcs; i++) {
     if (crtc_id == res->crtcs[i]) {
@@ -516,16 +688,21 @@ find_plane_for_crtc (int fd, drmModeRes * res, drmModePlaneRes * pres,
   }
 
   if (pipe == -1)
-    return NULL;
+    return -1;
 
   for (i = 0; i < pres->count_planes; i++) {
-    plane = drmModeGetPlane (fd, pres->planes[i]);
-    if (plane->possible_crtcs & (1 << pipe))
-      return plane;
-    drmModeFreePlane (plane);
+    GData *plane = NULL;
+    guint32 possible_crtcs = 0;
+
+    plane = g_hash_table_lookup (plane_res, GUINT_TO_POINTER (pres->planes[i]));
+    possible_crtcs =
+        GPOINTER_TO_UINT (g_datalist_get_data (&plane, "possible_crtcs"));
+
+    if (possible_crtcs & (1 << pipe))
+      return pres->planes[i];
   }
 
-  return NULL;
+  return -1;
 }
 
 static drmModeCrtc *
@@ -714,7 +891,7 @@ get_drm_caps (GstKMSSink * self)
     self->has_async_page_flip = (gboolean) has_async_page_flip;
 
   GST_INFO_OBJECT (self,
-      "prime import (%s) / prime export (%s) / async page flip (%s)",
+      "prime import (%s) / prime export (%s) / legacy async page flip (%s)",
       self->has_prime_import ? "✓" : "✗",
       self->has_prime_export ? "✓" : "✗",
       self->has_async_page_flip ? "✓" : "✗");
@@ -730,19 +907,82 @@ ensure_kms_allocator (GstKMSSink * self)
   self->allocator = gst_kms_allocator_new (self->fd);
 }
 
+static gint
+apply_atomic_mode_setting (GstKMSSink * self, drmModeAtomicReqPtr req,
+    drmModeModeInfoPtr mode)
+{
+  guint32 blob_id = 0;
+  int err;
+
+  err = drmModeCreatePropertyBlob (self->fd, mode, sizeof (*mode), &blob_id);
+  if (err)
+    goto create_mode_failed;
+
+  add_connection_property (self, req, "CRTC_ID", self->crtc_id);
+
+  add_crtc_property (self, req, "MODE_ID", blob_id);
+  add_crtc_property (self, req, "ACTIVE", 1);
+
+  err =
+      drmModeAtomicCommit (self->fd, req, DRM_MODE_ATOMIC_ALLOW_MODESET, NULL);
+  if (err)
+    goto modesetting_failed;
+
+bail:
+  drmModeDestroyPropertyBlob (self->fd, blob_id);
+  return err;
+create_mode_failed:
+  {
+    GST_ERROR_OBJECT (self, "cannot create mode: %s", g_strerror (errno));
+    return FALSE;
+  }
+modesetting_failed:
+  {
+    GST_ERROR_OBJECT (self, "Failed to set mode: %s", g_strerror (errno));
+    drmModeDestroyPropertyBlob (self->fd, blob_id);
+    goto bail;
+  }
+}
+
+static drmModeModeInfoPtr
+find_appropriate_mode (GstKMSSink * self, gint width, gint height)
+{
+  drmModeConnector *conn = NULL;
+  drmModeModeInfo *mode = NULL;
+  gint i;
+
+  conn = drmModeGetConnector (self->fd, self->conn_id);
+  if (!conn)
+    goto connector_failed;
+
+  for (i = 0; i < conn->count_modes; i++) {
+    if (conn->modes[i].vdisplay == height && conn->modes[i].hdisplay == width) {
+      mode = &conn->modes[i];
+      break;
+    }
+  }
+bail:
+  if (conn)
+    drmModeFreeConnector (conn);
+
+  return mode;
+connector_failed:
+  {
+    GST_ERROR_OBJECT (self, "Could not find a valid monitor connector");
+    goto bail;
+  }
+}
+
 static gboolean
 configure_mode_setting (GstKMSSink * self, GstVideoInfo * vinfo)
 {
   gboolean ret;
-  drmModeConnector *conn;
   int err;
-  gint i;
   drmModeModeInfo *mode;
   guint32 fb_id;
   GstKMSMemory *kmsmem;
 
   ret = FALSE;
-  conn = NULL;
   mode = NULL;
   kmsmem = NULL;
 
@@ -757,22 +997,39 @@ configure_mode_setting (GstKMSSink * self, GstVideoInfo * vinfo)
     goto bo_failed;
   fb_id = kmsmem->fb_id;
 
-  conn = drmModeGetConnector (self->fd, self->conn_id);
-  if (!conn)
-    goto connector_failed;
-
-  for (i = 0; i < conn->count_modes; i++) {
-    if (conn->modes[i].vdisplay == GST_VIDEO_INFO_HEIGHT (vinfo) &&
-        conn->modes[i].hdisplay == GST_VIDEO_INFO_WIDTH (vinfo)) {
-      mode = &conn->modes[i];
-      break;
-    }
-  }
+  mode = find_appropriate_mode (self, GST_VIDEO_INFO_WIDTH (vinfo),
+      GST_VIDEO_INFO_HEIGHT (vinfo));
   if (!mode)
     goto mode_failed;
 
-  err = drmModeSetCrtc (self->fd, self->crtc_id, fb_id, 0, 0,
-      (uint32_t *) & self->conn_id, 1, mode);
+  if (self->has_atomic) {
+    drmModeAtomicReqPtr req = NULL;
+
+    req = drmModeAtomicAlloc ();
+    if (!req) {
+      GST_ERROR_OBJECT (self, "can't allocator atomic request");
+      goto bail;
+    }
+
+    add_plane_property (self, req, self->plane_id, "FB_ID", fb_id);
+    add_plane_property (self, req, self->plane_id, "CRTC_ID", self->crtc_id);
+    add_plane_property (self, req, self->plane_id, "SRC_X", 0);
+    add_plane_property (self, req, self->plane_id, "SRC_Y", 0);
+    add_plane_property (self, req, self->plane_id, "SRC_W",
+        GST_VIDEO_INFO_WIDTH (vinfo) << 16);
+    add_plane_property (self, req, self->plane_id, "SRC_H",
+        GST_VIDEO_INFO_HEIGHT (vinfo) << 16);
+    add_plane_property (self, req, self->plane_id, "CRTC_X", 0);
+    add_plane_property (self, req, self->plane_id, "CRTC_Y", 0);
+    add_plane_property (self, req, self->plane_id, "CRTC_W",
+        GST_VIDEO_INFO_WIDTH (vinfo));
+    add_plane_property (self, req, self->plane_id, "CRTC_H",
+        GST_VIDEO_INFO_HEIGHT (vinfo));
+    err = apply_atomic_mode_setting (self, req, mode);
+  } else {
+    err = drmModeSetCrtc (self->fd, self->crtc_id, fb_id, 0, 0,
+        (uint32_t *) & self->conn_id, 1, mode);
+  }
   if (err)
     goto modesetting_failed;
 
@@ -782,9 +1039,6 @@ configure_mode_setting (GstKMSSink * self, GstVideoInfo * vinfo)
   ret = TRUE;
 
 bail:
-  if (conn)
-    drmModeFreeConnector (conn);
-
   return ret;
 
   /* ERRORS */
@@ -792,11 +1046,6 @@ bo_failed:
   {
     GST_ERROR_OBJECT (self,
         "failed to allocate buffer object for mode setting");
-    goto bail;
-  }
-connector_failed:
-  {
-    GST_ERROR_OBJECT (self, "Could not find a valid monitor connector");
     goto bail;
   }
 mode_failed:
@@ -813,13 +1062,14 @@ modesetting_failed:
 
 static gboolean
 ensure_allowed_caps (GstKMSSink * self, drmModeConnector * conn,
-    drmModePlane * plane, drmModeRes * res)
+    gint plane_id, drmModeRes * res)
 {
+  GData *props = NULL;
+  GSList *formats = NULL;
+
   GstCaps *out_caps, *tmp_caps, *caps;
-  int i, j;
+  int i;
   GstVideoFormat fmt;
-  const gchar *format;
-  drmModeModeInfo *mode;
   gint count_modes;
 
   if (self->allowed_caps)
@@ -834,7 +1084,13 @@ ensure_allowed_caps (GstKMSSink * self, drmModeConnector * conn,
   else
     count_modes = 1;
 
+  props = g_hash_table_lookup (self->plane_res, GUINT_TO_POINTER (plane_id));
+  formats = g_datalist_id_get_data (&props, g_quark_from_static_string ("fmt"));
+
   for (i = 0; i < count_modes; i++) {
+    const gchar *format = NULL;
+    drmModeModeInfo *mode = NULL;
+    GSList *iter = NULL;
     tmp_caps = gst_caps_new_empty ();
     if (!tmp_caps)
       return FALSE;
@@ -843,11 +1099,12 @@ ensure_allowed_caps (GstKMSSink * self, drmModeConnector * conn,
     if (conn && self->modesetting_enabled)
       mode = &conn->modes[i];
 
-    for (j = 0; j < plane->count_formats; j++) {
-      fmt = gst_video_format_from_drm (plane->formats[j]);
+    for (iter = formats; iter; iter = g_slist_next (iter)) {
+      /* TODO: support drm modifier in the future */
+      fmt = gst_video_format_from_drm (GPOINTER_TO_UINT (iter->data));
       if (fmt == GST_VIDEO_FORMAT_UNKNOWN) {
         GST_INFO_OBJECT (self, "ignoring format %" GST_FOURCC_FORMAT,
-            GST_FOURCC_ARGS (plane->formats[j]));
+            GST_FOURCC_ARGS (GPOINTER_TO_UINT (iter->data)));
         continue;
       }
 
@@ -890,33 +1147,29 @@ ensure_allowed_caps (GstKMSSink * self, drmModeConnector * conn,
 }
 
 static gboolean
-set_drm_property (gint fd, guint32 object, guint32 object_type,
-    drmModeObjectPropertiesPtr properties, const gchar * prop_name,
-    guint64 value)
+set_drm_property (GstKMSSink * self, guint32 object, guint32 object_type,
+    const gchar * prop_name, guint64 value)
 {
-  guint i;
   gboolean ret = FALSE;
+  GData *conn_props = self->conn_props;
+  GData *plane_props = g_hash_table_lookup (self->plane_res,
+      GUINT_TO_POINTER (self->plane_id));
+  drmModePropertyPtr property = NULL;
 
-  for (i = 0; i < properties->count_props && !ret; i++) {
-    drmModePropertyPtr property;
-
-    property = drmModeGetProperty (fd, properties->props[i]);
-
-    /* GstStructure parser limits the set of supported character, so we
-     * replace the invalid characters with '-'. In DRM, this is generally
-     * replacing spaces into '-'. */
-    g_strcanon (property->name, G_CSET_a_2_z G_CSET_A_2_Z G_CSET_DIGITS "_",
-        '-');
-
-    GST_LOG ("found property %s (looking for %s)", property->name, prop_name);
-
-    if (!strcmp (property->name, prop_name)) {
-      drmModeObjectSetProperty (fd, object, object_type,
-          property->prop_id, value);
-      ret = TRUE;
-    }
-    drmModeFreeProperty (property);
+  switch (object_type) {
+    case DRM_MODE_OBJECT_CONNECTOR:
+      get_drm_property (conn, prop_name, property);
+      break;
+    case DRM_MODE_OBJECT_PLANE:
+      get_drm_property (plane, prop_name, property);
+      break;
+    default:
+      return FALSE;
   }
+
+  drmModeObjectSetProperty (self->fd, object, object_type,
+      property->prop_id, value);
+  ret = TRUE;
 
   return ret;
 }
@@ -924,10 +1177,10 @@ set_drm_property (gint fd, guint32 object, guint32 object_type,
 typedef struct
 {
   GstKMSSink *self;
-  drmModeObjectPropertiesPtr properties;
   guint obj_id;
   guint obj_type;
   const gchar *obj_type_str;
+  drmModeAtomicReqPtr req;
 } SetPropsIter;
 
 static gboolean
@@ -937,6 +1190,8 @@ set_obj_prop (GQuark field_id, const GValue * value, gpointer user_data)
   GstKMSSink *self = iter->self;
   const gchar *name;
   guint64 v;
+  /* FIXME: there is no way to check whether drm property is right in atomic */
+  gint ret = -1;
 
   name = g_quark_to_string (field_id);
 
@@ -954,8 +1209,20 @@ set_obj_prop (GQuark field_id, const GValue * value, gpointer user_data)
     return TRUE;
   }
 
-  if (set_drm_property (self->fd, iter->obj_id, iter->obj_type,
-          iter->properties, name, v)) {
+  if (self->has_atomic) {
+    switch (iter->obj_type) {
+      case DRM_MODE_OBJECT_CONNECTOR:
+        ret = add_connection_property (self, iter->req, name, v);
+        break;
+      case DRM_MODE_OBJECT_PLANE:
+        ret = add_plane_property (self, iter->req, self->plane_id, name, v);
+        break;
+    }
+  } else {
+    ret = set_drm_property (self, iter->obj_id, iter->obj_type, name, v);
+  }
+
+  if (!ret) {
     GST_DEBUG_OBJECT (self,
         "Set %s property '%s' to %" G_GUINT64_FORMAT,
         iter->obj_type_str, name, v);
@@ -971,18 +1238,12 @@ set_obj_prop (GQuark field_id, const GValue * value, gpointer user_data)
 static void
 gst_kms_sink_update_properties (SetPropsIter * iter, GstStructure * props)
 {
-  GstKMSSink *self = iter->self;
-
-  iter->properties = drmModeObjectGetProperties (self->fd, iter->obj_id,
-      iter->obj_type);
-
   gst_structure_foreach (props, set_obj_prop, iter);
-
-  drmModeFreeObjectProperties (iter->properties);
 }
 
 static void
-gst_kms_sink_update_connector_properties (GstKMSSink * self)
+gst_kms_sink_update_connector_properties (GstKMSSink * self,
+    drmModeAtomicReq * req)
 {
   SetPropsIter iter;
 
@@ -990,6 +1251,7 @@ gst_kms_sink_update_connector_properties (GstKMSSink * self)
     return;
 
   iter.self = self;
+  iter.req = req;
   iter.obj_id = self->conn_id;
   iter.obj_type = DRM_MODE_OBJECT_CONNECTOR;
   iter.obj_type_str = "connector";
@@ -998,7 +1260,7 @@ gst_kms_sink_update_connector_properties (GstKMSSink * self)
 }
 
 static void
-gst_kms_sink_update_plane_properties (GstKMSSink * self)
+gst_kms_sink_update_plane_properties (GstKMSSink * self, drmModeAtomicReq * req)
 {
   SetPropsIter iter;
 
@@ -1006,11 +1268,31 @@ gst_kms_sink_update_plane_properties (GstKMSSink * self)
     return;
 
   iter.self = self;
+  iter.req = req;
   iter.obj_id = self->plane_id;
   iter.obj_type = DRM_MODE_OBJECT_PLANE;
   iter.obj_type_str = "plane";
 
   gst_kms_sink_update_properties (&iter, self->plane_props);
+}
+
+static GstStateChangeReturn
+gst_kms_sink_change_state (GstElement * element, GstStateChange transition)
+{
+  GstKMSSink *self = GST_KMS_SINK (element);
+  GstStateChangeReturn ret = GST_STATE_CHANGE_SUCCESS;
+
+  ret = GST_ELEMENT_CLASS (parent_class)->change_state (element, transition);
+
+  switch (transition) {
+    case GST_STATE_CHANGE_PAUSED_TO_READY:
+      gst_kms_sink_drain (self);
+      break;
+    default:
+      break;
+  }
+
+  return ret;
 }
 
 static gboolean
@@ -1021,8 +1303,8 @@ gst_kms_sink_start (GstBaseSink * bsink)
   drmModeConnector *conn;
   drmModeCrtc *crtc;
   drmModePlaneRes *pres;
-  drmModePlane *plane;
   gboolean universal_planes;
+  guint32 plane_id;
   gboolean ret;
 
   self = GST_KMS_SINK (bsink);
@@ -1032,7 +1314,6 @@ gst_kms_sink_start (GstBaseSink * bsink)
   conn = NULL;
   crtc = NULL;
   pres = NULL;
-  plane = NULL;
 
   /* open our own internal device fd if application did not supply its own */
   if (self->is_internal_fd) {
@@ -1048,6 +1329,24 @@ gst_kms_sink_start (GstBaseSink * bsink)
   log_drm_version (self);
   if (!get_drm_caps (self))
     goto bail;
+
+  if (!self->force_legacy) {
+    if (drmSetClientCap (self->fd, DRM_CLIENT_CAP_ATOMIC, 1)) {
+      GST_WARNING_OBJECT (self, "could not set atomic capability");
+      goto set_cap_failed;
+    }
+    self->has_atomic = 1;
+    /* TODO: support atomic async page flip */
+    self->has_async_page_flip = 0;
+    /*
+     * From kernel code, this would be enabled at the same time, it is not
+     * to be enabled later.
+     */
+    universal_planes = TRUE;
+  } else {
+    /* unset here to save time on checking flag */
+    self->has_atomic = 0;
+  }
 
   res = drmModeGetResources (self->fd);
   if (!res)
@@ -1075,27 +1374,32 @@ gst_kms_sink_start (GstBaseSink * bsink)
   }
 
 retry_find_plane:
-  if (universal_planes &&
-      drmSetClientCap (self->fd, DRM_CLIENT_CAP_UNIVERSAL_PLANES, 1))
-    goto set_cap_failed;
+  if (!self->has_atomic) {
+    if (universal_planes &&
+        drmSetClientCap (self->fd, DRM_CLIENT_CAP_UNIVERSAL_PLANES, 1))
+      goto set_cap_failed;
+  }
 
   pres = drmModeGetPlaneResources (self->fd);
   if (!pres)
     goto plane_resources_failed;
 
+  cache_planes_properties (self, pres);
+
   if (self->plane_id == -1)
-    plane = find_plane_for_crtc (self->fd, res, pres, crtc->crtc_id);
+    plane_id = find_plane_for_crtc (self->plane_res, res, pres, crtc->crtc_id);
   else
-    plane = drmModeGetPlane (self->fd, self->plane_id);
-  if (!plane)
+    plane_id = self->plane_id;
+
+  if (!g_hash_table_lookup (self->plane_res, GUINT_TO_POINTER (plane_id)))
     goto plane_failed;
 
-  if (!ensure_allowed_caps (self, conn, plane, res))
+  if (!ensure_allowed_caps (self, conn, plane_id, res))
     goto allowed_caps_failed;
 
   self->conn_id = conn->connector_id;
   self->crtc_id = crtc->crtc_id;
-  self->plane_id = plane->plane_id;
+  self->plane_id = plane_id;
 
   GST_INFO_OBJECT (self, "connector id = %d / crtc id = %d / plane id = %d",
       self->conn_id, self->crtc_id, self->plane_id);
@@ -1129,14 +1433,23 @@ retry_find_plane:
   g_object_notify_by_pspec (G_OBJECT (self), g_properties[PROP_DISPLAY_WIDTH]);
   g_object_notify_by_pspec (G_OBJECT (self), g_properties[PROP_DISPLAY_HEIGHT]);
 
-  gst_kms_sink_update_connector_properties (self);
-  gst_kms_sink_update_plane_properties (self);
+  cache_conn_properties (self);
+  cache_crtc_properties (self);
+
+  if (!self->has_atomic) {
+    gst_kms_sink_update_connector_properties (self, NULL);
+    gst_kms_sink_update_plane_properties (self, NULL);
+  }
+#ifdef HAVE_DRM_HDR
+  if (gst_kms_sink_check_hdr_props (self))
+    self->has_hdr_prop = TRUE;
+  else
+    GST_DEBUG_OBJECT (self, "No HDR support on target display");
+#endif
 
   ret = TRUE;
 
 bail:
-  if (plane)
-    drmModeFreePlane (plane);
   if (pres)
     drmModeFreePlaneResources (pres);
   if (crtc != self->saved_crtc)
@@ -1187,8 +1500,13 @@ crtc_failed:
 
 set_cap_failed:
   {
-    GST_ELEMENT_ERROR (self, RESOURCE, SETTINGS,
-        ("Could not set universal planes capability bit"), (NULL));
+    if (self->has_atomic) {
+      GST_ELEMENT_ERROR (self, RESOURCE, SETTINGS,
+          ("Could not set atomic capability bit"), (NULL));
+    } else {
+      GST_ELEMENT_ERROR (self, RESOURCE, SETTINGS,
+          ("Could not set universal planes capability bit"), (NULL));
+    }
     goto bail;
   }
 
@@ -1232,6 +1550,9 @@ gst_kms_sink_stop (GstBaseSink * bsink)
   if (self->allocator)
     gst_kms_allocator_clear_cache (self->allocator);
 
+  if (self->has_atomic)
+    gst_kms_sink_wait_event (self);
+
   gst_buffer_replace (&self->last_buffer, NULL);
   gst_caps_replace (&self->allowed_caps, NULL);
   gst_object_replace ((GstObject **) & self->pool, NULL);
@@ -1240,12 +1561,39 @@ gst_kms_sink_stop (GstBaseSink * bsink)
   gst_poll_remove_fd (self->poll, &self->pollfd);
   gst_poll_restart (self->poll);
   gst_poll_fd_init (&self->pollfd);
+  g_hash_table_destroy (self->plane_res);
 
   if (self->saved_crtc) {
     drmModeCrtc *crtc = (drmModeCrtc *) self->saved_crtc;
 
-    err = drmModeSetCrtc (self->fd, crtc->crtc_id, crtc->buffer_id, crtc->x,
-        crtc->y, (uint32_t *) & self->conn_id, 1, &crtc->mode);
+    if (self->has_atomic) {
+      drmModeAtomicReqPtr req = NULL;
+
+      req = drmModeAtomicAlloc ();
+      if (!req) {
+        GST_ERROR_OBJECT (self, "can't allocator atomic request");
+        err = 1;
+        goto no_restore_crtc;
+      }
+
+      add_plane_property (self, req, self->plane_id, "FB_ID", crtc->buffer_id);
+      add_plane_property (self, req, self->plane_id, "CRTC_ID", crtc->crtc_id);
+      /* FIXME: there is no way to know these from its orignal buffer  */
+      add_plane_property (self, req, self->plane_id, "SRC_X", 0);
+      add_plane_property (self, req, self->plane_id, "SRC_Y", 0);
+      add_plane_property (self, req, self->plane_id, "SRC_W", crtc->width);
+      add_plane_property (self, req, self->plane_id, "SRC_H", crtc->height);
+
+      add_plane_property (self, req, self->plane_id, "CRTC_X", crtc->x);
+      add_plane_property (self, req, self->plane_id, "CRTC_Y", crtc->y);
+      add_plane_property (self, req, self->plane_id, "CRTC_W", crtc->width);
+      add_plane_property (self, req, self->plane_id, "CRTC_H", crtc->height);
+      err = apply_atomic_mode_setting (self, req, &crtc->mode);
+    } else {
+      err = drmModeSetCrtc (self->fd, crtc->crtc_id, crtc->buffer_id, crtc->x,
+          crtc->y, (uint32_t *) & self->conn_id, 1, &crtc->mode);
+    }
+  no_restore_crtc:
     if (err)
       GST_ERROR_OBJECT (self, "Failed to restore previous CRTC mode: %s",
           g_strerror (errno));
@@ -1253,6 +1601,12 @@ gst_kms_sink_stop (GstBaseSink * bsink)
     drmModeFreeCrtc (crtc);
     self->saved_crtc = NULL;
   }
+#if HAVE_DRM_HDR
+  if (self->hdr_blob_id) {
+    drmModeDestroyPropertyBlob (self->fd, self->hdr_blob_id);
+    self->hdr_blob_id = 0;
+  }
+#endif
 
   if (self->fd >= 0) {
     if (self->is_internal_fd)
@@ -1324,6 +1678,14 @@ gst_kms_sink_get_caps (GstBaseSink * bsink, GstCaps * filter)
   }
 
   GST_OBJECT_UNLOCK (self);
+
+  if (self->has_prime_import) {
+    caps = gst_caps_copy (out_caps);
+    gst_caps_set_features (caps, 0,
+        gst_caps_features_new (GST_CAPS_FEATURE_MEMORY_DMABUF, NULL));
+    out_caps = gst_caps_merge (out_caps, caps);
+    caps = NULL;
+  }
 
   GST_DEBUG_OBJECT (self, "Proposing caps %" GST_PTR_FORMAT, out_caps);
 
@@ -1648,6 +2010,66 @@ event_failed:
   }
 }
 
+static void
+atomic_flip_handler (gint fd, guint frame, guint sec, guint usec, guint crtc_id,
+    gpointer data)
+{
+  GstKMSSink *self = GST_KMS_SINK (data);
+  gst_buffer_replace (&self->last_buffer, NULL);
+}
+
+static gboolean
+gst_kms_sink_wait_event (GstKMSSink * self)
+{
+  gint ret;
+  drmEventContext evctxt = {
+    .version = DRM_EVENT_CONTEXT_VERSION,
+    .page_flip_handler2 = atomic_flip_handler,
+  };
+
+  if (!self->has_async_page_flip)
+    return TRUE;
+  if (!self->last_buffer)
+    return TRUE;
+
+again:
+  ret = gst_poll_wait (self->poll, 3 * GST_SECOND);
+  if (G_UNLIKELY (ret < 0)) {
+    switch (errno) {
+      case EBUSY:
+        return FALSE;
+      case EAGAIN:
+      case EINTR:
+        goto again;
+      case ENXIO:
+        GST_WARNING_OBJECT (self, "This drm device doesn't support poll"
+            "It doesn't make sense, disable async_page_flip");
+        self->has_async_page_flip = FALSE;
+      default:
+        goto poll_failed;
+    }
+  }
+
+  ret = drmHandleEvent (self->fd, &evctxt);
+  if (ret)
+    goto event_failed;
+
+  return TRUE;;
+
+  /* ERRORS */
+poll_failed:
+  {
+    GST_ERROR_OBJECT (self, "poll failed: %s (%d)", strerror (-ret), ret);
+    return FALSE;
+  }
+event_failed:
+  {
+    GST_ERROR_OBJECT (self, "drmHandleEvent failed: %s (%d)", strerror (-ret),
+        ret);
+    return FALSE;
+  }
+}
+
 static gboolean
 gst_kms_sink_import_dmabuf (GstKMSSink * self, GstBuffer * inbuf,
     GstBuffer ** outbuf)
@@ -1919,7 +2341,7 @@ gst_kms_sink_show_frame (GstVideoSink * vsink, GstBuffer * buf)
   GST_TRACE_OBJECT (self, "displaying fb %d", fb_id);
 
   GST_OBJECT_LOCK (self);
-  if (self->modesetting_enabled) {
+  if ((!self->has_atomic) && self->modesetting_enabled) {
     self->buffer_id = fb_id;
     goto sync_frame;
   }
@@ -1964,7 +2386,9 @@ retry_set_plane:
 
   if (result.w <= 0 || result.h <= 0) {
     GST_WARNING_OBJECT (self, "video is out of display range");
-    goto sync_frame;
+    /* FIXME: I think it should throw an expection here */
+    if (!self->has_atomic)
+      goto sync_frame;
   }
 
   /* to make sure it can be show when driver don't support scale */
@@ -1972,32 +2396,77 @@ retry_set_plane:
     src.w = result.w;
     src.h = result.h;
   }
+
+  if (self->has_atomic) {
+    drmModeAtomicReqPtr req = NULL;
+    guint32 flags = 0;
+
+    /* Wait for the previous frame to complete redraw */
+    if (!gst_kms_sink_wait_event (self))
+      goto bail;
+
+    req = drmModeAtomicAlloc ();
+    if (!req) {
+      GST_ERROR_OBJECT (self, "can't allocator atomic request");
+      goto bail;
+    }
+
+    GST_TRACE_OBJECT (self,
+        "drmModeAtomicCommit at (%i,%i) %ix%i sourcing at (%i,%i) %ix%i",
+        result.x, result.y, result.w, result.h, src.x, src.y, src.w, src.h);
+
+    add_plane_property (self, req, self->plane_id, "FB_ID", fb_id);
+    add_plane_property (self, req, self->plane_id, "CRTC_ID", self->crtc_id);
+    /* source/cropping coordinates are given in Q16 */
+    add_plane_property (self, req, self->plane_id, "SRC_X", src.x << 16);
+    add_plane_property (self, req, self->plane_id, "SRC_Y", src.y << 16);
+    add_plane_property (self, req, self->plane_id, "SRC_W", src.w << 16);
+    add_plane_property (self, req, self->plane_id, "SRC_H", src.h << 16);
+    add_plane_property (self, req, self->plane_id, "CRTC_X", result.x);
+    add_plane_property (self, req, self->plane_id, "CRTC_Y", result.y);
+    add_plane_property (self, req, self->plane_id, "CRTC_W", result.w);
+    add_plane_property (self, req, self->plane_id, "CRTC_H", result.h);
+    /* TODO: add support for drm_color_encoding and drm_color_range */
 #ifdef HAVE_DRM_HDR
-  /* Send the HDR infoframes if appropriate */
-  gst_kms_push_hdr_infoframe (self, FALSE);
+    gst_kms_push_hdr_infoframe (self, req);
+#endif
+    gst_kms_sink_update_connector_properties (self, req);
+    gst_kms_sink_update_plane_properties (self, req);
+
+    /* assume all the drivers support page flip */
+    flags |= DRM_MODE_PAGE_FLIP_EVENT | DRM_MODE_ATOMIC_NONBLOCK;
+
+    ret = drmModeAtomicCommit (self->fd, req, flags, (gpointer) self);
+    if (ret)
+      goto commit_plane_failed;
+  } else {
+#ifdef HAVE_DRM_HDR
+    /* Send the HDR infoframes if appropriate */
+    gst_kms_push_hdr_infoframe_legacy (self, FALSE);
 #endif
 
-  GST_TRACE_OBJECT (self,
-      "drmModeSetPlane at (%i,%i) %ix%i sourcing at (%i,%i) %ix%i",
-      result.x, result.y, result.w, result.h, src.x, src.y, src.w, src.h);
+    GST_TRACE_OBJECT (self,
+        "drmModeSetPlane at (%i,%i) %ix%i sourcing at (%i,%i) %ix%i",
+        result.x, result.y, result.w, result.h, src.x, src.y, src.w, src.h);
 
-  ret = drmModeSetPlane (self->fd, self->plane_id, self->crtc_id, fb_id, 0,
-      result.x, result.y, result.w, result.h,
-      /* source/cropping coordinates are given in Q16 */
-      src.x << 16, src.y << 16, src.w << 16, src.h << 16);
-  if (ret) {
-    if (self->can_scale) {
-      self->can_scale = FALSE;
-      goto retry_set_plane;
+    ret = drmModeSetPlane (self->fd, self->plane_id, self->crtc_id, fb_id, 0,
+        result.x, result.y, result.w, result.h,
+        /* source/cropping coordinates are given in Q16 */
+        src.x << 16, src.y << 16, src.w << 16, src.h << 16);
+    if (ret) {
+      if (self->can_scale) {
+        self->can_scale = FALSE;
+        goto retry_set_plane;
+      }
+      goto set_plane_failed;
     }
-    goto set_plane_failed;
-  }
 
-sync_frame:
-  /* Wait for the previous frame to complete redraw */
-  if (!self->skip_vsync && !gst_kms_sink_sync (self)) {
-    GST_OBJECT_UNLOCK (self);
-    goto bail;
+  sync_frame:
+    /* Wait for the previous frame to complete redraw */
+    if (!self->skip_vsync && !gst_kms_sink_sync (self)) {
+      GST_OBJECT_UNLOCK (self);
+      goto bail;
+    }
   }
 
   /* Save the rendered buffer and its metadata in case a redraw is needed */
@@ -2020,6 +2489,18 @@ bail:
 buffer_invalid:
   {
     GST_ERROR_OBJECT (self, "invalid buffer: it doesn't have a fb id");
+    goto bail;
+  }
+commit_plane_failed:
+  {
+    GST_OBJECT_UNLOCK (self);
+    GST_DEBUG_OBJECT (self, "result = { %d, %d, %d, %d} / "
+        "src = { %d, %d, %d %d } / dst = { %d, %d, %d %d }", result.x, result.y,
+        result.w, result.h, src.x, src.y, src.w, src.h, dst.x, dst.y, dst.w,
+        dst.h);
+    GST_ELEMENT_ERROR (self, RESOURCE, FAILED,
+        (NULL), ("drmModeAtomicCommit failed: %s (%d)", g_strerror (errno),
+            errno));
     goto bail;
   }
 set_plane_failed:
@@ -2046,6 +2527,26 @@ static void
 gst_kms_sink_drain (GstKMSSink * self)
 {
   GstParentBufferMeta *parent_meta;
+
+  if (self->has_atomic) {
+    drmModeAtomicReqPtr req = NULL;
+
+    req = drmModeAtomicAlloc ();
+
+    /* commit an empty request to disable this plane */
+    add_plane_property (self, req, self->plane_id, "FB_ID", 0);
+    add_plane_property (self, req, self->plane_id, "CRTC_ID", 0);
+
+    /* Do I need to check it here ? It should work for just close a plane */
+    drmModeAtomicCommit (self->fd, req, 0, (gpointer) self);
+    /*
+     * We can drop the buffer safely here, the previous buffer should
+     * have been scanout after the return of wait_event()
+     */
+    if (!gst_kms_sink_wait_event (self))
+      GST_WARNING_OBJECT (self, "something went wrong with the driver");
+    return;
+  }
 
   if (!self->last_buffer)
     return;
@@ -2195,9 +2696,11 @@ gst_kms_sink_set_property (GObject * object, guint prop_id,
     }
     case PROP_FD:
       _validate_and_set_external_fd (sink, g_value_get_int (value));
-      break;
     case PROP_SKIP_VSYNC:
       sink->skip_vsync = g_value_get_boolean (value);
+      break;
+    case PROP_FORCE_LEGACY:
+      sink->force_legacy = g_value_get_boolean (value);
       break;
     default:
       if (!gst_video_overlay_set_property (object, PROP_N, prop_id, value))
@@ -2254,6 +2757,8 @@ gst_kms_sink_get_property (GObject * object, guint prop_id,
       break;
     case PROP_FD:
       g_value_set_int (value, sink->fd);
+    case PROP_FORCE_LEGACY:
+      g_value_set_boolean (value, sink->force_legacy);
       break;
     case PROP_SKIP_VSYNC:
       g_value_set_boolean (value, sink->skip_vsync);
@@ -2275,6 +2780,8 @@ gst_kms_sink_finalize (GObject * object)
   gst_poll_free (sink->poll);
   g_clear_pointer (&sink->connector_props, gst_structure_free);
   g_clear_pointer (&sink->plane_props, gst_structure_free);
+  g_datalist_clear (&sink->conn_props);
+  g_datalist_clear (&sink->crtc_props);
   g_clear_pointer (&sink->tmp_kmsmem, gst_memory_unref);
 
   G_OBJECT_CLASS (parent_class)->finalize (object);
@@ -2287,6 +2794,8 @@ gst_kms_sink_init (GstKMSSink * sink)
   sink->is_internal_fd = TRUE;
   sink->conn_id = -1;
   sink->plane_id = -1;
+  g_datalist_init (&sink->conn_props);
+  g_datalist_init (&sink->crtc_props);
   sink->can_scale = TRUE;
   gst_poll_fd_init (&sink->pollfd);
   sink->poll = gst_poll_new (TRUE);
@@ -2294,11 +2803,10 @@ gst_kms_sink_init (GstKMSSink * sink)
   sink->skip_vsync = FALSE;
 
 #ifdef HAVE_DRM_HDR
-  sink->no_infoframe = FALSE;
+  sink->has_hdr_prop = FALSE;
   sink->has_hdr_info = FALSE;
   sink->has_sent_hdrif = FALSE;
-  sink->edidPropID = 0;
-  sink->hdrPropID = 0;
+  sink->hdr_blob_id = 0;
   sink->colorimetry = HDMI_EOTF_TRADITIONAL_GAMMA_SDR;
   gst_video_mastering_display_info_init (&sink->hdr_minfo);
   gst_video_content_light_level_init (&sink->hdr_cll);
@@ -2326,6 +2834,8 @@ gst_kms_sink_class_init (GstKMSSinkClass * klass)
   gst_element_class_add_pad_template (element_class,
       gst_pad_template_new ("sink", GST_PAD_SINK, GST_PAD_ALWAYS, caps));
   gst_caps_unref (caps);
+
+  element_class->change_state = GST_DEBUG_FUNCPTR (gst_kms_sink_change_state);
 
   basesink_class->start = GST_DEBUG_FUNCPTR (gst_kms_sink_start);
   basesink_class->stop = GST_DEBUG_FUNCPTR (gst_kms_sink_stop);
@@ -2481,6 +2991,10 @@ gst_kms_sink_class_init (GstKMSSinkClass * klass)
       g_param_spec_int ("fd", "File Descriptor",
       "DRM file descriptor", -1, G_MAXINT, -1,
       G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | G_PARAM_CONSTRUCT);
+  g_properties[PROP_FORCE_LEGACY] =
+      g_param_spec_boolean ("legacy", "Legacy API",
+      "Force to use legacy DRM API", FALSE,
+      G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS);
 
   /**
    * kmssink:skip-vsync:
