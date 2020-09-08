@@ -2001,6 +2001,14 @@ gst_base_parse_add_index_entry (GstBaseParse * parse, guint64 offset,
       goto exit;
     }
 
+    /* upstream TIME format means that baseparse is running on push mode,
+     * but this check will not hurt flow anyway */
+    if (parse->priv->upstream_format == GST_FORMAT_TIME
+        && parse->priv->pad_mode == GST_PAD_MODE_PUSH) {
+      GST_DEBUG_OBJECT (parse, "upstream format is time; discarding");
+      goto exit;
+    }
+
     /* FIXME need better helper data structure that handles these issues
      * related to ongoing collecting of index entries */
     if (parse->priv->index_last_offset + parse->priv->idx_byte_interval >=
