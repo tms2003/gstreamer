@@ -117,12 +117,56 @@ h264_tstamp_valid (struct avtp_stream_pdu * pdu)
   return FALSE;
 }
 
+/* Returns only valid values when the AVTP timestamp is valid
+ * In case of CVF a single video frame might be fragmented but only the last
+ * fragment/PDU contains the valid timestamp.
+ */
+static guint
+get_events_per_ts (const GstAvtpCrfBase * const avtpcrfbase,
+    const struct avtp_stream_pdu *const pdu)
+{
+  guint32 type;
+  guint64 len;
+  guint64 channels;
+  guint64 bit_depth;
+  int res;
+
+  res =
+      avtp_pdu_get ((struct avtp_common_pdu *) pdu, AVTP_FIELD_SUBTYPE, &type);
+  g_assert (res == 0);
+
+  switch (type) {
+    case AVTP_SUBTYPE_AAF:
+      res = avtp_aaf_pdu_get (pdu, AVTP_AAF_FIELD_STREAM_DATA_LEN, &len);
+      g_assert (res == 0);
+      res = avtp_aaf_pdu_get (pdu, AVTP_AAF_FIELD_CHAN_PER_FRAME, &channels);
+      g_assert (res == 0);
+      res = avtp_aaf_pdu_get (pdu, AVTP_AAF_FIELD_BIT_DEPTH, &bit_depth);
+      g_assert (res == 0);
+      /* calculate audio samples/events per PDU */
+      return (len * 8) / (channels * bit_depth);
+      break;
+    case AVTP_SUBTYPE_CVF:
+      // TODO expects that one video frame is between valid timestamps and
+      // avtpcrfbase->thread_data.average_period is calculated from CRF video
+      // frame sync type
+      return 1;
+    default:
+      GST_INFO_OBJECT (avtpcrfbase, "type 0x%x not supported.\n", type);
+      break;
+  }
+
+  return 1;
+}
+
 GstClockTime
-gst_avtp_crf_adjust_ts (GstAvtpCrfBase * const avtpcrfbase, GstClockTime tstamp)
+gst_avtp_crf_adjust_ts (GstAvtpCrfBase * const avtpcrfbase,
+    const struct avtp_stream_pdu * const pdu, GstClockTime tstamp)
 {
   const GstAvtpCrfThreadData *const thread_data = &avtpcrfbase->thread_data;
   const GstClockTime current_ts = thread_data->current_ts;
-  const gdouble avg_period = thread_data->average_period;
+  const guint events_per_ts = get_events_per_ts (avtpcrfbase, pdu);
+  const gdouble avg_period = thread_data->average_period * events_per_ts;
   GstClockTime adjusted_tstamp;
 
   /*

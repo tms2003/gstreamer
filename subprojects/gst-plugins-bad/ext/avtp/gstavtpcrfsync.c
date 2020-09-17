@@ -180,7 +180,7 @@ gst_avtp_crf_sync_transform_ip (GstBaseTransform * parent, GstBuffer * buffer)
     if (h264_time < current_ts)
       h264_time += (1ULL << 32);
 
-    adjusted_h264_time = gst_avtp_crf_adjust_ts (avtpcrfbase, h264_time);
+    adjusted_h264_time = gst_avtp_crf_adjust_ts (avtpcrfbase, pdu, h264_time);
     res =
         avtp_cvf_pdu_set (pdu, AVTP_CVF_FIELD_H264_TIMESTAMP,
         adjusted_h264_time);
@@ -204,7 +204,7 @@ gst_avtp_crf_sync_transform_ip (GstBaseTransform * parent, GstBuffer * buffer)
   if (tstamp < current_ts)
     tstamp += (1ULL << 32);
 
-  adjusted_tstamp = gst_avtp_crf_adjust_ts (avtpcrfbase, tstamp);
+  adjusted_tstamp = gst_avtp_crf_adjust_ts (avtpcrfbase, pdu, tstamp);
   set_avtp_tstamp (avtpcrfsync, pdu, adjusted_tstamp);
   set_avtp_mr_bit (avtpcrfsync, pdu, thread_data->mr);
   GST_LOG_OBJECT (avtpcrfsync,
