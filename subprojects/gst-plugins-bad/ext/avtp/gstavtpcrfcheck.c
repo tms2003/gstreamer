@@ -41,6 +41,7 @@
 #include <glib.h>
 #include <math.h>
 
+#include "gstavtputil.h"
 #include "gstavtpcrfbase.h"
 #include "gstavtpcrfcheck.h"
 #include "gstavtpcrfutil.h"
@@ -193,10 +194,9 @@ gst_avtp_crf_check_transform_ip (GstBaseTransform * parent, GstBuffer * buffer)
 
     res = avtp_cvf_pdu_get (pdu, AVTP_CVF_FIELD_H264_TIMESTAMP, &h264_time);
     g_assert (res == 0);
-    /* Extrapolate tstamp to 64 bit and assume it's greater than CRF timestamp. */
-    h264_time |= current_ts & 0xFFFFFFFF00000000;
-    if (h264_time < current_ts)
-      h264_time += (1ULL << 32);
+
+    h264_time = gst_avtp_tstamp_to_ptime (GST_ELEMENT (avtpcrfbase), h264_time,
+        current_ts);
 
     /*
      * float typecasted to guint64 truncates the decimal part. So, round() it
@@ -224,13 +224,8 @@ gst_avtp_crf_check_transform_ip (GstBaseTransform * parent, GstBuffer * buffer)
   if (tstamp == GST_CLOCK_TIME_NONE)
     goto exit;
 
-  /* 
-   * Extrapolate the 32-bit AVTP Timestamp to 64-bit and assume it's greater
-   * than the 64-bit CRF timestamp.
-   */
-  tstamp |= current_ts & 0xFFFFFFFF00000000;
-  if (tstamp < current_ts)
-    tstamp += (1ULL << 32);
+  tstamp = gst_avtp_tstamp_to_ptime (GST_ELEMENT (avtpcrfbase), tstamp,
+      current_ts);
 
   /*
    * float typecasted to guint64 truncates the decimal part. So, round() it

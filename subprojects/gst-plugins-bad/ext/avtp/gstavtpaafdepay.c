@@ -39,6 +39,7 @@
 #include <avtp_aaf.h>
 #include <gst/audio/audio-format.h>
 
+#include "gstavtputil.h"
 #include "gstavtpaafdepay.h"
 
 GST_DEBUG_CATEGORY_STATIC (avtpaafdepay_debug);
@@ -303,7 +304,7 @@ gst_avtp_aaf_depay_chain (GstPad * pad, GstObject * parent, GstBuffer * buffer)
   }
   avtpbasedepayload->seqnum++;
 
-  ptime = gst_avtp_base_depayload_tstamp_to_ptime (avtpbasedepayload, tstamp,
+  ptime = gst_avtp_tstamp_to_ptime (GST_ELEMENT (avtpbasedepayload), tstamp,
       avtpbasedepayload->prev_ptime);
 
   subbuffer = gst_buffer_copy_region (buffer, GST_BUFFER_COPY_ALL,

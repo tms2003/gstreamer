@@ -19,6 +19,7 @@
  * Boston, MA 02110-1301 USA
  */
 
+#include "gstavtputil.h"
 #include "gstavtpbasedepayload.h"
 
 GST_DEBUG_CATEGORY_STATIC (avtpbasedepayload_debug);
@@ -196,31 +197,6 @@ gst_avtp_base_depayload_sink_event (GstPad * pad, GstObject * parent,
   }
 }
 
-/* Helper function to convert AVTP timestamp to AVTP presentation time. Since
- * AVTP timestamp represents the lower 32-bit part from AVTP presentation time,
- * the helper requires a reference time ('ref' argument) to convert it properly.
- * The reference time must be in gstreamer clock-time coordinate.
- */
-GstClockTime
-gst_avtp_base_depayload_tstamp_to_ptime (GstAvtpBaseDepayload *
-    avtpbasedepayload, guint32 tstamp, GstClockTime ref)
-{
-  GstClockTime ptime;
-
-  ptime = (ref & 0xFFFFFFFF00000000ULL) | tstamp;
-
-  /* If 'ptime' is less than the our reference time, it means the higher part
-   * from 'ptime' needs to be incremented by 1 in order reflect the correct
-   * presentation time.
-   */
-  if (ptime < ref)
-    ptime += (1ULL << 32);
-
-  GST_LOG_OBJECT (avtpbasedepayload, "AVTP presentation time %" GST_TIME_FORMAT,
-      GST_TIME_ARGS (ptime));
-  return ptime;
-}
-
 gboolean
 gst_avtp_base_depayload_push_segment_event (GstAvtpBaseDepayload *
     avtpbasedepayload, guint32 avtp_tstamp)
@@ -234,7 +210,7 @@ gst_avtp_base_depayload_push_segment_event (GstAvtpBaseDepayload *
 
   now = gst_clock_get_time (clock);
   avtp_ptime =
-      gst_avtp_base_depayload_tstamp_to_ptime (avtpbasedepayload, avtp_tstamp,
+      gst_avtp_tstamp_to_ptime (GST_ELEMENT (avtpbasedepayload), avtp_tstamp,
       now);
   base_time = gst_element_get_base_time (GST_ELEMENT (avtpbasedepayload));
 
