@@ -35,6 +35,7 @@ G_BEGIN_DECLS
 #define GST_MINI_OBJECT(obj)               (GST_MINI_OBJECT_CAST(obj))
 
 typedef struct _GstMiniObject GstMiniObject;
+typedef struct _GstMiniObjectPool GstMiniObjectPool;
 
 /**
  * GstMiniObjectCopyFunction:
@@ -194,6 +195,7 @@ typedef enum {
  * @refcount: atomic refcount
  * @lockstate: atomic state of the locks
  * @flags: extra flags.
+ * @pool: pointer to the pool owner of the mini-object
  * @copy: a copy function
  * @dispose: a dispose function
  * @free: the free function
@@ -201,12 +203,13 @@ typedef enum {
  * Base class for refcounted lightweight objects.
  */
 struct _GstMiniObject {
-  GType   type;
+  GType                     type;
 
   /*< public >*/ /* with COW */
-  gint    refcount;
-  gint    lockstate;
-  guint   flags;
+  gint                      refcount;
+  gint                      lockstate;
+  guint                     flags;
+  GstMiniObjectPool         *pool;
 
   GstMiniObjectCopyFunction copy;
   GstMiniObjectDisposeFunction dispose;

@@ -22,6 +22,7 @@
  * SECTION:gstminiobject
  * @title: GstMiniObject
  * @short_description: Lightweight base class for the GStreamer object hierarchy
+ * @see_also: #GstMiniObjectPool
  *
  * #GstMiniObject is a simple structure that can be used to implement refcounted
  * types.
@@ -32,7 +33,8 @@
  * gst_mini_object_ref() and gst_mini_object_unref() increment and decrement the
  * refcount respectively. When the refcount of a mini-object reaches 0, the
  * dispose function is called first and when this returns %TRUE, the free
- * function of the miniobject is called.
+ * function of the miniobject is called. Mini-objects allocated from a
+ * #GstMiniObjectPool will be returned to the pool when the refcount drops to 0.
  *
  * A copy can be made with gst_mini_object_copy().
  *
@@ -56,6 +58,7 @@
 
 #include "gst/gst_private.h"
 #include "gst/gstminiobject.h"
+#include "gst/gstminiobjectpool.h"
 #include "gst/gstinfo.h"
 #include <gobject/gvaluecollector.h>
 
@@ -154,6 +157,7 @@ gst_mini_object_init (GstMiniObject * mini_object, guint flags, GType type,
   mini_object->refcount = 1;
   mini_object->lockstate = 0;
   mini_object->flags = flags;
+  mini_object->pool = NULL;
 
   mini_object->copy = copy_func;
   mini_object->dispose = dispose_func;
@@ -635,6 +639,7 @@ void
 gst_mini_object_unref (GstMiniObject * mini_object)
 {
   gint old_refcount, new_refcount;
+  GstMiniObjectPool *pool;
 
   g_return_if_fail (mini_object != NULL);
   g_return_if_fail (GST_MINI_OBJECT_REFCOUNT_VALUE (mini_object) > 0);
@@ -651,8 +656,24 @@ gst_mini_object_unref (GstMiniObject * mini_object)
 
   if (new_refcount == 0) {
     gboolean do_free;
+    gboolean do_dispose;
 
-    if (mini_object->dispose)
+    /* belongs to a pool, return free */
+    if ((pool = mini_object->pool) != NULL) {
+      /* keep the buffer alive */
+      gst_mini_object_ref (mini_object);
+      /* return the buffer to the pool */
+      GST_CAT_LOG (GST_CAT_REFCOUNTING, "release %p to pool %p", mini_object,
+          pool);
+      gst_mini_object_pool_release_object (pool, mini_object);
+      /* don't call subclass dispose if the mini object was revived to the pool */
+      do_dispose = FALSE;
+      do_free = FALSE;
+    } else {
+      do_dispose = TRUE;
+    }
+
+    if (do_dispose && mini_object->dispose)
       do_free = mini_object->dispose (mini_object);
     else
       do_free = TRUE;
