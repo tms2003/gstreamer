@@ -1182,3 +1182,22 @@ gst_mini_object_pool_set_flushing (GstMiniObjectPool * pool, gboolean flushing)
 done:
   GST_MINI_OBJECT_POOL_UNLOCK (pool);
 }
+
+/**
+ * gst_mini_object_pool_discard_object:
+ * @pool: a #GstMiniObjectPool
+ * @object: the #GstMiniObject to discard from the pool
+ *
+ * Discard a mini-object from the pool by removing it. Typically
+ * called by subclasses to handle errors.
+ */
+void
+gst_mini_object_pool_discard_object (GstMiniObjectPool * pool,
+    GstMiniObject * object)
+{
+  g_return_if_fail (GST_IS_MINI_OBJECT_POOL (pool));
+  g_return_if_fail (object);
+
+  do_free_object (pool, object);
+  gst_poll_write_control (pool->priv->poll);
+}

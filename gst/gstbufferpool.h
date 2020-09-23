@@ -24,6 +24,7 @@
 #define __GST_BUFFER_POOL_H__
 
 #include <gst/gstminiobject.h>
+#include <gst/gstminiobjectpool.h>
 #include <gst/gstpad.h>
 #include <gst/gstbuffer.h>
 
@@ -42,11 +43,7 @@ typedef struct _GstBufferPoolClass GstBufferPoolClass;
 
 /**
  * GstBufferPoolAcquireFlags:
- * @GST_BUFFER_POOL_ACQUIRE_FLAG_NONE: no flags
  * @GST_BUFFER_POOL_ACQUIRE_FLAG_KEY_UNIT: buffer is keyframe
- * @GST_BUFFER_POOL_ACQUIRE_FLAG_DONTWAIT: when the bufferpool is empty, acquire_buffer
- * will by default block until a buffer is released into the pool again. Setting
- * this flag makes acquire_buffer return #GST_FLOW_EOS instead of blocking.
  * @GST_BUFFER_POOL_ACQUIRE_FLAG_DISCONT: buffer is discont
  * @GST_BUFFER_POOL_ACQUIRE_FLAG_LAST: last flag, subclasses can use private flags
  *    starting from this value.
@@ -54,47 +51,33 @@ typedef struct _GstBufferPoolClass GstBufferPoolClass;
  * Additional flags to control the allocation of a buffer
  */
 typedef enum {
-  GST_BUFFER_POOL_ACQUIRE_FLAG_NONE     = 0,
-  GST_BUFFER_POOL_ACQUIRE_FLAG_KEY_UNIT = (1 << 0),
-  GST_BUFFER_POOL_ACQUIRE_FLAG_DONTWAIT = (1 << 1),
-  GST_BUFFER_POOL_ACQUIRE_FLAG_DISCONT  = (1 << 2),
-  GST_BUFFER_POOL_ACQUIRE_FLAG_LAST     = (1 << 16),
+  GST_BUFFER_POOL_ACQUIRE_FLAG_KEY_UNIT = (GST_MINI_OBJECT_POOL_ACQUIRE_FLAG_LAST << 0),
+  GST_BUFFER_POOL_ACQUIRE_FLAG_DISCONT  = (GST_MINI_OBJECT_POOL_ACQUIRE_FLAG_LAST << 2),
+  GST_BUFFER_POOL_ACQUIRE_FLAG_LAST     = (GST_MINI_OBJECT_POOL_ACQUIRE_FLAG_LAST << 15),
 } GstBufferPoolAcquireFlags;
 
-typedef struct _GstBufferPoolAcquireParams GstBufferPoolAcquireParams;
+/**
+ * GST_BUFFER_POOL_ACQUIRE_FLAG_NONE:
+ *
+ * Alias of #GST_MINI_OBJECT_POOL_ACQUIRE_FLAG_NONE. Use the later on
+ * newly written code.
+ */
+#define GST_BUFFER_POOL_ACQUIRE_FLAG_NONE GST_MINI_OBJECT_POOL_ACQUIRE_FLAG_NONE
+
+/**
+ * GST_BUFFER_POOL_ACQUIRE_FLAG_DONTWAIT:
+ *
+ * Alias of #GST_MINI_OBJECT_POOL_ACQUIRE_FLAG_DONTWAIT. Use the later
+ * on newly written code.
+ */
+#define GST_BUFFER_POOL_ACQUIRE_FLAG_DONTWAIT GST_MINI_OBJECT_POOL_ACQUIRE_FLAG_DONTWAIT
 
 /**
  * GstBufferPoolAcquireParams:
- * @format: the format of @start and @stop
- * @start: the start position
- * @stop: the stop position
- * @flags: additional flags
  *
- * Parameters passed to the gst_buffer_pool_acquire_buffer() function to control the
- * allocation of the buffer.
- *
- * The default implementation ignores the @start and @stop members but other
- * implementations can use this extra information to decide what buffer to
- * return.
+ * Alias of #GstMiniObjectPoolAcquireParams. Use the later on newly written code.
  */
-struct _GstBufferPoolAcquireParams {
-  GstFormat                 format;
-  gint64                    start;
-  gint64                    stop;
-  GstBufferPoolAcquireFlags flags;
-
-  /*< private >*/
-  gpointer _gst_reserved[GST_PADDING];
-};
-
-/**
- * GST_BUFFER_POOL_IS_FLUSHING:
- * @pool: a GstBufferPool
- *
- * Check if the bufferpool is flushing. Subclasses might want to check the
- * state of the pool in the acquire function.
- */
-#define GST_BUFFER_POOL_IS_FLUSHING(pool)  (g_atomic_int_get (&pool->flushing))
+typedef GstMiniObjectPoolAcquireParams GstBufferPoolAcquireParams;
 
 /**
  * GstBufferPool:
@@ -103,10 +86,7 @@ struct _GstBufferPoolAcquireParams {
  * variables.
  */
 struct _GstBufferPool {
-  GstObject            object;
-
-  /*< protected >*/
-  gint                 flushing;
+  GstMiniObjectPool    pool;
 
   /*< private >*/
   GstBufferPoolPrivate *priv;
@@ -117,62 +97,14 @@ struct _GstBufferPool {
 /**
  * GstBufferPoolClass:
  * @object_class:  Object parent class
- * @get_options: get a list of options supported by this pool
- * @set_config: apply the bufferpool configuration. The default configuration
- *              will parse the default config parameters
- * @start: start the bufferpool. The default implementation will preallocate
- *         min-buffers buffers and put them in the queue
- * @stop: stop the bufferpool. the default implementation will free the
- *        preallocated buffers. This function is called when all the buffers are
- *        returned to the pool.
- * @acquire_buffer: get a new buffer from the pool. The default implementation
- *        will take a buffer from the queue and optionally wait for a buffer to
- *        be released when there are no buffers available.
- * @alloc_buffer: allocate a buffer. the default implementation allocates
- *        buffers from the configured memory allocator and with the configured
- *        parameters. All metadata that is present on the allocated buffer will
- *        be marked as #GST_META_FLAG_POOLED and #GST_META_FLAG_LOCKED and will
- *        not be removed from the buffer in @reset_buffer. The buffer should
- *        have the GST_BUFFER_FLAG_TAG_MEMORY cleared.
- * @reset_buffer: reset the buffer to its state when it was freshly allocated.
- *        The default implementation will clear the flags, timestamps and
- *        will remove the metadata without the #GST_META_FLAG_POOLED flag (even
- *        the metadata with #GST_META_FLAG_LOCKED). If the
- *        #GST_BUFFER_FLAG_TAG_MEMORY was set, this function can also try to
- *        restore the memory and clear the #GST_BUFFER_FLAG_TAG_MEMORY again.
- * @release_buffer: release a buffer back in the pool. The default
- *        implementation will put the buffer back in the queue and notify any
- *        blocking acquire_buffer calls when the #GST_BUFFER_FLAG_TAG_MEMORY
- *        is not set on the buffer. If #GST_BUFFER_FLAG_TAG_MEMORY is set, the
- *        buffer will be freed with @free_buffer.
- * @free_buffer: free a buffer. The default implementation unrefs the buffer.
- * @flush_start: enter the flushing state. (Since: 1.4)
- * @flush_stop: leave the flushign state. (Since: 1.4)
  *
  * The GstBufferPool class.
  */
 struct _GstBufferPoolClass {
-  GstObjectClass    object_class;
-
-  /*< public >*/
-  const gchar ** (*get_options)    (GstBufferPool *pool);
-  gboolean       (*set_config)     (GstBufferPool *pool, GstStructure *config);
-
-  gboolean       (*start)          (GstBufferPool *pool);
-  gboolean       (*stop)           (GstBufferPool *pool);
-
-  GstFlowReturn  (*acquire_buffer) (GstBufferPool *pool, GstBuffer **buffer,
-                                    GstBufferPoolAcquireParams *params);
-  GstFlowReturn  (*alloc_buffer)   (GstBufferPool *pool, GstBuffer **buffer,
-                                    GstBufferPoolAcquireParams *params);
-  void           (*reset_buffer)   (GstBufferPool *pool, GstBuffer *buffer);
-  void           (*release_buffer) (GstBufferPool *pool, GstBuffer *buffer);
-  void           (*free_buffer)    (GstBufferPool *pool, GstBuffer *buffer);
-  void           (*flush_start)    (GstBufferPool *pool);
-  void           (*flush_stop)     (GstBufferPool *pool);
+  GstMiniObjectPoolClass    pool_class;
 
   /*< private >*/
-  gpointer _gst_reserved[GST_PADDING - 2];
+  gpointer _gst_reserved[GST_PADDING + 9];
 };
 
 GST_API
@@ -246,7 +178,7 @@ gboolean         gst_buffer_pool_config_validate_params (GstStructure *config, G
 
 GST_API
 GstFlowReturn    gst_buffer_pool_acquire_buffer  (GstBufferPool *pool, GstBuffer **buffer,
-                                                  GstBufferPoolAcquireParams *params);
+                                                  GstMiniObjectPoolAcquireParams *params);
 
 GST_API
 void             gst_buffer_pool_release_buffer  (GstBufferPool *pool, GstBuffer *buffer);

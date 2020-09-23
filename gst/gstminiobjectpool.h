@@ -222,6 +222,9 @@ GstFlowReturn    gst_mini_object_pool_acquire_object  (GstMiniObjectPool *pool, 
 GST_API
 void             gst_mini_object_pool_release_object  (GstMiniObjectPool *pool, GstMiniObject *object);
 
+GST_API
+void             gst_mini_object_pool_discard_object  (GstMiniObjectPool *pool, GstMiniObject *object);
+
 G_END_DECLS
 
 #endif /* __GST_MINI_OBJECT_POOL_H__ */
