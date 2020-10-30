@@ -160,12 +160,21 @@ validate_tstamps (GstAvtpCrfBase * avtpcrfbase, GstBuffer * buf,
 
 static void
 test_crf_tstamps (GstHarness * h, GstBuffer * buf, struct buffer_tstamps *orig,
-    struct buffer_tstamps *expected)
+    struct buffer_tstamps *expected, GstClockTime ref64)
 {
   GstAvtpCrfBase *avtpcrfbase;
   GstBuffer *bufout;
 
   avtpcrfbase = (GstAvtpCrfBase *) gst_harness_find_element (h, "avtpcrfsync");
+  /* avtppay uses base_time and running_time to determine the presentation time
+   * stamps. running_time is depending on buf_pts time. avtpcrfsync uses also
+   * base_time and running_time to reconstruct the 64 bit time stamp from the
+   * 32 bit presentation time stamps. Due to running_time differs for each test
+   * case base_time has to be adjusted to use the same reference for the
+   * reconstruction for each test case.
+   */
+  gst_element_set_base_time (GST_ELEMENT (avtpcrfbase),
+      (ref64 - orig->buf_pts));
   set_buffer_tstamps (buf, orig);
 
   bufout = gst_harness_push_and_pull (h, buf);
@@ -261,26 +270,36 @@ GST_START_TEST (test_crf_cvf_data)
   GstAvtpCrfBase *avtpcrfbase;
   GstBuffer *buf;
   GstHarness *h;
+  GstClockTime ref64;
 
   h = setup_harness ();
 
   buf = create_input_buffer (h, AVTP_SUBTYPE_CVF);
   avtpcrfbase = (GstAvtpCrfBase *) gst_harness_find_element (h, "avtpcrfsync");
+  /* used for 32 to 64 bit extension
+   * The reference should be constant for each test case.
+   */
+  ref64 = 110000;
+  /* used for timestamp alignment */
   avtpcrfbase->thread_data.average_period = 3300;
   avtpcrfbase->thread_data.current_ts = 110000;
   gst_object_unref (avtpcrfbase);
 
   orig = (struct buffer_tstamps) {
   .buf_pts = 103000,.buf_dts = 100000,.avtp_ts = 110000,.h264_ts = 108000};
+  /* orig.h264_ts < reference timestamp. Therefore 64 bit extension adds 1<<32.
+   * This extended timestamp will be aligned to average_period which results
+   * into h264_ts +=1204 and finally into buf_pts += 1204
+   */
   expected = (struct buffer_tstamps) {
   .buf_pts = 104204,.buf_dts = 100000,.avtp_ts = 110000,.h264_ts = 109204};
-  test_crf_tstamps (h, buf, &orig, &expected);
+  test_crf_tstamps (h, buf, &orig, &expected, ref64);
 
   orig = (struct buffer_tstamps) {
   .buf_pts = 107000,.buf_dts = 105000,.avtp_ts = 113000,.h264_ts = 118500};
   expected = (struct buffer_tstamps) {
   .buf_pts = 108400,.buf_dts = 105300,.avtp_ts = 113300,.h264_ts = 119900};
-  test_crf_tstamps (h, buf, &orig, &expected);
+  test_crf_tstamps (h, buf, &orig, &expected, ref64);
 
   /* test for invalid DTS */
   orig = (struct buffer_tstamps) {
@@ -289,7 +308,7 @@ GST_START_TEST (test_crf_cvf_data)
   expected = (struct buffer_tstamps) {
   .buf_pts = 108400,.buf_dts = GST_CLOCK_TIME_NONE,.avtp_ts =
         113300,.h264_ts = 119900};
-  test_crf_tstamps (h, buf, &orig, &expected);
+  test_crf_tstamps (h, buf, &orig, &expected, ref64);
 
   gst_buffer_unref (buf);
   gst_harness_teardown (h);
@@ -303,11 +322,17 @@ GST_START_TEST (test_crf_aaf_data)
   GstAvtpCrfBase *avtpcrfbase;
   GstBuffer *buf;
   GstHarness *h;
+  GstClockTime ref64;
 
   h = setup_harness ();
 
   buf = create_input_buffer (h, AVTP_SUBTYPE_AAF);
   avtpcrfbase = (GstAvtpCrfBase *) gst_harness_find_element (h, "avtpcrfsync");
+  /* used for 32 to 64 bit extension
+   * The reference should be constant for each test case.
+   */
+  ref64 = 110000;
+  /* used for timestamp alignment */
   avtpcrfbase->thread_data.average_period = 3300;
   avtpcrfbase->thread_data.current_ts = 110000;
   gst_object_unref (avtpcrfbase);
@@ -316,13 +341,13 @@ GST_START_TEST (test_crf_aaf_data)
   .buf_pts = 108000,.buf_dts = 0,.avtp_ts = 110000,.h264_ts = 0};
   expected = (struct buffer_tstamps) {
   .buf_pts = 108000,.buf_dts = 0,.avtp_ts = 110000,.h264_ts = 0};
-  test_crf_tstamps (h, buf, &orig, &expected);
+  test_crf_tstamps (h, buf, &orig, &expected, ref64);
 
   orig = (struct buffer_tstamps) {
   .buf_pts = 110000,.buf_dts = 0,.avtp_ts = 113000,.h264_ts = 0};
   expected = (struct buffer_tstamps) {
   .buf_pts = 110300,.buf_dts = 0,.avtp_ts = 113300,.h264_ts = 0};
-  test_crf_tstamps (h, buf, &orig, &expected);
+  test_crf_tstamps (h, buf, &orig, &expected, ref64);
 
   gst_buffer_unref (buf);
   gst_harness_teardown (h);
@@ -349,7 +374,7 @@ GST_START_TEST (test_crf_period_zero)
   .buf_pts = 100,.buf_dts = 105,.avtp_ts = 112,.h264_ts = 110};
   expected = (struct buffer_tstamps) {
   .buf_pts = 100,.buf_dts = 105,.avtp_ts = 112,.h264_ts = 110};
-  test_crf_tstamps (h, buf, &orig, &expected);
+  test_crf_tstamps (h, buf, &orig, &expected, 110);
 
   gst_buffer_unref (buf);
   gst_harness_teardown (h);
