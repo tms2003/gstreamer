@@ -24,6 +24,7 @@
 #include "gstfdkaac.h"
 #include "gstfdkaacenc.h"
 
+#include <gst/base/gstbitwriter.h>
 #include <gst/pbutils/pbutils.h>
 
 #include <string.h>
@@ -79,7 +80,7 @@ static GstStaticPadTemplate src_template = GST_STATIC_PAD_TEMPLATE ("src",
         "mpegversion = (int) 4, "
         "rate = (int) { " SAMPLE_RATES " }, "
         "channels = (int) {1, 2, 3, 4, 5, 6, 8}, "
-        "stream-format = (string) { adts, adif, raw }, "
+        "stream-format = (string) { adts, adif, raw, latm-mcp0, latm-mcp1 }, "
         "profile = (string) { lc, he-aac-v1, he-aac-v2, ld }, "
         "framed = (boolean) true")
     );
@@ -298,6 +299,7 @@ gst_fdkaacenc_set_format (GstAudioEncoder * enc, GstAudioInfo * info)
   AACENC_InfoStruct enc_info = { 0 };
   gint bitrate, signaling_mode;
   guint bitrate_mode;
+  guint8 audio_spec_conf[2] = { 0 };
 
   if (self->enc && !self->is_drained) {
     /* drain */
@@ -324,6 +326,20 @@ gst_fdkaacenc_set_format (GstAudioEncoder * enc, GstAudioInfo * info)
       } else if (strcmp (str, "raw") == 0) {
         GST_DEBUG_OBJECT (self, "use RAW format for output");
         transmux = 0;
+      } else if (strcmp (str, "latm-mcp1") == 0) {
+        /*
+         * Enable TT_MP4_LATM_MCP1. Sets muxConfigPresent = 1. See Section 4.1 of
+         * RFC 3016.
+         */
+        GST_DEBUG_OBJECT (self, "use LATM MCP1 format for output");
+        transmux = 6;
+      } else if (strcmp (str, "latm-mcp0") == 0) {
+        /*
+         * Enable TT_MP4_LATM_MCP0. Sets muxConfigPresent = 0. See Section 4.1 of
+         * RFC 3016.
+         */
+        GST_DEBUG_OBJECT (self, "use LATM MCP0 format for output");
+        transmux = 7;
       }
     }
 
@@ -572,12 +588,57 @@ gst_fdkaacenc_set_format (GstAudioEncoder * enc, GstAudioInfo * info)
   } else if (transmux == 2) {
     gst_caps_set_simple (src_caps, "stream-format", G_TYPE_STRING, "adts",
         NULL);
+  } else if (transmux == 6 || transmux == 7) {
+    GstBitWriter bw;
+    guint rate = GST_AUDIO_INFO_RATE (info);
+    guint8 channels = GST_AUDIO_INFO_CHANNELS (info);
+    GstBuffer *codec_data;
+
+    /*
+     * Craft a AudioSpecificConfig manually to be used for setting level and
+     * profile later as when LATM_MCP0/1 is enabled enc_info.confBuf won't have
+     * AudioSpecificConfig but StreamMuxConfig. Since gst_codec_utils expects
+     * an AudioSpecificConfig to retrieve aot, rate and channel config
+     * information, it will fail. We pass this manually constructed
+     * AudioSpecificConfig when LATM is requested.
+     */
+    gst_bit_writer_init_with_data (&bw, audio_spec_conf,
+        sizeof (audio_spec_conf), FALSE);
+    gst_bit_writer_put_bits_uint8 (&bw, 2 /* AOT_AAC_LC */ , 5);
+    gst_bit_writer_put_bits_uint8 (&bw,
+        gst_codec_utils_aac_get_index_from_sample_rate (rate), 4);
+    gst_bit_writer_put_bits_uint8 (&bw, channels, 4);
+
+    codec_data =
+        gst_buffer_new_wrapped (g_memdup (enc_info.confBuf, enc_info.confSize),
+        enc_info.confSize);
+    /*
+     * For MCP0 the config is out of band, so set codec_data to
+     * StreamMuxConfig. For MCP1, the config is in band and need not be send
+     * via any out of band means like codec_data.
+     */
+    if (transmux == 6)
+      gst_caps_set_simple (src_caps, "stream-format", G_TYPE_STRING,
+          "latm-mcp1", NULL);
+    else
+      gst_caps_set_simple (src_caps, "codec_data", GST_TYPE_BUFFER, codec_data,
+          "stream-format", G_TYPE_STRING, "latm-mcp0", NULL);
+    gst_buffer_unref (codec_data);
   } else {
     g_assert_not_reached ();
   }
 
-  gst_codec_utils_aac_caps_set_level_and_profile (src_caps, enc_info.confBuf,
-      enc_info.confSize);
+  if (transmux != 6 && transmux != 7)
+    gst_codec_utils_aac_caps_set_level_and_profile (src_caps,
+        enc_info.confBuf, enc_info.confSize);
+  else
+    /*
+     * For LATM, confBuf is StreamMuxConfig and not AudioSpecificConfig.
+     * In this case, pass in the manually constructed AudioSpecificConfig
+     * buffer above.
+     */
+    gst_codec_utils_aac_caps_set_level_and_profile (src_caps, audio_spec_conf,
+        sizeof (audio_spec_conf));
 
   /* The above only parses the "base" profile, which is always going to be LC.
    * Set actual profile. */
