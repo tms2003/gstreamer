@@ -5893,11 +5893,20 @@ GstStructure *
 gst_base_sink_get_stats (GstBaseSink * sink)
 {
   GstBaseSinkPrivate *priv = NULL;
+  gdouble rate = 0;
+  GstClockTime avg_in_diff;
 
   g_return_val_if_fail (sink != NULL, NULL);
+
   priv = sink->priv;
+  avg_in_diff = priv->avg_in_diff;
+
+  /* Convert avg_in_diff (approximately frame duration) to rate */
+  if (GST_CLOCK_TIME_IS_VALID (avg_in_diff) && avg_in_diff > 0)
+    rate = (gdouble) GST_SECOND / avg_in_diff;
+
   return gst_structure_new ("application/x-gst-base-sink-stats",
-      "average-rate", G_TYPE_DOUBLE, priv->avg_rate,
+      "average-rate", G_TYPE_DOUBLE, rate,
       "dropped", G_TYPE_UINT64, priv->dropped,
       "rendered", G_TYPE_UINT64, priv->rendered, NULL);
 }
