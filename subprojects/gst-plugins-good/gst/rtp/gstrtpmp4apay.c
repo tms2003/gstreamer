@@ -23,6 +23,7 @@
 
 #include <string.h>
 
+#include <gst/base/gstbitreader.h>
 #include <gst/rtp/gstrtpbuffer.h>
 #include <gst/audio/audio.h>
 
@@ -40,7 +41,7 @@ GST_STATIC_PAD_TEMPLATE ("sink",
     GST_PAD_SINK,
     GST_PAD_ALWAYS,
     GST_STATIC_CAPS ("audio/mpeg, mpegversion=(int)4, "
-        "stream-format=(string)raw")
+        "stream-format = (string) { raw, latm-mcp0, latm-mcp1 }")
     );
 
 static GstStaticPadTemplate gst_rtp_mp4a_pay_src_template =
@@ -55,7 +56,7 @@ GST_STATIC_PAD_TEMPLATE ("src",
         /* All optional parameters
          *
          * "cpresent = (string) \"0\""
-         * "config=" 
+         * "config="
          */
     )
     );
@@ -107,6 +108,7 @@ gst_rtp_mp4a_pay_init (GstRtpMP4APay * rtpmp4apay)
 {
   rtpmp4apay->rate = 90000;
   rtpmp4apay->profile = g_strdup ("1");
+  rtpmp4apay->parse_latm = FALSE;
 }
 
 static void
@@ -135,49 +137,69 @@ static const unsigned int sampling_table[16] = {
 };
 
 static gboolean
-gst_rtp_mp4a_pay_parse_audio_config (GstRtpMP4APay * rtpmp4apay,
-    GstBuffer * buffer)
+gst_rtp_mp4a_pay_get_audio_object_type (GstRtpMP4APay * rtpmp4apay,
+    GstBitReader * br, guint8 * audio_object_type)
 {
-  GstMapInfo map;
-  guint8 *data;
-  gsize size;
+  if (!gst_bit_reader_get_bits_uint8 (br, audio_object_type, 5))
+    return FALSE;
+
+  if (*audio_object_type == 31) {
+    if (!gst_bit_reader_get_bits_uint8 (br, audio_object_type, 6))
+      return FALSE;
+    *audio_object_type += 32;
+  }
+
+  GST_LOG_OBJECT (rtpmp4apay, "audio object type %u", *audio_object_type);
+
+  return TRUE;
+}
+
+static gboolean
+gst_rtp_mp4a_pay_get_audio_sample_rate (GstRtpMP4APay * rtpmp4apay,
+    GstBitReader * br, gint * sample_rate)
+{
+  guint8 sampling_frequency_index;
+
+  if (!gst_bit_reader_get_bits_uint8 (br, &sampling_frequency_index, 4))
+    return FALSE;
+
+  GST_LOG_OBJECT (rtpmp4apay, "sampling_frequency_index: %u",
+      sampling_frequency_index);
+
+  if (sampling_frequency_index == 0xf) {
+    guint32 sampling_rate;
+    if (!gst_bit_reader_get_bits_uint32 (br, &sampling_rate, 24))
+      return FALSE;
+    *sample_rate = sampling_rate;
+  } else {
+    *sample_rate = sampling_table[sampling_frequency_index];
+    if (!*sample_rate)
+      return FALSE;
+  }
+
+  return TRUE;
+}
+
+static gboolean
+gst_rtp_mp4a_pay_parse_audio_config (GstRtpMP4APay * rtpmp4apay,
+    GstBitReader * br)
+{
   guint8 objectType;
-  guint8 samplingIdx;
   guint8 channelCfg;
 
-  gst_buffer_map (buffer, &map, GST_MAP_READ);
-  data = map.data;
-  size = map.size;
-
-  if (size < 2)
-    goto too_short;
-
   /* any object type is fine, we need to copy it to the profile-level-id field. */
-  objectType = (data[0] & 0xf8) >> 3;
-  if (objectType == 0)
-    goto invalid_object;
+  if (!gst_rtp_mp4a_pay_get_audio_object_type (rtpmp4apay, br, &objectType))
+    return FALSE;
 
-  samplingIdx = ((data[0] & 0x07) << 1) | ((data[1] & 0x80) >> 7);
-  /* only fixed values for now */
-  if (samplingIdx > 12 && samplingIdx != 15)
-    goto wrong_freq;
+  if (!gst_rtp_mp4a_pay_get_audio_sample_rate (rtpmp4apay, br,
+          &rtpmp4apay->rate))
+    return FALSE;
 
-  channelCfg = ((data[1] & 0x78) >> 3);
+  if (!gst_bit_reader_get_bits_uint8 (br, &channelCfg, 4))
+    return FALSE;
   if (channelCfg > 7)
     goto wrong_channels;
 
-  /* rtp rate depends on sampling rate of the audio */
-  if (samplingIdx == 15) {
-    if (size < 5)
-      goto too_short;
-
-    /* index of 15 means we get the rate in the next 24 bits */
-    rtpmp4apay->rate = ((data[1] & 0x7f) << 17) |
-        ((data[2]) << 9) | ((data[3]) << 1) | ((data[4] & 0x80) >> 7);
-  } else {
-    /* else use the rate from the table */
-    rtpmp4apay->rate = sampling_table[samplingIdx];
-  }
   /* extra rtp params contain the number of channels */
   g_free (rtpmp4apay->params);
   rtpmp4apay->params = g_strdup_printf ("%d", channelCfg);
@@ -187,45 +209,146 @@ gst_rtp_mp4a_pay_parse_audio_config (GstRtpMP4APay * rtpmp4apay,
   g_free (rtpmp4apay->profile);
   rtpmp4apay->profile = g_strdup_printf ("%d", objectType);
 
-  GST_DEBUG_OBJECT (rtpmp4apay,
-      "objectType: %d, samplingIdx: %d (%d), channelCfg: %d", objectType,
-      samplingIdx, rtpmp4apay->rate, channelCfg);
-
-  gst_buffer_unmap (buffer, &map);
+  GST_LOG_OBJECT (rtpmp4apay,
+      "objectType: %d, sampling rate: %d, channelCfg: %d",
+      objectType, rtpmp4apay->rate, channelCfg);
 
   return TRUE;
 
   /* ERROR */
-too_short:
-  {
-    GST_ELEMENT_ERROR (rtpmp4apay, STREAM, FORMAT,
-        (NULL),
-        ("config string too short, expected 2 bytes, got %" G_GSIZE_FORMAT,
-            size));
-    gst_buffer_unmap (buffer, &map);
-    return FALSE;
-  }
-invalid_object:
-  {
-    GST_ELEMENT_ERROR (rtpmp4apay, STREAM, FORMAT,
-        (NULL), ("invalid object type 0"));
-    gst_buffer_unmap (buffer, &map);
-    return FALSE;
-  }
-wrong_freq:
-  {
-    GST_ELEMENT_ERROR (rtpmp4apay, STREAM, NOT_IMPLEMENTED,
-        (NULL), ("unsupported frequency index %d", samplingIdx));
-    gst_buffer_unmap (buffer, &map);
-    return FALSE;
-  }
 wrong_channels:
   {
     GST_ELEMENT_ERROR (rtpmp4apay, STREAM, NOT_IMPLEMENTED,
         (NULL), ("unsupported number of channels %d, must < 8", channelCfg));
-    gst_buffer_unmap (buffer, &map);
     return FALSE;
   }
+}
+
+static gboolean
+gst_rtp_mp4a_pay_latm_get_value (GstRtpMP4APay * rtpmp4apay, GstBitReader * br,
+    guint32 * value)
+{
+  guint8 bytes, i, byte;
+
+  *value = 0;
+
+  if (!gst_bit_reader_get_bits_uint8 (br, &bytes, 2))
+    return FALSE;
+
+  for (i = 0; i <= bytes; ++i) {
+    *value <<= 8;
+    if (!gst_bit_reader_get_bits_uint8 (br, &byte, 8))
+      return FALSE;
+    *value += byte;
+  }
+
+  return TRUE;
+}
+
+static gboolean
+gst_rtp_mp4a_pay_parse_streammux_config (GstRtpMP4APay * rtpmp4apay,
+    GstBitReader * br)
+{
+  guint8 v, vA;
+
+  GST_LOG_OBJECT (rtpmp4apay, "Trying to parse StreamMux config");
+
+  /* audioMuxVersion */
+  if (!gst_bit_reader_get_bits_uint8 (br, &v, 1))
+    return FALSE;
+
+  if (v) {
+    /* audioMuxVersionA */
+    if (!gst_bit_reader_get_bits_uint8 (br, &vA, 1))
+      return FALSE;
+  } else
+    vA = 0;
+
+  GST_DEBUG_OBJECT (rtpmp4apay, "v %d, vA %d", v, vA);
+
+  if (vA == 0) {
+    guint8 same_time_framing, subframes, num_program, prog;
+    if (v == 1) {
+      guint32 value;
+      /* taraBufferFullness */
+      if (!gst_rtp_mp4a_pay_latm_get_value (rtpmp4apay, br, &value))
+        return FALSE;
+    }
+
+    if (!gst_bit_reader_get_bits_uint8 (br, &same_time_framing, 1))
+      return FALSE;
+    if (!gst_bit_reader_get_bits_uint8 (br, &subframes, 6))
+      return FALSE;
+    if (!gst_bit_reader_get_bits_uint8 (br, &num_program, 4))
+      return FALSE;
+
+    /*
+     * For LATM, maximum number of program and layer is 1. Getting a value of
+     * 0 for either program or layer implies a value of 1.
+     */
+    num_program += 1;
+    if (num_program > 1) {
+      GST_ERROR_OBJECT (rtpmp4apay, "LATM Unsupported format");
+      return FALSE;
+    }
+
+    GST_INFO_OBJECT (rtpmp4apay,
+        "same_time_framing %d, subframes %d, num_program %d", same_time_framing,
+        subframes, num_program);
+
+    for (prog = 0; prog < num_program; ++prog) {
+      guint8 num_layer, layer;
+
+      if (!gst_bit_reader_get_bits_uint8 (br, &num_layer, 3))
+        return FALSE;
+
+      num_layer += 1;
+      if (num_layer > 1) {
+        GST_ERROR_OBJECT (rtpmp4apay, "LATM Unsupported format");
+        return FALSE;
+      }
+
+      GST_INFO_OBJECT (rtpmp4apay, "Program %d: %d layers", prog, num_layer);
+
+      for (layer = 0; layer < num_layer; layer++) {
+        guint8 use_same_config;
+
+        if (prog == 0 && layer == 0) {
+          use_same_config = 0;
+        } else {
+          if (!gst_bit_reader_get_bits_uint8 (br, &use_same_config, 1))
+            return FALSE;
+        }
+
+        if (!use_same_config) {
+          if (v == 0) {
+            if (!gst_rtp_mp4a_pay_parse_audio_config (rtpmp4apay, br)) {
+              GST_ERROR_OBJECT (rtpmp4apay,
+                  "Failed to read audio specific config");
+              return FALSE;
+            }
+          } else {
+            guint32 asc_len;
+            if (!gst_rtp_mp4a_pay_latm_get_value (rtpmp4apay, br, &asc_len))
+              return FALSE;
+            if (!gst_rtp_mp4a_pay_parse_audio_config (rtpmp4apay, br)) {
+              GST_ERROR_OBJECT (rtpmp4apay,
+                  "Failed to read audio specific config");
+              return FALSE;
+            }
+            if (!gst_bit_reader_skip (br, asc_len))
+              return FALSE;
+          }
+        }
+      }
+    }
+  } else {
+    GST_ERROR_OBJECT (rtpmp4apay,
+        "audioMuxVersionA > 0 reserved for future extensions");
+    return FALSE;
+  }
+
+  return TRUE;
 }
 
 static gboolean
@@ -256,6 +379,7 @@ gst_rtp_mp4a_pay_setcaps (GstRTPBasePayload * payload, GstCaps * caps)
   const GValue *codec_data;
   gboolean res, framed = TRUE;
   const gchar *stream_format;
+  gboolean mux_config_present = FALSE;
 
   rtpmp4apay = GST_RTP_MP4A_PAY (payload);
 
@@ -266,8 +390,11 @@ gst_rtp_mp4a_pay_setcaps (GstRTPBasePayload * payload, GstCaps * caps)
    * fails */
   stream_format = gst_structure_get_string (structure, "stream-format");
   if (stream_format) {
-    if (strcmp (stream_format, "raw") != 0) {
-      GST_WARNING_OBJECT (rtpmp4apay, "AAC's stream-format must be 'raw', "
+    if (!(strcmp (stream_format, "raw") != 0
+            || strcmp (stream_format, "latm-mcp0") != 0
+            || strcmp (stream_format, "latm-mcp1") != 0)) {
+      GST_WARNING_OBJECT (rtpmp4apay,
+          "AAC's stream-format must be 'raw' or 'latm-mcp0' or 'latm-mcp1', "
           "%s is not supported", stream_format);
       return FALSE;
     }
@@ -276,11 +403,26 @@ gst_rtp_mp4a_pay_setcaps (GstRTPBasePayload * payload, GstCaps * caps)
         "assuming 'raw'");
   }
 
+  /* For LATM MCP0, the StreamMuxConfig will be in codec_data */
+  if (strcmp (stream_format, "latm-mcp0") == 0)
+    mux_config_present = TRUE;
+  else if (strcmp (stream_format, "latm-mcp1") == 0) {
+    /*
+     * For LATM MCP1, we will have to parse the incoming bitstream to figure out
+     * the required parameters like sample rate. Set the parse_latm flag to
+     * signal this and parse the incoming bitstream in handle_buffer when this
+     * is set.
+     */
+    rtpmp4apay->parse_latm = TRUE;
+    return TRUE;
+  }
+
   codec_data = gst_structure_get_value (structure, "codec_data");
   if (codec_data) {
     GST_LOG_OBJECT (rtpmp4apay, "got codec_data");
     if (G_VALUE_TYPE (codec_data) == GST_TYPE_BUFFER) {
       GstBuffer *buffer, *cbuffer;
+      GstBitReader br;
       GstMapInfo map;
       GstMapInfo cmap;
       guint i;
@@ -288,13 +430,37 @@ gst_rtp_mp4a_pay_setcaps (GstRTPBasePayload * payload, GstCaps * caps)
       buffer = gst_value_get_buffer (codec_data);
       GST_LOG_OBJECT (rtpmp4apay, "configuring codec_data");
 
-      /* parse buffer */
-      res = gst_rtp_mp4a_pay_parse_audio_config (rtpmp4apay, buffer);
+      if (buffer && gst_buffer_get_size (buffer) < 2) {
+        GST_ERROR_OBJECT (rtpmp4apay, "Malformed codec_data. Too short.");
+        return FALSE;
+      }
+
+      if (!gst_buffer_map (buffer, &map, GST_MAP_READ))
+        return FALSE;
+      gst_bit_reader_init (&br, map.data, map.size);
+
+      if (mux_config_present)
+        res = gst_rtp_mp4a_pay_parse_streammux_config (rtpmp4apay, &br);
+      else
+        res = gst_rtp_mp4a_pay_parse_audio_config (rtpmp4apay, &br);
 
       if (!res)
         goto config_failed;
 
-      gst_buffer_map (buffer, &map, GST_MAP_READ);
+      /*
+       * If muxConfigPresent = 1, then codec_data will have StreamMuxConfig.
+       * We do not need to construct a StreamMuxConfig again, just copy it to
+       * the 'config' buffer.
+       */
+      if (mux_config_present) {
+        cbuffer = gst_buffer_new_and_alloc (map.size);
+        gst_buffer_map (cbuffer, &cmap, GST_MAP_WRITE);
+
+        memcpy (cmap.data, map.data, map.size);
+        gst_buffer_unmap (cbuffer, &cmap);
+        gst_buffer_unmap (buffer, &map);
+        goto streammux_present;
+      }
 
       /* make the StreamMuxConfig, we need 15 bits for the header */
       cbuffer = gst_buffer_new_and_alloc (map.size + 2);
@@ -322,6 +488,7 @@ gst_rtp_mp4a_pay_setcaps (GstRTPBasePayload * payload, GstCaps * caps)
       gst_buffer_unmap (cbuffer, &cmap);
       gst_buffer_unmap (buffer, &map);
 
+    streammux_present:
       /* now we can configure the buffer */
       if (rtpmp4apay->config)
         gst_buffer_unref (rtpmp4apay->config);
@@ -379,6 +546,53 @@ gst_rtp_mp4a_pay_handle_buffer (GstRTPBasePayload * basepayload,
 
   list = gst_buffer_list_new_sized (size / (mtu - RTP_HEADER_LEN) + 1);
 
+  /*
+   * If this is set, incoming bitstream has stream format as latm-mcp1 and the
+   * bitstream needs to be parsed to retrieve the required parameters from
+   * StreamMuxConfig which is included in the bitstream.
+   */
+  if (rtpmp4apay->parse_latm) {
+    GstMapInfo map;
+    GstBitReader br;
+    guint8 u8 = 0;
+
+    GST_INFO_OBJECT (rtpmp4apay,
+        "Trying to parse StreamMuxConfig in incoming buffer");
+
+    gst_buffer_map (buffer, &map, GST_MAP_READ);
+
+    gst_bit_reader_init (&br, map.data, map.size);
+
+    /* First bit is "use last config" */
+    gst_bit_reader_get_bits_uint8 (&br, &u8, 1);
+
+    if (u8) {
+      GST_LOG_OBJECT (rtpmp4apay, "Frame uses previous config");
+      goto use_prev_smc;
+    } else {
+      if (!gst_rtp_mp4a_pay_parse_streammux_config (rtpmp4apay, &br)) {
+        GST_ERROR_OBJECT (rtpmp4apay,
+            "Could not read StreamMuxConfig in incoming buffer");
+        gst_buffer_unmap (buffer, &map);
+        return GST_FLOW_ERROR;
+      }
+    }
+
+    gst_buffer_unmap (buffer, &map);
+
+    gst_rtp_base_payload_set_options (basepayload, "audio", TRUE, "MP4A-LATM",
+        rtpmp4apay->rate);
+
+    if (!gst_rtp_base_payload_set_outcaps (GST_RTP_BASE_PAYLOAD (rtpmp4apay),
+            NULL)) {
+      GST_ERROR_OBJECT (rtpmp4apay,
+          "Could not set caps after parsing StreamMuxConfig");
+      gst_buffer_list_unref (list);
+      return GST_FLOW_ERROR;
+    }
+  }
+
+use_prev_smc:
   while (size > 0) {
     guint towrite;
     GstBuffer *outbuf;
