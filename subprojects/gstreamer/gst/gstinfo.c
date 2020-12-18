@@ -640,7 +640,9 @@ static inline gchar *
 gst_info_structure_to_string (const GstStructure * s)
 {
   if (G_LIKELY (s)) {
-    gchar *str = gst_structure_to_string (s);
+    gchar *str =
+        gst_structure_serialize (s, GST_SERIALIZE_FLAG_SKIP_DEFAULT_TYPES);
+
     if (G_UNLIKELY (pretty_tags && s->name == GST_QUARK (TAGLIST)))
       return prettify_structure_string (str);
     else
@@ -753,7 +755,7 @@ gst_info_describe_stream (GstStream * stream)
 
   caps = gst_stream_get_caps (stream);
   if (caps) {
-    caps_str = gst_caps_to_string (caps);
+    caps_str = gst_caps_serialize (caps, GST_SERIALIZE_FLAG_SKIP_DEFAULT_TYPES);
     gst_caps_unref (caps);
   }
 
@@ -823,7 +825,8 @@ gst_debug_print_object (gpointer ptr)
     return g_strdup ("(NULL)");
   }
   if (GST_IS_CAPS (ptr)) {
-    return gst_caps_to_string ((const GstCaps *) ptr);
+    return gst_caps_serialize ((const GstCaps *) ptr,
+        GST_SERIALIZE_FLAG_SKIP_DEFAULT_TYPES);
   }
   if (GST_IS_STRUCTURE (ptr)) {
     return gst_info_structure_to_string ((const GstStructure *) ptr);
