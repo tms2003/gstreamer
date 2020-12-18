@@ -44,6 +44,7 @@ typedef enum
 {
   GST_SERIALIZE_FLAG_NONE = 0,
   GST_SERIALIZE_FLAG_BACKWARD_COMPAT = (1 << 0),
+  GST_SERIALIZE_FLAG_SKIP_DEFAULT_TYPES = (1 << 1),
 } GstSerializeFlags;
 
 #define GST_TYPE_STRUCTURE             (_gst_structure_type)
