@@ -1174,7 +1174,7 @@ static gboolean
 gst_aggregator_default_negotiate (GstAggregator * self)
 {
   GstAggregatorClass *agg_klass = GST_AGGREGATOR_GET_CLASS (self);
-  GstCaps *downstream_caps, *template_caps, *caps = NULL;
+  GstCaps *downstream_caps, *template_caps, *current_caps, *caps = NULL;
   GstFlowReturn ret = GST_FLOW_OK;
 
   template_caps = gst_pad_get_pad_template_caps (self->srcpad);
@@ -1247,11 +1247,22 @@ gst_aggregator_default_negotiate (GstAggregator * self)
     }
   }
 
-  gst_aggregator_set_src_caps (self, caps);
+  current_caps = gst_pad_get_current_caps (self->srcpad);
+  if (current_caps) {
+    /* Don't send identical caps nor trigger allocation query if the caps didn't
+     * really change. */
+    if (!gst_caps_is_equal (caps, current_caps)) {
+      gst_aggregator_set_src_caps (self, caps);
 
-  if (!gst_aggregator_do_allocation (self, caps)) {
-    GST_WARNING_OBJECT (self, "Allocation negotiation failed");
-    ret = GST_FLOW_NOT_NEGOTIATED;
+      GST_DEBUG_OBJECT (self, "Doing allocation query");
+      if (!gst_aggregator_do_allocation (self, caps)) {
+        GST_WARNING_OBJECT (self, "Allocation negotiation failed");
+        ret = GST_FLOW_NOT_NEGOTIATED;
+      }
+    } else {
+      GST_DEBUG_OBJECT (self, "Output caps haven't changed");
+    }
+    gst_caps_unref (current_caps);
   }
 
 done:
@@ -2976,6 +2987,8 @@ gst_aggregator_pad_chain_internal (GstAggregator * self,
 {
   GstFlowReturn flow_return;
   GstClockTime buf_pts;
+
+  GST_LOG_OBJECT (aggpad, "head:%d buffer %" GST_PTR_FORMAT, head, buffer);
 
   PAD_LOCK (aggpad);
   flow_return = aggpad->priv->flow_return;
