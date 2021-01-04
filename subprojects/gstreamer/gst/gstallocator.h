@@ -144,7 +144,7 @@ struct _GstAllocatorClass {
 
   /*< public >*/
   GstMemory *  (*alloc)      (GstAllocator *allocator, gsize size,
-                              GstAllocationParams *params);
+                              const GstAllocationParams *params);
   void         (*free)       (GstAllocator *allocator, GstMemory *memory);
 
   /*< private >*/
@@ -184,7 +184,7 @@ void           gst_allocation_params_free    (GstAllocationParams *params);
 
 GST_API
 GstMemory *    gst_allocator_alloc           (GstAllocator * allocator, gsize size,
-                                              GstAllocationParams *params);
+                                              const GstAllocationParams *params);
 
 GST_API
 void           gst_allocator_free            (GstAllocator * allocator, GstMemory *memory);

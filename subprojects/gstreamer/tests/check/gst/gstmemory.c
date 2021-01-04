@@ -586,7 +586,7 @@ typedef struct
 
 static GstMemory *
 _my_opaque_alloc (GstAllocator * allocator, gsize size,
-    GstAllocationParams * params)
+    const GstAllocationParams * params)
 {
   MyOpaqueMemory *mem = g_slice_new (MyOpaqueMemory);
   gsize maxsize = size + params->prefix + params->padding;

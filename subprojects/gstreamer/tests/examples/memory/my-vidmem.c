@@ -34,7 +34,8 @@ typedef struct
 
 
 static GstMemory *
-_my_alloc (GstAllocator * allocator, gsize size, GstAllocationParams * params)
+_my_alloc (GstAllocator * allocator, gsize size,
+    const GstAllocationParams * params)
 {
   g_warning ("Use my_vidmem_alloc() to allocate from this allocator");
 

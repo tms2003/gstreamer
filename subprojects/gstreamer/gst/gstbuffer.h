@@ -308,7 +308,7 @@ GstBuffer * gst_buffer_new                 (void);
 
 GST_API
 GstBuffer * gst_buffer_new_allocate        (GstAllocator * allocator, gsize size,
-                                            GstAllocationParams * params);
+                                            const GstAllocationParams * params);
 GST_API
 GstBuffer * gst_buffer_new_wrapped_full    (GstMemoryFlags flags, gpointer data, gsize maxsize,
                                             gsize offset, gsize size, gpointer user_data,

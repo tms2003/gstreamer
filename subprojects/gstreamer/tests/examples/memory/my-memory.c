@@ -29,7 +29,8 @@ typedef struct
 
 
 static GstMemory *
-_my_alloc (GstAllocator * allocator, gsize size, GstAllocationParams * params)
+_my_alloc (GstAllocator * allocator, gsize size,
+    const GstAllocationParams * params)
 {
   MyMemory *mem;
   gsize maxsize = size + params->prefix + params->padding;

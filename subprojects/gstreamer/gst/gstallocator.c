@@ -313,7 +313,7 @@ gst_allocator_set_default (GstAllocator * allocator)
  */
 GstMemory *
 gst_allocator_alloc (GstAllocator * allocator, gsize size,
-    GstAllocationParams * params)
+    const GstAllocationParams * params)
 {
   GstMemory *mem;
   static GstAllocationParams defparams = { 0, 0, 0, 0, };
@@ -528,7 +528,7 @@ _sysmem_is_span (GstMemorySystem * mem1, GstMemorySystem * mem2, gsize * offset)
 
 static GstMemory *
 default_alloc (GstAllocator * allocator, gsize size,
-    GstAllocationParams * params)
+    const GstAllocationParams * params)
 {
   gsize maxsize = size + params->prefix + params->padding;
 
