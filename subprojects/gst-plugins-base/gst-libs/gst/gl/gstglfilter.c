@@ -90,8 +90,7 @@ enum
 #define gst_gl_filter_parent_class parent_class
 G_DEFINE_TYPE_WITH_CODE (GstGLFilter, gst_gl_filter, GST_TYPE_GL_BASE_FILTER,
     GST_DEBUG_CATEGORY_INIT (gst_gl_filter_debug, "glfilter", 0,
-        "glfilter element");
-    );
+        "glfilter element"););
 
 static void gst_gl_filter_set_property (GObject * object, guint prop_id,
     const GValue * value, GParamSpec * pspec);
@@ -244,7 +243,8 @@ gst_gl_filter_fixate_caps (GstBaseTransform * bt,
   GstStructure *ins, *outs;
   const GValue *from_par, *to_par;
   GValue fpar = { 0, }, tpar = {
-  0,};
+    0,
+  };
 
   othercaps = gst_caps_make_writable (othercaps);
   othercaps = gst_caps_truncate (othercaps);
