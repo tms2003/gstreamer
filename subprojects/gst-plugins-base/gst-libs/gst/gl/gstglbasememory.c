@@ -670,7 +670,7 @@ gst_gl_allocation_params_init (GstGLAllocationParams * params,
  * Since: 1.8
  */
 GstGLAllocationParams *
-gst_gl_allocation_params_copy (GstGLAllocationParams * src)
+gst_gl_allocation_params_copy (const GstGLAllocationParams * src)
 {
   GstGLAllocationParams *dest;
 
@@ -730,7 +730,7 @@ gst_gl_allocation_params_free_data (GstGLAllocationParams * params)
  * Since: 1.8
  */
 void
-gst_gl_allocation_params_copy_data (GstGLAllocationParams * src,
+gst_gl_allocation_params_copy_data (const GstGLAllocationParams * src,
     GstGLAllocationParams * dest)
 {
   gst_gl_allocation_params_init (dest, src->struct_size, src->alloc_flags,
@@ -756,7 +756,7 @@ G_DEFINE_BOXED_TYPE (GstGLAllocationParams, gst_gl_allocation_params,
  */
 GstGLBaseMemory *
 gst_gl_base_memory_alloc (GstGLBaseMemoryAllocator * allocator,
-    GstGLAllocationParams * params)
+    const GstGLAllocationParams * params)
 {
   GstGLBaseMemoryAllocatorClass *alloc_class;
 

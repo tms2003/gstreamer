@@ -137,7 +137,8 @@ typedef struct _GstGLAllocationParams GstGLAllocationParams;
  * Copies the parameters from @src into @dest.  The subclass must compose copy
  * functions from the superclass.
  */
-typedef void    (*GstGLAllocationParamsCopyFunc)    (GstGLAllocationParams * src, GstGLAllocationParams * dest);
+typedef void    (*GstGLAllocationParamsCopyFunc)    (const GstGLAllocationParams * src,
+                                                     GstGLAllocationParams * dest);
 /**
  * GstGLAllocationParamsFreeFunc:
  * @params: a #GstGLAllocationParams
@@ -235,7 +236,7 @@ gboolean                gst_gl_allocation_params_init       (GstGLAllocationPara
 
 /* free with gst_gl_allocation_params_free */
 GST_GL_API
-GstGLAllocationParams * gst_gl_allocation_params_copy       (GstGLAllocationParams * src);
+GstGLAllocationParams * gst_gl_allocation_params_copy       (const GstGLAllocationParams * src);
 
 GST_GL_API
 void                    gst_gl_allocation_params_free       (GstGLAllocationParams * params);
@@ -246,7 +247,7 @@ void                    gst_gl_allocation_params_free_data  (GstGLAllocationPara
 
 /* subclass usage */
 GST_GL_API
-void                    gst_gl_allocation_params_copy_data  (GstGLAllocationParams * src,
+void                    gst_gl_allocation_params_copy_data  (const GstGLAllocationParams * src,
                                                              GstGLAllocationParams * dest);
 
 /**
@@ -261,7 +262,7 @@ void                    gst_gl_allocation_params_copy_data  (GstGLAllocationPara
  * Since: 1.8
  */
 typedef GstGLBaseMemory *   (*GstGLBaseMemoryAllocatorAllocFunction)        (GstGLBaseMemoryAllocator * allocator,
-                                                                             GstGLAllocationParams * params);
+                                                                             const GstGLAllocationParams * params);
 
 /**
  * GstGLBaseMemoryAllocatorCreateFunction:
@@ -414,7 +415,7 @@ gboolean      gst_gl_base_memory_memcpy     (GstGLBaseMemory * src,
 
 GST_GL_API
 GstGLBaseMemory *   gst_gl_base_memory_alloc    (GstGLBaseMemoryAllocator * allocator,
-                                                 GstGLAllocationParams * params);
+                                                 const GstGLAllocationParams * params);
 
 G_END_DECLS
 

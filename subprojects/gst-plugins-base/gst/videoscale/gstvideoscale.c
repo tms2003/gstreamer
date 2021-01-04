@@ -198,8 +198,8 @@ static gboolean gst_video_scale_transform_meta (GstBaseTransform * trans,
     GstBuffer * outbuf, GstMeta * meta, GstBuffer * inbuf);
 
 static gboolean gst_video_scale_set_info (GstVideoFilter * filter,
-    GstCaps * in, GstVideoInfo * in_info, GstCaps * out,
-    GstVideoInfo * out_info);
+    GstCaps * in, const GstVideoInfo * in_info, GstCaps * out,
+    const GstVideoInfo * out_info);
 static GstFlowReturn gst_video_scale_transform_frame (GstVideoFilter * filter,
     GstVideoFrame * in, GstVideoFrame * out);
 
@@ -562,7 +562,7 @@ gst_video_scale_transform_meta (GstBaseTransform * trans, GstBuffer * outbuf,
 
 static gboolean
 gst_video_scale_set_info (GstVideoFilter * filter, GstCaps * in,
-    GstVideoInfo * in_info, GstCaps * out, GstVideoInfo * out_info)
+    const GstVideoInfo * in_info, GstCaps * out, const GstVideoInfo * out_info)
 {
   GstVideoScale *videoscale = GST_VIDEO_SCALE (filter);
   gint from_dar_n, from_dar_d, to_dar_n, to_dar_d;
