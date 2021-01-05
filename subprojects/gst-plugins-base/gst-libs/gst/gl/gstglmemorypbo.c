@@ -604,7 +604,7 @@ _gl_mem_copy (GstGLMemoryPBO * src, gssize offset, gssize size)
       return NULL;
     }
 
-    if (!gst_gl_memory_copy_into ((GstGLMemory *) src,
+    if (!gst_gl_memory_copy_into ((const GstGLMemory *) src,
             ((GstGLMemory *) dest)->tex_id, src->mem.tex_target,
             src->mem.tex_format, src->mem.tex_width, GL_MEM_HEIGHT (src))) {
       GST_CAT_WARNING (GST_CAT_GL_MEMORY, "Could not copy GL Memory");

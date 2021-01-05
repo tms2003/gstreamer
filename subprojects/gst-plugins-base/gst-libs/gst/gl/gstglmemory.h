@@ -278,14 +278,14 @@ void            gst_gl_memory_init              (GstGLMemory * mem,
                                                  GDestroyNotify notify);
 
 GST_GL_API
-gboolean        gst_gl_memory_copy_into         (GstGLMemory *gl_mem,
+gboolean        gst_gl_memory_copy_into         (const GstGLMemory *gl_mem,
                                                  guint tex_id,
                                                  GstGLTextureTarget target,
                                                  GstGLFormat tex_format,
                                                  gint width,
                                                  gint height);
 GST_GL_API
-gboolean        gst_gl_memory_copy_teximage     (GstGLMemory * src,
+gboolean        gst_gl_memory_copy_teximage     (const GstGLMemory * src,
                                                  guint tex_id,
                                                  GstGLTextureTarget out_target,
                                                  GstGLFormat out_tex_format,
@@ -293,7 +293,7 @@ gboolean        gst_gl_memory_copy_teximage     (GstGLMemory * src,
                                                  gint out_height);
 
 GST_GL_API
-gboolean        gst_gl_memory_read_pixels       (GstGLMemory * gl_mem,
+gboolean        gst_gl_memory_read_pixels       (const GstGLMemory * gl_mem,
                                                  gpointer write_pointer);
 GST_GL_API
 void            gst_gl_memory_texsubimage       (GstGLMemory * gl_mem,

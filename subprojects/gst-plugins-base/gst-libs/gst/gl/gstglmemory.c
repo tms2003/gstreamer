@@ -93,7 +93,7 @@ GST_DEFINE_MINI_OBJECT_TYPE (GstGLMemory, gst_gl_memory);
 typedef struct
 {
   /* in */
-  GstGLMemory *src;
+  const GstGLMemory *src;
   GstGLFormat out_format;
   guint out_width, out_height;
   GstGLTextureTarget tex_target;
@@ -275,7 +275,7 @@ _gl_tex_create (GstGLMemory * gl_mem, GError ** error)
 }
 
 static void
-_gst_gl_memory_start_log (GstGLMemory * gl_mem, const gchar * func_name)
+_gst_gl_memory_start_log (const GstGLMemory * gl_mem, const gchar * func_name)
 {
   /* debugging is disabled */
   if (!GST_GL_BASE_MEMORY_CAST (gl_mem)->query)
@@ -286,7 +286,7 @@ _gst_gl_memory_start_log (GstGLMemory * gl_mem, const gchar * func_name)
 }
 
 static void
-_gst_gl_memory_end_log (GstGLMemory * gl_mem)
+_gst_gl_memory_end_log (const GstGLMemory * gl_mem)
 {
   /* debugging is disabled */
   if (!GST_GL_BASE_MEMORY_CAST (gl_mem)->query)
@@ -383,7 +383,7 @@ gst_gl_memory_init (GstGLMemory * mem, GstAllocator * allocator,
  * Since: 1.8
  */
 gboolean
-gst_gl_memory_read_pixels (GstGLMemory * gl_mem, gpointer write_pointer)
+gst_gl_memory_read_pixels (const GstGLMemory * gl_mem, gpointer write_pointer)
 {
   GstGLContext *context = gl_mem->mem.context;
   const GstGLFuncs *gl = context->gl_vtable;
@@ -656,7 +656,7 @@ _gl_tex_unmap (GstGLMemory * gl_mem, GstMapInfo * info)
  * Since: 1.8
  */
 gboolean
-gst_gl_memory_copy_teximage (GstGLMemory * src, guint tex_id,
+gst_gl_memory_copy_teximage (const GstGLMemory * src, guint tex_id,
     GstGLTextureTarget out_target, GstGLFormat out_tex_format,
     gint out_width, gint out_height)
 {
@@ -861,7 +861,7 @@ _default_gl_tex_copy (GstGLMemory * src, gssize offset, gssize size)
       return NULL;
     }
 
-    if (!gst_gl_memory_copy_into ((GstGLMemory *) src,
+    if (!gst_gl_memory_copy_into ((const GstGLMemory *) src,
             ((GstGLMemory *) dest)->tex_id, src->tex_target,
             src->tex_format, src->tex_width, GL_MEM_HEIGHT (src))) {
       GST_CAT_WARNING (GST_CAT_GL_MEMORY, "Could not copy GL Memory");
@@ -1002,7 +1002,7 @@ gst_gl_memory_allocator_init (GstGLMemoryAllocator * allocator)
  * Since: 1.8
  */
 gboolean
-gst_gl_memory_copy_into (GstGLMemory * gl_mem, guint tex_id,
+gst_gl_memory_copy_into (const GstGLMemory * gl_mem, guint tex_id,
     GstGLTextureTarget target, GstGLFormat tex_format, gint width, gint height)
 {
   GstGLMemoryCopyParams copy_params;
