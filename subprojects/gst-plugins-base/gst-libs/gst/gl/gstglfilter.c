@@ -1039,7 +1039,7 @@ struct glcb
 {
   GstGLFilter *filter;
   GstGLFilterRenderFunc func;
-  GstGLMemory *in_tex;
+  const GstGLMemory *in_tex;
   gpointer data;
 };
 
@@ -1066,7 +1066,7 @@ _glcb (gpointer data)
  * Since: 1.10
  */
 gboolean
-gst_gl_filter_render_to_target (GstGLFilter * filter, GstGLMemory * input,
+gst_gl_filter_render_to_target (GstGLFilter * filter, const GstGLMemory * input,
     GstGLMemory * output, GstGLFilterRenderFunc func, gpointer data)
 {
   struct glcb cb;
@@ -1102,7 +1102,7 @@ _get_attributes (GstGLFilter * filter)
 }
 
 static gboolean
-_draw_with_shader_cb (GstGLFilter * filter, GstGLMemory * in_tex,
+_draw_with_shader_cb (GstGLFilter * filter, const GstGLMemory * in_tex,
     gpointer unused)
 {
   GstGLContext *context = GST_GL_BASE_FILTER (filter)->context;
@@ -1151,7 +1151,7 @@ _draw_with_shader_cb (GstGLFilter * filter, GstGLMemory * in_tex,
  * the shader, render input to a quad */
 void
 gst_gl_filter_render_to_target_with_shader (GstGLFilter * filter,
-    GstGLMemory * input, GstGLMemory * output, GstGLShader * shader)
+    const GstGLMemory * input, GstGLMemory * output, GstGLShader * shader)
 {
   if (filter->default_shader != shader)
     filter->valid_attributes = FALSE;

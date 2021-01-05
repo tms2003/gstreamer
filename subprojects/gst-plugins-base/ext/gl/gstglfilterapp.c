@@ -1,4 +1,4 @@
-/* 
+/*
  * GStreamer
  * Copyright (C) 2008 Julien Isorce <julien.isorce@gmail.com>
  *
@@ -70,7 +70,7 @@ static void gst_gl_filter_app_get_property (GObject * object, guint prop_id,
 static gboolean gst_gl_filter_app_set_caps (GstGLFilter * filter,
     GstCaps * incaps, GstCaps * outcaps);
 static gboolean gst_gl_filter_app_filter_texture (GstGLFilter * filter,
-    GstGLMemory * in_tex, GstGLMemory * out_tex);
+    const GstGLMemory * in_tex, GstGLMemory * out_tex);
 
 static gboolean gst_gl_filter_app_gl_start (GstGLBaseFilter * base_filter);
 static void gst_gl_filter_app_gl_stop (GstGLBaseFilter * base_filter);
@@ -190,7 +190,7 @@ gst_gl_filter_app_set_caps (GstGLFilter * filter, GstCaps * incaps,
 struct glcb2
 {
   GstGLFilterApp *app;
-  GstGLMemory *in_tex;
+  const GstGLMemory *in_tex;
   GstGLMemory *out_tex;
 };
 
@@ -208,8 +208,8 @@ _emit_draw_signal (gpointer data)
 }
 
 static gboolean
-gst_gl_filter_app_filter_texture (GstGLFilter * filter, GstGLMemory * in_tex,
-    GstGLMemory * out_tex)
+gst_gl_filter_app_filter_texture (GstGLFilter * filter,
+    const GstGLMemory * in_tex, GstGLMemory * out_tex)
 {
   GstGLFilterApp *app_filter = GST_GL_FILTER_APP (filter);
   gboolean default_draw;

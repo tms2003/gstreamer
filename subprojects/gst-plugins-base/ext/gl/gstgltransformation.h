@@ -48,7 +48,7 @@ struct _GstGLTransformation
     GLint        attr_position;
     GLint        attr_texture;
 
-    GstGLMemory *in_tex;
+    const GstGLMemory *in_tex;
     GstGLMemory *out_tex;
 
     gfloat xrotation;

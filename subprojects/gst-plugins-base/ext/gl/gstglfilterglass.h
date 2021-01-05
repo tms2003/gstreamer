@@ -1,4 +1,4 @@
-/* 
+/*
  * GStreamer
  * Copyright (C) 2008 Julien Isorce <julien.isorce@gmail.com>
  *
@@ -41,7 +41,7 @@ struct _GstGLFilterGlass
   GstGLShader *passthrough_shader;
   GstGLShader *shader;
   gint64 timestamp;
-  GstGLMemory *in_tex;
+  const GstGLMemory *in_tex;
   GstGLMemory *out_tex;
   gint64 start_time;
 };

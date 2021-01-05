@@ -80,7 +80,7 @@ static void gst_gl_overlay_get_property (GObject * object, guint prop_id,
 static void gst_gl_overlay_before_transform (GstBaseTransform * trans,
     GstBuffer * outbuf);
 static gboolean gst_gl_overlay_filter_texture (GstGLFilter * filter,
-    GstGLMemory * in_tex, GstGLMemory * out_tex);
+    const GstGLMemory * in_tex, GstGLMemory * out_tex);
 
 static gboolean gst_gl_overlay_load_png (GstGLOverlay * overlay, FILE * fp);
 static gboolean gst_gl_overlay_load_jpeg (GstGLOverlay * overlay, FILE * fp);
@@ -432,7 +432,7 @@ static const GLushort indices[] = { 0, 1, 2, 0, 2, 3, };
 /* *INDENT-ON* */
 
 static gboolean
-gst_gl_overlay_callback (GstGLFilter * filter, GstGLMemory * in_tex,
+gst_gl_overlay_callback (GstGLFilter * filter, const GstGLMemory * in_tex,
     gpointer stuff)
 {
   GstGLOverlay *overlay = GST_GL_OVERLAY (filter);
@@ -625,7 +625,7 @@ out:
 }
 
 static gboolean
-gst_gl_overlay_filter_texture (GstGLFilter * filter, GstGLMemory * in_tex,
+gst_gl_overlay_filter_texture (GstGLFilter * filter, const GstGLMemory * in_tex,
     GstGLMemory * out_tex)
 {
   GstGLOverlay *overlay = GST_GL_OVERLAY (filter);

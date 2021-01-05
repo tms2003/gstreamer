@@ -26,8 +26,8 @@
 
 static void
 gst_gl_effects_rgb_to_curve (GstGLEffects * effects,
-    const GstGLEffectsCurve * curve, gint curve_index, GstGLMemory * in_tex,
-    GstGLMemory * out_tex)
+    const GstGLEffectsCurve * curve, gint curve_index,
+    const GstGLMemory * in_tex, GstGLMemory * out_tex)
 {
   GstGLContext *context = GST_GL_BASE_FILTER (effects)->context;
   GstGLFilter *filter = GST_GL_FILTER (effects);

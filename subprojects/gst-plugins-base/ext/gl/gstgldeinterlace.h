@@ -1,4 +1,4 @@
-/* 
+/*
  * GStreamer
  * Copyright (C) 2009 Julien Isorce <julien.isorce@gmail.com>
  *
@@ -41,10 +41,10 @@ struct _GstGLDeinterlace
 {
   GstGLFilter               filter;
 
-  GstGLFilterRenderFunc     deinterlacefunc; 
+  GstGLFilterRenderFunc     deinterlacefunc;
   GHashTable               *shaderstable;
   GstBuffer                *prev_buffer;
-  GstGLMemory *             prev_tex;
+  const GstGLMemory        *prev_tex;
 
   gint	                    current_method;
 };

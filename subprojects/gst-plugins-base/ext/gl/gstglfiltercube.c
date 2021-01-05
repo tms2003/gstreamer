@@ -84,7 +84,7 @@ static gboolean gst_gl_filter_cube_gl_start (GstGLBaseFilter * filter);
 static void gst_gl_filter_cube_gl_stop (GstGLBaseFilter * filter);
 static gboolean _callback (gpointer stuff);
 static gboolean gst_gl_filter_cube_filter_texture (GstGLFilter * filter,
-    GstGLMemory * in_tex, GstGLMemory * out_tex);
+    const GstGLMemory * in_tex, GstGLMemory * out_tex);
 
 /* vertex source */
 static const gchar *cube_v_src =
@@ -334,8 +334,8 @@ gst_gl_filter_cube_gl_start (GstGLBaseFilter * filter)
 }
 
 static gboolean
-gst_gl_filter_cube_filter_texture (GstGLFilter * filter, GstGLMemory * in_tex,
-    GstGLMemory * out_tex)
+gst_gl_filter_cube_filter_texture (GstGLFilter * filter,
+    const GstGLMemory * in_tex, GstGLMemory * out_tex)
 {
   GstGLFilterCube *cube_filter = GST_GL_FILTER_CUBE (filter);
 
@@ -347,7 +347,7 @@ gst_gl_filter_cube_filter_texture (GstGLFilter * filter, GstGLMemory * in_tex,
 
 /* *INDENT-OFF* */
 static const GLfloat vertices[] = {
- /*|     Vertex     | TexCoord |*/ 
+ /*|     Vertex     | TexCoord |*/
     /* front face */
      1.0,  1.0, -1.0, 1.0, 0.0,
      1.0, -1.0, -1.0, 1.0, 1.0,

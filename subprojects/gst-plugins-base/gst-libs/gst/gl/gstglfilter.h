@@ -49,7 +49,7 @@ GType gst_gl_filter_get_type(void);
  *
  * Since: 1.10
  */
-typedef gboolean (*GstGLFilterRenderFunc) (GstGLFilter * filter, GstGLMemory * in_tex, gpointer user_data);
+typedef gboolean (*GstGLFilterRenderFunc) (GstGLFilter * filter, const GstGLMemory * in_tex, gpointer user_data);
 
 /**
  * GstGLFilter:
@@ -112,7 +112,7 @@ struct _GstGLFilterClass
   /*< public >*/
   gboolean (*set_caps)          (GstGLFilter* filter, GstCaps* incaps, GstCaps* outcaps);
   gboolean (*filter)            (GstGLFilter *filter, GstBuffer *inbuf, GstBuffer *outbuf);
-  gboolean (*filter_texture)    (GstGLFilter *filter, GstGLMemory *input, GstGLMemory *output);
+  gboolean (*filter_texture)    (GstGLFilter *filter, const GstGLMemory *input, GstGLMemory *output);
   gboolean (*init_fbo)          (GstGLFilter *filter);
 
   GstCaps *(*transform_internal_caps) (GstGLFilter *filter,
@@ -131,7 +131,7 @@ gboolean gst_gl_filter_filter_texture (GstGLFilter * filter, GstBuffer * input,
 
 GST_GL_API
 gboolean gst_gl_filter_render_to_target             (GstGLFilter *filter,
-                                                     GstGLMemory * input,
+                                                     const GstGLMemory * input,
                                                      GstGLMemory * output,
                                                      GstGLFilterRenderFunc func,
                                                      gpointer data);
@@ -140,7 +140,7 @@ GST_GL_API
 void gst_gl_filter_draw_fullscreen_quad             (GstGLFilter *filter);
 GST_GL_API
 void gst_gl_filter_render_to_target_with_shader     (GstGLFilter * filter,
-                                                     GstGLMemory * input,
+                                                     const GstGLMemory * input,
                                                      GstGLMemory * output,
                                                      GstGLShader *shader);
 

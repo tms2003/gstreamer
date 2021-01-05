@@ -80,7 +80,7 @@ static void gst_gl_effects_ghash_func_clean (gpointer key, gpointer value,
     gpointer data);
 
 static gboolean gst_gl_effects_filter_texture (GstGLFilter * filter,
-    GstGLMemory * in_tex, GstGLMemory * out_tex);
+    const GstGLMemory * in_tex, GstGLMemory * out_tex);
 static gboolean gst_gl_effects_filters_is_property_supported (const
     GstGLEffectsFilterDescriptor *, gint property);
 
@@ -542,8 +542,8 @@ gst_gl_effects_on_init_gl_context (GstGLFilter * filter)
 }
 
 static gboolean
-gst_gl_effects_filter_texture (GstGLFilter * filter, GstGLMemory * in_tex,
-    GstGLMemory * out_tex)
+gst_gl_effects_filter_texture (GstGLFilter * filter,
+    const GstGLMemory * in_tex, GstGLMemory * out_tex)
 {
   GstGLEffects *effects = GST_GL_EFFECTS (filter);
 

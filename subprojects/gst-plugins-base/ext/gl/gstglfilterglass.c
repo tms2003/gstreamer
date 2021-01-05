@@ -73,7 +73,7 @@ static gboolean gst_gl_filter_glass_reset (GstBaseTransform * trans);
 
 static gboolean gst_gl_filter_glass_init_shader (GstGLFilter * filter);
 static gboolean gst_gl_filter_glass_filter_texture (GstGLFilter * filter,
-    GstGLMemory * in_tex, GstGLMemory * out_tex);
+    const GstGLMemory * in_tex, GstGLMemory * out_tex);
 
 static void gst_gl_filter_glass_draw_background_gradient ();
 static void gst_gl_filter_glass_draw_video_plane (GstGLFilter * filter,
@@ -138,13 +138,13 @@ static const gchar *glass_vertex_source =
     "  alpha = gl_Color.a;\n"
     "}\n";
 
-static const gchar * passthrough_vertex = 
+static const gchar * passthrough_vertex =
     "void main () {\n"
     "  gl_Position = gl_ModelViewProjectionMatrix * gl_Vertex;\n"
     "  gl_FrontColor = gl_Color;\n"
     "}\n";
 
-static const gchar * passthrough_fragment = 
+static const gchar * passthrough_fragment =
     "void main () {\n"
     "  gl_FragColor = gl_Color;\n"
     "}\n";
@@ -247,8 +247,8 @@ gst_gl_filter_glass_init_shader (GstGLFilter * filter)
 }
 
 static gboolean
-gst_gl_filter_glass_filter_texture (GstGLFilter * filter, GstGLMemory * in_tex,
-    GstGLMemory * out_tex)
+gst_gl_filter_glass_filter_texture (GstGLFilter * filter,
+    const GstGLMemory * in_tex, GstGLMemory * out_tex)
 {
   GstGLFilterGlass *glass_filter = GST_GL_FILTER_GLASS (filter);
 

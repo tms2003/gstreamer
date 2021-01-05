@@ -28,7 +28,7 @@ G_BEGIN_DECLS
 void gst_gl_effects_luma_to_curve (GstGLEffects *effects,
                                    const GstGLEffectsCurve *curve,
                                    gint curve_index,
-                                   GstGLMemory *in_tex,
+                                   const GstGLMemory *in_tex,
                                    GstGLMemory *out_tex);
 G_END_DECLS
 

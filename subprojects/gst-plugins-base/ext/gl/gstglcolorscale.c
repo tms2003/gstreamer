@@ -73,7 +73,7 @@ static gboolean gst_gl_colorscale_gl_start (GstGLBaseFilter * base_filter);
 static void gst_gl_colorscale_gl_stop (GstGLBaseFilter * base_filter);
 
 static gboolean gst_gl_colorscale_filter_texture (GstGLFilter * filter,
-    GstGLMemory * in_tex, GstGLMemory * out_tex);
+    const GstGLMemory * in_tex, GstGLMemory * out_tex);
 
 static void
 gst_gl_colorscale_class_init (GstGLColorscaleClass * klass)
@@ -176,8 +176,8 @@ gst_gl_colorscale_gl_stop (GstGLBaseFilter * base_filter)
 }
 
 static gboolean
-gst_gl_colorscale_filter_texture (GstGLFilter * filter, GstGLMemory * in_tex,
-    GstGLMemory * out_tex)
+gst_gl_colorscale_filter_texture (GstGLFilter * filter,
+    const GstGLMemory * in_tex, GstGLMemory * out_tex)
 {
   GstGLColorscale *colorscale = GST_GL_COLORSCALE (filter);
 

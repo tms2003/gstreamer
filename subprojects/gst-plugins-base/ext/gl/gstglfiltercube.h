@@ -1,4 +1,4 @@
-/* 
+/*
  * GStreamer
  * Copyright (C) 2008 Julien Isorce <julien.isorce@gmail.com>
  *
@@ -41,7 +41,7 @@ struct _GstGLFilterCube
     GstGLFilter filter;
 
     GstGLShader *shader;
-    GstGLMemory *in_tex;
+    const GstGLMemory *in_tex;
 
     /* background color */
     gfloat red;

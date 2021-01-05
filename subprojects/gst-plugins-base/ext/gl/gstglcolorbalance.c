@@ -373,8 +373,8 @@ gst_gl_color_balance_before_transform (GstBaseTransform * base, GstBuffer * buf)
 }
 
 static gboolean
-gst_gl_color_balance_filter_texture (GstGLFilter * filter, GstGLMemory * in_tex,
-    GstGLMemory * out_tex)
+gst_gl_color_balance_filter_texture (GstGLFilter * filter,
+    const GstGLMemory * in_tex, GstGLMemory * out_tex)
 {
   GstGLColorBalance *balance = GST_GL_COLOR_BALANCE (filter);
 

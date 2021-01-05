@@ -68,7 +68,7 @@ static void gst_gl_differencematte_get_property (GObject * object,
     guint prop_id, GValue * value, GParamSpec * pspec);
 
 static gboolean gst_gl_differencematte_filter_texture (GstGLFilter * filter,
-    GstGLMemory * in_tex, GstGLMemory * out_tex);
+    const GstGLMemory * in_tex, GstGLMemory * out_tex);
 
 static gboolean gst_gl_differencematte_loader (GstGLFilter * filter);
 
@@ -344,7 +344,7 @@ init_pixbuf_texture (GstGLDifferenceMatte * differencematte)
 }
 
 static gboolean
-gst_gl_differencematte_diff (GstGLFilter * filter, GstGLMemory * in_tex,
+gst_gl_differencematte_diff (GstGLFilter * filter, const GstGLMemory * in_tex,
     gpointer stuff)
 {
   GstGLDifferenceMatte *differencematte = GST_GL_DIFFERENCEMATTE (filter);
@@ -369,7 +369,7 @@ gst_gl_differencematte_diff (GstGLFilter * filter, GstGLMemory * in_tex,
 }
 
 static gboolean
-gst_gl_differencematte_hblur (GstGLFilter * filter, GstGLMemory * in_tex,
+gst_gl_differencematte_hblur (GstGLFilter * filter, const GstGLMemory * in_tex,
     gpointer stuff)
 {
   GstGLDifferenceMatte *differencematte = GST_GL_DIFFERENCEMATTE (filter);
@@ -393,7 +393,7 @@ gst_gl_differencematte_hblur (GstGLFilter * filter, GstGLMemory * in_tex,
 }
 
 static gboolean
-gst_gl_differencematte_vblur (GstGLFilter * filter, GstGLMemory * in_tex,
+gst_gl_differencematte_vblur (GstGLFilter * filter, const GstGLMemory * in_tex,
     gpointer stuff)
 {
   GstGLDifferenceMatte *differencematte = GST_GL_DIFFERENCEMATTE (filter);
@@ -417,8 +417,8 @@ gst_gl_differencematte_vblur (GstGLFilter * filter, GstGLMemory * in_tex,
 }
 
 static gboolean
-gst_gl_differencematte_interp (GstGLFilter * filter, GstGLMemory * in_tex,
-    gpointer stuff)
+gst_gl_differencematte_interp (GstGLFilter * filter,
+    const GstGLMemory * in_tex, gpointer stuff)
 {
   GstGLDifferenceMatte *differencematte = GST_GL_DIFFERENCEMATTE (filter);
   const GstGLFuncs *gl = GST_GL_BASE_FILTER (filter)->context->gl_vtable;
@@ -447,7 +447,7 @@ gst_gl_differencematte_interp (GstGLFilter * filter, GstGLMemory * in_tex,
 
 static gboolean
 gst_gl_differencematte_filter_texture (GstGLFilter * filter,
-    GstGLMemory * in_tex, GstGLMemory * out_tex)
+    const GstGLMemory * in_tex, GstGLMemory * out_tex)
 {
   GstGLDifferenceMatte *differencematte = GST_GL_DIFFERENCEMATTE (filter);
 

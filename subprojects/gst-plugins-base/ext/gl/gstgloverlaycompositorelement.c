@@ -92,9 +92,9 @@ static GstCaps *_oce_transform_internal_caps (GstGLFilter *
 static gboolean gst_gl_overlay_compositor_element_filter (GstGLFilter * filter,
     GstBuffer * inbuf, GstBuffer * outbuf);
 static gboolean gst_gl_overlay_compositor_element_filter_texture (GstGLFilter *
-    filter, GstGLMemory * in_tex, GstGLMemory * out_tex);
+    filter, const GstGLMemory * in_tex, GstGLMemory * out_tex);
 static gboolean gst_gl_overlay_compositor_element_callback (GstGLFilter *
-    filter, GstGLMemory * in_tex, gpointer stuff);
+    filter, const GstGLMemory * in_tex, gpointer stuff);
 
 static void
 gst_gl_overlay_compositor_element_class_init (GstGLOverlayCompositorElementClass
@@ -318,7 +318,7 @@ gst_gl_overlay_compositor_element_filter (GstGLFilter * filter,
 
 static gboolean
 gst_gl_overlay_compositor_element_filter_texture (GstGLFilter * filter,
-    GstGLMemory * in_tex, GstGLMemory * out_tex)
+    const GstGLMemory * in_tex, GstGLMemory * out_tex)
 {
   GstGLOverlayCompositorElement *self =
       GST_GL_OVERLAY_COMPOSITOR_ELEMENT (filter);
@@ -334,7 +334,7 @@ gst_gl_overlay_compositor_element_filter_texture (GstGLFilter * filter,
 
 static gboolean
 gst_gl_overlay_compositor_element_callback (GstGLFilter * filter,
-    GstGLMemory * in_tex, gpointer stuff)
+    const GstGLMemory * in_tex, gpointer stuff)
 {
   GstGLOverlayCompositorElement *self =
       GST_GL_OVERLAY_COMPOSITOR_ELEMENT (filter);

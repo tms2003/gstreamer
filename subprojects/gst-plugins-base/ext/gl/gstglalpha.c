@@ -436,7 +436,7 @@ gst_gl_alpha_before_transform (GstBaseTransform * base, GstBuffer * buf)
 }
 
 static gboolean
-gst_gl_alpha_filter_texture (GstGLFilter * filter, GstGLMemory * in_tex,
+gst_gl_alpha_filter_texture (GstGLFilter * filter, const GstGLMemory * in_tex,
     GstGLMemory * out_tex)
 {
   GstGLAlpha *alpha = GST_GL_ALPHA (filter);

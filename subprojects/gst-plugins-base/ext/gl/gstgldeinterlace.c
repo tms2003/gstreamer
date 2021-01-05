@@ -71,11 +71,11 @@ static gboolean gst_gl_deinterlace_init_fbo (GstGLFilter * filter);
 static gboolean gst_gl_deinterlace_filter (GstGLFilter * filter,
     GstBuffer * inbuf, GstBuffer * outbuf);
 static gboolean gst_gl_deinterlace_filter_texture (GstGLFilter * filter,
-    GstGLMemory * in_tex, GstGLMemory * out_tex);
+    const GstGLMemory * in_tex, GstGLMemory * out_tex);
 static gboolean gst_gl_deinterlace_vfir_callback (GstGLFilter * filter,
-    GstGLMemory * in_tex, gpointer stuff);
+    const GstGLMemory * in_tex, gpointer stuff);
 static gboolean gst_gl_deinterlace_greedyh_callback (GstGLFilter * filter,
-    GstGLMemory * in_tex, gpointer stuff);
+    const GstGLMemory * in_tex, gpointer stuff);
 
 /* *INDENT-OFF* */
 static const gchar *greedyh_fragment_source =
@@ -389,8 +389,8 @@ gst_gl_deinterlace_init_fbo (GstGLFilter * filter)
 }
 
 static gboolean
-gst_gl_deinterlace_filter_texture (GstGLFilter * filter, GstGLMemory * in_tex,
-    GstGLMemory * out_tex)
+gst_gl_deinterlace_filter_texture (GstGLFilter * filter,
+    const GstGLMemory * in_tex, GstGLMemory * out_tex)
 {
   GstGLDeinterlace *deinterlace_filter = GST_GL_DEINTERLACE (filter);
 
@@ -457,8 +457,8 @@ gst_gl_deinterlace_get_fragment_shader (GstGLFilter * filter,
 }
 
 static gboolean
-gst_gl_deinterlace_vfir_callback (GstGLFilter * filter, GstGLMemory * in_tex,
-    gpointer user_data)
+gst_gl_deinterlace_vfir_callback (GstGLFilter * filter,
+    const GstGLMemory * in_tex, gpointer user_data)
 {
   GstGLContext *context = GST_GL_BASE_FILTER (filter)->context;
   const GstGLFuncs *gl = context->gl_vtable;
@@ -494,8 +494,8 @@ gst_gl_deinterlace_vfir_callback (GstGLFilter * filter, GstGLMemory * in_tex,
 }
 
 static gboolean
-gst_gl_deinterlace_greedyh_callback (GstGLFilter * filter, GstGLMemory * in_tex,
-    gpointer user_data)
+gst_gl_deinterlace_greedyh_callback (GstGLFilter * filter,
+    const GstGLMemory * in_tex, gpointer user_data)
 {
   GstGLShader *shader;
   GstGLDeinterlace *deinterlace_filter = GST_GL_DEINTERLACE (filter);

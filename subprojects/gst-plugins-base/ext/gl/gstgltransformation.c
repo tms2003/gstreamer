@@ -119,7 +119,7 @@ gst_gl_transformation_prepare_output_buffer (GstBaseTransform * trans,
 static gboolean gst_gl_transformation_filter (GstGLFilter * filter,
     GstBuffer * inbuf, GstBuffer * outbuf);
 static gboolean gst_gl_transformation_filter_texture (GstGLFilter * filter,
-    GstGLMemory * in_tex, GstGLMemory * out_tex);
+    const GstGLMemory * in_tex, GstGLMemory * out_tex);
 
 static void
 gst_gl_transformation_class_init (GstGLTransformationClass * klass)
@@ -847,7 +847,7 @@ gst_gl_transformation_filter (GstGLFilter * filter,
 
 static gboolean
 gst_gl_transformation_filter_texture (GstGLFilter * filter,
-    GstGLMemory * in_tex, GstGLMemory * out_tex)
+    const GstGLMemory * in_tex, GstGLMemory * out_tex)
 {
   GstGLTransformation *transformation = GST_GL_TRANSFORMATION (filter);
 

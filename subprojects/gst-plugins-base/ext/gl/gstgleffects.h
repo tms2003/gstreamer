@@ -71,7 +71,7 @@ struct _GstGLEffects
   GstGLEffectProcessFunc effect;
   gint current_effect;
 
-  GstGLMemory *intexture;
+  const GstGLMemory *intexture;
   GstGLMemory *midtexture[NEEDED_TEXTURES];
   GstGLMemory *outtexture;
 

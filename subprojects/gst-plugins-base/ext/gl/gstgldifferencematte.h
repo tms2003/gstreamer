@@ -48,7 +48,7 @@ struct _GstGLDifferenceMatte
   GstGLMemory *savedbgtexture;
   GstGLMemory *newbgtexture;
   GstGLMemory *midtexture[4];
-  GstGLMemory *intexture;
+  const GstGLMemory *intexture;
   float kernel[7];
 };
 
