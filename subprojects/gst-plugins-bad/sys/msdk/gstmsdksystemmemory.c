@@ -336,7 +336,7 @@ gst_msdk_system_allocator_free (GstAllocator * allocator, GstMemory * base_mem)
 
 static GstMemory *
 gst_msdk_system_allocator_alloc (GstAllocator * allocator, gsize size,
-    GstAllocationParams * params)
+    const GstAllocationParams * params)
 {
   return gst_msdk_system_memory_new (allocator);
 }

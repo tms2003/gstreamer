@@ -368,7 +368,7 @@ typedef struct
 
 static GstMemory *
 gst_d3d_surface_memory_allocator_alloc (GstAllocator * allocator, gsize size,
-    GstAllocationParams * params)
+    const GstAllocationParams * params)
 {
   g_assert_not_reached ();
   return NULL;

@@ -44,7 +44,7 @@ static GstMemory *cuda_mem_copy (GstMemory * mem, gssize offset, gssize size);
 
 static GstMemory *
 gst_cuda_allocator_dummy_alloc (GstAllocator * allocator, gsize size,
-    GstAllocationParams * params)
+    const GstAllocationParams * params)
 {
   g_return_val_if_reached (NULL);
 }

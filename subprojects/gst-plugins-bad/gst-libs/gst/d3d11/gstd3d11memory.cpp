@@ -1219,7 +1219,7 @@ G_DEFINE_TYPE_WITH_PRIVATE (GstD3D11Allocator,
     gst_d3d11_allocator, GST_TYPE_ALLOCATOR);
 
 static GstMemory *gst_d3d11_allocator_dummy_alloc (GstAllocator * allocator,
-    gsize size, GstAllocationParams * params);
+    gsize size, const GstAllocationParams * params);
 static GstMemory *gst_d3d11_allocator_alloc_internal (GstD3D11Allocator * self,
     GstD3D11Device * device, const D3D11_TEXTURE2D_DESC * desc);
 static void gst_d3d11_allocator_free (GstAllocator * allocator,
@@ -1340,7 +1340,7 @@ gst_d3d11_allocator_init (GstD3D11Allocator * allocator)
 
 static GstMemory *
 gst_d3d11_allocator_dummy_alloc (GstAllocator * allocator, gsize size,
-    GstAllocationParams * params)
+    const GstAllocationParams * params)
 {
   g_return_val_if_reached (NULL);
 }

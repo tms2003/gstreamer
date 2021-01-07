@@ -186,7 +186,7 @@ _vk_mem_is_span (GstVulkanMemory * mem1, GstVulkanMemory * mem2, gsize * offset)
 
 static GstMemory *
 _vk_mem_alloc (GstAllocator * allocator, gsize size,
-    GstAllocationParams * params)
+    const GstAllocationParams * params)
 {
   g_critical ("Subclass should override GstAllocatorClass::alloc() function");
 

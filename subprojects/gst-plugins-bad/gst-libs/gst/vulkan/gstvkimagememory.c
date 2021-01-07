@@ -393,7 +393,7 @@ _vk_image_mem_is_span (GstVulkanImageMemory * mem1, GstVulkanImageMemory * mem2,
 
 static GstMemory *
 _vk_image_mem_alloc (GstAllocator * allocator, gsize size,
-    GstAllocationParams * params)
+    const GstAllocationParams * params)
 {
   g_critical ("Subclass should override GstAllocatorClass::alloc() function");
 

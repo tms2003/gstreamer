@@ -250,7 +250,7 @@ gst_shm_sink_allocator_init (GstShmSinkAllocator * self)
 
 static GstMemory *
 gst_shm_sink_allocator_alloc_locked (GstShmSinkAllocator * self, gsize size,
-    GstAllocationParams * params)
+    const GstAllocationParams * params)
 {
   GstMemory *memory = NULL;
   ShmBlock *block = NULL;
@@ -301,7 +301,7 @@ gst_shm_sink_allocator_alloc_locked (GstShmSinkAllocator * self, gsize size,
 
 static GstMemory *
 gst_shm_sink_allocator_alloc (GstAllocator * allocator, gsize size,
-    GstAllocationParams * params)
+    const GstAllocationParams * params)
 {
   GstShmSinkAllocator *self = GST_SHM_SINK_ALLOCATOR (allocator);
   GstMemory *memory = NULL;

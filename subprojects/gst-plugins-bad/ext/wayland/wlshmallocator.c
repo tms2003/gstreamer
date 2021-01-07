@@ -38,7 +38,7 @@ G_DEFINE_TYPE (GstWlShmAllocator, gst_wl_shm_allocator, GST_TYPE_FD_ALLOCATOR);
 
 static GstMemory *
 gst_wl_shm_allocator_alloc (GstAllocator * allocator, gsize size,
-    GstAllocationParams * params)
+    const GstAllocationParams * params)
 {
   GstWlShmAllocator *self = GST_WL_SHM_ALLOCATOR (allocator);
   char filename[1024];

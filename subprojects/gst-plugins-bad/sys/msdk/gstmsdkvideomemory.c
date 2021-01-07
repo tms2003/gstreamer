@@ -395,7 +395,7 @@ G_DEFINE_TYPE (GstMsdkVideoAllocator, gst_msdk_video_allocator,
 
 static GstMemory *
 gst_msdk_video_allocator_alloc (GstAllocator * allocator, gsize size,
-    GstAllocationParams * params)
+    const GstAllocationParams * params)
 {
   return gst_msdk_video_memory_new (allocator);
 }
