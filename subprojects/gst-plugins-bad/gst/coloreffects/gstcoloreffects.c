@@ -435,8 +435,9 @@ gst_color_effects_transform_ayuv (GstColorEffects * filter,
 }
 
 static gboolean
-gst_color_effects_set_info (GstVideoFilter * vfilter, GstCaps * incaps,
-    GstVideoInfo * in_info, GstCaps * outcaps, GstVideoInfo * out_info)
+gst_color_effects_set_info (GstVideoFilter * vfilter,
+    const GstCaps * incaps, const GstVideoInfo * in_info,
+    const GstCaps * outcaps, const GstVideoInfo * out_info)
 {
   GstColorEffects *filter = GST_COLOR_EFFECTS (vfilter);
 

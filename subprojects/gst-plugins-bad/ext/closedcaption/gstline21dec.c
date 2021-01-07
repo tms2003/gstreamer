@@ -103,8 +103,8 @@ gst_line_21_decoder_mode_get_type (void)
 static void gst_line_21_decoder_finalize (GObject * self);
 static gboolean gst_line_21_decoder_stop (GstBaseTransform * btrans);
 static gboolean gst_line_21_decoder_set_info (GstVideoFilter * filter,
-    GstCaps * incaps, GstVideoInfo * in_info,
-    GstCaps * outcaps, GstVideoInfo * out_info);
+    const GstCaps * incaps, const GstVideoInfo * in_info,
+    const GstCaps * outcaps, const GstVideoInfo * out_info);
 static GstFlowReturn gst_line_21_decoder_transform_ip (GstVideoFilter * filter,
     GstVideoFrame * frame);
 static GstFlowReturn gst_line_21_decoder_prepare_output_buffer (GstBaseTransform
@@ -263,8 +263,8 @@ vbi_pixfmt_from_gst_video_format (GstVideoFormat format,
 
 static gboolean
 gst_line_21_decoder_set_info (GstVideoFilter * filter,
-    GstCaps * incaps, GstVideoInfo * in_info,
-    GstCaps * outcaps, GstVideoInfo * out_info)
+    const GstCaps * incaps, const GstVideoInfo * in_info,
+    const GstCaps * outcaps, const GstVideoInfo * out_info)
 {
   GstLine21Decoder *self = (GstLine21Decoder *) filter;
   vbi_pixfmt fmt =
@@ -363,7 +363,7 @@ gst_line_21_decoder_set_info (GstVideoFilter * filter,
         GST_VIDEO_INFO_COMP_STRIDE (self->info, 0);
     /* Sampling starts 9.7 µs from the front edge of the
        hor. sync pulse. You may have to adjust this.
-       NOTE : This is actually ignored in the code ... 
+       NOTE : This is actually ignored in the code ...
      */
     self->zvbi_decoder.offset = 9.7e-6 * 13.5e6;
 

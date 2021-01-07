@@ -93,8 +93,8 @@ GST_STATIC_PAD_TEMPLATE ("sink",
 
 static gboolean gst_chroma_hold_start (GstBaseTransform * trans);
 static gboolean gst_chroma_hold_set_info (GstVideoFilter * vfilter,
-    GstCaps * incaps, GstVideoInfo * in_info, GstCaps * outcaps,
-    GstVideoInfo * out_info);
+    const GstCaps * incaps, const GstVideoInfo * in_info,
+    const GstCaps * outcaps, const GstVideoInfo * out_info);
 static GstFlowReturn gst_chroma_hold_transform_frame_ip (GstVideoFilter *
     vfilter, GstVideoFrame * frame);
 static void gst_chroma_hold_before_transform (GstBaseTransform * btrans,
@@ -243,8 +243,9 @@ gst_chroma_hold_get_property (GObject * object, guint prop_id, GValue * value,
 }
 
 static gboolean
-gst_chroma_hold_set_info (GstVideoFilter * vfilter, GstCaps * incaps,
-    GstVideoInfo * in_info, GstCaps * outcaps, GstVideoInfo * out_info)
+gst_chroma_hold_set_info (GstVideoFilter * vfilter,
+    const GstCaps * incaps, const GstVideoInfo * in_info,
+    const GstCaps * outcaps, const GstVideoInfo * out_info)
 {
   GstChromaHold *self = GST_CHROMA_HOLD (vfilter);
 

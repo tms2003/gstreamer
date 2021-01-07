@@ -58,8 +58,8 @@ struct _GstCudaBaseTransformClass
   GstBaseTransformClass parent_class;
 
   gboolean      (*set_info)           (GstCudaBaseTransform *filter,
-                                       GstCaps *incaps, GstVideoInfo *in_info,
-                                       GstCaps *outcaps, GstVideoInfo *out_info);
+                                       const GstCaps *incaps, const GstVideoInfo *in_info,
+                                       const GstCaps *outcaps, const GstVideoInfo *out_info);
 
   GstFlowReturn (*transform_frame)    (GstCudaBaseTransform *filter,
                                        GstVideoFrame *in_frame,

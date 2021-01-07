@@ -66,8 +66,8 @@ static void gst_video_mark_finalize (GObject * object);
 static gboolean gst_video_mark_start (GstBaseTransform * trans);
 static gboolean gst_video_mark_stop (GstBaseTransform * trans);
 static gboolean gst_video_mark_set_info (GstVideoFilter * filter,
-    GstCaps * incaps, GstVideoInfo * in_info, GstCaps * outcaps,
-    GstVideoInfo * out_info);
+    const GstCaps * incaps, const GstVideoInfo * in_info,
+    const GstCaps * outcaps, const GstVideoInfo * out_info);
 static GstFlowReturn gst_video_mark_transform_frame_ip (GstVideoFilter * filter,
     GstVideoFrame * frame);
 
@@ -309,8 +309,9 @@ gst_video_mark_stop (GstBaseTransform * trans)
 }
 
 static gboolean
-gst_video_mark_set_info (GstVideoFilter * filter, GstCaps * incaps,
-    GstVideoInfo * in_info, GstCaps * outcaps, GstVideoInfo * out_info)
+gst_video_mark_set_info (GstVideoFilter * filter,
+    const GstCaps * incaps, const GstVideoInfo * in_info,
+    const GstCaps * outcaps, const GstVideoInfo * out_info)
 {
   GstSimpleVideoMark *simplevideomark = GST_SIMPLE_VIDEO_MARK (filter);
 

@@ -57,8 +57,9 @@ static GstCaps *gst_cuda_convert_fixate_caps (GstBaseTransform * base,
 static gboolean gst_cuda_convert_filter_meta (GstBaseTransform * trans,
     GstQuery * query, GType api, const GstStructure * params);
 static gboolean
-gst_cuda_convert_set_info (GstCudaBaseTransform * btrans, GstCaps * incaps,
-    GstVideoInfo * in_info, GstCaps * outcaps, GstVideoInfo * out_info);
+gst_cuda_convert_set_info (GstCudaBaseTransform * btrans,
+    const GstCaps * incaps, const GstVideoInfo * in_info,
+    const GstCaps * outcaps, const GstVideoInfo * out_info);
 
 /* copies the given caps */
 static GstCaps *
@@ -389,8 +390,9 @@ gst_cuda_convert_filter_meta (GstBaseTransform * trans, GstQuery * query,
 }
 
 static gboolean
-gst_cuda_convert_set_info (GstCudaBaseTransform * btrans, GstCaps * incaps,
-    GstVideoInfo * in_info, GstCaps * outcaps, GstVideoInfo * out_info)
+gst_cuda_convert_set_info (GstCudaBaseTransform * btrans,
+    const GstCaps * incaps, const GstVideoInfo * in_info,
+    const GstCaps * outcaps, const GstVideoInfo * out_info)
 {
   /* these must match */
   if (in_info->width != out_info->width || in_info->height != out_info->height

@@ -3,7 +3,7 @@
  * Copyright (C) 2016 Andreas Frisch <fraxinas@dreambox.guru>
  *
  * gstlcms.c
- * 
+ *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
  * License as published by the Free Software Foundation; either
@@ -139,8 +139,9 @@ static void gst_lcms_get_property (GObject * object, guint prop_id,
 static void gst_lcms_finalize (GObject * object);
 static GstStateChangeReturn gst_lcms_change_state (GstElement * element,
     GstStateChange transition);
-static gboolean gst_lcms_set_info (GstVideoFilter * vfilter, GstCaps * incaps,
-    GstVideoInfo * in_info, GstCaps * outcaps, GstVideoInfo * out_info);
+static gboolean gst_lcms_set_info (GstVideoFilter * vfilter,
+    const GstCaps * incaps, const GstVideoInfo * in_info,
+    const GstCaps * outcaps, const GstVideoInfo * out_info);
 static gboolean gst_lcms_sink_event (GstBaseTransform * trans,
     GstEvent * event);
 static void gst_lcms_handle_tags (GstLcms * lcms, GstTagList * taglist);
@@ -571,8 +572,9 @@ gst_lcms_cms_format_from_gst (GstVideoFormat gst_format)
 }
 
 static gboolean
-gst_lcms_set_info (GstVideoFilter * vfilter, GstCaps * incaps,
-    GstVideoInfo * in_info, GstCaps * outcaps, GstVideoInfo * out_info)
+gst_lcms_set_info (GstVideoFilter * vfilter,
+    const GstCaps * incaps, const GstVideoInfo * in_info,
+    const GstCaps * outcaps, const GstVideoInfo * out_info)
 {
   GstLcms *lcms = GST_LCMS (vfilter);
 

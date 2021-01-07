@@ -64,8 +64,8 @@ static GstCaps *gst_cuda_scale_transform_caps (GstBaseTransform * trans,
 static GstCaps *gst_cuda_scale_fixate_caps (GstBaseTransform * base,
     GstPadDirection direction, GstCaps * caps, GstCaps * othercaps);
 static gboolean gst_cuda_scale_set_info (GstCudaBaseTransform * filter,
-    GstCaps * incaps, GstVideoInfo * in_info, GstCaps * outcaps,
-    GstVideoInfo * out_info);
+    const GstCaps * incaps, const GstVideoInfo * in_info,
+    const GstCaps * outcaps, const GstVideoInfo * out_info);
 
 static void
 gst_cuda_scale_class_init (GstCudaScaleClass * klass)
@@ -593,8 +593,9 @@ done:
 }
 
 static gboolean
-gst_cuda_scale_set_info (GstCudaBaseTransform * btrans, GstCaps * incaps,
-    GstVideoInfo * in_info, GstCaps * outcaps, GstVideoInfo * out_info)
+gst_cuda_scale_set_info (GstCudaBaseTransform * btrans,
+    const GstCaps * incaps, const GstVideoInfo * in_info,
+    const GstCaps * outcaps, const GstVideoInfo * out_info)
 {
   if (GST_VIDEO_INFO_WIDTH (in_info) == GST_VIDEO_INFO_WIDTH (out_info) &&
       GST_VIDEO_INFO_HEIGHT (in_info) == GST_VIDEO_INFO_HEIGHT (out_info) &&

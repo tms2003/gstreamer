@@ -112,8 +112,8 @@ gst_d3d11_base_convert_decide_allocation (GstBaseTransform * trans,
 static GstFlowReturn gst_d3d11_base_convert_transform (GstBaseTransform *
     trans, GstBuffer * inbuf, GstBuffer * outbuf);
 static gboolean gst_d3d11_base_convert_set_info (GstD3D11BaseFilter * filter,
-    GstCaps * incaps, GstVideoInfo * in_info, GstCaps * outcaps,
-    GstVideoInfo * out_info);
+    const GstCaps * incaps, const GstVideoInfo * in_info,
+    const GstCaps * outcaps, const GstVideoInfo * out_info);
 
 /* copies the given caps */
 static GstCaps *
@@ -1716,8 +1716,8 @@ error:
 
 static gboolean
 gst_d3d11_base_convert_set_info (GstD3D11BaseFilter * filter,
-    GstCaps * incaps, GstVideoInfo * in_info, GstCaps * outcaps,
-    GstVideoInfo * out_info)
+    const GstCaps * incaps, const GstVideoInfo * in_info,
+    const GstCaps * outcaps, const GstVideoInfo * out_info)
 {
   GstD3D11BaseConvert *self = GST_D3D11_BASE_CONVERT (filter);
   const GstVideoInfo *unknown_info;

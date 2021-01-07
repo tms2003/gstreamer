@@ -128,8 +128,9 @@ end:
 }
 
 static gboolean
-gst_geometric_transform_set_info (GstVideoFilter * vfilter, GstCaps * incaps,
-    GstVideoInfo * in_info, GstCaps * outcaps, GstVideoInfo * out_info)
+gst_geometric_transform_set_info (GstVideoFilter * vfilter,
+    const GstCaps * incaps, const GstVideoInfo * in_info,
+    const GstCaps * outcaps, const GstVideoInfo * out_info)
 {
   GstGeometricTransform *gt;
   gboolean ret = TRUE;

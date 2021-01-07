@@ -82,8 +82,8 @@ static GstFlowReturn gst_opencv_video_filter_transform_frame_ip (GstVideoFilter
     * trans, GstVideoFrame * frame);
 
 static gboolean gst_opencv_video_filter_set_info (GstVideoFilter * trans,
-    GstCaps * incaps, const GstVideoInfo * in_info, GstCaps * outcaps,
-    const GstVideoInfo * out_info);
+    const GstCaps * incaps, const GstVideoInfo * in_info,
+    const GstCaps * outcaps, const GstVideoInfo * out_info);
 
 /* Clean up */
 static void
@@ -170,8 +170,9 @@ gst_opencv_video_filter_transform_frame_ip (GstVideoFilter * trans,
 }
 
 static gboolean
-gst_opencv_video_filter_set_info (GstVideoFilter * trans, GstCaps * incaps,
-    const GstVideoInfo * in_info, GstCaps * outcaps, const GstVideoInfo * out_info)
+gst_opencv_video_filter_set_info (GstVideoFilter * trans,
+    const GstCaps * incaps, const GstVideoInfo * in_info,
+    const GstCaps * outcaps, const GstVideoInfo * out_info)
 {
   GstOpencvVideoFilter *transform = GST_OPENCV_VIDEO_FILTER (trans);
   GstOpencvVideoFilterClass *klass =

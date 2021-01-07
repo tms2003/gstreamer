@@ -62,8 +62,8 @@ gst_cuda_base_filter_transform_frame (GstCudaBaseTransform * btrans,
     GstVideoFrame * in_frame, GstCudaMemory * in_cuda_mem,
     GstVideoFrame * out_frame, GstCudaMemory * out_cuda_mem);
 static gboolean gst_cuda_base_filter_set_info (GstCudaBaseTransform * btrans,
-    GstCaps * incaps, GstVideoInfo * in_info, GstCaps * outcaps,
-    GstVideoInfo * out_info);
+    const GstCaps * incaps, const GstVideoInfo * in_info,
+    const GstCaps * outcaps, const GstVideoInfo * out_info);
 
 static void
 gst_cuda_base_filter_class_init (GstCudaBaseFilterClass * klass)
@@ -121,7 +121,7 @@ gst_cuda_base_filter_dispose (GObject * object)
 
 static gboolean
 gst_cuda_base_filter_configure (GstCudaBaseFilter * filter,
-    GstVideoInfo * in_info, GstVideoInfo * out_info)
+    const GstVideoInfo * in_info, const GstVideoInfo * out_info)
 {
   GstCudaBaseTransform *btrans = GST_CUDA_BASE_TRANSFORM (filter);
 
@@ -148,8 +148,9 @@ gst_cuda_base_filter_configure (GstCudaBaseFilter * filter,
 }
 
 static gboolean
-gst_cuda_base_filter_set_info (GstCudaBaseTransform * btrans, GstCaps * incaps,
-    GstVideoInfo * in_info, GstCaps * outcaps, GstVideoInfo * out_info)
+gst_cuda_base_filter_set_info (GstCudaBaseTransform * btrans,
+    const GstCaps * incaps, const GstVideoInfo * in_info,
+    const GstCaps * outcaps, const GstVideoInfo * out_info)
 {
   GstCudaBaseFilter *filter = GST_CUDA_BASE_FILTER (btrans);
 

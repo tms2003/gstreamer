@@ -98,8 +98,8 @@ static gboolean gst_d3d11_download_decide_allocation (GstBaseTransform * trans,
 static GstFlowReturn gst_d3d11_download_transform (GstBaseTransform * trans,
     GstBuffer * inbuf, GstBuffer * outbuf);
 static gboolean gst_d3d11_download_set_info (GstD3D11BaseFilter * filter,
-    GstCaps * incaps, GstVideoInfo * in_info, GstCaps * outcaps,
-    GstVideoInfo * out_info);
+    const GstCaps * incaps, const GstVideoInfo * in_info,
+    const GstCaps * outcaps, const GstVideoInfo * out_info);
 
 static void
 gst_d3d11_download_class_init (GstD3D11DownloadClass * klass)
@@ -454,8 +454,8 @@ invalid_buffer:
 
 static gboolean
 gst_d3d11_download_set_info (GstD3D11BaseFilter * filter,
-    GstCaps * incaps, GstVideoInfo * in_info, GstCaps * outcaps,
-    GstVideoInfo * out_info)
+    const GstCaps * incaps, const GstVideoInfo * in_info,
+    const GstCaps * outcaps, const GstVideoInfo * out_info)
 {
   GstD3D11Download *self = GST_D3D11_DOWNLOAD (filter);
 

@@ -53,8 +53,9 @@ GST_STATIC_PAD_TEMPLATE ("sink",
     )
     );
 
-static gboolean gst_smooth_set_info (GstVideoFilter * filter, GstCaps * incaps,
-    GstVideoInfo * in_info, GstCaps * outcaps, GstVideoInfo * out_info);
+static gboolean gst_smooth_set_info (GstVideoFilter * filter,
+    const GstCaps * incaps, const GstVideoInfo * in_info,
+    const GstCaps * outcaps, const GstVideoInfo * out_info);
 static GstFlowReturn gst_smooth_transform_frame (GstVideoFilter * vfilter,
     GstVideoFrame * in_frame, GstVideoFrame * out_frame);
 
@@ -104,8 +105,9 @@ gst_smooth_class_init (GstSmoothClass * klass)
 }
 
 static gboolean
-gst_smooth_set_info (GstVideoFilter * filter, GstCaps * incaps,
-    GstVideoInfo * in_info, GstCaps * outcaps, GstVideoInfo * out_info)
+gst_smooth_set_info (GstVideoFilter * filter,
+    const GstCaps * incaps, const GstVideoInfo * in_info,
+    const GstCaps * outcaps, const GstVideoInfo * out_info)
 {
   GstSmooth *smooth;
 

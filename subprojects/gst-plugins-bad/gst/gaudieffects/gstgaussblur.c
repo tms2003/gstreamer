@@ -71,8 +71,8 @@
 static void gst_gaussianblur_finalize (GObject * object);
 
 static gboolean gst_gaussianblur_set_info (GstVideoFilter * filter,
-    GstCaps * incaps, GstVideoInfo * in_info, GstCaps * outcaps,
-    GstVideoInfo * out_info);
+    const GstCaps * incaps, const GstVideoInfo * in_info,
+    const GstCaps * outcaps, const GstVideoInfo * out_info);
 static GstFlowReturn gst_gaussianblur_transform_frame (GstVideoFilter * vfilter,
     GstVideoFrame * in_frame, GstVideoFrame * out_frame);
 
@@ -160,8 +160,9 @@ gst_gaussianblur_class_init (GstGaussianBlurClass * klass)
 }
 
 static gboolean
-gst_gaussianblur_set_info (GstVideoFilter * filter, GstCaps * incaps,
-    GstVideoInfo * in_info, GstCaps * outcaps, GstVideoInfo * out_info)
+gst_gaussianblur_set_info (GstVideoFilter * filter,
+    const GstCaps * incaps, const GstVideoInfo * in_info,
+    const GstCaps * outcaps, const GstVideoInfo * out_info)
 {
   GstGaussianBlur *gb = GST_GAUSSIANBLUR (filter);
   guint32 n_elems;

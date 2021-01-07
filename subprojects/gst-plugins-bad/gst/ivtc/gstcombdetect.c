@@ -52,8 +52,8 @@ GST_DEBUG_CATEGORY_STATIC (gst_comb_detect_debug_category);
 static GstCaps *gst_comb_detect_transform_caps (GstBaseTransform * trans,
     GstPadDirection direction, GstCaps * caps, GstCaps * filter);
 static gboolean gst_comb_detect_set_info (GstVideoFilter * filter,
-    GstCaps * incaps, GstVideoInfo * in_info, GstCaps * outcaps,
-    GstVideoInfo * out_info);
+    const GstCaps * incaps, const GstVideoInfo * in_info,
+    const GstCaps * outcaps, const GstVideoInfo * out_info);
 static GstFlowReturn gst_comb_detect_transform_frame (GstVideoFilter * filter,
     GstVideoFrame * inframe, GstVideoFrame * outframe);
 
@@ -179,8 +179,8 @@ gst_comb_detect_transform_caps (GstBaseTransform * trans,
 
 static gboolean
 gst_comb_detect_set_info (GstVideoFilter * filter,
-    GstCaps * incaps, GstVideoInfo * in_info, GstCaps * outcaps,
-    GstVideoInfo * out_info)
+    const GstCaps * incaps, const GstVideoInfo * in_info,
+    const GstCaps * outcaps, const GstVideoInfo * out_info)
 {
   GstCombDetect *combdetect = GST_COMB_DETECT (filter);
 

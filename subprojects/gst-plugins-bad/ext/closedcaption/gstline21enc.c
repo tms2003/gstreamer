@@ -64,8 +64,8 @@ GST_ELEMENT_REGISTER_DEFINE (line21encoder, "line21encoder",
     GST_RANK_NONE, GST_TYPE_LINE21ENCODER);
 
 static gboolean gst_line_21_encoder_set_info (GstVideoFilter * filter,
-    GstCaps * incaps, GstVideoInfo * in_info,
-    GstCaps * outcaps, GstVideoInfo * out_info);
+    const GstCaps * incaps, const GstVideoInfo * in_info,
+    const GstCaps * outcaps, const GstVideoInfo * out_info);
 static GstFlowReturn gst_line_21_encoder_transform_ip (GstVideoFilter * filter,
     GstVideoFrame * frame);
 static void gst_line_21_encoder_set_property (GObject * self, guint prop_id,
@@ -180,8 +180,8 @@ vbi_pixfmt_from_gst_video_format (GstVideoFormat format)
 
 static gboolean
 gst_line_21_encoder_set_info (GstVideoFilter * filter,
-    GstCaps * incaps, GstVideoInfo * in_info,
-    GstCaps * outcaps, GstVideoInfo * out_info)
+    const GstCaps * incaps, const GstVideoInfo * in_info,
+    const GstCaps * outcaps, const GstVideoInfo * out_info)
 {
   GstLine21Encoder *self = GST_LINE21ENCODER (filter);
 

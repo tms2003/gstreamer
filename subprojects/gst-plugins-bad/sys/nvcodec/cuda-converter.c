@@ -780,8 +780,8 @@ struct _GstCudaConverter
  * Returns: a #GstCudaConverter or %NULL if conversion is not possible.
  */
 GstCudaConverter *
-gst_cuda_converter_new (GstVideoInfo * in_info, GstVideoInfo * out_info,
-    GstCudaContext * cuda_ctx)
+gst_cuda_converter_new (const GstVideoInfo * in_info,
+    const GstVideoInfo * out_info, GstCudaContext * cuda_ctx)
 {
   GstCudaConverter *convert;
   gint i;

@@ -14,8 +14,9 @@ gstreamer-video-1.0
 % prototypes
 static gboolean gst_replace_start (GstBaseTransform * trans);
 static gboolean gst_replace_stop (GstBaseTransform * trans);
-static gboolean gst_replace_set_info (GstVideoFilter * filter, GstCaps * incaps,
-    GstVideoInfo * in_info, GstCaps * outcaps, GstVideoInfo * out_info);
+static gboolean gst_replace_set_info (GstVideoFilter * filter,
+    const GstCaps * incaps, const GstVideoInfo * in_info,
+    const GstCaps * outcaps, const GstVideoInfo * out_info);
 static GstFlowReturn gst_replace_transform_frame (GstVideoFilter * filter,
     GstVideoFrame * inframe, GstVideoFrame * outframe);
 static GstFlowReturn gst_replace_transform_frame_ip (GstVideoFilter * filter,
@@ -51,8 +52,9 @@ gst_replace_stop (GstBaseTransform * trans)
 }
 
 static gboolean
-gst_replace_set_info (GstVideoFilter * filter, GstCaps * incaps,
-    GstVideoInfo * in_info, GstCaps * outcaps, GstVideoInfo * out_info)
+gst_replace_set_info (GstVideoFilter * filter,
+    const GstCaps * incaps, const GstVideoInfo * in_info,
+    const GstCaps * outcaps, const GstVideoInfo * out_info)
 {
   GstReplace *replace = GST_REPLACE (filter);
 
