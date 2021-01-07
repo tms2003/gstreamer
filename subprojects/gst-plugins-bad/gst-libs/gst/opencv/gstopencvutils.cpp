@@ -96,7 +96,7 @@ gboolean gst_opencv_parse_cv_mat_params_from_caps
 }
 
 gboolean gst_opencv_cv_mat_params_from_video_info
-    (GstVideoInfo * info, gint * width, gint * height, int *cv_type,
+    (const GstVideoInfo * info, gint * width, gint * height, int *cv_type,
     GError ** err)
 {
   GstVideoFormat format;

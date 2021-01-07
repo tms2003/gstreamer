@@ -1,6 +1,6 @@
 /* GStreamer
  * Copyright (C) <2010> Thiago Santos <thiago.sousa.santos@collabora.co.uk>
- * Copyright (C) <2018> Nicola Murino <nicola.murino@gmail.com> 
+ * Copyright (C) <2018> Nicola Murino <nicola.murino@gmail.com>
  *
  * gstopencvutils.h: miscellaneous utility functions
  *
@@ -35,12 +35,12 @@ G_BEGIN_DECLS
 
 GST_OPENCV_API
 gboolean gst_opencv_parse_cv_mat_params_from_caps
-    (GstCaps * caps, gint * width, gint * height, int * cv_type, 
+    (GstCaps * caps, gint * width, gint * height, int * cv_type,
     GError ** err);
 
 GST_OPENCV_API
 gboolean gst_opencv_cv_mat_params_from_video_info
-    (GstVideoInfo * info, gint * width, gint * height, int *cv_type, 
+    (const GstVideoInfo * info, gint * width, gint * height, int *cv_type,
     GError ** err);
 
 GST_OPENCV_API
