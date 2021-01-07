@@ -2426,8 +2426,9 @@ static void gst_video_box_before_transform (GstBaseTransform * trans,
 static gboolean gst_video_box_src_event (GstBaseTransform * trans,
     GstEvent * event);
 
-static gboolean gst_video_box_set_info (GstVideoFilter * vfilter, GstCaps * in,
-    GstVideoInfo * in_info, GstCaps * out, GstVideoInfo * out_info);
+static gboolean gst_video_box_set_info (GstVideoFilter * vfilter,
+    const GstCaps * in, const GstVideoInfo * in_info,
+    const GstCaps * out, const GstVideoInfo * out_info);
 static GstFlowReturn gst_video_box_transform_frame (GstVideoFilter * vfilter,
     GstVideoFrame * in_frame, GstVideoFrame * out_frame);
 
@@ -3144,8 +3145,9 @@ gst_video_box_select_processing_functions (GstVideoBox * video_box)
 }
 
 static gboolean
-gst_video_box_set_info (GstVideoFilter * vfilter, GstCaps * in,
-    GstVideoInfo * in_info, GstCaps * out, GstVideoInfo * out_info)
+gst_video_box_set_info (GstVideoFilter * vfilter,
+    const GstCaps * in, const GstVideoInfo * in_info,
+    const GstCaps * out, const GstVideoInfo * out_info)
 {
   GstVideoBox *video_box = GST_VIDEO_BOX (vfilter);
   gboolean ret;

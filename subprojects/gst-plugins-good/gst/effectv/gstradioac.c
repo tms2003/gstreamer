@@ -421,8 +421,9 @@ gst_radioactv_transform_frame (GstVideoFilter * vfilter,
 }
 
 static gboolean
-gst_radioactv_set_info (GstVideoFilter * vfilter, GstCaps * incaps,
-    GstVideoInfo * in_info, GstCaps * outcaps, GstVideoInfo * out_info)
+gst_radioactv_set_info (GstVideoFilter * vfilter,
+    const GstCaps * incaps, const GstVideoInfo * in_info,
+    const GstCaps * outcaps, const GstVideoInfo * out_info)
 {
   GstRadioacTV *filter = GST_RADIOACTV (vfilter);
   gint width, height;

@@ -22,7 +22,7 @@
 
 /*
  * This file was (probably) generated from gstvideoflip.c,
- * gstvideoflip.c,v 1.7 2003/11/08 02:48:59 dschleef Exp 
+ * gstvideoflip.c,v 1.7 2003/11/08 02:48:59 dschleef Exp
  */
 /**
  * SECTION:element-videoflip
@@ -1022,8 +1022,9 @@ gst_video_flip_configure_process (GstVideoFlip * vf)
 }
 
 static gboolean
-gst_video_flip_set_info (GstVideoFilter * vfilter, GstCaps * incaps,
-    GstVideoInfo * in_info, GstCaps * outcaps, GstVideoInfo * out_info)
+gst_video_flip_set_info (GstVideoFilter * vfilter,
+    const GstCaps * incaps, const GstVideoInfo * in_info,
+    const GstCaps * outcaps, const GstVideoInfo * out_info)
 {
   GstVideoFlip *vf = GST_VIDEO_FLIP (vfilter);
   gboolean ret = FALSE, need_reconfigure = FALSE;

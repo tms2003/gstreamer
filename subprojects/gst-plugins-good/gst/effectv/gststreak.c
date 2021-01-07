@@ -144,8 +144,9 @@ gst_streaktv_transform_frame (GstVideoFilter * vfilter,
 }
 
 static gboolean
-gst_streaktv_set_info (GstVideoFilter * vfilter, GstCaps * incaps,
-    GstVideoInfo * in_info, GstCaps * outcaps, GstVideoInfo * out_info)
+gst_streaktv_set_info (GstVideoFilter * vfilter,
+    const GstCaps * incaps, const GstVideoInfo * in_info,
+    const GstCaps * outcaps, const GstVideoInfo * out_info)
 {
   GstStreakTV *filter = GST_STREAKTV (vfilter);
   gint i, width, height;

@@ -142,8 +142,8 @@ static void gst_smpte_alpha_get_property (GObject * object, guint prop_id,
     GValue * value, GParamSpec * pspec);
 
 static gboolean gst_smpte_alpha_set_info (GstVideoFilter * vfilter,
-    GstCaps * incaps, GstVideoInfo * in_info,
-    GstCaps * outcaps, GstVideoInfo * out_info);
+    const GstCaps * incaps, const GstVideoInfo * in_info,
+    const GstCaps * outcaps, const GstVideoInfo * out_info);
 static GstFlowReturn gst_smpte_alpha_transform_frame (GstVideoFilter * vfilter,
     GstVideoFrame * in_frame, GstVideoFrame * out_frame);
 static void gst_smpte_alpha_before_transform (GstBaseTransform * trans,
@@ -614,8 +614,9 @@ gst_smpte_alpha_transform_caps (GstBaseTransform * trans,
 }
 
 static gboolean
-gst_smpte_alpha_set_info (GstVideoFilter * vfilter, GstCaps * incaps,
-    GstVideoInfo * in_info, GstCaps * outcaps, GstVideoInfo * out_info)
+gst_smpte_alpha_set_info (GstVideoFilter * vfilter,
+    const GstCaps * incaps, const GstVideoInfo * in_info,
+    const GstCaps * outcaps, const GstVideoInfo * out_info)
 {
   GstSMPTEAlpha *smpte = GST_SMPTE_ALPHA (vfilter);
   gboolean ret;

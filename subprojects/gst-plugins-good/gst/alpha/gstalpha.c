@@ -164,8 +164,8 @@ static void gst_alpha_before_transform (GstBaseTransform * btrans,
     GstBuffer * buf);
 
 static gboolean gst_alpha_set_info (GstVideoFilter * filter,
-    GstCaps * incaps, GstVideoInfo * in_info, GstCaps * outcaps,
-    GstVideoInfo * out_info);
+    const GstCaps * incaps, const GstVideoInfo * in_info,
+    const GstCaps * outcaps, const GstVideoInfo * out_info);
 static GstFlowReturn gst_alpha_transform_frame (GstVideoFilter * filter,
     GstVideoFrame * in_frame, GstVideoFrame * out_frame);
 
@@ -174,7 +174,7 @@ static void gst_alpha_init_params_full (GstAlpha * alpha,
 static void gst_alpha_init_params (GstAlpha * alpha);
 static void gst_alpha_set_process_function (GstAlpha * alpha);
 static gboolean gst_alpha_set_process_function_full (GstAlpha * alpha,
-    GstVideoInfo * in_info, GstVideoInfo * out_info);
+    const GstVideoInfo * in_info, const GstVideoInfo * out_info);
 
 static void gst_alpha_set_property (GObject * object, guint prop_id,
     const GValue * value, GParamSpec * pspec);
@@ -500,8 +500,8 @@ gst_alpha_transform_caps (GstBaseTransform * btrans,
 
 static gboolean
 gst_alpha_set_info (GstVideoFilter * filter,
-    GstCaps * incaps, GstVideoInfo * in_info, GstCaps * outcaps,
-    GstVideoInfo * out_info)
+    const GstCaps * incaps, const GstVideoInfo * in_info,
+    const GstCaps * outcaps, const GstVideoInfo * out_info)
 {
   GstAlpha *alpha = GST_ALPHA (filter);
   gboolean passthrough;
@@ -2378,8 +2378,8 @@ gst_alpha_init_params (GstAlpha * alpha)
 
 /* Protected with the alpha lock */
 static gboolean
-gst_alpha_set_process_function_full (GstAlpha * alpha, GstVideoInfo * in_info,
-    GstVideoInfo * out_info)
+gst_alpha_set_process_function_full (GstAlpha * alpha,
+    const GstVideoInfo * in_info, const GstVideoInfo * out_info)
 {
   alpha->process = NULL;
 

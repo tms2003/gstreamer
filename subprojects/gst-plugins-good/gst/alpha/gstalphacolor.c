@@ -65,8 +65,8 @@ static GstCaps *gst_alpha_color_transform_caps (GstBaseTransform * btrans,
     GstPadDirection direction, GstCaps * caps, GstCaps * filter);
 
 static gboolean gst_alpha_color_set_info (GstVideoFilter * filter,
-    GstCaps * incaps, GstVideoInfo * in_info, GstCaps * outcaps,
-    GstVideoInfo * out_info);
+    const GstCaps * incaps, const GstVideoInfo * in_info,
+    const GstCaps * outcaps, const GstVideoInfo * out_info);
 static GstFlowReturn gst_alpha_color_transform_frame_ip (GstVideoFilter *
     filter, GstVideoFrame * frame);
 
@@ -465,8 +465,9 @@ transform_rgba_argb (GstVideoFrame * frame, const gint * matrix)
 #define transform_bgra_abgr transform_rgba_argb
 
 static gboolean
-gst_alpha_color_set_info (GstVideoFilter * filter, GstCaps * incaps,
-    GstVideoInfo * in_info, GstCaps * outcaps, GstVideoInfo * out_info)
+gst_alpha_color_set_info (GstVideoFilter * filter,
+    const GstCaps * incaps, const GstVideoInfo * in_info,
+    const GstCaps * outcaps, const GstVideoInfo * out_info)
 {
   GstAlphaColor *alpha = GST_ALPHA_COLOR (filter);
   gboolean in_sdtv, out_sdtv;

@@ -69,8 +69,8 @@ gst_gdk_pixbuf_overlay_transform_frame_ip (GstVideoFilter * filter,
 static void gst_gdk_pixbuf_overlay_before_transform (GstBaseTransform * trans,
     GstBuffer * outbuf);
 static gboolean gst_gdk_pixbuf_overlay_set_info (GstVideoFilter * filter,
-    GstCaps * incaps, GstVideoInfo * in_info, GstCaps * outcaps,
-    GstVideoInfo * out_info);
+    const GstCaps * incaps, const GstVideoInfo * in_info,
+    const GstCaps * outcaps, const GstVideoInfo * out_info);
 static gboolean
 gst_gdk_pixbuf_overlay_load_image (GstGdkPixbufOverlay * overlay,
     GError ** err);
@@ -591,8 +591,9 @@ gst_gdk_pixbuf_overlay_stop (GstBaseTransform * trans)
 }
 
 static gboolean
-gst_gdk_pixbuf_overlay_set_info (GstVideoFilter * filter, GstCaps * incaps,
-    GstVideoInfo * in_info, GstCaps * outcaps, GstVideoInfo * out_info)
+gst_gdk_pixbuf_overlay_set_info (GstVideoFilter * filter,
+    const GstCaps * incaps, const GstVideoInfo * in_info,
+    const GstCaps * outcaps, const GstVideoInfo * out_info)
 {
   GST_INFO_OBJECT (filter, "caps: %" GST_PTR_FORMAT, incaps);
   return TRUE;

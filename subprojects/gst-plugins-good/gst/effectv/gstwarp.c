@@ -23,7 +23,7 @@
 
 /*
  * This file was (probably) generated from gstvideotemplate.c,
- * gstvideotemplate.c,v 1.11 2004/01/07 08:56:45 ds Exp 
+ * gstvideotemplate.c,v 1.11 2004/01/07 08:56:45 ds Exp
  */
 
 /* From main.c of warp-1.1:
@@ -84,8 +84,9 @@ GST_STATIC_PAD_TEMPLATE ("sink",
     );
 
 static gboolean
-gst_warptv_set_info (GstVideoFilter * vfilter, GstCaps * incaps,
-    GstVideoInfo * in_info, GstCaps * outcaps, GstVideoInfo * out_info)
+gst_warptv_set_info (GstVideoFilter * vfilter,
+    const GstCaps * incaps, const GstVideoInfo * in_info,
+    const GstCaps * outcaps, const GstVideoInfo * out_info)
 {
   GstWarpTV *filter = GST_WARPTV (vfilter);
   gint width, height;

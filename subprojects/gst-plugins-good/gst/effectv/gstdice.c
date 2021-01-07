@@ -69,7 +69,8 @@ typedef enum _dice_dir
 G_DEFINE_TYPE (GstDiceTV, gst_dicetv, GST_TYPE_VIDEO_FILTER);
 GST_ELEMENT_REGISTER_DEFINE (dicetv, "dicetv", GST_RANK_NONE, GST_TYPE_DICETV);
 
-static void gst_dicetv_create_map (GstDiceTV * filter, GstVideoInfo * info);
+static void gst_dicetv_create_map (GstDiceTV * filter,
+    const GstVideoInfo * info);
 
 static GstStaticPadTemplate gst_dicetv_src_template =
 GST_STATIC_PAD_TEMPLATE ("src",
@@ -92,8 +93,9 @@ enum
 };
 
 static gboolean
-gst_dicetv_set_info (GstVideoFilter * vfilter, GstCaps * incaps,
-    GstVideoInfo * in_info, GstCaps * outcaps, GstVideoInfo * out_info)
+gst_dicetv_set_info (GstVideoFilter * vfilter,
+    const GstCaps * incaps, const GstVideoInfo * in_info,
+    const GstCaps * outcaps, const GstVideoInfo * out_info)
 {
   GstDiceTV *filter = GST_DICETV (vfilter);
 
@@ -202,7 +204,7 @@ gst_dicetv_transform_frame (GstVideoFilter * vfilter, GstVideoFrame * in_frame,
 }
 
 static void
-gst_dicetv_create_map (GstDiceTV * filter, GstVideoInfo * info)
+gst_dicetv_create_map (GstDiceTV * filter, const GstVideoInfo * info)
 {
   gint x, y, i;
   gint width, height;

@@ -21,7 +21,7 @@
 
 /*
  * This file was (probably) generated from gstvideobalance.c,
- * gstvideobalance.c,v 1.7 2003/11/08 02:48:59 dschleef Exp 
+ * gstvideobalance.c,v 1.7 2003/11/08 02:48:59 dschleef Exp
  */
 
 /**
@@ -415,8 +415,9 @@ gst_video_balance_packed_rgb (GstVideoBalance * videobalance,
 
 /* get notified of caps and plug in the correct process function */
 static gboolean
-gst_video_balance_set_info (GstVideoFilter * vfilter, GstCaps * incaps,
-    GstVideoInfo * in_info, GstCaps * outcaps, GstVideoInfo * out_info)
+gst_video_balance_set_info (GstVideoFilter * vfilter,
+    const GstCaps * incaps, const GstVideoInfo * in_info,
+    const GstCaps * outcaps, const GstVideoInfo * out_info)
 {
   GstVideoBalance *videobalance = GST_VIDEO_BALANCE (vfilter);
 

@@ -122,8 +122,9 @@ gst_cacatv_dither_get_type (void)
 }
 
 static gboolean
-gst_cacatv_setcaps (GstVideoFilter * filter, GstCaps * incaps,
-    GstVideoInfo * in_info, GstCaps * outcaps, GstVideoInfo * out_info)
+gst_cacatv_setcaps (GstVideoFilter * filter,
+    const GstCaps * incaps, const GstVideoInfo * in_info,
+    const GstCaps * outcaps, const GstVideoInfo * out_info)
 {
   GstCACATv *cacatv = GST_CACATV (filter);
   GstVideoInfo info;

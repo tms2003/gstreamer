@@ -23,9 +23,9 @@
 
 /*
  * This file was (probably) generated from
- * gstvideotemplate.c,v 1.12 2004/01/07 21:07:12 ds Exp 
+ * gstvideotemplate.c,v 1.12 2004/01/07 21:07:12 ds Exp
  * and
- * make_filter,v 1.6 2004/01/07 21:33:01 ds Exp 
+ * make_filter,v 1.6 2004/01/07 21:33:01 ds Exp
  */
 
 /**
@@ -92,8 +92,9 @@ static void gst_gamma_set_property (GObject * object, guint prop_id,
 static void gst_gamma_get_property (GObject * object, guint prop_id,
     GValue * value, GParamSpec * pspec);
 
-static gboolean gst_gamma_set_info (GstVideoFilter * vfilter, GstCaps * incaps,
-    GstVideoInfo * in_info, GstCaps * outcaps, GstVideoInfo * out_info);
+static gboolean gst_gamma_set_info (GstVideoFilter * vfilter,
+    const GstCaps * incaps, const GstVideoInfo * in_info,
+    const GstCaps * outcaps, const GstVideoInfo * out_info);
 static GstFlowReturn gst_gamma_transform_frame_ip (GstVideoFilter * vfilter,
     GstVideoFrame * frame);
 static void gst_gamma_before_transform (GstBaseTransform * transform,
@@ -324,8 +325,9 @@ gst_gamma_packed_rgb_ip (GstGamma * gamma, GstVideoFrame * frame)
 }
 
 static gboolean
-gst_gamma_set_info (GstVideoFilter * vfilter, GstCaps * incaps,
-    GstVideoInfo * in_info, GstCaps * outcaps, GstVideoInfo * out_info)
+gst_gamma_set_info (GstVideoFilter * vfilter,
+    const GstCaps * incaps, const GstVideoInfo * in_info,
+    const GstCaps * outcaps, const GstVideoInfo * out_info)
 {
   GstGamma *gamma = GST_GAMMA (vfilter);
 

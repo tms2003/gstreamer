@@ -108,8 +108,9 @@ static GstCaps *gst_video_crop_transform_caps (GstBaseTransform * trans,
 static gboolean gst_video_crop_src_event (GstBaseTransform * trans,
     GstEvent * event);
 
-static gboolean gst_video_crop_set_info (GstVideoFilter * vfilter, GstCaps * in,
-    GstVideoInfo * in_info, GstCaps * out, GstVideoInfo * out_info);
+static gboolean gst_video_crop_set_info (GstVideoFilter * vfilter,
+    const GstCaps * in, const GstVideoInfo * in_info,
+    const GstCaps * out, const GstVideoInfo * out_info);
 static GstFlowReturn gst_video_crop_transform_frame (GstVideoFilter * vfilter,
     GstVideoFrame * in_frame, GstVideoFrame * out_frame);
 
@@ -748,8 +749,9 @@ gst_video_crop_transform_caps (GstBaseTransform * trans,
 }
 
 static gboolean
-gst_video_crop_set_info (GstVideoFilter * vfilter, GstCaps * in,
-    GstVideoInfo * in_info, GstCaps * out, GstVideoInfo * out_info)
+gst_video_crop_set_info (GstVideoFilter * vfilter,
+    const GstCaps * in, const GstVideoInfo * in_info,
+    const GstCaps * out, const GstVideoInfo * out_info)
 {
   GstVideoCrop *crop = GST_VIDEO_CROP (vfilter);
   GstCapsFeatures *features;

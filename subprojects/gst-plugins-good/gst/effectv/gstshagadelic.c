@@ -55,7 +55,7 @@ GST_ELEMENT_REGISTER_DEFINE (shagadelictv, "shagadelictv",
     GST_RANK_NONE, GST_TYPE_SHAGADELICTV);
 
 static void gst_shagadelic_initialize (GstShagadelicTV * filter,
-    GstVideoInfo * in_info);
+    const GstVideoInfo * in_info);
 
 #if G_BYTE_ORDER == G_LITTLE_ENDIAN
 #define CAPS_STR GST_VIDEO_CAPS_MAKE ("BGRx")
@@ -78,8 +78,9 @@ GST_STATIC_PAD_TEMPLATE ("sink",
     );
 
 static gboolean
-gst_shagadelictv_set_info (GstVideoFilter * vfilter, GstCaps * incaps,
-    GstVideoInfo * in_info, GstCaps * outcaps, GstVideoInfo * out_info)
+gst_shagadelictv_set_info (GstVideoFilter * vfilter,
+    const GstCaps * incaps, const GstVideoInfo * in_info,
+    const GstCaps * outcaps, const GstVideoInfo * out_info)
 {
   GstShagadelicTV *filter = GST_SHAGADELICTV (vfilter);
   gint width, height, area;
@@ -100,7 +101,7 @@ gst_shagadelictv_set_info (GstVideoFilter * vfilter, GstCaps * incaps,
 }
 
 static void
-gst_shagadelic_initialize (GstShagadelicTV * filter, GstVideoInfo * info)
+gst_shagadelic_initialize (GstShagadelicTV * filter, const GstVideoInfo * info)
 {
   int i, x, y;
 #ifdef PS2
@@ -182,7 +183,7 @@ gst_shagadelictv_transform_frame (GstVideoFilter * vfilter,
       v = *src++ | 0x1010100;
       v = (v - 0x707060) & 0x1010100;
       v -= v >> 8;
-/* Try another Babe! 
+/* Try another Babe!
  * v = *src++;
  * *dest++ = v & ((r<<16)|(g<<8)|b);
  */

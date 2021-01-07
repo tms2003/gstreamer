@@ -266,8 +266,9 @@ gst_optv_transform_frame (GstVideoFilter * vfilter, GstVideoFrame * in_frame,
 }
 
 static gboolean
-gst_optv_set_info (GstVideoFilter * vfilter, GstCaps * incaps,
-    GstVideoInfo * in_info, GstCaps * outcaps, GstVideoInfo * out_info)
+gst_optv_set_info (GstVideoFilter * vfilter,
+    const GstCaps * incaps, const GstVideoInfo * in_info,
+    const GstCaps * outcaps, const GstVideoInfo * out_info)
 {
   GstOpTV *filter = GST_OPTV (vfilter);
   gint i, width, height;
