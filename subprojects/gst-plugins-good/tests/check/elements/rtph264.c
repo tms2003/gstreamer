@@ -125,7 +125,7 @@ G_DEFINE_TYPE (CustomSysmemAllocator, custom_sysmem_allocator,
 
 static GstMemory *
 custom_sysmem_allocator_alloc (GstAllocator * allocator, gsize size,
-    GstAllocationParams * params)
+    const GstAllocationParams * params)
 {
   gsize maxsize = size + params->prefix + params->padding;
 

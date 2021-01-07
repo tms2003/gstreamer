@@ -327,7 +327,7 @@ static GstStateChangeReturn gst_deinterlace_change_state (GstElement * element,
     GstStateChange transition);
 static gboolean gst_deinterlace_set_allocation (GstDeinterlace * self,
     GstBufferPool * pool, GstAllocator * allocator,
-    GstAllocationParams * params);
+    const GstAllocationParams * params);
 
 static gboolean gst_deinterlace_src_event (GstPad * pad, GstObject * parent,
     GstEvent * event);
@@ -2609,7 +2609,7 @@ done:
 static gboolean
 gst_deinterlace_set_allocation (GstDeinterlace * self,
     GstBufferPool * pool, GstAllocator * allocator,
-    GstAllocationParams * params)
+    const GstAllocationParams * params)
 {
   GstAllocator *oldalloc;
   GstBufferPool *oldpool;
