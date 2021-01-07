@@ -114,7 +114,7 @@ gst_gl_memory_egl_get_display (GstGLMemoryEGL * mem)
 
 static GstMemory *
 _gl_mem_alloc (GstAllocator * allocator, gsize size,
-    GstAllocationParams * params)
+    const GstAllocationParams * params)
 {
   g_warning ("Use gst_gl_base_memory_allocator_alloc() to allocate from this "
       "GstGLMemoryEGL allocator");

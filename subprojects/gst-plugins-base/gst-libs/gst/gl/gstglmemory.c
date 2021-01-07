@@ -902,7 +902,7 @@ _gl_tex_copy (GstGLMemory * src, gssize offset, gssize size)
 
 static GstMemory *
 _gl_tex_alloc (GstAllocator * allocator, gsize size,
-    GstAllocationParams * params)
+    const GstAllocationParams * params)
 {
   g_warning ("Use gst_gl_base_memory_alloc to allocate from this allocator");
 

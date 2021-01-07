@@ -439,7 +439,8 @@ _mem_is_span (GstGLBaseMemory * mem1, GstGLBaseMemory * mem2, gsize * offset)
 }
 
 static GstMemory *
-_mem_alloc (GstAllocator * allocator, gsize size, GstAllocationParams * params)
+_mem_alloc (GstAllocator * allocator, gsize size,
+    const GstAllocationParams * params)
 {
   g_critical ("Subclass should override GstAllocatorClass::alloc() function");
 

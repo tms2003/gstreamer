@@ -406,7 +406,7 @@ _gl_buffer_copy (GstGLBuffer * src, gssize offset, gssize size)
 
 static GstMemory *
 _gl_buffer_alloc (GstAllocator * allocator, gsize size,
-    GstAllocationParams * params)
+    const GstAllocationParams * params)
 {
   g_critical ("Need to use gst_gl_base_memory_alloc() to allocate from "
       "this allocator");

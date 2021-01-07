@@ -51,7 +51,7 @@ gst_ximagesink_handle_xerror (Display * display, XErrorEvent * xevent)
 
 static GstMemory *
 gst_ximage_memory_alloc (GstAllocator * allocator, gsize size,
-    GstAllocationParams * params)
+    const GstAllocationParams * params)
 {
   return NULL;
 }

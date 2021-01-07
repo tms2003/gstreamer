@@ -628,7 +628,7 @@ _gl_mem_copy (GstGLMemoryPBO * src, gssize offset, gssize size)
 
 static GstMemory *
 _gl_mem_alloc (GstAllocator * allocator, gsize size,
-    GstAllocationParams * params)
+    const GstAllocationParams * params)
 {
   g_warning ("Use gst_gl_base_memory_alloc () to allocate from this "
       "GstGLMemoryPBO allocator");
