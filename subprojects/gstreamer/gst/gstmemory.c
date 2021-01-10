@@ -153,7 +153,7 @@ gst_memory_init (GstMemory * mem, GstMemoryFlags flags,
  * Since: 1.2
  */
 gboolean
-gst_memory_is_type (GstMemory * mem, const gchar * mem_type)
+gst_memory_is_type (const GstMemory * mem, const gchar * mem_type)
 {
   g_return_val_if_fail (mem != NULL, FALSE);
   g_return_val_if_fail (mem->allocator != NULL, FALSE);
@@ -173,7 +173,7 @@ gst_memory_is_type (GstMemory * mem, const gchar * mem_type)
  * Returns: the current size of @mem
  */
 gsize
-gst_memory_get_sizes (GstMemory * mem, gsize * offset, gsize * maxsize)
+gst_memory_get_sizes (const GstMemory * mem, gsize * offset, gsize * maxsize)
 {
   g_return_val_if_fail (mem != NULL, 0);
 

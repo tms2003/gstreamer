@@ -40,7 +40,8 @@ GType gst_memory_get_type(void);
 typedef struct _GstMemory GstMemory;
 typedef struct _GstAllocator GstAllocator;
 
-#define GST_MEMORY_CAST(mem)   ((GstMemory *)(mem))
+#define GST_MEMORY_CAST(mem)       ((GstMemory *)(mem))
+#define GST_MEMORY_CONST_CAST(mem) ((const GstMemory *)(mem))
 
 /**
  * GstMemoryFlags:
@@ -321,7 +322,7 @@ void           gst_memory_init         (GstMemory *mem, GstMemoryFlags flags,
                                         gsize maxsize, gsize align,
                                         gsize offset, gsize size);
 GST_API
-gboolean       gst_memory_is_type      (GstMemory *mem, const gchar *mem_type);
+gboolean       gst_memory_is_type      (const GstMemory *mem, const gchar *mem_type);
 
 #ifndef GST_DISABLE_MINIOBJECT_INLINE_FUNCTIONS
 /* refcounting */
@@ -347,7 +348,7 @@ void           gst_memory_unref (GstMemory * memory);
 /* getting/setting memory properties */
 
 GST_API
-gsize          gst_memory_get_sizes    (GstMemory *mem, gsize *offset, gsize *maxsize);
+gsize          gst_memory_get_sizes    (const GstMemory *mem, gsize *offset, gsize *maxsize);
 
 GST_API
 void           gst_memory_resize       (GstMemory *mem, gssize offset, gsize size);
