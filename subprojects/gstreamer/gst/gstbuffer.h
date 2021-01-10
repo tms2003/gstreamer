@@ -42,6 +42,7 @@ typedef struct _GstBufferPool GstBufferPool;
 #define GST_IS_BUFFER(obj)                      (GST_IS_MINI_OBJECT_TYPE(obj, GST_TYPE_BUFFER))
 #define GST_BUFFER_CAST(obj)                    ((GstBuffer *)(obj))
 #define GST_BUFFER(obj)                         (GST_BUFFER_CAST(obj))
+#define GST_BUFFER_CONST_CAST(obj)              ((const GstBuffer *)(obj))
 
 /**
  * GST_BUFFER_FLAGS:
@@ -387,16 +388,16 @@ GST_API
 gsize       gst_buffer_memset              (GstBuffer *buffer, gsize offset,
                                             guint8 val, gsize size);
 GST_API
-gsize       gst_buffer_get_sizes_range     (GstBuffer *buffer, guint idx, gint length,
+gsize       gst_buffer_get_sizes_range     (const GstBuffer *buffer, guint idx, gint length,
                                             gsize *offset, gsize *maxsize);
 GST_API
 gboolean    gst_buffer_resize_range        (GstBuffer *buffer, guint idx, gint length,
                                             gssize offset, gssize size);
 GST_API
-gsize       gst_buffer_get_sizes           (GstBuffer *buffer, gsize *offset, gsize *maxsize);
+gsize       gst_buffer_get_sizes           (const GstBuffer *buffer, gsize *offset, gsize *maxsize);
 
 GST_API
-gsize       gst_buffer_get_size            (GstBuffer *buffer);
+gsize       gst_buffer_get_size            (const GstBuffer *buffer);
 
 GST_API
 void        gst_buffer_resize              (GstBuffer *buffer, gssize offset, gssize size);
@@ -418,10 +419,10 @@ void        gst_buffer_extract_dup         (GstBuffer *buffer, gsize offset,
                                             gsize size, gpointer *dest,
                                             gsize *dest_size);
 GST_API
-GstBufferFlags gst_buffer_get_flags        (GstBuffer * buffer);
+GstBufferFlags gst_buffer_get_flags        (const GstBuffer * buffer);
 
 GST_API
-gboolean       gst_buffer_has_flags        (GstBuffer * buffer, GstBufferFlags flags);
+gboolean       gst_buffer_has_flags        (const GstBuffer * buffer, GstBufferFlags flags);
 
 GST_API
 gboolean       gst_buffer_set_flags        (GstBuffer * buffer, GstBufferFlags flags);

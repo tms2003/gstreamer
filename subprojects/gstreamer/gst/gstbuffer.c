@@ -366,7 +366,7 @@ _replace_memory (GstBuffer * buffer, guint len, guint idx, guint length,
  * Since: 1.10
  */
 GstBufferFlags
-gst_buffer_get_flags (GstBuffer * buffer)
+gst_buffer_get_flags (const GstBuffer * buffer)
 {
   return (GstBufferFlags) GST_BUFFER_FLAGS (buffer);
 }
@@ -383,7 +383,7 @@ gst_buffer_get_flags (GstBuffer * buffer)
  * Since: 1.10
  */
 gboolean
-gst_buffer_has_flags (GstBuffer * buffer, GstBufferFlags flags)
+gst_buffer_has_flags (const GstBuffer * buffer, GstBufferFlags flags)
 {
   return GST_BUFFER_FLAG_IS_SET (buffer, flags);
 }
@@ -1522,7 +1522,7 @@ gst_buffer_is_all_memory_writable (GstBuffer * buffer)
  * Returns: total size of the memory blocks in @buffer.
  */
 gsize
-gst_buffer_get_sizes (GstBuffer * buffer, gsize * offset, gsize * maxsize)
+gst_buffer_get_sizes (const GstBuffer * buffer, gsize * offset, gsize * maxsize)
 {
   return gst_buffer_get_sizes_range (buffer, 0, -1, offset, maxsize);
 }
@@ -1536,7 +1536,7 @@ gst_buffer_get_sizes (GstBuffer * buffer, gsize * offset, gsize * maxsize)
  * Returns: total size of the memory blocks in @buffer.
  */
 gsize
-gst_buffer_get_size (GstBuffer * buffer)
+gst_buffer_get_size (const GstBuffer * buffer)
 {
   guint i;
   gsize size, len;
@@ -1570,7 +1570,7 @@ gst_buffer_get_size (GstBuffer * buffer)
  * Returns: total size of @length memory blocks starting at @idx in @buffer.
  */
 gsize
-gst_buffer_get_sizes_range (GstBuffer * buffer, guint idx, gint length,
+gst_buffer_get_sizes_range (const GstBuffer * buffer, guint idx, gint length,
     gsize * offset, gsize * maxsize)
 {
   guint len;

@@ -3934,7 +3934,7 @@ again:
     if (is_list)
       size = gst_buffer_list_calculate_size (GST_BUFFER_LIST_CAST (obj));
     else
-      size = gst_buffer_get_size (GST_BUFFER_CAST (obj));
+      size = gst_buffer_get_size (GST_BUFFER_CONST_CAST (obj));
 
     priv->rc_accumulated += size;
     priv->rc_next = priv->rc_time + gst_util_uint64_scale (priv->rc_accumulated,

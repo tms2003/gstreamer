@@ -2051,7 +2051,7 @@ gst_multi_queue_buffer_item_new (GstMiniObject * object, guint32 curid)
   item->posid = curid;
   item->is_query = GST_IS_QUERY (object);
 
-  item->size = gst_buffer_get_size (GST_BUFFER_CAST (object));
+  item->size = gst_buffer_get_size (GST_BUFFER_CONST_CAST (object));
   item->duration = GST_BUFFER_DURATION (object);
   if (item->duration == GST_CLOCK_TIME_NONE)
     item->duration = 0;
