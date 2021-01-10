@@ -937,7 +937,7 @@ gst_gl_filter_decide_allocation (GstBaseTransform * trans, GstQuery * query)
  * Since: 1.4
  */
 gboolean
-gst_gl_filter_filter_texture (GstGLFilter * filter, const GstBuffer * input,
+gst_gl_filter_filter_texture (GstGLFilter * filter, GstBuffer * input,
     GstBuffer * output)
 {
   GstGLFilterClass *filter_class;
@@ -947,8 +947,7 @@ gst_gl_filter_filter_texture (GstGLFilter * filter, const GstBuffer * input,
 
   filter_class = GST_GL_FILTER_GET_CLASS (filter);
 
-  // TODO: This function is used for read and write mapping, can/should we always pass this const?
-  if (!gst_video_frame_map (&gl_frame, &filter->in_info, (GstBuffer *) input,
+  if (!gst_video_frame_map (&gl_frame, &filter->in_info, input,
           GST_MAP_READ | GST_MAP_GL)) {
     ret = FALSE;
     goto inbuf_error;

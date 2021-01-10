@@ -69,7 +69,7 @@ static GstCaps *gst_gl_deinterlace_transform_internal_caps (GstGLFilter *
     filter, GstPadDirection direction, GstCaps * caps, GstCaps * caps_filter);
 static gboolean gst_gl_deinterlace_init_fbo (GstGLFilter * filter);
 static gboolean gst_gl_deinterlace_filter (GstGLFilter * filter,
-    const GstBuffer * inbuf, GstBuffer * outbuf);
+    GstBuffer * inbuf, GstBuffer * outbuf);
 static gboolean gst_gl_deinterlace_filter_texture (GstGLFilter * filter,
     const GstGLMemory * in_tex, GstGLMemory * out_tex);
 static gboolean gst_gl_deinterlace_vfir_callback (GstGLFilter * filter,
@@ -402,15 +402,14 @@ gst_gl_deinterlace_filter_texture (GstGLFilter * filter,
 }
 
 static gboolean
-gst_gl_deinterlace_filter (GstGLFilter * filter, const GstBuffer * inbuf,
+gst_gl_deinterlace_filter (GstGLFilter * filter, GstBuffer * inbuf,
     GstBuffer * outbuf)
 {
   GstGLDeinterlace *deinterlace_filter = GST_GL_DEINTERLACE (filter);
 
   gst_gl_filter_filter_texture (filter, inbuf, outbuf);
 
-  // TODO
-  gst_buffer_replace (&deinterlace_filter->prev_buffer, (GstBuffer *) inbuf);
+  gst_buffer_replace (&deinterlace_filter->prev_buffer, inbuf);
 
   return TRUE;
 }

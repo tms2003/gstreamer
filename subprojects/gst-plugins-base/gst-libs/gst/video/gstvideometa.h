@@ -104,10 +104,10 @@ GST_VIDEO_API
 const GstMetaInfo * gst_video_meta_get_info (void);
 
 GST_VIDEO_API
-GstVideoMeta * gst_buffer_get_video_meta (const GstBuffer *buffer);
+GstVideoMeta * gst_buffer_get_video_meta (GstBuffer *buffer);
 
 GST_VIDEO_API
-GstVideoMeta * gst_buffer_get_video_meta_id    (const GstBuffer *buffer, gint id);
+GstVideoMeta * gst_buffer_get_video_meta_id    (GstBuffer *buffer, gint id);
 
 GST_VIDEO_API
 GstVideoMeta * gst_buffer_add_video_meta       (GstBuffer *buffer, GstVideoFrameFlags flags,
@@ -353,7 +353,7 @@ GstVideoRegionOfInterestMeta *gst_buffer_add_video_region_of_interest_meta    (G
                                                                                guint         h);
 
 GST_VIDEO_API
-GstVideoRegionOfInterestMeta *gst_buffer_add_video_region_of_interest_meta_id (GstBuffer   * buffer,
+GstVideoRegionOfInterestMeta *gst_buffer_add_video_region_of_interest_meta_id (GstBuffer   * buffer, 
 									       GQuark        roi_type,
                                                                                guint         x,
                                                                                guint         y,

@@ -90,7 +90,7 @@ static void gst_gl_overlay_compositor_element_gl_stop (GstGLBaseFilter * base);
 static GstCaps *_oce_transform_internal_caps (GstGLFilter *
     filter, GstPadDirection direction, GstCaps * caps, GstCaps * filter_caps);
 static gboolean gst_gl_overlay_compositor_element_filter (GstGLFilter * filter,
-    const GstBuffer * inbuf, GstBuffer * outbuf);
+    GstBuffer * inbuf, GstBuffer * outbuf);
 static gboolean gst_gl_overlay_compositor_element_filter_texture (GstGLFilter *
     filter, const GstGLMemory * in_tex, GstGLMemory * out_tex);
 static gboolean gst_gl_overlay_compositor_element_callback (GstGLFilter *
@@ -303,7 +303,7 @@ passthrough:
 
 static gboolean
 gst_gl_overlay_compositor_element_filter (GstGLFilter * filter,
-    const GstBuffer * inbuf, GstBuffer * outbuf)
+    GstBuffer * inbuf, GstBuffer * outbuf)
 {
   GstGLOverlayCompositorElement *self =
       GST_GL_OVERLAY_COMPOSITOR_ELEMENT (filter);

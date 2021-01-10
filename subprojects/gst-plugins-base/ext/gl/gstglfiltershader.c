@@ -103,7 +103,7 @@ static void gst_gl_filtershader_get_property (GObject * object, guint prop_id,
 static gboolean gst_gl_filtershader_gl_start (GstGLBaseFilter * base);
 static void gst_gl_filtershader_gl_stop (GstGLBaseFilter * base);
 static gboolean gst_gl_filtershader_filter (GstGLFilter * filter,
-    const GstBuffer * inbuf, GstBuffer * outbuf);
+    GstBuffer * inbuf, GstBuffer * outbuf);
 static gboolean gst_gl_filtershader_filter_texture (GstGLFilter * filter,
     const GstGLMemory * in_tex, GstGLMemory * out_tex);
 static gboolean gst_gl_filtershader_hcallback (GstGLFilter * filter,
@@ -322,7 +322,7 @@ _gint64_time_val_to_double (gint64 time, gdouble * result)
 }
 
 static gboolean
-gst_gl_filtershader_filter (GstGLFilter * filter, const GstBuffer * inbuf,
+gst_gl_filtershader_filter (GstGLFilter * filter, GstBuffer * inbuf,
     GstBuffer * outbuf)
 {
   GstGLFilterShader *filtershader = GST_GL_FILTERSHADER (filter);
