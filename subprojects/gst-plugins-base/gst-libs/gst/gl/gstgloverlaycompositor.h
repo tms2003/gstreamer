@@ -52,7 +52,7 @@ struct _GstGLOverlayCompositor
   guint last_window_height;
 
   GList * overlays;
- 
+
   GstGLShader *shader;
   gint  position_attrib;
   gint  texcoord_attrib;
@@ -80,7 +80,7 @@ void gst_gl_overlay_compositor_free_overlays (GstGLOverlayCompositor * composito
 
 GST_GL_API
 void gst_gl_overlay_compositor_upload_overlays (GstGLOverlayCompositor * compositor,
-        GstBuffer * buf);
+        const GstBuffer * buf);
 
 GST_GL_API
 void gst_gl_overlay_compositor_draw_overlays (GstGLOverlayCompositor * compositor);

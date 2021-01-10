@@ -117,7 +117,7 @@ static GstFlowReturn
 gst_gl_transformation_prepare_output_buffer (GstBaseTransform * trans,
     GstBuffer * inbuf, GstBuffer ** outbuf);
 static gboolean gst_gl_transformation_filter (GstGLFilter * filter,
-    GstBuffer * inbuf, GstBuffer * outbuf);
+    const GstBuffer * inbuf, GstBuffer * outbuf);
 static gboolean gst_gl_transformation_filter_texture (GstGLFilter * filter,
     const GstGLMemory * in_tex, GstGLMemory * out_tex);
 
@@ -833,7 +833,7 @@ gst_gl_transformation_prepare_output_buffer (GstBaseTransform * trans,
 
 static gboolean
 gst_gl_transformation_filter (GstGLFilter * filter,
-    GstBuffer * inbuf, GstBuffer * outbuf)
+    const GstBuffer * inbuf, GstBuffer * outbuf)
 {
   GstGLTransformation *transformation = GST_GL_TRANSFORMATION (filter);
 

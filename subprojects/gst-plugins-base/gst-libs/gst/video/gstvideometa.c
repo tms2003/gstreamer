@@ -164,14 +164,15 @@ gst_video_meta_get_info (void)
  * is no such metadata on @buffer.
  */
 GstVideoMeta *
-gst_buffer_get_video_meta (GstBuffer * buffer)
+gst_buffer_get_video_meta (const GstBuffer * buffer)
 {
   gpointer state = NULL;
   GstVideoMeta *out = NULL;
   GstMeta *meta;
   const GstMetaInfo *info = GST_VIDEO_META_INFO;
 
-  while ((meta = gst_buffer_iterate_meta (buffer, &state))) {
+  // TODO
+  while ((meta = gst_buffer_iterate_meta ((GstBuffer *) buffer, &state))) {
     if (meta->info->api == info->api) {
       GstVideoMeta *vmeta = (GstVideoMeta *) meta;
       if (vmeta->id == 0)
@@ -197,13 +198,13 @@ gst_buffer_get_video_meta (GstBuffer * buffer)
  * on @buffer.
  */
 GstVideoMeta *
-gst_buffer_get_video_meta_id (GstBuffer * buffer, gint id)
+gst_buffer_get_video_meta_id (const GstBuffer * buffer, gint id)
 {
   gpointer state = NULL;
   GstMeta *meta;
   const GstMetaInfo *info = GST_VIDEO_META_INFO;
 
-  while ((meta = gst_buffer_iterate_meta (buffer, &state))) {
+  while ((meta = gst_buffer_iterate_meta ((GstBuffer *) buffer, &state))) {
     if (meta->info->api == info->api) {
       GstVideoMeta *vmeta = (GstVideoMeta *) meta;
       if (vmeta->id == id)

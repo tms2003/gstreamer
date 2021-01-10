@@ -237,7 +237,7 @@ gst_gl_composition_overlay_init (GstGLCompositionOverlay * overlay)
 
 static void
 gst_gl_composition_overlay_add_transformation (GstGLCompositionOverlay *
-    overlay, GstBuffer * video_buffer)
+    overlay, const GstBuffer * video_buffer)
 {
   gint comp_x, comp_y;
   guint comp_width, comp_height;
@@ -338,7 +338,7 @@ _video_frame_unmap_and_free (gpointer user_data)
 
 static void
 gst_gl_composition_overlay_upload (GstGLCompositionOverlay * overlay,
-    GstBuffer * buf)
+    const GstBuffer * buf)
 {
   GstGLMemory *comp_gl_memory = NULL;
   GstBuffer *comp_buffer = NULL;
@@ -654,13 +654,14 @@ gst_gl_overlay_compositor_free_overlays (GstGLOverlayCompositor * compositor)
 
 void
 gst_gl_overlay_compositor_upload_overlays (GstGLOverlayCompositor * compositor,
-    GstBuffer * buf)
+    const GstBuffer * buf)
 {
   GstVideoOverlayCompositionMeta *composition_meta;
   GstGLOverlayCompositorPrivate *priv =
       gst_gl_overlay_compositor_get_instance_private (compositor);
 
-  composition_meta = gst_buffer_get_video_overlay_composition_meta (buf);
+  composition_meta =
+      gst_buffer_get_video_overlay_composition_meta ((GstBuffer *) buf);
   if (composition_meta) {
     GstVideoOverlayComposition *composition = NULL;
     guint num_overlays, i;
