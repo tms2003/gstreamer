@@ -67,8 +67,8 @@ struct _GstVideoFilterClass {
   GstBaseTransformClass parent_class;
 
   gboolean      (*set_info)           (GstVideoFilter *filter,
-                                       GstCaps *incaps, const GstVideoInfo *in_info,
-                                       GstCaps *outcaps, const GstVideoInfo *out_info);
+                                       const GstCaps *incaps, const GstVideoInfo *in_info,
+                                       const GstCaps *outcaps, const GstVideoInfo *out_info);
 
   /* transform */
   GstFlowReturn (*transform_frame)    (GstVideoFilter *filter,

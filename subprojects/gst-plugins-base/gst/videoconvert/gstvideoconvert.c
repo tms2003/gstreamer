@@ -108,8 +108,8 @@ static void gst_video_convert_get_property (GObject * object,
     guint property_id, GValue * value, GParamSpec * pspec);
 
 static gboolean gst_video_convert_set_info (GstVideoFilter * filter,
-    GstCaps * incaps, const GstVideoInfo * in_info, GstCaps * outcaps,
-    const GstVideoInfo * out_info);
+    const GstCaps * incaps, const GstVideoInfo * in_info,
+    const GstCaps * outcaps, const GstVideoInfo * out_info);
 static GstFlowReturn gst_video_convert_transform_frame (GstVideoFilter * filter,
     GstVideoFrame * in_frame, GstVideoFrame * out_frame);
 
@@ -537,8 +537,8 @@ gst_video_convert_transform_meta (GstBaseTransform * trans, GstBuffer * outbuf,
 
 static gboolean
 gst_video_convert_set_info (GstVideoFilter * filter,
-    GstCaps * incaps, const GstVideoInfo * in_info, GstCaps * outcaps,
-    const GstVideoInfo * out_info)
+    const GstCaps * incaps, const GstVideoInfo * in_info,
+    const GstCaps * outcaps, const GstVideoInfo * out_info)
 {
   GstVideoConvert *space;
   GstBaseTransformClass *gstbasetransform_class =
