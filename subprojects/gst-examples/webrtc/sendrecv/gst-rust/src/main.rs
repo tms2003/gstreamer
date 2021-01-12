@@ -19,6 +19,8 @@ use tungstenite::Message as WsMessage;
 use gst::gst_element_error;
 use gst::prelude::*;
 
+use libnice::ffi::NiceAgent;
+
 use serde_derive::{Deserialize, Serialize};
 
 use anyhow::{anyhow, bail, Context};
@@ -46,6 +48,8 @@ struct Args {
     server: String,
     #[structopt(short, long)]
     peer_id: Option<u32>,
+    #[structopt(long)]
+    port_range: Option<String>,
 }
 
 // JSON messages we communicate with
@@ -101,6 +105,45 @@ impl App {
     // Downgrade the strong reference to a weak reference
     fn downgrade(&self) -> AppWeak {
         AppWeak(Arc::downgrade(&self.0))
+    }
+
+    fn restrict_port_range(
+        &self,
+        min_port: u16,
+        max_port: u16) -> Result<(), anyhow::Error>
+    {
+        let ice = self.webrtcbin.get_property("ice-agent").unwrap().get::<gst::Object>().unwrap().unwrap();
+
+        // Iterate our transceivers, in the BUNDLE case the transport will be
+        // the same but if not, restrict the range on all transports
+        for i in 0..2 {
+            let agent = ice.get_property("agent").unwrap().get::<NiceAgent>().unwrap().unwrap();
+            let transceiver = self.webrtcbin.emit("get-transceiver", &[&i]).unwrap().unwrap().get::<gst_webrtc::WebRTCRTPTransceiver>().unwrap().unwrap();
+            let receiver = transceiver.get_property("receiver").unwrap().get::<gst::Object>().unwrap().unwrap();
+
+            receiver.connect ("notify::transport", false, move |values| {
+                // Get to the NiceTransport object
+                let receiver = values[0].get::<gst::Object>().expect("Invalid argument").unwrap();
+                let dtls_transport = receiver.get_property("transport").unwrap().get::<gst::Object>().unwrap().unwrap();
+                let transport = dtls_transport.get_property("transport").unwrap().get::<gst::Object>().unwrap().unwrap();
+
+                // Identify the generated stream ID
+                let stream = transport.get_property("stream").unwrap().get::<gst::Object>().unwrap().unwrap();
+                let stream_id = stream.get_property("stream-id").unwrap().get::<u32>().unwrap().unwrap();
+
+                // Do not try to restrict the port range once we've started gathering
+                let state = transport.get_property("gathering-state").unwrap().get::<gst_webrtc::WebRTCICEGatheringState>().unwrap().unwrap();
+
+                if state == gst_webrtc::WebRTCICEGatheringState::New {
+                    // Restrict the range for both the RTP and RTCP components
+                    agent.set_port_range (stream_id, 1, min_port, max_port);
+                    agent.set_port_range (stream_id, 2, min_port, max_port);
+                }
+
+                None
+            }).unwrap();
+        }
+        Ok(())
     }
 
     fn new(
@@ -168,6 +211,14 @@ impl App {
                     None
                 })
                 .unwrap();
+        }
+
+        // Demonstrate how to interface with NiceAgent
+        if let Some(port_range) = &app.args.port_range {
+            let ports: Vec<u16> = port_range.to_string().split(":").map(|s| s.parse().expect("failed to parse port")).collect();
+            assert_eq!(ports.len(), 2, "Expected two ports in range, found {}", ports.len());
+            assert!(ports[0] < ports[1], "invalid port range, {} >= {}", ports[0], ports[1]);
+            app.restrict_port_range(ports[0], ports[1])?;
         }
 
         // Whenever there is a new ICE candidate, send it to the peer
