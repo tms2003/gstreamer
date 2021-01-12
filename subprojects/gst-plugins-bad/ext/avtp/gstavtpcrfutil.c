@@ -17,6 +17,7 @@
  * Free Software Foundation, Inc., 51 Franklin St, Fifth Floor,
  * Boston, MA 02110-1301, USA.
  */
+#include <math.h>
 #include <avtp.h>
 #include <avtp_aaf.h>
 #include <avtp_cvf.h>
@@ -114,4 +115,23 @@ h264_tstamp_valid (struct avtp_stream_pdu * pdu)
       return TRUE;
   }
   return FALSE;
+}
+
+GstClockTime
+gst_avtp_crf_adjust_ts (GstAvtpCrfBase * const avtpcrfbase, GstClockTime tstamp)
+{
+  const GstAvtpCrfThreadData *const thread_data = &avtpcrfbase->thread_data;
+  const GstClockTime current_ts = thread_data->current_ts;
+  const gdouble avg_period = thread_data->average_period;
+  GstClockTime adjusted_tstamp;
+
+  /*
+   * float typecasted to guint64 truncates the decimal part. So, round() it
+   * before casting.
+   */
+  adjusted_tstamp =
+      (GstClockTime) roundl (current_ts + ceill (((gdouble) tstamp -
+              current_ts) / avg_period) * avg_period);
+
+  return adjusted_tstamp;
 }
