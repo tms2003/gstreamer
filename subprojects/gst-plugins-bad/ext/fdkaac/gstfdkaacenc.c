@@ -32,7 +32,6 @@
 /* TODO:
  * - Add support for other AOT / profiles
  * - Signal encoder delay
- * - LOAS / LATM support
  */
 
 enum
@@ -80,7 +79,7 @@ static GstStaticPadTemplate src_template = GST_STATIC_PAD_TEMPLATE ("src",
         "mpegversion = (int) 4, "
         "rate = (int) { " SAMPLE_RATES " }, "
         "channels = (int) {1, 2, 3, 4, 5, 6, 8}, "
-        "stream-format = (string) { adts, adif, raw, latm-mcp0, latm-mcp1 }, "
+        "stream-format = (string) { adts, adif, raw, latm-mcp0, latm-mcp1, loas }, "
         "profile = (string) { lc, he-aac-v1, he-aac-v2, ld }, "
         "framed = (boolean) true")
     );
@@ -326,6 +325,9 @@ gst_fdkaacenc_set_format (GstAudioEncoder * enc, GstAudioInfo * info)
       } else if (strcmp (str, "raw") == 0) {
         GST_DEBUG_OBJECT (self, "use RAW format for output");
         transmux = 0;
+      } else if (strcmp (str, "loas") == 0) {
+        GST_DEBUG_OBJECT (self, "use LOAS format for output");
+        transmux = 10;
       } else if (strcmp (str, "latm-mcp1") == 0) {
         /*
          * Enable TT_MP4_LATM_MCP1. Sets muxConfigPresent = 1. See Section 4.1 of
@@ -588,7 +590,7 @@ gst_fdkaacenc_set_format (GstAudioEncoder * enc, GstAudioInfo * info)
   } else if (transmux == 2) {
     gst_caps_set_simple (src_caps, "stream-format", G_TYPE_STRING, "adts",
         NULL);
-  } else if (transmux == 6 || transmux == 7) {
+  } else if (transmux == 6 || transmux == 7 || transmux == 10) {
     GstBitWriter bw;
     guint rate = GST_AUDIO_INFO_RATE (info);
     guint8 channels = GST_AUDIO_INFO_CHANNELS (info);
@@ -620,20 +622,23 @@ gst_fdkaacenc_set_format (GstAudioEncoder * enc, GstAudioInfo * info)
     if (transmux == 6)
       gst_caps_set_simple (src_caps, "stream-format", G_TYPE_STRING,
           "latm-mcp1", NULL);
-    else
+    else if (transmux == 7)
       gst_caps_set_simple (src_caps, "codec_data", GST_TYPE_BUFFER, codec_data,
           "stream-format", G_TYPE_STRING, "latm-mcp0", NULL);
+    else
+      gst_caps_set_simple (src_caps, "stream-format", G_TYPE_STRING,
+          "loas", NULL);
     gst_buffer_unref (codec_data);
   } else {
     g_assert_not_reached ();
   }
 
-  if (transmux != 6 && transmux != 7)
+  if (transmux != 6 && transmux != 7 && transmux != 10)
     gst_codec_utils_aac_caps_set_level_and_profile (src_caps,
         enc_info.confBuf, enc_info.confSize);
   else
     /*
-     * For LATM, confBuf is StreamMuxConfig and not AudioSpecificConfig.
+     * For LATM/LOAS, confBuf is StreamMuxConfig and not AudioSpecificConfig.
      * In this case, pass in the manually constructed AudioSpecificConfig
      * buffer above.
      */

@@ -49,7 +49,8 @@ static GstStaticPadTemplate sink_template = GST_STATIC_PAD_TEMPLATE ("sink",
         CHANNELS_CAPS_STR ";  "
         "audio/mpeg, "
         "mpegversion = (int) 4, "
-        "stream-format = (string) { latm-mcp0, latm-mcp1 }, " CHANNELS_CAPS_STR)
+        "stream-format = (string) { latm-mcp0, latm-mcp1, loas }, "
+        CHANNELS_CAPS_STR)
     );
 
 static GstStaticPadTemplate src_template = GST_STATIC_PAD_TEMPLATE ("src",
@@ -130,6 +131,8 @@ gst_fdkaacdec_set_format (GstAudioDecoder * dec, GstCaps * caps)
     transport_format = TT_MP4_ADIF;
   } else if (strcmp (stream_format, "adts") == 0) {
     transport_format = TT_MP4_ADTS;
+  } else if (strcmp (stream_format, "loas") == 0) {
+    transport_format = TT_MP4_LOAS;
   } else if (strcmp (stream_format, "latm-mcp0") == 0) {
     transport_format = TT_MP4_LATM_MCP0;
   } else if (strcmp (stream_format, "latm-mcp1") == 0) {
