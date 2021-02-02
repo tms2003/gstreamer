@@ -102,6 +102,8 @@ static GstStaticPadTemplate srctemplate = GST_STATIC_PAD_TEMPLATE ("src",
 GST_DEBUG_CATEGORY_STATIC (gst_file_src_debug);
 #define GST_CAT_DEFAULT gst_file_src_debug
 
+#define GST_FILE_SRC_CAST(obj) ((GstFileSrc*) obj)
+
 /* FileSrc signals and args */
 enum
 {
@@ -115,6 +117,20 @@ enum
 {
   PROP_0,
   PROP_LOCATION
+};
+
+struct _GstFileSrc
+{
+  GstBaseSrc element;
+
+  /*< private > */
+  gchar *filename;              /* filename */
+  gchar *uri;                   /* caching the URI */
+  gint fd;                      /* open file descriptor */
+  guint64 read_position;        /* position of fd */
+
+  gboolean seekable;            /* whether the file is seekable */
+  gboolean is_regular;          /* whether it's a (symlink to a) regular file */
 };
 
 static void gst_file_src_finalize (GObject * object);
