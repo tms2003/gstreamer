@@ -46,17 +46,9 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #ifdef G_OS_WIN32
-#include <windows.h>
-#include <io.h>                 /* lseek, open, close, read */
-/* On win32, stat* default to 32 bit; we need the 64-bit
- * variants, so explicitly define it that way. */
-#undef lseek
-#define lseek _lseeki64
+#include "gstwin32utils.h"
 #undef off_t
 #define off_t guint64
-/* Prevent stat.h from defining the stat* functions as
- * _stat*, since we're explicitly overriding that */
-#undef _INC_STAT_INL
 #endif
 
 #include <fcntl.h>
@@ -126,7 +118,11 @@ struct _GstFileSrc
   /*< private > */
   gchar *filename;              /* filename */
   gchar *uri;                   /* caching the URI */
+#ifdef G_OS_WIN32
+  GstWin32File *file;
+#else
   gint fd;                      /* open file descriptor */
+#endif
   guint64 read_position;        /* position of fd */
 
   gboolean seekable;            /* whether the file is seekable */
@@ -204,7 +200,6 @@ static void
 gst_file_src_init (GstFileSrc * src)
 {
   src->filename = NULL;
-  src->fd = 0;
   src->uri = NULL;
 
   src->is_regular = FALSE;
@@ -337,7 +332,11 @@ gst_file_src_fill (GstBaseSrc * basesrc, guint64 offset, guint length,
   if (G_UNLIKELY (offset != -1 && src->read_position != offset)) {
     off_t res;
 
+#ifdef G_OS_WIN32
+    res = gst_win32_file_seek (src->file, offset, FILE_BEGIN);
+#else
     res = lseek (src->fd, offset, SEEK_SET);
+#endif
     if (G_UNLIKELY (res < 0 || res != offset))
       goto seek_failed;
 
@@ -353,6 +352,14 @@ gst_file_src_fill (GstBaseSrc * basesrc, guint64 offset, guint length,
   while (to_read > 0) {
     GST_LOG_OBJECT (src, "Reading %d bytes at offset 0x%" G_GINT64_MODIFIER "x",
         to_read, offset + bytes_read);
+#ifdef G_OS_WIN32
+    ret = gst_win32_file_read (src->file, data + bytes_read, to_read);
+    /* EAGAIN (~= ERROR_IO_PENDING) or EINTR (~=ERROR_OPERATION_ABORTED)
+     * wouldn't happen for synchronous I/O */
+    if (G_UNLIKELY (ret < 0)) {
+      goto could_not_read;
+    }
+#else
     errno = 0;
     ret = read (src->fd, data + bytes_read, to_read);
     if (G_UNLIKELY (ret < 0)) {
@@ -360,6 +367,7 @@ gst_file_src_fill (GstBaseSrc * basesrc, guint64 offset, guint length,
         continue;
       goto could_not_read;
     }
+#endif
 
     /* files should eos if they read 0 and more was requested */
     if (G_UNLIKELY (ret == 0)) {
@@ -433,7 +441,7 @@ gst_file_src_get_size (GstBaseSrc * basesrc, guint64 * size)
   }
 #ifdef G_OS_WIN32
   {
-    HANDLE h = (HANDLE) _get_osfhandle (src->fd);
+    HANDLE h = gst_win32_file_get_file_handle (src->file);
     LARGE_INTEGER file_size;
 
     if (h == INVALID_HANDLE_VALUE)
@@ -470,25 +478,36 @@ static gboolean
 gst_file_src_start (GstBaseSrc * basesrc)
 {
   GstFileSrc *src = GST_FILE_SRC (basesrc);
+#ifndef G_OS_WIN32
   int flags = O_RDONLY | O_BINARY;
 #if defined (__BIONIC__)
   flags |= O_LARGEFILE;
 #endif
+#endif /* G_OS_WIN32 */
 
   if (src->filename == NULL || src->filename[0] == '\0')
     goto no_filename;
 
   GST_INFO_OBJECT (src, "opening file %s", src->filename);
 
+#ifdef G_OS_WIN32
+  src->file = gst_win32_file_open (src->filename, GENERIC_READ,
+      FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING,
+      0, FILE_ATTRIBUTE_NORMAL, 0, NULL);
+
+  if (!src->file)
+    goto open_failed;
+#else
   /* open the file */
   src->fd = g_open (src->filename, flags, 0);
 
   if (src->fd < 0)
     goto open_failed;
+#endif
 
 #ifdef G_OS_WIN32
   {
-    HANDLE h = (HANDLE) _get_osfhandle (src->fd);
+    HANDLE h = gst_win32_file_get_file_handle (src->file);
     FILE_STANDARD_INFO file_info;
 
     if (h == INVALID_HANDLE_VALUE)
@@ -528,14 +547,23 @@ gst_file_src_start (GstBaseSrc * basesrc)
 
   /* We need to check if the underlying file is seekable. */
   {
-    off_t res = lseek (src->fd, 0, SEEK_END);
+    off_t res;
+#ifdef G_OS_WIN32
+    res = gst_win32_file_seek (src->file, 0, FILE_END);
+#else
+    res = lseek (src->fd, 0, SEEK_END);
+#endif
 
     if (res < 0) {
       GST_LOG_OBJECT (src, "disabling seeking, lseek failed: %s",
           g_strerror (errno));
       src->seekable = FALSE;
     } else {
+#ifdef G_OS_WIN32
+      res = gst_win32_file_seek (src->file, 0, FILE_BEGIN);
+#else
       res = lseek (src->fd, 0, SEEK_SET);
+#endif
 
       if (res < 0) {
         /* We really don't like not being able to go back to 0 */
@@ -605,7 +633,11 @@ lseek_wonky:
     goto error_close;
   }
 error_close:
+#ifdef G_OS_WIN32
+  g_clear_pointer (&src->file, gst_win32_file_close);
+#else
   close (src->fd);
+#endif
 error_exit:
   return FALSE;
 }
@@ -617,10 +649,14 @@ gst_file_src_stop (GstBaseSrc * basesrc)
   GstFileSrc *src = GST_FILE_SRC (basesrc);
 
   /* close the file */
+#ifdef G_OS_WIN32
+  g_clear_pointer (&src->file, gst_win32_file_close);
+#else
   g_close (src->fd, NULL);
 
   /* zero out a lot of our state */
   src->fd = 0;
+#endif
   src->is_regular = FALSE;
 
   return TRUE;

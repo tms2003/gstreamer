@@ -26,6 +26,10 @@ gst_elements_sources = [
   'gstvalve.c',
 ]
 
+if host_system == 'windows'
+  gst_elements_sources += ['gstwin32utils.c']
+endif
+
 gst_elements = library('gstcoreelements',
   gst_elements_sources,
   c_args : gst_c_args,
