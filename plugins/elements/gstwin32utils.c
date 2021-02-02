@@ -22,10 +22,18 @@
 #endif
 
 #include "gstwin32utils.h"
+#include <string.h>
 
 struct _GstWin32File
 {
   HANDLE file_handle;
+
+  /* For unbuffered I/O */
+  guint8 *buffer;
+  gint64 buffer_size;
+
+  gint64 read_size;
+  gint64 remaining;
 };
 
 GstWin32File *
@@ -70,6 +78,30 @@ gst_win32_file_open (const gchar * filename, gint desired_access,
   self = g_new0 (GstWin32File, 1);
   self->file_handle = file_handle;
 
+  /* NOTE: unbuffed read has some restrictions.
+   * See https://docs.microsoft.com/en-us/windows/win32/fileio/file-buffering */
+  if ((file_flags & FILE_FLAG_NO_BUFFERING) == FILE_FLAG_NO_BUFFERING) {
+    SYSTEM_INFO system_info;
+    guint8 *buffer;
+
+    /* Get page size and allocate buffer for unbuffered I/O */
+    GetNativeSystemInfo (&system_info);
+
+    g_assert (system_info.dwPageSize != 0);
+
+    /* Allocate page aligned memory for direct I/O */
+    /* FIXME: do we want to larger size buffer (multiple of page size)? */
+    buffer = _aligned_malloc (system_info.dwPageSize, system_info.dwPageSize);
+
+    if (!buffer) {
+      gst_win32_file_close (self);
+      return NULL;
+    }
+
+    self->buffer = buffer;
+    self->buffer_size = system_info.dwPageSize;
+  }
+
   return self;
 }
 
@@ -80,6 +112,9 @@ gst_win32_file_close (GstWin32File * file)
 
   if (file->file_handle != INVALID_HANDLE_VALUE)
     CloseHandle (file->file_handle);
+
+  if (file->buffer)
+    _aligned_free (file->buffer);
 
   g_free (file);
 }
@@ -92,20 +127,141 @@ gst_win32_file_get_file_handle (GstWin32File * file)
   return file->file_handle;
 }
 
+static gint64
+gst_win32_file_calculate_unbuffered_file_begin_seek_offset (GstWin32File * file,
+    gint64 offset, gint move_method, gint64 * logical_position)
+{
+  LARGE_INTEGER val;
+  gint64 new_offset;
+  DWORD last_err;
+
+  *logical_position = -1;
+
+  if (!file->buffer)
+    return offset;
+
+  switch (move_method) {
+    case FILE_BEGIN:
+      *logical_position = offset;
+
+      return GST_ROUND_DOWN_N (offset, file->buffer_size);
+    case FILE_CURRENT:
+      /* Get current position */
+      val.QuadPart = 0;
+      val.LowPart = SetFilePointer (file->file_handle, val.LowPart,
+          &val.HighPart, move_method);
+
+      /* ERROR */
+      last_err = GetLastError ();
+      if (val.LowPart == INVALID_SET_FILE_POINTER && last_err != NO_ERROR) {
+        GST_ERROR ("Couldn't get current position, last error %d", last_err);
+        return -1;
+      }
+
+      new_offset = val.QuadPart + offset;
+      if (new_offset < 0) {
+        GST_ERROR ("New offset is negative %" G_GINT64_FORMAT, new_offset);
+        return -1;
+      }
+
+      *logical_position = new_offset;
+
+      return GST_ROUND_DOWN_N (new_offset, file->buffer_size);
+    case FILE_END:
+      if (offset > 0) {
+        GST_ERROR ("Invalid offset for FILE_END %" G_GINT64_FORMAT, offset);
+        return -1;
+      }
+
+      /* The position of FILE_END might not be sector aligned */
+      if (!GetFileSizeEx (file->file_handle, &val)) {
+        GST_ERROR ("Couldn't get query file size, last error %d",
+            GetLastError ());
+        return -1;
+      }
+
+      new_offset = val.QuadPart + offset;
+      if (new_offset < 0) {
+        GST_ERROR ("New offset is negative %" G_GINT64_FORMAT, new_offset);
+        return -1;
+      }
+
+      *logical_position = new_offset;
+
+      return GST_ROUND_DOWN_N (new_offset, file->buffer_size);
+    default:
+      g_assert_not_reached ();
+      return -1;
+  }
+}
+
 gint64
 gst_win32_file_seek (GstWin32File * file, gint64 offset, gint move_method)
 {
   LARGE_INTEGER val;
+  gint64 logical_pos = 0;
 
   g_return_val_if_fail (file != NULL, -1);
   g_return_val_if_fail (file->file_handle != INVALID_HANDLE_VALUE, -1);
+
+  /* Seek position for unbuffered I/O needs to be sector-aligned.
+   * Calculating new offset in that case */
+  if (file->buffer) {
+    gint64 new_offset =
+        gst_win32_file_calculate_unbuffered_file_begin_seek_offset (file,
+        offset, move_method, &logical_pos);
+
+    if (new_offset < 0)
+      return -1;
+
+    move_method = FILE_BEGIN;
+    offset = new_offset;
+  }
 
   val.QuadPart = offset;
   val.LowPart = SetFilePointer (file->file_handle, val.LowPart, &val.HighPart,
       move_method);
 
-  if (val.LowPart == INVALID_SET_FILE_POINTER && GetLastError () != NO_ERROR)
+  if (val.LowPart == INVALID_SET_FILE_POINTER && GetLastError () != NO_ERROR) {
     val.QuadPart = -1;
+  } else if (file->buffer) {
+    gint64 to_drop = logical_pos - offset;
+
+    /* Return logical position, otherwise caller would be confused */
+    val.QuadPart = logical_pos;
+
+    g_assert (logical_pos >= offset);
+    g_assert (to_drop < file->buffer_size);
+
+    file->read_size = file->remaining = 0;
+
+    /* If logical position is different from actual position,
+     * pre-load buffer and mark a position where we need to read from */
+    if (to_drop > 0) {
+      DWORD read_size = 0;
+      BOOL ret;
+
+      ret = ReadFile (file->file_handle, file->buffer, file->buffer_size,
+          &read_size, NULL);
+
+      if (!ret) {
+        GST_ERROR ("Failed to pre-load buffer, last error %d", GetLastError ());
+        return -1;
+      }
+
+      /* Possible? */
+      if (to_drop > read_size) {
+        GST_ERROR ("Need %" G_GINT64_FORMAT " bytes but read only %d",
+            to_drop, read_size);
+        return -1;
+      }
+
+      file->read_size = read_size;
+      file->remaining = read_size - to_drop;
+    } else {
+      file->read_size = file->remaining = 0;
+    }
+  }
 
   return (guint64) val.QuadPart;
 }
@@ -119,10 +275,41 @@ gst_win32_file_read (GstWin32File * file, gpointer buf, gint count)
   g_return_val_if_fail (file != NULL, -1);
   g_return_val_if_fail (file->file_handle != INVALID_HANDLE_VALUE, -1);
   g_return_val_if_fail (buf != NULL, -1);
+  g_return_val_if_fail (count >= 0, -1);
 
-  ret = ReadFile (file->file_handle, buf, count, &read_size, NULL);
-  if (!ret)
-    return -1;
+  if (file->buffer) {
+    gint to_copy = 0;
+    gint64 offset;
 
-  return read_size;
+    /* Return data if we have buffered one. If it's insufficent,
+     * caller will call this method again */
+    if (file->remaining) {
+      to_copy = MIN (count, file->remaining);
+      offset = file->read_size - file->remaining;
+
+      memcpy (buf, file->buffer + offset, to_copy);
+      file->remaining -= to_copy;
+      return to_copy;
+    }
+
+    ret = ReadFile (file->file_handle, file->buffer, file->buffer_size,
+        &read_size, NULL);
+    if (!ret) {
+      GST_ERROR ("Read failed, last error %d", GetLastError ());
+      return -1;
+    }
+
+    file->read_size = file->remaining = read_size;
+    to_copy = MIN (count, file->remaining);
+
+    memcpy (buf, file->buffer, to_copy);
+    file->remaining -= to_copy;
+    return to_copy;
+  } else {
+    ret = ReadFile (file->file_handle, buf, count, &read_size, NULL);
+    if (!ret)
+      return -1;
+
+    return read_size;
+  }
 }

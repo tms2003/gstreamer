@@ -104,11 +104,13 @@ enum
 };
 
 #define DEFAULT_BLOCKSIZE       4*1024
+#define DEFAULT_NO_BUFFERING    FALSE
 
 enum
 {
   PROP_0,
-  PROP_LOCATION
+  PROP_LOCATION,
+  PROP_NO_BUFFERING,
 };
 
 struct _GstFileSrc
@@ -127,6 +129,8 @@ struct _GstFileSrc
 
   gboolean seekable;            /* whether the file is seekable */
   gboolean is_regular;          /* whether it's a (symlink to a) regular file */
+
+  gboolean no_buffering;
 };
 
 static void gst_file_src_finalize (GObject * object);
@@ -175,6 +179,14 @@ gst_file_src_class_init (GstFileSrcClass * klass)
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
           GST_PARAM_MUTABLE_READY));
 
+#ifdef G_OS_WIN32
+  g_object_class_install_property (gobject_class, PROP_NO_BUFFERING,
+      g_param_spec_boolean ("no-buffering", "No Buffering",
+          "Disable OS-layer buffering", DEFAULT_NO_BUFFERING,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
+          GST_PARAM_MUTABLE_READY | GST_PARAM_CONDITIONALLY_AVAILABLE));
+#endif
+
   gobject_class->finalize = gst_file_src_finalize;
 
   gst_element_class_set_static_metadata (gstelement_class,
@@ -201,8 +213,8 @@ gst_file_src_init (GstFileSrc * src)
 {
   src->filename = NULL;
   src->uri = NULL;
-
   src->is_regular = FALSE;
+  src->no_buffering = DEFAULT_NO_BUFFERING;
 
   gst_base_src_set_blocksize (GST_BASE_SRC (src), DEFAULT_BLOCKSIZE);
 }
@@ -281,6 +293,11 @@ gst_file_src_set_property (GObject * object, guint prop_id,
     case PROP_LOCATION:
       gst_file_src_set_location (src, g_value_get_string (value), NULL);
       break;
+#ifdef G_OS_WIN32
+    case PROP_NO_BUFFERING:
+      src->no_buffering = g_value_get_boolean (value);
+      break;
+#endif
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -301,6 +318,11 @@ gst_file_src_get_property (GObject * object, guint prop_id, GValue * value,
     case PROP_LOCATION:
       g_value_set_string (value, src->filename);
       break;
+#ifdef G_OS_WIN32
+    case PROP_NO_BUFFERING:
+      g_value_set_boolean (value, src->no_buffering);
+      break;
+#endif
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -478,7 +500,9 @@ static gboolean
 gst_file_src_start (GstBaseSrc * basesrc)
 {
   GstFileSrc *src = GST_FILE_SRC (basesrc);
-#ifndef G_OS_WIN32
+#ifdef G_OS_WIN32
+  gint file_flags = 0;
+#else
   int flags = O_RDONLY | O_BINARY;
 #if defined (__BIONIC__)
   flags |= O_LARGEFILE;
@@ -491,9 +515,12 @@ gst_file_src_start (GstBaseSrc * basesrc)
   GST_INFO_OBJECT (src, "opening file %s", src->filename);
 
 #ifdef G_OS_WIN32
+  if (src->no_buffering)
+    file_flags |= FILE_FLAG_NO_BUFFERING;
+
   src->file = gst_win32_file_open (src->filename, GENERIC_READ,
       FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING,
-      0, FILE_ATTRIBUTE_NORMAL, 0, NULL);
+      file_flags, FILE_ATTRIBUTE_NORMAL, 0, NULL);
 
   if (!src->file)
     goto open_failed;
