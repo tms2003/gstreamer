@@ -68,6 +68,8 @@ GST_DEBUG_CATEGORY_STATIC (avtpsink_debug);
 #define TAI_OFFSET    (37ULL * NSEC_PER_SEC)
 #define UTC_TO_TAI(t) (t + TAI_OFFSET)
 
+#define RESEND_DELAY  50000 /* us */
+
 enum
 {
   PROP_0,
@@ -367,7 +369,9 @@ gst_avtp_sink_adjust_time (GstBaseSink * basesink, GstClockTime time)
   return time;
 }
 
-static void
+/* If this function returns FALSE consider re-sending after a delay.
+ */
+static gboolean
 gst_avtp_sink_process_error_queue (GstAvtpSink * avtpsink, int fd)
 {
   uint8_t msg_control[CMSG_SPACE (sizeof (struct sock_extended_err))];
@@ -388,7 +392,9 @@ gst_avtp_sink_process_error_queue (GstAvtpSink * avtpsink, int fd)
 
   if (recvmsg (fd, &msg, MSG_ERRQUEUE) == -1) {
     GST_LOG_OBJECT (avtpsink, "Could not get socket errqueue: recvmsg failed");
-    return;
+    /* Usually means buffer is simply full (if errno == ENOBUFS), consider
+     * resending after a delay */
+    return FALSE;
   }
 
   cmsg = CMSG_FIRSTHDR (&msg);
@@ -405,11 +411,14 @@ gst_avtp_sink_process_error_queue (GstAvtpSink * avtpsink, int fd)
           break;
       }
 
-      return;
+      return TRUE;
     }
 
     cmsg = CMSG_NXTHDR (&msg, cmsg);
   }
+
+  /* Unhandled socket error */
+  return TRUE;
 }
 
 static GstFlowReturn
@@ -419,6 +428,7 @@ gst_avtp_sink_render (GstBaseSink * basesink, GstBuffer * buffer)
   GstMapInfo info;
   GstAvtpSink *avtpsink = GST_AVTP_SINK (basesink);
   struct iovec *iov = avtpsink->msg->msg_iov;
+  GstClockTime msg_time = GST_CLOCK_TIME_NONE;
 
   if (G_LIKELY (basesink->sync)) {
     GstClockTime base_time, running_time;
@@ -435,7 +445,8 @@ gst_avtp_sink_render (GstBaseSink * basesink, GstBuffer * buffer)
 
     base_time = gst_element_get_base_time (GST_ELEMENT (avtpsink));
     running_time = gst_avtp_sink_adjust_time (basesink, running_time);
-    *(__u64 *) CMSG_DATA (cmsg) = UTC_TO_TAI (base_time + running_time);
+    msg_time = UTC_TO_TAI (base_time + running_time);
+    *(__u64 *) CMSG_DATA (cmsg) = msg_time;
   }
 
   if (!gst_buffer_map (buffer, &info, GST_MAP_READ)) {
@@ -446,18 +457,35 @@ gst_avtp_sink_render (GstBaseSink * basesink, GstBuffer * buffer)
   iov->iov_base = info.data;
   iov->iov_len = info.size;
 
-  n = sendmsg (avtpsink->sk_fd, avtpsink->msg, 0);
-  if (n < 0) {
-    GST_INFO_OBJECT (avtpsink, "Failed to send AVTPDU: %s", g_strerror (errno));
+  while (1) {
+    n = sendmsg (avtpsink->sk_fd, avtpsink->msg, 0);
+    if (n < 0) {
+      int errno_snd = errno;
+      gboolean fatal_err = FALSE;
 
-    if (G_LIKELY (basesink->sync))
-      gst_avtp_sink_process_error_queue (avtpsink, avtpsink->sk_fd);
+      GST_DEBUG_OBJECT (avtpsink, "Failed to send AVTPDU@%lu: %d: %s", msg_time,
+          errno_snd, g_strerror (errno_snd));
 
-    goto out;
-  }
-  if (n != info.size) {
-    GST_INFO_OBJECT (avtpsink, "Incomplete AVTPDU transmission");
-    goto out;
+      if (G_LIKELY (basesink->sync))
+        fatal_err = gst_avtp_sink_process_error_queue (avtpsink, avtpsink->sk_fd);
+
+      /* Retry send after a short wait */
+      if (errno_snd == ENOBUFS && !fatal_err) {
+        GST_DEBUG_OBJECT (avtpsink, "Resending AVTPDU@%lu after %uus", msg_time,
+            RESEND_DELAY);
+        usleep (RESEND_DELAY);
+        continue;
+      }
+
+      goto out;
+    } else {
+      GST_LOG_OBJECT (avtpsink, "Sent AVTPDU@%lu with size %ld", msg_time, n);
+      goto out;
+    }
+    if (n != info.size) {
+      GST_INFO_OBJECT (avtpsink, "Incomplete AVTPDU@%lu transmission", msg_time);
+      goto out;
+    }
   }
 
 out:
