@@ -400,6 +400,7 @@ gst_ps_demux_reset (GstPsDemux * demux)
   demux->next_pts = G_MAXUINT64;
   demux->next_dts = G_MAXUINT64;
   demux->need_no_more_pads = TRUE;
+  demux->adjust_segment = TRUE;
   gst_ps_demux_reset_psm (demux);
   gst_segment_init (&demux->sink_segment, GST_FORMAT_UNDEFINED);
   gst_segment_init (&demux->src_segment, GST_FORMAT_TIME);
@@ -664,6 +665,20 @@ gst_ps_demux_send_segment (GstPsDemux * demux, GstPsStream * stream,
         GST_TIME_ARGS (demux->src_segment.start),
         GST_TIME_ARGS (demux->src_segment.stop));
 
+    /* adjust segment start if estimating a seek was off quite a bit,
+     * make sure to do for all streams though to preserve a/v sync */
+    /* FIXME such adjustment tends to be frowned upon */
+    if (pts != GST_CLOCK_TIME_NONE && demux->adjust_segment) {
+      if (demux->src_segment.rate > 0) {
+        if (GST_CLOCK_DIFF (demux->src_segment.start, pts) > GST_SECOND)
+          demux->src_segment.start = pts - demux->base_time;
+      } else {
+        if (GST_CLOCK_DIFF (demux->src_segment.stop, pts) > GST_SECOND)
+          demux->src_segment.stop = pts - demux->base_time;
+      }
+    }
+    demux->adjust_segment = FALSE;
+
     /* we should be in sync with downstream, so start from our segment notion,
      * which also includes proper base_time etc, tweak it a bit and send */
     gst_segment_copy_into (&demux->src_segment, &segment);
@@ -798,6 +813,7 @@ gst_ps_demux_mark_discont (GstPsDemux * demux, gboolean discont,
     if (G_LIKELY (stream)) {
       stream->discont |= discont;
       stream->need_segment |= need_segment;
+      demux->adjust_segment |= need_segment;
       if (need_segment)
         demux->segment_seqnum = 0;
       GST_DEBUG_OBJECT (demux, "marked stream as discont %d, need_segment %d",
@@ -1105,6 +1121,8 @@ gst_ps_demux_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
         /* we expect our timeline (SCR, PTS) to match the one from upstream,
          * if not, will adjust with offset later on */
         gst_segment_copy_into (segment, &demux->src_segment);
+        /* accept upstream segment without adjusting */
+        demux->adjust_segment = FALSE;
       }
 
       gst_event_unref (event);
