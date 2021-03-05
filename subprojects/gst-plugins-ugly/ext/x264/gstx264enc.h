@@ -113,6 +113,7 @@ struct _GstX264Enc
   GString *option_string; /* used by set prop */
   gint frame_packing;
   gboolean insert_vui;
+  gint nal_hrd;
 
   /* input description */
   GstVideoCodecState *input_state;
