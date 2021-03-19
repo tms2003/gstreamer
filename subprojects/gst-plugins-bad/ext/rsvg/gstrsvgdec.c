@@ -1,6 +1,7 @@
 /* GStreamer
  * Copyright (C) <2009> Sebastian Dröge <sebastian.droege@collabora.co.uk>
  * Copyright (C) <2013> Luciana Fujii <luciana.fujii@collabora.co.uk>
+ * Copyright (C) <2021> Sebastian Dröge <sebastian@centricular.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -41,6 +42,66 @@
 GST_DEBUG_CATEGORY_STATIC (rsvgdec_debug);
 #define GST_CAT_DEFAULT rsvgdec_debug
 
+enum
+{
+  PROP_0,
+  PROP_FIT_MODE,
+  PROP_VIEWPORT_X,
+  PROP_VIEWPORT_Y,
+  PROP_VIEWPORT_WIDTH,
+  PROP_VIEWPORT_HEIGHT,
+  PROP_RELATIVE_VIEWPORT,
+  PROP_DPI
+};
+
+#define DEFAULT_FIT_MODE (GST_RSVG_FIT_MODE_SCALE)
+#define DEFAULT_VIEWPORT_X (0.0)
+#define DEFAULT_VIEWPORT_Y (0.0)
+#define DEFAULT_VIEWPORT_WIDTH (G_MAXDOUBLE)
+#define DEFAULT_VIEWPORT_HEIGHT (G_MAXDOUBLE)
+#define DEFAULT_RELATIVE_VIEWPORT (FALSE)
+#define DEFAULT_DPI (96.0)
+
+/**
+ * GstRsvgFitMode:
+ * @GST_RSVG_FIT_MODE_SCALE: Scale the source image to the negotiated output
+ *     resolution but keep the aspect ratio. Transparent black borders are
+ *     inserted if necessary. The viewport is by default configured to the
+ *     whole negotiated resolution.
+ * @GST_RSVG_FIT_MODE_SCALE_NO_ASPECT: Scale the source image to the
+ *     negotiated output resolution but do not keep the aspect ratio. The
+ *     viewport is by default configured to the whole negotiated resolution.
+ * @GST_RSVG_FIT_MODE_CROP: Crop the source image to the negotiated output
+ *     resolution or extend with transparent black on either side. The
+ *     viewport properties can be used to select the position in the output,
+ *     and by default the viewport is configured to the natural resolution of
+ *     the SVG.
+ *
+ * Since: 1.20
+ */
+#define GST_TYPE_RSVG_FIT_MODE (gst_rsvg_fit_mode_get_type ())
+static GType
+gst_rsvg_fit_mode_get_type (void)
+{
+  static GType gtype = 0;
+
+  if (gtype == 0) {
+    static const GEnumValue values[] = {
+      {GST_RSVG_FIT_MODE_SCALE,
+          "Scale viewport to the output resolution (default)", "scale"},
+      {GST_RSVG_FIT_MODE_SCALE_NO_ASPECT,
+            "Scale viewport to the output resolution without keeping aspect ratio",
+          "scale-no-aspect"},
+      {GST_RSVG_FIT_MODE_CROP, "Crop viewport or extend with transparent black",
+          "crop"},
+      {0, NULL, NULL}
+    };
+
+    gtype = g_enum_register_static ("GstRsvgFitMode", values);
+  }
+  return gtype;
+}
+
 static GstStaticPadTemplate sink_factory =
     GST_STATIC_PAD_TEMPLATE ("sink", GST_PAD_SINK, GST_PAD_ALWAYS,
     GST_STATIC_CAPS ("image/svg+xml; image/svg"));
@@ -71,8 +132,13 @@ static GstFlowReturn gst_rsvg_dec_handle_frame (GstVideoDecoder * decoder,
     GstVideoCodecFrame * frame);
 static GstFlowReturn gst_rsvg_decode_image (GstRsvgDec * rsvg,
     GstBuffer * buffer, GstVideoCodecFrame * frame);
+static gboolean gst_rsvg_dec_negotiate (GstVideoDecoder * decoder);
 
 static void gst_rsvg_dec_finalize (GObject * object);
+static void gst_rsvg_dec_set_property (GObject * object, guint prop_id,
+    const GValue * value, GParamSpec * pspec);
+static void gst_rsvg_dec_get_property (GObject * object, guint prop_id,
+    GValue * value, GParamSpec * pspec);
 
 static void
 gst_rsvg_dec_class_init (GstRsvgDecClass * klass)
@@ -83,30 +149,167 @@ gst_rsvg_dec_class_init (GstRsvgDecClass * klass)
 
   GST_DEBUG_CATEGORY_INIT (rsvgdec_debug, "rsvgdec", 0, "RSVG decoder");
 
+  gobject_class->finalize = gst_rsvg_dec_finalize;
+  gobject_class->set_property = gst_rsvg_dec_set_property;
+  gobject_class->get_property = gst_rsvg_dec_get_property;
+
+  /**
+   * GstRsvgDec:fit-mode:
+   *
+   * Controls how the source image will be fit into the negotiated output
+   * resolution.
+   *
+   * If possible, the negotiated output resolution will be the original
+   * resolution of the source image. In that case this property has no effect.
+   *
+   * See #GstRsvgFitMode for details on the different modes.
+   *
+   * Since: 1.20
+   */
+  g_object_class_install_property (gobject_class, PROP_FIT_MODE,
+      g_param_spec_enum ("fit-mode", "Fit Mode",
+          "Fit Mode",
+          GST_TYPE_RSVG_FIT_MODE, DEFAULT_FIT_MODE,
+          G_PARAM_CONSTRUCT | G_PARAM_READWRITE | GST_PARAM_MUTABLE_PLAYING |
+          G_PARAM_STATIC_STRINGS));
+
+  /**
+   * GstRsvgDec:viewport-x:
+   *
+   * Configures the viewport horizontal start position.
+   *
+   * Since: 1.20
+   */
+  g_object_class_install_property (gobject_class, PROP_VIEWPORT_X,
+      g_param_spec_double ("viewport-x", "Viewport X",
+          "Viewport horizontal start position",
+          -G_MAXDOUBLE, G_MAXDOUBLE, DEFAULT_VIEWPORT_X,
+          G_PARAM_CONSTRUCT | G_PARAM_READWRITE | GST_PARAM_MUTABLE_PLAYING |
+          G_PARAM_STATIC_STRINGS));
+
+  /**
+   * GstRsvgDec:viewport-y:
+   *
+   * Configures the viewport vertical start position.
+   *
+   * Since: 1.20
+   */
+  g_object_class_install_property (gobject_class, PROP_VIEWPORT_Y,
+      g_param_spec_double ("viewport-y", "Viewport Y",
+          "Viewport vertical start position",
+          -G_MAXDOUBLE, G_MAXDOUBLE, DEFAULT_VIEWPORT_Y,
+          G_PARAM_CONSTRUCT | G_PARAM_READWRITE | GST_PARAM_MUTABLE_PLAYING |
+          G_PARAM_STATIC_STRINGS));
+
+  /**
+   * GstRsvgDec:viewport-width:
+   *
+   * Configures the viewport width.
+   *
+   * If GstRsvgDec:relative-viewport is enabled then 1.0 refers to the
+   * negotiated resolution in non-crop mode and the natural resolution of the
+   * SVG otherwise.
+   *
+   * If GstRsvgDec:relative-viewport is disabled (default) then %G_MAXDOUBLE
+   * has the same effect.
+   *
+   * Since: 1.20
+   */
+  g_object_class_install_property (gobject_class, PROP_VIEWPORT_WIDTH,
+      g_param_spec_double ("viewport-width", "Viewport Width",
+          "Viewport width",
+          -G_MAXDOUBLE, G_MAXDOUBLE, DEFAULT_VIEWPORT_WIDTH,
+          G_PARAM_CONSTRUCT | G_PARAM_READWRITE | GST_PARAM_MUTABLE_PLAYING |
+          G_PARAM_STATIC_STRINGS));
+
+  /**
+   * GstRsvgDec:viewport-height:
+   *
+   * Configures the viewport height.
+   *
+   * If GstRsvgDec:relative-viewport is enabled then 1.0 refers to the
+   * negotiated resolution in non-crop mode and the natural resolution of the
+   * SVG otherwise.
+   *
+   * If GstRsvgDec:relative-viewport is disabled (default) then %G_MAXDOUBLE
+   * has the same effect.
+   *
+   * Since: 1.20
+   */
+  g_object_class_install_property (gobject_class, PROP_VIEWPORT_HEIGHT,
+      g_param_spec_double ("viewport-height", "Viewport Height",
+          "Viewport height",
+          -G_MAXDOUBLE, G_MAXDOUBLE, DEFAULT_VIEWPORT_HEIGHT,
+          G_PARAM_CONSTRUCT | G_PARAM_READWRITE | GST_PARAM_MUTABLE_PLAYING |
+          G_PARAM_STATIC_STRINGS));
+
+  /**
+   * GstRsvgDec:relative-viewport:
+   *
+   * Configures the viewport relative to the negotiated resolution in non-crop
+   * mode and the natural resolution of the SVG otherwise.
+   *
+   * Since: 1.20
+   */
+  g_object_class_install_property (gobject_class, PROP_RELATIVE_VIEWPORT,
+      g_param_spec_boolean ("relative-viewport", "Relative Viewport",
+          "Viewport given relative to negotiated resolution or natural resolution",
+          DEFAULT_RELATIVE_VIEWPORT,
+          G_PARAM_CONSTRUCT | G_PARAM_READWRITE | GST_PARAM_MUTABLE_PLAYING |
+          G_PARAM_STATIC_STRINGS));
+
+  /**
+   * GstRsvgDec:dpi:
+   *
+   * Configures the DPI (dots per inch) to use for translation physical
+   * natural SVG sizes to pixels.
+   *
+   * Since: 1.20
+   */
+  g_object_class_install_property (gobject_class, PROP_DPI,
+      g_param_spec_double ("dpi", "DPI",
+          "Dots per inch",
+          0.0, G_MAXDOUBLE, DEFAULT_DPI,
+          G_PARAM_CONSTRUCT | G_PARAM_READWRITE | GST_PARAM_MUTABLE_PLAYING |
+          G_PARAM_STATIC_STRINGS));
+
   gst_element_class_set_static_metadata (element_class,
       "SVG image decoder", "Codec/Decoder/Image",
       "Uses librsvg to decode SVG images",
-      "Sebastian Dröge <sebastian.droege@collabora.co.uk>");
+      "Sebastian Dröge <sebastian@centricular.com>");
 
   gst_element_class_add_static_pad_template (element_class, &sink_factory);
   gst_element_class_add_static_pad_template (element_class, &src_factory);
 
-  gobject_class->finalize = gst_rsvg_dec_finalize;
   video_decoder_class->stop = GST_DEBUG_FUNCPTR (gst_rsvg_dec_stop);
   video_decoder_class->set_format = GST_DEBUG_FUNCPTR (gst_rsvg_dec_set_format);
   video_decoder_class->parse = GST_DEBUG_FUNCPTR (gst_rsvg_dec_parse);
+  video_decoder_class->negotiate = GST_DEBUG_FUNCPTR (gst_rsvg_dec_negotiate);
   video_decoder_class->handle_frame =
       GST_DEBUG_FUNCPTR (gst_rsvg_dec_handle_frame);
+
+  gst_type_mark_as_plugin_api (GST_TYPE_RSVG_FIT_MODE, 0);
 }
 
 static void
 gst_rsvg_dec_init (GstRsvgDec * rsvg)
 {
   GstVideoDecoder *decoder = GST_VIDEO_DECODER (rsvg);
+
   gst_video_decoder_set_packetized (decoder, FALSE);
   gst_video_decoder_set_use_default_pad_acceptcaps (GST_VIDEO_DECODER_CAST
       (rsvg), TRUE);
   GST_PAD_SET_ACCEPT_TEMPLATE (GST_VIDEO_DECODER_SINK_PAD (rsvg));
+
+  rsvg->fit_mode = DEFAULT_FIT_MODE;
+  rsvg->viewport_x = DEFAULT_VIEWPORT_X;
+  rsvg->viewport_y = DEFAULT_VIEWPORT_Y;
+  rsvg->viewport_width = DEFAULT_VIEWPORT_WIDTH;
+  rsvg->viewport_height = DEFAULT_VIEWPORT_HEIGHT;
+  rsvg->relative_viewport = DEFAULT_RELATIVE_VIEWPORT;
+  rsvg->dpi = DEFAULT_DPI;
+
+  rsvg->renegotiate = TRUE;
 }
 
 static void
@@ -115,6 +318,73 @@ gst_rsvg_dec_finalize (GObject * object)
   G_OBJECT_CLASS (gst_rsvg_dec_parent_class)->finalize (object);
 }
 
+static void
+gst_rsvg_dec_set_property (GObject * object, guint prop_id,
+    const GValue * value, GParamSpec * pspec)
+{
+  GstRsvgDec *rsvg = GST_RSVG_DEC (object);
+
+  switch (prop_id) {
+    case PROP_FIT_MODE:
+      rsvg->fit_mode = g_value_get_enum (value);
+      break;
+    case PROP_VIEWPORT_X:
+      rsvg->viewport_x = g_value_get_double (value);
+      break;
+    case PROP_VIEWPORT_Y:
+      rsvg->viewport_y = g_value_get_double (value);
+      break;
+    case PROP_VIEWPORT_WIDTH:
+      rsvg->viewport_width = g_value_get_double (value);
+      break;
+    case PROP_VIEWPORT_HEIGHT:
+      rsvg->viewport_height = g_value_get_double (value);
+      break;
+    case PROP_RELATIVE_VIEWPORT:
+      rsvg->relative_viewport = g_value_get_boolean (value);
+      break;
+    case PROP_DPI:
+      rsvg->dpi = g_value_get_double (value);
+      break;
+    default:
+      G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
+      break;
+  }
+}
+
+static void
+gst_rsvg_dec_get_property (GObject * object, guint prop_id,
+    GValue * value, GParamSpec * pspec)
+{
+  GstRsvgDec *rsvg = GST_RSVG_DEC (object);
+
+  switch (prop_id) {
+    case PROP_FIT_MODE:
+      g_value_set_enum (value, rsvg->fit_mode);
+      break;
+    case PROP_VIEWPORT_X:
+      g_value_set_double (value, rsvg->viewport_x);
+      break;
+    case PROP_VIEWPORT_Y:
+      g_value_set_double (value, rsvg->viewport_y);
+      break;
+    case PROP_VIEWPORT_WIDTH:
+      g_value_set_double (value, rsvg->viewport_width);
+      break;
+    case PROP_VIEWPORT_HEIGHT:
+      g_value_set_double (value, rsvg->viewport_height);
+      break;
+    case PROP_RELATIVE_VIEWPORT:
+      g_value_set_boolean (value, rsvg->relative_viewport);
+      break;
+    case PROP_DPI:
+      g_value_set_double (value, rsvg->dpi);
+      break;
+    default:
+      G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
+      break;
+  }
+}
 
 #define CAIRO_UNPREMULTIPLY(a,r,g,b) G_STMT_START { \
   b = (a > 0) ? MIN ((b * 255 + a / 2) / a, 255) : 0; \
@@ -157,10 +427,11 @@ gst_rsvg_decode_image (GstRsvgDec * rsvg, GstBuffer * buffer,
   RsvgHandle *handle;
   GError *error = NULL;
   RsvgDimensionData dimension;
-  gdouble scalex, scaley;
+  RsvgRectangle viewport;
   GstMapInfo minfo;
   GstVideoFrame vframe;
   GstVideoCodecState *output_state;
+  GError *err = NULL;
 
   GST_LOG_OBJECT (rsvg, "parsing svg");
 
@@ -175,10 +446,12 @@ gst_rsvg_decode_image (GstRsvgDec * rsvg, GstBuffer * buffer,
     return GST_FLOW_ERROR;
   }
 
+  rsvg_handle_set_dpi (handle, rsvg->dpi);
   rsvg_handle_get_dimensions (handle, &dimension);
 
   output_state = gst_video_decoder_get_output_state (decoder);
-  if ((output_state == NULL)
+  if (output_state == NULL
+      || rsvg->renegotiate
       || rsvg->dimension.width != dimension.width
       || rsvg->dimension.height != dimension.height) {
     GstCaps *peer_caps;
@@ -237,6 +510,7 @@ gst_rsvg_decode_image (GstRsvgDec * rsvg, GstBuffer * buffer,
     gst_clear_caps (&peer_caps);
 
     rsvg->dimension = dimension;
+    rsvg->renegotiate = FALSE;
   }
 
   ret = gst_video_decoder_allocate_output_frame (decoder, frame);
@@ -274,20 +548,94 @@ gst_rsvg_decode_image (GstRsvgDec * rsvg, GstBuffer * buffer,
   cairo_set_operator (cr, CAIRO_OPERATOR_OVER);
   cairo_set_source_rgba (cr, 0.0, 0.0, 0.0, 1.0);
 
-  scalex = scaley = 1.0;
-  if (GST_VIDEO_INFO_WIDTH (&output_state->info) != dimension.width) {
-    scalex =
-        ((gdouble) GST_VIDEO_INFO_WIDTH (&output_state->info)) /
-        ((gdouble) dimension.width);
-  }
-  if (GST_VIDEO_INFO_HEIGHT (&output_state->info) != dimension.height) {
-    scaley =
-        ((gdouble) GST_VIDEO_INFO_HEIGHT (&output_state->info)) /
-        ((gdouble) dimension.height);
+  switch (rsvg->fit_mode) {
+    case GST_RSVG_FIT_MODE_SCALE:{
+      if (rsvg->relative_viewport) {
+        viewport.x = rsvg->viewport_x * GST_VIDEO_FRAME_WIDTH (&vframe);
+        viewport.y = rsvg->viewport_y * GST_VIDEO_FRAME_HEIGHT (&vframe);
+        viewport.width = rsvg->viewport_width * GST_VIDEO_FRAME_WIDTH (&vframe);
+        viewport.height =
+            rsvg->viewport_height * GST_VIDEO_FRAME_HEIGHT (&vframe);
+      } else {
+        viewport.x = rsvg->viewport_x;
+        viewport.y = rsvg->viewport_y;
+        viewport.width =
+            rsvg->viewport_width ==
+            G_MAXDOUBLE ? GST_VIDEO_FRAME_WIDTH (&vframe) :
+            rsvg->viewport_width;
+        viewport.height =
+            rsvg->viewport_height ==
+            G_MAXDOUBLE ? GST_VIDEO_FRAME_HEIGHT (&vframe) :
+            rsvg->viewport_height;
+      }
+      break;
+    }
+    case GST_RSVG_FIT_MODE_SCALE_NO_ASPECT:{
+      gdouble scalex, scaley;
+
+      if (rsvg->relative_viewport) {
+        viewport.x = rsvg->viewport_x * dimension.width;
+        viewport.y = rsvg->viewport_y * dimension.height;
+        viewport.width = rsvg->viewport_width * dimension.width;
+        viewport.height = rsvg->viewport_height * dimension.height;
+      } else {
+        viewport.x = rsvg->viewport_x;
+        viewport.y = rsvg->viewport_y;
+        viewport.width =
+            rsvg->viewport_width ==
+            G_MAXDOUBLE ? dimension.width : rsvg->viewport_width;
+        viewport.height =
+            rsvg->viewport_height ==
+            G_MAXDOUBLE ? dimension.height : rsvg->viewport_height;
+      }
+
+      scalex = scaley = 1.0;
+      if (GST_VIDEO_INFO_WIDTH (&output_state->info) != dimension.width) {
+        scalex =
+            ((gdouble) GST_VIDEO_INFO_WIDTH (&output_state->info)) /
+            ((gdouble) dimension.width);
+      }
+      if (GST_VIDEO_INFO_HEIGHT (&output_state->info) != dimension.height) {
+        scaley =
+            ((gdouble) GST_VIDEO_INFO_HEIGHT (&output_state->info)) /
+            ((gdouble) dimension.height);
+      }
+
+      GST_DEBUG_OBJECT (rsvg, "Scale by %lfx%lf", scalex, scaley);
+      cairo_scale (cr, scalex, scaley);
+
+      break;
+    }
+    case GST_RSVG_FIT_MODE_CROP:{
+      if (rsvg->relative_viewport) {
+        viewport.x = rsvg->viewport_x * dimension.width;
+        viewport.y = rsvg->viewport_y * dimension.height;
+        viewport.width = rsvg->viewport_width * dimension.width;
+        viewport.height = rsvg->viewport_height * dimension.height;
+      } else {
+        viewport.x = rsvg->viewport_x;
+        viewport.y = rsvg->viewport_y;
+        viewport.width =
+            rsvg->viewport_width ==
+            G_MAXDOUBLE ? dimension.width : rsvg->viewport_width;
+        viewport.height =
+            rsvg->viewport_height ==
+            G_MAXDOUBLE ? dimension.height : rsvg->viewport_height;
+      }
+      break;
+    }
+    default:
+      g_assert_not_reached ();
+      break;
   }
 
-  cairo_scale (cr, scalex, scaley);
-  rsvg_handle_render_cairo (handle, cr);
+  GST_DEBUG_OBJECT (rsvg, "Using viewport %lfx%lf %lfx%lf", viewport.x,
+      viewport.y, viewport.width, viewport.height);
+
+  if (!rsvg_handle_render_document (handle, cr, &viewport, &err)) {
+    GST_ERROR_OBJECT (rsvg, "Failed to render SVG: %s", err->message);
+    g_clear_error (&err);
+  }
 
   g_object_unref (handle);
   cairo_destroy (cr);
@@ -304,6 +652,17 @@ gst_rsvg_decode_image (GstRsvgDec * rsvg, GstBuffer * buffer,
   return ret;
 }
 
+static gboolean
+gst_rsvg_dec_negotiate (GstVideoDecoder * decoder)
+{
+  GstRsvgDec *rsvg = GST_RSVG_DEC (decoder);
+
+  /* Remember that we need to renegotiate the next time */
+  rsvg->renegotiate = TRUE;
+
+  return
+      GST_VIDEO_DECODER_CLASS (gst_rsvg_dec_parent_class)->negotiate (decoder);
+}
 
 static gboolean
 gst_rsvg_dec_set_format (GstVideoDecoder * decoder, GstVideoCodecState * state)
@@ -414,6 +773,8 @@ gst_rsvg_dec_stop (GstVideoDecoder * decoder)
   }
 
   memset (&rsvg->dimension, 0, sizeof (RsvgDimensionData));
+
+  rsvg->renegotiate = TRUE;
 
   return TRUE;
 }
