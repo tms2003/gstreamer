@@ -134,7 +134,6 @@ static GstFlowReturn gst_rsvg_decode_image (GstRsvgDec * rsvg,
     GstBuffer * buffer, GstVideoCodecFrame * frame);
 static gboolean gst_rsvg_dec_negotiate (GstVideoDecoder * decoder);
 
-static void gst_rsvg_dec_finalize (GObject * object);
 static void gst_rsvg_dec_set_property (GObject * object, guint prop_id,
     const GValue * value, GParamSpec * pspec);
 static void gst_rsvg_dec_get_property (GObject * object, guint prop_id,
@@ -149,7 +148,6 @@ gst_rsvg_dec_class_init (GstRsvgDecClass * klass)
 
   GST_DEBUG_CATEGORY_INIT (rsvgdec_debug, "rsvgdec", 0, "RSVG decoder");
 
-  gobject_class->finalize = gst_rsvg_dec_finalize;
   gobject_class->set_property = gst_rsvg_dec_set_property;
   gobject_class->get_property = gst_rsvg_dec_get_property;
 
@@ -310,12 +308,6 @@ gst_rsvg_dec_init (GstRsvgDec * rsvg)
   rsvg->dpi = DEFAULT_DPI;
 
   rsvg->renegotiate = TRUE;
-}
-
-static void
-gst_rsvg_dec_finalize (GObject * object)
-{
-  G_OBJECT_CLASS (gst_rsvg_dec_parent_class)->finalize (object);
 }
 
 static void
