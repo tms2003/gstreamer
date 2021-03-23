@@ -150,7 +150,7 @@ gst_audio_buffer_clip (GstBuffer * buffer, const GstSegment * segment,
         if (change_duration)
           duration -= diff;
 
-        diff = gst_util_uint64_scale (diff, rate, GST_SECOND);
+        diff = gst_util_uint64_scale_round (diff, rate, GST_SECOND);
         if (change_offset)
           offset += diff;
         trim += diff;
@@ -162,7 +162,7 @@ gst_audio_buffer_clip (GstBuffer * buffer, const GstSegment * segment,
         /* duration is always valid if stop is valid */
         duration -= diff;
 
-        diff = gst_util_uint64_scale (diff, rate, GST_SECOND);
+        diff = gst_util_uint64_scale_round (diff, rate, GST_SECOND);
         if (change_offset_end)
           offset_end -= diff;
         size -= diff;
@@ -288,7 +288,7 @@ gst_audio_buffer_truncate (GstBuffer * buffer, gint bpf, gsize trim,
   orig_ts = GST_BUFFER_PTS (buffer);
   orig_offset = GST_BUFFER_OFFSET (buffer);
 
-  g_return_val_if_fail (trim < orig_samples, NULL);
+  g_return_val_if_fail (trim <= orig_samples, NULL);
   g_return_val_if_fail (samples == -1 || trim + samples <= orig_samples, NULL);
 
   if (samples == -1)
