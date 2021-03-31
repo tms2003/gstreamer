@@ -71,7 +71,7 @@ typedef gboolean (*GstStructureForeachFunc) (GQuark   field_id,
 /**
  * GstStructureMapFunc:
  * @field_id: the #GQuark of the field name
- * @value: the #GValue of the field
+ * @value: (inout) (transfer none): the #GValue of the field
  * @user_data: user data
  *
  * A function that will be called in gst_structure_map_in_place(). The function
@@ -87,7 +87,7 @@ typedef gboolean (*GstStructureMapFunc)     (GQuark   field_id,
 /**
  * GstStructureFilterMapFunc:
  * @field_id: the #GQuark of the field name
- * @value: the #GValue of the field
+ * @value: (inout) (transfer none): the #GValue of the field
  * @user_data: user data
  *
  * A function that will be called in gst_structure_filter_and_map_in_place().

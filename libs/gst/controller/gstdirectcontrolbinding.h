@@ -61,10 +61,11 @@ typedef void (* GstDirectControlBindingConvertValue) (GstDirectControlBinding *s
 /**
  * GstDirectControlBindingConvertGValue:
  * @self: the #GstDirectControlBinding instance
- * @src_value: the value returned by the cotnrol source
- * @dest_value: the target GValue
+ * @src_value: the value returned by the control source
+ * @dest_value: (inout) (transfer none): the target GValue
  *
  * Function to map a control-value to the target GValue.
+ * @dest_value must be initialized with the target type.
  */
 typedef void (* GstDirectControlBindingConvertGValue) (GstDirectControlBinding *self, gdouble src_value, GValue *dest_value);
 

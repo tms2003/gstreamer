@@ -578,7 +578,7 @@ gst_iterator_filter (GstIterator * it, GCompareFunc func,
  * gst_iterator_fold:
  * @it: The #GstIterator to fold over
  * @func: (scope call): the fold function
- * @ret: the seed value passed to the fold function
+ * @ret: (inout): the seed value passed to the fold function
  * @user_data: (closure): user data passed to the fold function
  *
  * Folds @func over the elements of @iter. That is to say, @func will be called

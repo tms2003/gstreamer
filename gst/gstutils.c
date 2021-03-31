@@ -140,7 +140,7 @@ gst_util_dump_buffer (GstBuffer * buf)
 
 /**
  * gst_util_set_value_from_string:
- * @value: (out caller-allocates): the value to set
+ * @value: (inout) (transfer none): the value to set
  * @value_str: the string to get the value from
  *
  * Converts the string to the type of the value and

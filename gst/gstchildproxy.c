@@ -250,10 +250,11 @@ gst_child_proxy_lookup (GstChildProxy * object, const gchar * name,
  * gst_child_proxy_get_property:
  * @object: object to query
  * @name: name of the property
- * @value: (out caller-allocates): a #GValue that should take the result.
+ * @value: (inout) (transfer none): a #GValue that should take the result.
  *
  * Gets a single property using the GstChildProxy mechanism.
- * You are responsible for freeing it by calling g_value_unset()
+ * You are responsible for freeing it by calling g_value_unset().
+ * @value must be initialized with a type, or initialized to #G_VALUE_INIT.
  */
 void
 gst_child_proxy_get_property (GstChildProxy * object, const gchar * name,

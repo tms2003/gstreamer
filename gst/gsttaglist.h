@@ -126,7 +126,7 @@ typedef void (*GstTagForeachFunc) (const GstTagList * list,
 
 /**
  * GstTagMergeFunc:
- * @dest: the destination #GValue
+ * @dest: (out caller-allocates): the destination #GValue
  * @src: the source #GValue
  *
  * A function for merging multiple values of a tag used when registering
