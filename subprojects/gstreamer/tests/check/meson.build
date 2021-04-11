@@ -145,11 +145,11 @@ foreach t : core_tests
 
   if not skip_test
     exe = executable(test_name, fname,
-        c_args : gst_c_args + test_defines,
-        cpp_args : gst_c_args + test_defines,
-        include_directories : [configinc],
-        link_with : link_with_libs,
-        dependencies : gst_deps + test_deps,
+      c_args : gst_c_args + test_defines,
+      cpp_args : gst_c_args + test_defines,
+      include_directories : [configinc],
+      link_with : link_with_libs,
+      dependencies : gst_deps + test_deps,
     )
 
     env = environment()
