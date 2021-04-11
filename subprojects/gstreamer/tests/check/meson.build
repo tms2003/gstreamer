@@ -124,9 +124,15 @@ test_defines = [
   '-UG_DISABLE_ASSERT',
   '-UG_DISABLE_CAST_CHECKS',
   '-DGST_CHECK_TEST_ENVIRONMENT_BEACON="GST_STATE_IGNORE_ELEMENTS"',
-  '-DTESTFILE="' + meson.current_source_dir() + '/meson.build"',
   '-DGST_DISABLE_DEPRECATED',
 ]
+
+testfile = meson.current_source_dir() + '/meson.build'
+if installed_tests_enabled
+  install_data(testfile, install_dir : installed_tests_metadir, rename : 'testfile')
+  testfile = installed_tests_metadir + '/testfile'
+endif
+test_defines += '-DTESTFILE="@0@"'.format(testfile)
 
 # sanity checking
 if get_option('check').disabled()
@@ -150,6 +156,8 @@ foreach t : core_tests
       include_directories : [configinc],
       link_with : link_with_libs,
       dependencies : gst_deps + test_deps,
+      install_dir: installed_tests_execdir,
+      install: installed_tests_enabled,
     )
 
     env = environment()
@@ -160,6 +168,18 @@ foreach t : core_tests
     env.set('GST_REGISTRY', '@0@/@1@.registry'.format(meson.current_build_dir(), test_name))
     env.set('GST_PLUGIN_SCANNER_1_0', gst_scanner_dir + '/gst-plugin-scanner')
     env.set('GST_PLUGIN_LOADING_WHITELIST', 'gstreamer')
+
+    if installed_tests_enabled
+      test_conf = configuration_data()
+      test_conf.set('installed_tests_dir', join_paths(prefix, installed_tests_execdir))
+      test_conf.set('program', test_name)
+      configure_file(
+        input: 'template.test.in',
+        output: test_name + '.test',
+        install_dir: installed_tests_metadir,
+        configuration: test_conf
+      )
+    endif
 
     test(test_name, exe, env: env, timeout : 3 * 60)
   endif
