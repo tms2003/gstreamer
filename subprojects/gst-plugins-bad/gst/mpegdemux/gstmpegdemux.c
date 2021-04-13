@@ -51,6 +51,8 @@
 #include <gst/tag/tag.h>
 #include <gst/pbutils/pbutils.h>
 #include <gst/base/gstbytereader.h>
+#define GST_USE_UNSTABLE_API
+#include <gst/codecparsers/gstmpegvideoparser.h>
 
 #include "gstmpegdefs.h"
 #include "gstmpegdemux.h"
@@ -68,7 +70,8 @@ typedef enum
 {
   SCAN_SCR,
   SCAN_DTS,
-  SCAN_PTS
+  SCAN_PTS,
+  SCAN_KEYFRAME
 } SCAN_MODE;
 
 /* We clamp scr delta with 0 so negative bytes won't be possible */
@@ -1268,9 +1271,10 @@ find_offset (GstPsDemux * demux, guint64 scr,
 }
 
 static inline gboolean
-gst_ps_demux_do_seek (GstPsDemux * demux, GstSegment * seeksegment)
+gst_ps_demux_do_seek (GstPsDemux * demux, GstSegment * seeksegment,
+    gboolean key_unit)
 {
-  gboolean found;
+  gboolean found = FALSE;
   guint64 fscr, offset;
   guint64 scr = GSTTIME_TO_MPEGTIME (seeksegment->position + demux->base_time);
 
@@ -1309,6 +1313,9 @@ gst_ps_demux_do_seek (GstPsDemux * demux, GstSegment * seeksegment)
     found = gst_ps_demux_scan_backward_ts (demux, &offset, SCAN_SCR, &fscr, 0);
   }
 
+  if (key_unit)
+    gst_ps_demux_scan_backward_ts (demux, &offset, SCAN_KEYFRAME, &fscr, 0);
+
   GST_INFO_OBJECT (demux, "doing seek at offset %" G_GUINT64_FORMAT
       " SCR: %" G_GUINT64_FORMAT " %" GST_TIME_FORMAT,
       offset, fscr, GST_TIME_ARGS (MPEGTIME_TO_GSTTIME (fscr)));
@@ -1326,7 +1333,7 @@ gst_ps_demux_handle_seek_pull (GstPsDemux * demux, GstEvent * event)
   GstSeekType start_type, stop_type;
   gint64 start, stop;
   gdouble rate;
-  gboolean update, flush, accurate;
+  gboolean update, flush, accurate, key_unit;
   GstSegment seeksegment;
   GstClockTime first_pts = MPEGTIME_TO_GSTTIME (demux->first_pts);
   guint32 seek_seqnum = gst_event_get_seqnum (event);
@@ -1346,8 +1353,7 @@ gst_ps_demux_handle_seek_pull (GstPsDemux * demux, GstEvent * event)
 
   flush = flags & GST_SEEK_FLAG_FLUSH;
   accurate = flags & GST_SEEK_FLAG_ACCURATE;
-
-  /* keyframe = flags & GST_SEEK_FLAG_KEY_UNIT; *//* FIXME */
+  key_unit = flags & GST_SEEK_FLAG_KEY_UNIT;
 
   if (flush) {
     GstEvent *event = gst_event_new_flush_start ();
@@ -1387,7 +1393,7 @@ gst_ps_demux_handle_seek_pull (GstPsDemux * demux, GstEvent * event)
 
   if (flush || seeksegment.position != demux->src_segment.position) {
     /* Do the actual seeking */
-    if (!gst_ps_demux_do_seek (demux, &seeksegment)) {
+    if (!gst_ps_demux_do_seek (demux, &seeksegment, accurate | key_unit)) {
       return FALSE;
     }
   }
@@ -2564,6 +2570,62 @@ gst_ps_demux_is_pes_sync (guint32 sync)
       ((sync & 0xe0) == 0xc0) || ((sync & 0xf0) == 0xe0);
 }
 
+static gboolean
+gst_ps_demux_scan_video_packet (GstPsDemux * demux, gint id,
+    const guint8 * data, guint packet_size)
+{
+  gboolean ret = FALSE;
+  gint offset = 0;
+  GstPsStream *stream = demux->streams[id];
+  if (!stream) {
+    GST_INFO_OBJECT (demux, "unable to find stream for id=0x%02x", id);
+    return FALSE;
+  }
+  switch (stream->type) {
+    case ST_VIDEO_MPEG1:
+    case ST_VIDEO_MPEG2:
+    case ST_GST_VIDEO_MPEG1_OR_2:{
+      GstMpegVideoPacket packet;
+      while (gst_mpeg_video_parse (&packet, data, packet_size, offset)) {
+        gboolean last_one = FALSE;
+        if (packet.size == -1) {
+          if (packet.offset < packet_size) {
+            packet.size = packet_size - packet.offset;
+            last_one = TRUE;
+          } else {
+            GST_WARNING_OBJECT (demux, "Get a packet with wrong size");
+            break;
+          }
+        }
+        if (packet.type == GST_MPEG_VIDEO_PACKET_PICTURE) {
+          GstMpegVideoPictureHdr pic_hdr;
+          if (gst_mpeg_video_packet_parse_picture_header (&packet, &pic_hdr)) {
+            GST_LOG_OBJECT (demux, "Found a picture type: %s",
+                gst_mpeg_video_picture_type_to_string (pic_hdr.pic_type));
+            if (pic_hdr.pic_type == GST_MPEG_VIDEO_PICTURE_TYPE_I) {
+              ret = TRUE;
+              break;
+            }
+          }
+        } else if (packet.type == GST_MPEG_VIDEO_PACKET_GOP) {
+          GST_LOG_OBJECT (demux, "Found a GOP.");
+          ret = TRUE;
+          break;
+        }
+        if (last_one || packet.size == 0)
+          break;
+        offset += packet.size;
+      }
+      break;
+    }
+    default:
+      GST_LOG_OBJECT (demux,
+          "This type of stream  is not supported to search for keyframe");
+  }
+
+  return ret;
+}
+
 #define CHECK_REMAINING(needed) G_STMT_START { \
   if (data + needed > end) { \
     GST_LOG_OBJECT(demux, "Not enough data to continue to parse %d", needed); \
@@ -2580,6 +2642,7 @@ gst_ps_demux_scan_ts (GstPsDemux * demux, const guint8 * data,
   guint64 scr;
   guint64 pts, dts;
   guint32 code;
+  guint8 id;
   guint16 len;
   /* read the 4 bytes for the sync code */
   code = GST_READ_UINT32_BE (data);
@@ -2651,6 +2714,7 @@ gst_ps_demux_scan_ts (GstPsDemux * demux, const guint8 * data,
   CHECK_REMAINING (8);
 
   code = GST_READ_UINT32_BE (data);
+  id = GST_READ_UINT8 (data + 3);
   len = GST_READ_UINT16_BE (data + 4);
   if (code == ID_PS_SYSTEM_HEADER_START_CODE) {
     /* Found a system header, skip it */
@@ -2664,7 +2728,21 @@ gst_ps_demux_scan_ts (GstPsDemux * demux, const guint8 * data,
     len = GST_READ_UINT16_BE (data + 4);
   }
 
-  CHECK_REMAINING (6 + len);
+  if (mode == SCAN_KEYFRAME) {
+    gint packet_size = end - data;
+    if (code != PACKET_VIDEO_START_CODE) {
+      GST_LOG_OBJECT (demux, "Skip non-video packet %d", code);
+      goto beach;
+    }
+    if (!gst_ps_demux_scan_video_packet (demux, id, data, packet_size)) {
+      GST_LOG_OBJECT (demux, "No key frame or GOP found in this packet size=%d",
+          packet_size);
+      goto beach;
+    }
+
+  }
+
+  CHECK_REMAINING (6);
 
   if (!gst_ps_demux_is_pes_sync (code))
     goto beach;
@@ -2753,7 +2831,7 @@ gst_ps_demux_scan_ts (GstPsDemux * demux, const guint8 * data,
     ret = TRUE;
   }
 
-  if (mode == SCAN_PTS && pts != (guint64) - 1) {
+  if ((mode == SCAN_PTS || mode == SCAN_KEYFRAME) && pts != (guint64) - 1) {
     *rts = pts;
     ret = TRUE;
   }
