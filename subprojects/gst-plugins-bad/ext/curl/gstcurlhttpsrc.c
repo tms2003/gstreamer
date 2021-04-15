@@ -890,7 +890,11 @@ retry:
     goto escape;
   }
 
-  if (!src->transfer_begun) {
+  if (!src->transfer_begun || src->state == GSTCURL_REMOVED) {
+    if (src->curl_handle) {
+      GST_DEBUG_OBJECT (src, "Destroying old handle");
+      gst_curl_http_src_destroy_easy_handle (src);
+    }
     GST_DEBUG_OBJECT (src, "Starting new request for URI %s", src->uri);
     /* Create the Easy Handle and set up the session. */
     src->curl_handle = gst_curl_http_src_create_easy_handle (src);
@@ -2141,6 +2145,9 @@ gst_curl_http_src_get_debug (CURL * handle, curl_infotype type, char *data,
   switch (type) {
     case CURLINFO_TEXT:
       GST_DEBUG_OBJECT (src, "%s", msg);
+      break;
+    case CURLINFO_HEADER_IN:
+      /* logged in gst_curl_http_src_get_header() */
       break;
     case CURLINFO_HEADER_OUT:
       GST_DEBUG_OBJECT (src, "outgoing header: %s", msg);
