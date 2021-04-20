@@ -317,11 +317,48 @@ gst_audio_aggregator_pad_update_conversion_info (GstAudioAggregatorPad *
 }
 
 static GstBuffer *
+converter_convert_buffer (GstAudioConverter * converter, GstAudioInfo * in_info,
+    GstAudioInfo * out_info, GstBuffer * inbuffer)
+{
+  gint insize, outsize;
+  gsize insamples, outsamples;
+  GstMapInfo inmap, outmap;
+  GstBuffer *outbuffer;
+
+  if (converter == NULL || gst_audio_converter_is_passthrough (converter))
+    return gst_buffer_ref (inbuffer);
+
+  insize = gst_buffer_get_size (inbuffer);
+  insamples = insize / in_info->bpf;
+  outsamples = gst_audio_converter_get_out_frames (converter, insamples);
+  outsize = outsamples * out_info->bpf;
+
+  outbuffer = gst_buffer_new_allocate (NULL, outsize, NULL);
+
+  /* We create a perfectly similar buffer, except obviously for
+   * its converted contents */
+  gst_buffer_copy_into (outbuffer, inbuffer,
+      GST_BUFFER_COPY_FLAGS | GST_BUFFER_COPY_TIMESTAMPS | GST_BUFFER_COPY_META,
+      0, -1);
+
+  gst_buffer_map (inbuffer, &inmap, GST_MAP_READ);
+  gst_buffer_map (outbuffer, &outmap, GST_MAP_WRITE);
+
+  gst_audio_converter_samples (converter, GST_AUDIO_CONVERTER_FLAG_NONE,
+      (gpointer *) & inmap.data, insamples, (gpointer *) & outmap.data,
+      outsamples);
+
+  gst_buffer_unmap (inbuffer, &inmap);
+  gst_buffer_unmap (outbuffer, &outmap);
+
+  return outbuffer;
+}
+
+static GstBuffer *
 gst_audio_aggregator_convert_pad_convert_buffer (GstAudioAggregatorPad *
     aaggpad, GstAudioInfo * in_info, GstAudioInfo * out_info,
     GstBuffer * input_buffer)
 {
-  GstBuffer *res;
   GstAudioAggregatorConvertPad *aaggcpad =
       GST_AUDIO_AGGREGATOR_CONVERT_PAD (aaggpad);
 
@@ -330,38 +367,8 @@ gst_audio_aggregator_convert_pad_convert_buffer (GstAudioAggregatorPad *
     return NULL;
   }
 
-  if (aaggcpad->priv->converter) {
-    gint insize = gst_buffer_get_size (input_buffer);
-    gsize insamples = insize / in_info->bpf;
-    gsize outsamples =
-        gst_audio_converter_get_out_frames (aaggcpad->priv->converter,
-        insamples);
-    gint outsize = outsamples * out_info->bpf;
-    GstMapInfo inmap, outmap;
-
-    res = gst_buffer_new_allocate (NULL, outsize, NULL);
-
-    /* We create a perfectly similar buffer, except obviously for
-     * its converted contents */
-    gst_buffer_copy_into (res, input_buffer,
-        GST_BUFFER_COPY_FLAGS | GST_BUFFER_COPY_TIMESTAMPS |
-        GST_BUFFER_COPY_META, 0, -1);
-
-    gst_buffer_map (input_buffer, &inmap, GST_MAP_READ);
-    gst_buffer_map (res, &outmap, GST_MAP_WRITE);
-
-    gst_audio_converter_samples (aaggcpad->priv->converter,
-        GST_AUDIO_CONVERTER_FLAG_NONE,
-        (gpointer *) & inmap.data, insamples,
-        (gpointer *) & outmap.data, outsamples);
-
-    gst_buffer_unmap (input_buffer, &inmap);
-    gst_buffer_unmap (res, &outmap);
-  } else {
-    res = gst_buffer_ref (input_buffer);
-  }
-
-  return res;
+  return converter_convert_buffer (aaggcpad->priv->converter, in_info, out_info,
+      input_buffer);
 }
 
 static void
