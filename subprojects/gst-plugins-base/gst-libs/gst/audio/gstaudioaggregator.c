@@ -1211,7 +1211,8 @@ gst_audio_aggregator_fixate_src_caps (GstAggregator * agg, GstCaps * caps)
 /* Must be called with OBJECT_LOCK taken */
 static gboolean
 gst_audio_aggregator_update_converters (GstAudioAggregator * aagg,
-    GstAudioInfo * new_info, GstAudioInfo * old_info)
+    GstAudioInfo * new_info, GstAudioInfo * old_info,
+    GstAudioConverter * converter)
 {
   GList *l;
 
@@ -1227,8 +1228,8 @@ gst_audio_aggregator_update_converters (GstAudioAggregator * aagg,
      * format */
     if (aaggpad->priv->buffer) {
       GstBuffer *new_converted_buffer =
-          gst_audio_aggregator_convert_buffer (aagg, GST_PAD (aaggpad),
-          old_info, new_info, aaggpad->priv->buffer);
+          converter_convert_buffer (converter, old_info, new_info,
+          aaggpad->priv->buffer);
       gst_buffer_replace (&aaggpad->priv->buffer, new_converted_buffer);
       if (new_converted_buffer)
         gst_buffer_unref (new_converted_buffer);
@@ -1260,8 +1261,22 @@ gst_audio_aggregator_negotiated_src_caps (GstAggregator * agg, GstCaps * caps)
     GstAudioInfo old_info = srcpad->info;
     GstAudioAggregatorPadClass *srcpad_klass =
         GST_AUDIO_AGGREGATOR_PAD_GET_CLASS (agg->srcpad);
+    GstAudioConverter *converter = NULL;
 
     GST_INFO_OBJECT (aagg, "setting caps to %" GST_PTR_FORMAT, caps);
+
+    if (old_info.finfo->format != GST_AUDIO_FORMAT_UNKNOWN) {
+      converter =
+          gst_audio_converter_new (GST_AUDIO_CONVERTER_FLAG_NONE, &old_info,
+          &info, NULL);
+      if (converter == NULL) {
+        GST_ERROR_OBJECT (aagg, "Failed to create converter for caps change");
+        GST_OBJECT_UNLOCK (aagg);
+        GST_AUDIO_AGGREGATOR_UNLOCK (aagg);
+        return FALSE;
+      }
+    }
+
     gst_caps_replace (&aagg->current_caps, caps);
 
     if (old_info.rate != info.rate)
@@ -1269,7 +1284,9 @@ gst_audio_aggregator_negotiated_src_caps (GstAggregator * agg, GstCaps * caps)
 
     memcpy (&srcpad->info, &info, sizeof (info));
 
-    if (!gst_audio_aggregator_update_converters (aagg, &info, &old_info)) {
+    if (!gst_audio_aggregator_update_converters (aagg, &info, &old_info,
+            converter)) {
+      gst_audio_converter_free (converter);
       GST_OBJECT_UNLOCK (aagg);
       GST_AUDIO_AGGREGATOR_UNLOCK (aagg);
       return FALSE;
@@ -1283,11 +1300,12 @@ gst_audio_aggregator_negotiated_src_caps (GstAggregator * agg, GstCaps * caps)
       GstBuffer *converted;
 
       converted =
-          gst_audio_aggregator_convert_buffer (aagg, agg->srcpad, &old_info,
-          &info, aagg->priv->current_buffer);
+          converter_convert_buffer (converter, &old_info, &info,
+          aagg->priv->current_buffer);
       gst_buffer_unref (aagg->priv->current_buffer);
       aagg->priv->current_buffer = converted;
       if (!converted) {
+        gst_audio_converter_free (converter);
         GST_OBJECT_UNLOCK (aagg);
         GST_AUDIO_AGGREGATOR_UNLOCK (aagg);
         return FALSE;
@@ -1296,6 +1314,8 @@ gst_audio_aggregator_negotiated_src_caps (GstAggregator * agg, GstCaps * caps)
 
     /* Force recalculating in aggregate */
     aagg->priv->samples_per_buffer = 0;
+
+    gst_audio_converter_free (converter);
   }
 
   GST_OBJECT_UNLOCK (aagg);
