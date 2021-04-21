@@ -63,7 +63,7 @@ enum
 {
   PROP_0,
   PROP_DISPLAY,
-  PROP_FULLSCREEN
+  PROP_FULLSCREEN,
 };
 
 GST_DEBUG_CATEGORY (gstwayland_debug);

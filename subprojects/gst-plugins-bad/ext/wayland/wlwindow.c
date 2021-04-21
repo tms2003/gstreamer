@@ -431,14 +431,14 @@ gst_wl_window_set_opaque (GstWlWindow * window, const GstVideoInfo * info)
 {
   struct wl_region *region;
 
-  /* Set area opaque */
-  region = wl_compositor_create_region (window->display->compositor);
-  wl_region_add (region, 0, 0, window->render_rectangle.w,
-      window->render_rectangle.h);
-  wl_surface_set_opaque_region (window->area_surface, region);
-  wl_region_destroy (region);
-
   if (!GST_VIDEO_INFO_HAS_ALPHA (info)) {
+    /* Set area opaque */
+    region = wl_compositor_create_region (window->display->compositor);
+    wl_region_add (region, 0, 0, window->render_rectangle.w,
+        window->render_rectangle.h);
+    wl_surface_set_opaque_region (window->area_surface, region);
+    wl_region_destroy (region);
+
     /* Set video opaque */
     region = wl_compositor_create_region (window->display->compositor);
     wl_region_add (region, 0, 0, window->render_rectangle.w,
@@ -512,8 +512,8 @@ gst_wl_window_update_borders (GstWlWindow * window)
     height = window->render_rectangle.h;
   }
 
-  /* we want WL_SHM_FORMAT_XRGB8888 */
-  format = GST_VIDEO_FORMAT_BGRx;
+  /* TODO just don't render this if window is transparent */
+  format = GST_VIDEO_FORMAT_BGRA;
 
   /* draw the area_subsurface */
   gst_video_info_set_format (&info, format, width, height);
