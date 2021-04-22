@@ -2546,6 +2546,13 @@ gst_ps_demux_is_pes_sync (guint32 sync)
       ((sync & 0xe0) == 0xc0) || ((sync & 0xf0) == 0xe0);
 }
 
+#define CHECK_REMAINING(needed) G_STMT_START { \
+  if (data + needed > end) { \
+    GST_LOG_OBJECT(demux, "Not enough data to continue to parse %d", needed); \
+    return FALSE; \
+  }\
+} G_STMT_END
+
 static inline gboolean
 gst_ps_demux_scan_ts (GstPsDemux * demux, const guint8 * data,
     SCAN_MODE mode, guint64 * rts, const guint8 * end)
@@ -2560,8 +2567,7 @@ gst_ps_demux_scan_ts (GstPsDemux * demux, const guint8 * data,
   code = GST_READ_UINT32_BE (data);
   if (G_LIKELY (code != ID_PS_PACK_START_CODE))
     goto beach;
-  if (data + 12 > end)
-    goto beach;
+  CHECK_REMAINING (12);
   /* skip start code */
   data += 4;
   scr1 = GST_READ_UINT32_BE (data);
@@ -2591,16 +2597,14 @@ gst_ps_demux_scan_ts (GstPsDemux * demux, const guint8 * data,
        to DTS/PTS, that also implies 1 tick rounding error */
     data += 6;
 
-    if (data + 4 > end)
-      goto beach;
+    CHECK_REMAINING (4);
     /* PMR:22 ! :2==11 ! reserved:5 ! stuffing_len:3 */
     next32 = GST_READ_UINT32_BE (data);
     if ((next32 & 0x00000300) != 0x00000300)
       goto beach;
     stuffing_bytes = (next32 & 0x07);
     data += 4;
-    if (data + stuffing_bytes > end)
-      goto beach;
+    CHECK_REMAINING (stuffing_bytes);
     while (stuffing_bytes--) {
       if (*data++ != 0xff)
         goto beach;
@@ -2626,9 +2630,7 @@ gst_ps_demux_scan_ts (GstPsDemux * demux, const guint8 * data,
     goto beach;
   }
 
-  /* Possible optional System header here */
-  if (data + 8 > end)
-    goto beach;
+  CHECK_REMAINING (8);
 
   code = GST_READ_UINT32_BE (data);
   len = GST_READ_UINT16_BE (data + 4);
@@ -2644,9 +2646,8 @@ gst_ps_demux_scan_ts (GstPsDemux * demux, const guint8 * data,
     len = GST_READ_UINT16_BE (data + 4);
   }
 
-  /* Check we have enough data left for reading the PES packet */
-  if (data + 6 + len > end)
-    return FALSE;
+  CHECK_REMAINING (6 + len);
+
   if (!gst_ps_demux_is_pes_sync (code))
     goto beach;
   switch (code) {
@@ -2669,20 +2670,24 @@ gst_ps_demux_scan_ts (GstPsDemux * demux, const guint8 * data,
   /* stuffing bits, first two bits are '10' for mpeg2 pes so this code is
    * not triggered. */
   while (TRUE) {
-    if (*data != 0xff)
+    if (data >= end || *data != 0xff)
       break;
     data++;
   }
 
   /* STD buffer size, never for mpeg2 */
-  if ((*data & 0xc0) == 0x40)
+  if ((*data & 0xc0) == 0x40) {
+    CHECK_REMAINING (3);
     data += 2;
+  }
   /* PTS but no DTS, never for mpeg2 */
   if ((*data & 0xf0) == 0x20) {
+    CHECK_REMAINING (5);
     READ_TS (data, pts, beach);
   }
   /* PTS and DTS, never for mpeg2 */
   else if ((*data & 0xf0) == 0x30) {
+    CHECK_REMAINING (10);
     READ_TS (data, pts, beach);
     READ_TS (data, dts, beach);
   } else if ((*data & 0xc0) == 0x80) {
@@ -2695,6 +2700,7 @@ gst_ps_demux_scan_ts (GstPsDemux * demux, const guint8 * data,
      * 1: copyright
      * 1: original_or_copy
      */
+    CHECK_REMAINING (3);
     flags = *data++;
     if ((flags & 0xc0) != 0x80)
       goto beach;
@@ -2714,10 +2720,12 @@ gst_ps_demux_scan_ts (GstPsDemux * demux, const guint8 * data,
       goto beach;
     /* check for PTS */
     if ((flags & 0x80)) {
+      CHECK_REMAINING (5);
       READ_TS (data, pts, beach);
     }
     /* check for DTS */
     if ((flags & 0x40)) {
+      CHECK_REMAINING (5);
       READ_TS (data, dts, beach);
     }
   }
