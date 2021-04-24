@@ -160,14 +160,19 @@ foreach t : core_tests
       install: installed_tests_enabled,
     )
 
-    env = environment()
-    env.set('GST_PLUGIN_PATH_1_0', meson.project_build_root())
-    env.set('GST_PLUGIN_SYSTEM_PATH_1_0', '')
-    env.set('GST_STATE_IGNORE_ELEMENTS', '')
-    env.set('CK_DEFAULT_TIMEOUT', '20')
-    env.set('GST_REGISTRY', '@0@/@1@.registry'.format(meson.current_build_dir(), test_name))
-    env.set('GST_PLUGIN_SCANNER_1_0', gst_scanner_dir + '/gst-plugin-scanner')
-    env.set('GST_PLUGIN_LOADING_WHITELIST', 'gstreamer')
+    # meson environment object can't be passed to configure_file and
+    # installed tests uses configure_file to install the environment.
+    # use a dictionary as this is the simplest solution
+    # to install the environment.
+    env = {
+      'GST_PLUGIN_PATH_1_0': meson.project_build_root(),
+      'GST_PLUGIN_SYSTEM_PATH_1_0': '',
+      'GST_STATE_IGNORE_ELEMENTS': '',
+      'CK_DEFAULT_TIMEOUT': '20',
+      'GST_REGISTRY': '@0@/@1@.registry'.format(meson.current_build_dir(), test_name),
+      'GST_PLUGIN_SCANNER_1_0': gst_scanner_dir + '/gst-plugin-scanner',
+      'GST_PLUGIN_LOADING_WHITELIST': 'gstreamer',
+    }
 
     if installed_tests_enabled
       test_conf = configuration_data()
