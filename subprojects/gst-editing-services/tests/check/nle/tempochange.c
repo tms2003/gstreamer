@@ -149,7 +149,7 @@ _test_pad_events (GstPad * pad, GstPadProbeInfo * info, PadEventData * data)
     data->num_eos++;
     fail_unless (data->num_eos <= data->expect_num_eos, "%s received %u "
         "EOS, more than the expected %u EOS", data->name, data->num_eos,
-        data->expect_num_seeks);
+        data->expect_num_eos);
   }
 
   return GST_PAD_PROBE_OK;
@@ -519,7 +519,7 @@ GST_START_TEST (test_tempochange_seek)
   PadEventData **data;
   gdouble rates[3] = { 2.0, 0.25, 1.0 };
   guint i, j;
-  GstClockTime offset = 0.1 * GST_SECOND;
+  GstClockTime offset = 0.2 * GST_SECOND;
 
   late_ges_init ();
 
