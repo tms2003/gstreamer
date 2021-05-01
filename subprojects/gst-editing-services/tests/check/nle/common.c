@@ -268,6 +268,14 @@ videotest_in_bin_nle_src (const gchar * name, guint64 start, gint64 duration,
   return nlesource;
 }
 
+#if G_BYTE_ORDER == G_LITTLE_ENDIAN
+# define AUDIO_CAPS_SIGNED "audio/x-raw,format=(string)S16LE"
+# define AUDIO_CAPS_FLOAT  "audio/x-raw,format=(string)F32LE"
+#else
+# define AUDIO_CAPS_SIGNED "audio/x-raw,format=(string)S16BE"
+# define AUDIO_CAPS_FLOAT  "audio/x-raw,format=(string)F32BE"
+#endif
+
 GstElement *
 audiotest_bin_src (const gchar * name, guint64 start,
     gint64 duration, guint priority, gboolean intaudio)
@@ -287,9 +295,9 @@ audiotest_bin_src (const gchar * name, guint64 start,
   audioconvert = gst_element_factory_make_or_warn ("audioconvert", NULL);
 
   if (intaudio)
-    caps = gst_caps_from_string ("audio/x-raw,format=(string)S16LE");
+    caps = gst_caps_from_string (AUDIO_CAPS_SIGNED);
   else
-    caps = gst_caps_from_string ("audio/x-raw,format=(string)F32LE");
+    caps = gst_caps_from_string (AUDIO_CAPS_FLOAT);
 
   gst_bin_add_many (GST_BIN (bin), audiotestsrc, audioconvert, identity, NULL);
   gst_element_link_pads_full (audiotestsrc, "src", audioconvert, "sink",
