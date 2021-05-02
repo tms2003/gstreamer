@@ -184,6 +184,23 @@ foreach t : core_tests
         install_dir: installed_tests_metadir,
         configuration: test_conf
       )
+
+      # All the tests will be deployed on the target machine and
+      # we use the home folder ~ for the registry which will then expand at runtime.
+      # Using the /tmp/gstreamer-1.0/@0@.registry can be problematic as it mostly
+      # is mounted using tmpfs and if the machine crash from some reason we can lost the registry
+      # that is useful for debug propose of the tests itself.
+      env += {'GST_REGISTRY': '~/.cache/gstreamer-1.0/@0@.registry'.format(test_name)}
+
+      # Set the full path for the test it self.
+      env += {'TEST': '@0@/@1@'.format(join_paths(prefix, installed_tests_execdir), test_name)}
+
+      configure_file(
+        input : 'template.sh.in',
+        output: test_name + '.sh',
+        install_dir: installed_tests_execdir,
+        configuration : env,
+      )
     endif
 
     test(test_name, exe, env: env, timeout : 3 * 60)
