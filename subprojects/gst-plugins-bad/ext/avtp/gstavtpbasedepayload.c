@@ -206,18 +206,26 @@ gst_avtp_base_depayload_tstamp_to_ptime (GstAvtpBaseDepayload *
     avtpbasedepayload, guint32 tstamp, GstClockTime ref)
 {
   GstClockTime ptime;
+  GstClockTimeDiff delta;
 
   ptime = (ref & 0xFFFFFFFF00000000ULL) | tstamp;
 
-  /* If 'ptime' is less than the our reference time, it means the higher part
-   * from 'ptime' needs to be incremented by 1 in order reflect the correct
-   * presentation time.
+  /* The avtp timestamp can only represent 4.29 seconds (2^32 in ns).
+   * These 4.29 seconds (relative to the current reference time) are actually
+   * divided in 2.1 seconds in the future, 2.1 seconds in the past.
+   *
+   * This means if 'ptime' is less than the our reference time by more than
+   * G_MAXINT32 then the window has rolled over and the higher part from 'ptime'
+   * needs to be incremented by 1 in order reflect the correct presentation
+   * time.
    */
-  if (ptime < ref)
+  delta = ptime - ref;
+  if (delta < -G_MAXINT32)
     ptime += (1ULL << 32);
 
-  GST_LOG_OBJECT (avtpbasedepayload, "AVTP presentation time %" GST_TIME_FORMAT,
-      GST_TIME_ARGS (ptime));
+  GST_LOG_OBJECT (avtpbasedepayload, "AVTP presentation time %" GST_TIME_FORMAT
+      ", delta %" GST_STIME_FORMAT,
+      GST_TIME_ARGS (ptime), GST_STIME_ARGS (delta));
   return ptime;
 }
 
@@ -239,7 +247,9 @@ gst_avtp_base_depayload_push_segment_event (GstAvtpBaseDepayload *
   base_time = gst_element_get_base_time (GST_ELEMENT (avtpbasedepayload));
 
   gst_segment_init (&segment, GST_FORMAT_TIME);
-  segment.base = avtp_ptime - base_time;
+  /* Only set a base running time if we need to wait to sync up */
+  if (avtp_ptime > base_time)
+    segment.base = avtp_ptime - base_time;
   segment.start = avtp_ptime;
   segment.stop = -1;
 

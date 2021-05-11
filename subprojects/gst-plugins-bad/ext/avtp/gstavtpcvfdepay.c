@@ -200,13 +200,18 @@ gst_avtp_cvf_depay_push (GstAvtpCvfDepay * avtpcvfdepay)
 
     if (!gst_avtp_cvf_depay_push_caps (avtpcvfdepay)) {
       GST_ELEMENT_ERROR (avtpcvfdepay, CORE, CAPS, (NULL), (NULL));
-      return GST_FLOW_ERROR;
+      gst_buffer_unref (avtpcvfdepay->out_buffer);
+      avtpcvfdepay->out_buffer = NULL;
+      return GST_FLOW_NOT_NEGOTIATED;
     }
 
     if (!gst_avtp_base_depayload_push_segment_event (avtpbasedepayload,
             GST_BUFFER_PTS (avtpcvfdepay->out_buffer))) {
       GST_ELEMENT_ERROR (avtpcvfdepay, CORE, EVENT,
           ("Could not send SEGMENT event"), (NULL));
+      gst_buffer_unref (avtpcvfdepay->out_buffer);
+      avtpcvfdepay->out_buffer = NULL;
+      return GST_FLOW_ERROR;
     }
 
     /* Now that we sent our segment starting on the first Presentation
