@@ -25,13 +25,14 @@ static GstStaticPadTemplate sinktemplate = GST_STATIC_PAD_TEMPLATE ("sink",
     GST_PAD_ALWAYS,
     GST_STATIC_CAPS_ANY);
 
-static gboolean
-udpsrc_setup (GstElement ** udpsrc, GSocket ** socket,
+static void
+udpsrc_setup (GSocketFamily family, GstElement ** udpsrc, GSocket ** socket,
     GstPad ** sinkpad, GSocketAddress ** sa)
 {
   GInetAddress *ia;
   int port = 0;
   gchar *s;
+  GError *err = NULL;
 
   *udpsrc = gst_check_setup_element ("udpsrc");
   fail_unless (*udpsrc != NULL);
@@ -45,33 +46,29 @@ udpsrc_setup (GstElement ** udpsrc, GSocket ** socket,
   g_object_get (*udpsrc, "port", &port, NULL);
   GST_INFO ("udpsrc port = %d", port);
 
-  *socket = g_socket_new (G_SOCKET_FAMILY_IPV4, G_SOCKET_TYPE_DATAGRAM,
-      G_SOCKET_PROTOCOL_UDP, NULL);
+  *socket = g_socket_new (family, G_SOCKET_TYPE_DATAGRAM,
+      G_SOCKET_PROTOCOL_UDP, &err);
 
-  if (*socket == NULL) {
-    GST_WARNING ("Could not create IPv4 UDP socket for unit test");
-    return FALSE;
-  }
+  fail_if (*socket == NULL, "Could not create %s UDP socket for unit test: %s",
+      family == G_SOCKET_FAMILY_IPV4 ? "IPv4" : "IPv6", err->message);
 
-  ia = g_inet_address_new_loopback (G_SOCKET_FAMILY_IPV4);
+  ia = g_inet_address_new_loopback (family);
   s = g_inet_address_to_string (ia);
   GST_LOG ("inet address %s", s);
   g_free (s);
   *sa = g_inet_socket_address_new (ia, port);
   g_object_unref (ia);
-
-  return TRUE;
 }
 
-GST_START_TEST (test_udpsrc_empty_packet)
+static void
+test_udpsrc_empty_packet (GSocketFamily family)
 {
   GSocketAddress *sa = NULL;
   GstElement *udpsrc = NULL;
   GSocket *socket = NULL;
   GstPad *sinkpad = NULL;
 
-  if (!udpsrc_setup (&udpsrc, &socket, &sinkpad, &sa))
-    goto no_socket;
+  udpsrc_setup (family, &udpsrc, &socket, &sinkpad, &sa);
 
   if (g_socket_send_to (socket, sa, "HeLL0", 0, NULL, NULL) == 0) {
     GST_INFO ("sent 0 bytes");
@@ -121,21 +118,33 @@ GST_START_TEST (test_udpsrc_empty_packet)
     GST_WARNING ("send_to(0 bytes) failed");
   }
 
-no_socket:
-
   gst_element_set_state (udpsrc, GST_STATE_NULL);
 
   gst_check_drop_buffers ();
   gst_check_teardown_pad_by_name (udpsrc, "src");
   gst_check_teardown_element (udpsrc);
 
-  g_object_unref (socket);
-  g_object_unref (sa);
+  g_clear_object (&socket);
+  g_clear_object (&sa);
+}
+
+GST_START_TEST (test_udpsrc_empty_packet_ipv4)
+{
+  test_udpsrc_empty_packet (G_SOCKET_FAMILY_IPV4);
 }
 
 GST_END_TEST;
 
-GST_START_TEST (test_udpsrc)
+GST_START_TEST (test_udpsrc_empty_packet_ipv6)
+{
+  test_udpsrc_empty_packet (G_SOCKET_FAMILY_IPV6);
+}
+
+GST_END_TEST;
+
+
+static void
+test_udpsrc (GSocketFamily family)
 {
   GSocketAddress *sa = NULL;
   GstElement *udpsrc = NULL;
@@ -152,8 +161,7 @@ GST_START_TEST (test_udpsrc)
   for (i = 0; i < G_N_ELEMENTS (data); ++i)
     data[i] = i & 0xff;
 
-  if (!udpsrc_setup (&udpsrc, &socket, &sinkpad, &sa))
-    goto no_socket;
+  udpsrc_setup (family, &udpsrc, &socket, &sinkpad, &sa);
 
   if ((sent = g_socket_send_to (socket, sa, data, 48000, NULL, &err)) == -1)
     goto send_failure;
@@ -228,7 +236,6 @@ GST_START_TEST (test_udpsrc)
 
   g_mutex_unlock (&check_mutex);
 
-no_socket:
 send_failure:
   if (err) {
     GST_WARNING ("Socket send error, skipping test: %s", err->message);
@@ -241,8 +248,20 @@ send_failure:
   gst_check_teardown_pad_by_name (udpsrc, "src");
   gst_check_teardown_element (udpsrc);
 
-  g_object_unref (socket);
-  g_object_unref (sa);
+  g_clear_object (&socket);
+  g_clear_object (&sa);
+}
+
+GST_START_TEST (test_udpsrc_ipv4)
+{
+  test_udpsrc (G_SOCKET_FAMILY_IPV4);
+}
+
+GST_END_TEST;
+
+GST_START_TEST (test_udpsrc_ipv6)
+{
+  test_udpsrc (G_SOCKET_FAMILY_IPV6);
 }
 
 GST_END_TEST;
@@ -296,6 +315,28 @@ GST_START_TEST (test_udpsrc_multicast_source)
 
 GST_END_TEST;
 
+static gboolean
+is_ipv6_supported (void)
+{
+  GError *err = NULL;
+  GSocket *sock;
+
+  sock =
+      g_socket_new (G_SOCKET_FAMILY_IPV6, G_SOCKET_TYPE_DATAGRAM,
+      G_SOCKET_PROTOCOL_DEFAULT, &err);
+  if (sock) {
+    g_object_unref (sock);
+    return TRUE;
+  }
+
+  if (!g_error_matches (err, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED)) {
+    GST_WARNING ("Unabled to create IPv6 socket: %s", err->message);
+  }
+  g_clear_error (&err);
+
+  return FALSE;
+}
+
 static Suite *
 udpsrc_suite (void)
 {
@@ -303,10 +344,13 @@ udpsrc_suite (void)
   TCase *tc_chain = tcase_create ("udpsrc");
 
   suite_add_tcase (s, tc_chain);
-  tcase_add_test (tc_chain, test_udpsrc_empty_packet);
-  tcase_add_test (tc_chain, test_udpsrc);
+  tcase_add_test (tc_chain, test_udpsrc_empty_packet_ipv4);
+  tcase_add_test (tc_chain, test_udpsrc_ipv4);
   tcase_add_test (tc_chain, test_udpsrc_multicast_source);
-
+  if (is_ipv6_supported ()) {
+    tcase_add_test (tc_chain, test_udpsrc_empty_packet_ipv6);
+    tcase_add_test (tc_chain, test_udpsrc_ipv6);
+  }
   return s;
 }
 
