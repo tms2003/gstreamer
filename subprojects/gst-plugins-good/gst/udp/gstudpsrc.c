@@ -556,9 +556,9 @@ static GstStaticPadTemplate src_template = GST_STATIC_PAD_TEMPLATE ("src",
     GST_STATIC_CAPS_ANY);
 
 #define UDP_DEFAULT_PORT                5004
-#define UDP_DEFAULT_MULTICAST_GROUP     "0.0.0.0"
+#define UDP_DEFAULT_MULTICAST_GROUP     "::"
 #define UDP_DEFAULT_MULTICAST_IFACE     NULL
-#define UDP_DEFAULT_URI                 "udp://"UDP_DEFAULT_MULTICAST_GROUP":"G_STRINGIFY(UDP_DEFAULT_PORT)
+#define UDP_DEFAULT_URI                 "udp://["UDP_DEFAULT_MULTICAST_GROUP"]:"G_STRINGIFY(UDP_DEFAULT_PORT)
 #define UDP_DEFAULT_CAPS                NULL
 #define UDP_DEFAULT_SOCKET              NULL
 #define UDP_DEFAULT_BUFFER_SIZE		0
@@ -818,12 +818,25 @@ gst_udpsrc_class_init (GstUDPSrcClass * klass)
   gst_type_mark_as_plugin_api (GST_TYPE_SOCKET_TIMESTAMP_MODE, 0);
 }
 
+static gchar *
+gst_udpsrc_build_uri (const gchar * address, gushort port)
+{
+  GInetAddress *addr = g_inet_address_new_from_string (address);
+  if (addr) {
+    if (g_inet_address_get_family (addr) == G_SOCKET_FAMILY_IPV6) {
+      g_object_unref (addr);
+      return g_strdup_printf ("udp://[%s]:%u", address, port);
+    }
+    g_object_unref (addr);
+  }
+  return g_strdup_printf ("udp://%s:%u", address, port);
+}
+
 static void
 gst_udpsrc_init (GstUDPSrc * udpsrc)
 {
   udpsrc->uri =
-      g_strdup_printf ("udp://%s:%u", UDP_DEFAULT_MULTICAST_GROUP,
-      UDP_DEFAULT_PORT);
+      gst_udpsrc_build_uri (UDP_DEFAULT_MULTICAST_GROUP, UDP_DEFAULT_PORT);
 
   udpsrc->address = g_strdup (UDP_DEFAULT_MULTICAST_GROUP);
   udpsrc->port = UDP_DEFAULT_PORT;
@@ -1335,8 +1348,7 @@ gst_udpsrc_set_property (GObject * object, guint prop_id, const GValue * value,
     case PROP_PORT:
       udpsrc->port = g_value_get_int (value);
       g_free (udpsrc->uri);
-      udpsrc->uri =
-          g_strdup_printf ("udp://%s:%u", udpsrc->address, udpsrc->port);
+      udpsrc->uri = gst_udpsrc_build_uri (udpsrc->address, udpsrc->port);
       break;
     case PROP_MULTICAST_GROUP:
     case PROP_ADDRESS:
@@ -1350,8 +1362,7 @@ gst_udpsrc_set_property (GObject * object, guint prop_id, const GValue * value,
         udpsrc->address = g_strdup (UDP_DEFAULT_MULTICAST_GROUP);
 
       g_free (udpsrc->uri);
-      udpsrc->uri =
-          g_strdup_printf ("udp://%s:%u", udpsrc->address, udpsrc->port);
+      udpsrc->uri = gst_udpsrc_build_uri (udpsrc->address, udpsrc->port);
       break;
     }
     case PROP_MULTICAST_IFACE:
@@ -1599,16 +1610,34 @@ gst_udpsrc_open (GstUDPSrc * src)
 
   if (src->socket == NULL) {
     /* need to allocate a socket */
-    GST_DEBUG_OBJECT (src, "allocating socket for %s:%d", src->address,
+    GST_DEBUG_OBJECT (src, "allocating socket for [%s]:%d", src->address,
         src->port);
 
     addr = gst_udpsrc_resolve (src, src->address);
     if (!addr)
       goto name_resolve;
 
-    if ((src->used_socket =
-            g_socket_new (g_inet_address_get_family (addr),
-                G_SOCKET_TYPE_DATAGRAM, G_SOCKET_PROTOCOL_UDP, &err)) == NULL)
+    src->used_socket =
+        g_socket_new (g_inet_address_get_family (addr),
+        G_SOCKET_TYPE_DATAGRAM, G_SOCKET_PROTOCOL_UDP, &err);
+    if (src->used_socket == NULL &&
+        g_inet_address_get_family (addr) == G_SOCKET_FAMILY_IPV6 &&
+        g_error_matches (err, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED) &&
+        g_strcmp0 (src->address, "::") == 0) {
+      /* Attempt to use IPv6 unspecified address on system that
+         doesn't support IPv6. Fall back to IPv4 */
+
+      g_object_unref (addr);
+      addr = gst_udpsrc_resolve (src, "0.0.0.0");
+      if (!addr)
+        goto name_resolve;
+
+      /* Keep original error */
+      src->used_socket =
+          g_socket_new (g_inet_address_get_family (addr),
+          G_SOCKET_TYPE_DATAGRAM, G_SOCKET_PROTOCOL_UDP, NULL);
+    }
+    if (src->used_socket == NULL)
       goto no_socket;
 
     src->external_socket = FALSE;
