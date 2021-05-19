@@ -38,7 +38,7 @@ G_DEFINE_TYPE_WITH_CODE (GstGLColorConvertElement, gst_gl_color_convert_element,
         "glconvertelement", 0, "convert");
     );
 GST_ELEMENT_REGISTER_DEFINE_WITH_CODE (glcolorconvert, "glcolorconvert",
-    GST_RANK_NONE, GST_TYPE_GL_COLOR_CONVERT_ELEMENT, gl_element_init (plugin));
+    GST_RANK_SECONDARY, GST_TYPE_GL_COLOR_CONVERT_ELEMENT, gl_element_init (plugin));
 
 static gboolean gst_gl_color_convert_element_gl_set_caps (GstGLBaseFilter *
     base_filter, GstCaps * in_caps, GstCaps * out_caps);
@@ -112,7 +112,7 @@ gst_gl_color_convert_element_class_init (GstGLColorConvertElementClass * klass)
       &gst_gl_color_convert_element_sink_pad_template);
 
   gst_element_class_set_metadata (element_class,
-      "OpenGL color converter", "Filter/Converter/Video",
+      "OpenGL color converter", "Filter/Converter/Video/Colorspace",
       "Converts between color spaces using OpenGL shaders",
       "Matthew Waters <matthew@centricular.com>");
 
