@@ -414,6 +414,8 @@ G_GNUC_INTERNAL gint element_end_compare                  (GESTimelineElement * 
                                                            GESTimelineElement * b);
 G_GNUC_INTERNAL GstElementFactory *
 ges_get_compositor_factory                                (void);
+G_GNUC_INTERNAL GstElementFactory *
+ges_get_videoconvert_factory                              (void);
 
 G_GNUC_INTERNAL void
 ges_idle_add (GSourceFunc func, gpointer udata, GDestroyNotify notify);
