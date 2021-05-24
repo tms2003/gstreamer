@@ -61,6 +61,9 @@ gboolean gst_buffer_memory_advance_bytes (GstBufferMemoryMap * map, gsize size);
 G_GNUC_INTERNAL
 void gst_buffer_memory_unmap (GstBufferMemoryMap * map);
 
+G_GNUC_INTERNAL
+gsize gst_buffer_memory_copy (GstBufferMemoryMap * map, guint8 * dest, const guint8 * source, gsize size);
+
 G_END_DECLS
 
 #endif /* __GST_BUFFER_MEMORY_H__ */
