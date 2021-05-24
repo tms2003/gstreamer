@@ -933,7 +933,7 @@ gst_rtp_jpeg_pay_handle_buffer (GstRTPBasePayload * basepayload,
 
         qt = info[i].qt;
         qsize = tables[qt].size;
-        memcpy (payload, tables[qt].data, qsize);
+        gst_buffer_memory_copy (&memory, payload, tables[qt].data, qsize);
 
         GST_LOG_OBJECT (pay, "component %d using quant %d, size %d", i, qt,
             qsize);
