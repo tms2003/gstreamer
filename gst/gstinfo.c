@@ -109,6 +109,18 @@
 #  include <windows.h>          /* GetStdHandle, windows console */
 #endif
 
+/* for getaddrinfo */
+#ifdef G_OS_WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <stdio.h>
+#else
+#include <stdlib.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netdb.h>
+#endif
+
 #include "gst_private.h"
 #include "gstutils.h"
 #include "gstquark.h"
@@ -302,6 +314,13 @@ static gboolean add_default_log_func = TRUE;
 #define PRETTY_TAGS_DEFAULT  TRUE
 static gboolean pretty_tags = PRETTY_TAGS_DEFAULT;
 
+#define STRUCTURED_JSON_CEE_DEFAULT  FALSE
+static gboolean structured_json_cee = STRUCTURED_JSON_CEE_DEFAULT;
+
+static const gchar *log_pname = 0;
+static const gchar *log_appname = 0;
+static const gchar *log_hostname = 0;
+
 static gint G_GNUC_MAY_ALIAS __default_level = GST_LEVEL_DEFAULT;
 static gint G_GNUC_MAY_ALIAS __use_color = GST_DEBUG_COLOR_MODE_ON;
 
@@ -450,6 +469,50 @@ _priv_gst_debug_init (void)
   env = g_getenv ("GST_DEBUG");
   if (env)
     gst_debug_set_threshold_from_string (env, FALSE);
+
+  env = g_getenv ("GST_DEBUG_STRUCTURED");
+  if (env != NULL) {
+    if (strstr (env, "JSON_CEE")) {
+      structured_json_cee = TRUE;
+      /* pname, hostname and time are mandatory for CEE */
+#if defined(__APPLE__) || defined(__FreeBSD__)
+      log_pname = getprogname ();
+#elif defined(_GNU_SOURCE)
+      log_pname = program_invocation_name;
+#else
+      log_pname = "?";
+#endif
+      /* if running multiple instances of the same pname, user
+         can set a different appname for each instance */
+      log_appname = g_getenv ("GST_DEBUG_APPNAME");
+      if (log_appname == NULL) {
+        log_appname = log_pname;
+      }
+      {
+        struct addrinfo hints, *info;
+        int gai_result;
+
+        char hostname[1024];
+        hostname[1023] = '\0';
+        gethostname (hostname, 1023);
+
+        memset (&hints, 0, sizeof (hints));
+        hints.ai_family = AF_UNSPEC;    /*either IPV4 or IPV6 */
+        hints.ai_socktype = SOCK_STREAM;
+        hints.ai_flags = AI_CANONNAME;
+
+        if ((gai_result = getaddrinfo (hostname, 0, &hints, &info)) != 0) {
+          log_hostname = "?";
+        } else if (info == NULL) {
+          log_hostname = "?";
+        } else {
+          log_hostname = g_strdup (info->ai_canonname);
+        }
+
+        freeaddrinfo (info);
+      }
+    }
+  }
 }
 
 /* we can't do this further above, because we initialize the GST_CAT_DEFAULT struct */
@@ -1109,7 +1172,7 @@ static const gchar *levelcolormap[GST_LEVEL_COUNT] = {
 static void
 _gst_debug_log_preamble (GstDebugMessage * message, GObject * object,
     const gchar ** file, const gchar ** message_str, gchar ** obj_str,
-    GstClockTime * elapsed)
+    GstClockTime * elapsed, GstClockTime * now)
 {
   gchar c;
 
@@ -1138,6 +1201,7 @@ _gst_debug_log_preamble (GstDebugMessage * message, GObject * object,
   }
 
   *elapsed = GST_CLOCK_DIFF (_priv_gst_start_time, gst_util_get_timestamp ());
+  *now = g_get_real_time () * 1000;
 }
 
 /**
@@ -1164,7 +1228,7 @@ gst_debug_log_get_line (GstDebugCategory * category, GstDebugLevel level,
     const gchar * file, const gchar * function, gint line,
     GObject * object, GstDebugMessage * message)
 {
-  GstClockTime elapsed;
+  GstClockTime elapsed, now;
   gchar *ret, *obj_str = NULL;
   const gchar *message_str;
 
@@ -1173,7 +1237,7 @@ gst_debug_log_get_line (GstDebugCategory * category, GstDebugLevel level,
 #endif
 
   _gst_debug_log_preamble (message, object, &file, &message_str, &obj_str,
-      &elapsed);
+      &elapsed, &now);
 
   ret = g_strdup_printf ("%" GST_TIME_FORMAT NOCOLOR_PRINT_FMT,
       GST_TIME_ARGS (elapsed), getpid (), g_thread_self (),
@@ -1250,7 +1314,7 @@ gst_debug_log_default (GstDebugCategory * category, GstDebugLevel level,
     GObject * object, GstDebugMessage * message, gpointer user_data)
 {
   gint pid;
-  GstClockTime elapsed;
+  GstClockTime elapsed, now;
   gchar *obj = NULL;
   GstDebugColorMode color_mode;
   const gchar *message_str;
@@ -1271,12 +1335,33 @@ gst_debug_log_default (GstDebugCategory * category, GstDebugLevel level,
 #endif
 
   _gst_debug_log_preamble (message, object, &file, &message_str, &obj,
-      &elapsed);
+      &elapsed, &now);
 
   pid = getpid ();
   color_mode = gst_debug_get_color_mode ();
 
-  if (color_mode != GST_DEBUG_COLOR_MODE_OFF) {
+  if (structured_json_cee == TRUE) {
+    GTimeVal tv;
+    uint64_t tv_ns = GST_TIME_AS_NSECONDS (now) % GST_SECOND;
+    struct tm _tm;
+#define ISO8601_BUF_SIZE 32
+    char iso8601buf[ISO8601_BUF_SIZE + 1];
+#define MAX_JSON_MSG_LEN 16384  /* SDP bodies can be quite big, heavy on stack */
+    gchar message_encoded[MAX_JSON_MSG_LEN + 1];
+    GST_TIME_TO_TIMEVAL (now, tv);
+    gmtime_r (&tv.tv_sec, &_tm);
+    strftime (iso8601buf, ISO8601_BUF_SIZE, "%FT%T", &_tm);
+    gst_debug_escape_json (message_str, message_encoded, MAX_JSON_MSG_LEN);
+#define PRINT_FMT "\"proc!id\":%d,\"proc!tid\":%ju,\"pri\":\"%s\",\"subsys\":\"%s\",\"file!name\":\"%s\",\"file!line\":%d,\"native!function\":\"%s\",\"native!object\":\"%s\",\"msg\":\"%s\",\"pname\":\"%s\",\"appname\":\"%s\",\"hostname\":\"%s\"}\n"
+    FPRINTF_DEBUG (log_file,
+        "{\"time\":\"%s.%09luZ\",\"native!time!elapsed\":%lu," PRINT_FMT,
+        iso8601buf, tv_ns, elapsed, pid, (uintptr_t) g_thread_self (),
+        gst_debug_level_get_name_cee (level),
+        gst_debug_category_get_name (category), file, line, function, obj,
+        message_encoded, log_pname, log_appname, log_hostname);
+    FFLUSH_DEBUG (log_file);
+#undef PRINT_FMT
+  } else if (color_mode != GST_DEBUG_COLOR_MODE_OFF) {
 #ifdef G_OS_WIN32
     G_LOCK (win_print_mutex);
     if (color_mode == GST_DEBUG_COLOR_MODE_UNIX) {
@@ -1381,6 +1466,75 @@ gst_debug_level_get_name (GstDebugLevel level)
       g_warning ("invalid level specified for gst_debug_level_get_name");
       return "";
   }
+}
+
+/**
+ * gst_debug_level_get_name_cee:
+ * @level: the level to get the name for
+ *
+ * Get the CEE level string for the specified GStreamer debug level
+ *
+ * Returns: the CEE level name
+ */
+const gchar *
+gst_debug_level_get_name_cee (GstDebugLevel level)
+{
+  switch (level) {
+    case GST_LEVEL_NONE:
+      return "";
+    case GST_LEVEL_ERROR:
+      return "ERROR";
+    case GST_LEVEL_WARNING:
+      return "WARN";
+    case GST_LEVEL_INFO:
+    case GST_LEVEL_DEBUG:
+    case GST_LEVEL_LOG:
+    case GST_LEVEL_FIXME:
+    case GST_LEVEL_TRACE:
+    case GST_LEVEL_MEMDUMP:
+      return "DEBUG";
+    default:
+      g_warning ("invalid level specified for gst_debug_level_get_name_cee");
+      return "";
+  }
+}
+
+/**
+ * gst_debug_escape_json:
+ * @src: the raw string to be encoded
+ * @dest: a buffer to store the encoded string
+ * @dest_size: the maximum number of bytes buffer can accept
+ *
+ * Encode @src into a JSON-escaped string as defined in
+ * RFC 7159 section 7
+ * https://datatracker.ietf.org/doc/html/rfc7159#section-7
+ *
+ * The output is silently truncated if it would be
+ * longer than @dest_size
+ */
+void
+gst_debug_escape_json (const gchar * src, gchar * dest, gsize dest_size)
+{
+  static const char *json_special = "\"\\/\b\f\n\r\t";
+  static const char *json_special_replace = "\"\\/bfnrt";
+  const gchar *src_p = src;
+  gchar *dest_p = dest, *dest_end = dest + dest_size - 6;
+  for (; *src_p != 0 && dest_p < dest_end; dest_p++) {
+    const char *special = strchr (json_special, (char) (*src_p));
+    if (special != NULL) {
+      const char *replace = json_special_replace + (special - json_special);
+      *(dest_p++) = '\\';
+      *dest_p = *replace;
+    } else if (*src_p < 0x20) {
+      /* Everything below 0x20 must be escaped */
+      snprintf (dest_p, 7, "\\u%04X", *src_p);
+      dest_p += 5;
+    } else {
+      *dest_p = *src_p;
+    }
+    src_p++;
+  }
+  *dest_p = 0;
 }
 
 /**
@@ -2980,7 +3134,7 @@ dbghelp_load_symbol (const gchar * symbol_name, gpointer * symbol)
     dbg_help_module = NULL;
   }
 
-  return ! !dbg_help_module;
+  return !!dbg_help_module;
 }
 
 static gboolean
@@ -3018,7 +3172,7 @@ dbghelp_initialize_symbols (HANDLE process)
     g_once_init_leave (&initialization_value, 1);
   }
 
-  return ! !dbg_help_module;
+  return !!dbg_help_module;
 }
 
 static gchar *
@@ -3224,14 +3378,36 @@ gst_ring_buffer_logger_log (GstDebugCategory * category,
   pid = getpid ();
   thread = g_thread_self ();
 
-  /* no color, all platforms */
-#define PRINT_FMT " "PID_FMT" "PTR_FMT" %s "CAT_FMT" %s\n"
-  output =
-      g_strdup_printf ("%" GST_TIME_FORMAT PRINT_FMT, GST_TIME_ARGS (elapsed),
-      pid, thread, gst_debug_level_get_name (level),
-      gst_debug_category_get_name (category), file, line, function, obj,
-      message_str);
+  if (structured_json_cee == TRUE) {
+    GTimeVal tv;
+    uint64_t tv_ns = GST_TIME_AS_NSECONDS (now) % GST_SECOND;
+    struct tm _tm;
+#define ISO8601_BUF_SIZE 32
+    char iso8601buf[ISO8601_BUF_SIZE + 1];
+#define MAX_JSON_MSG_LEN 16384  /* SDP bodies can be quite big, heavy on stack */
+    gchar message_encoded[MAX_JSON_MSG_LEN + 1];
+    GST_TIME_TO_TIMEVAL (now, tv);
+    gmtime_r (&tv.tv_sec, &_tm);
+    strftime (iso8601buf, ISO8601_BUF_SIZE, "%FT%T", &_tm);
+    gst_debug_escape_json (message_str, message_encoded, MAX_JSON_MSG_LEN);
+#define PRINT_FMT "\"proc!id\":%d,\"proc!tid\":%ju,\"pri\":\"%s\",\"subsys\":\"%s\",\"file!name\":\"%s\",\"file!line\":%d,\"native!function\":\"%s\",\"native!object\":\"%s\",\"msg\":\"%s\",\"pname\":\"%s\",\"appname\":\"%s\",\"hostname\":\"%s\"}\n"
+    output =
+        g_strdup_printf ("{\"time\":\"%s.%09luZ\",\"native!time!elapsed\":%lu,"
+        PRINT_FMT, iso8601buf, tv_ns, elapsed, pid, (uintptr_t) thread,
+        gst_debug_level_get_name_cee (level),
+        gst_debug_category_get_name (category), file, line, function, obj,
+        message_encoded, log_pname, log_appname, log_hostname);
 #undef PRINT_FMT
+  } else {
+    /* no color, all platforms */
+#define PRINT_FMT " "PID_FMT" "PTR_FMT" %s "CAT_FMT" %s\n"
+    output =
+        g_strdup_printf ("%" GST_TIME_FORMAT PRINT_FMT, GST_TIME_ARGS (elapsed),
+        pid, thread, gst_debug_level_get_name (level),
+        gst_debug_category_get_name (category), file, line, function, obj,
+        message_str);
+#undef PRINT_FMT
+  }
 
   output_len = strlen (output);
 
