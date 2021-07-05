@@ -119,6 +119,7 @@ enum
   PROP_BOUND_PORT,
   PROP_BACKLOG,
   PROP_MAX_CLIENTS,
+  PROP_ACTIVE_CLIENTS,
 
   PROP_SESSION_POOL,
   PROP_MOUNT_POINTS,
@@ -256,6 +257,16 @@ gst_rtsp_server_class_init (GstRTSPServerClass * klass)
           "The maximum number of clients (-1 == unlimited)",
           -1, G_MAXINT, DEFAULT_MAX_CLIENTS,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  /**
+   * GstRTSPServer::active-clients:
+   *
+   * The amount of connected clients to this server.
+   */
+  g_object_class_install_property (gobject_class, PROP_ACTIVE_CLIENTS,
+      g_param_spec_int ("active-clients", "Active clients",
+          "The number of active clients",
+          -1, G_MAXINT, 0, G_PARAM_READABLE | G_PARAM_STATIC_STRINGS));
 
   gst_rtsp_server_signals[SIGNAL_CLIENT_CONNECTED] =
       g_signal_new ("client-connected", G_TYPE_FROM_CLASS (gobject_class),
@@ -682,6 +693,31 @@ gst_rtsp_server_get_max_clients (GstRTSPServer * server)
 }
 
 /**
+ * gst_rtsp_server_get_active_clients:
+ * @server: a #GstRTSPServer
+ *
+ * Get the active number of clients to @server.
+ *
+ * Returns: the active number of clients to @server.
+ */
+gint
+gst_rtsp_server_get_active_clients (GstRTSPServer * server)
+{
+  GstRTSPServerPrivate *priv;
+  gint result = -1;
+
+  g_return_val_if_fail (GST_IS_RTSP_SERVER (server), result);
+
+  priv = server->priv;
+
+  GST_RTSP_SERVER_LOCK (server);
+  result = g_list_length (priv->clients);
+  GST_RTSP_SERVER_UNLOCK (server);
+
+  return result;
+}
+
+/**
  * gst_rtsp_server_set_content_length_limit
  * @server: a #GstRTSPServer
  * Configure @server to use the specified Content-Length limit.
@@ -873,6 +909,9 @@ gst_rtsp_server_get_property (GObject * object, guint propid,
       break;
     case PROP_MAX_CLIENTS:
       g_value_set_int (value, gst_rtsp_server_get_max_clients (server));
+      break;
+    case PROP_ACTIVE_CLIENTS:
+      g_value_set_int (value, gst_rtsp_server_get_active_clients (server));
       break;
     case PROP_CONTENT_LENGTH_LIMIT:
       g_value_set_uint (value,
