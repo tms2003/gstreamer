@@ -99,6 +99,7 @@
 #include <errno.h>
 #ifdef HAVE_UNISTD_H
 #  include <unistd.h>           /* getpid on UNIX */
+#  include <syslog.h>
 #endif
 #ifdef HAVE_PROCESS_H
 #  include <process.h>          /* getpid on win32 */
@@ -183,6 +184,17 @@ static char *gst_info_printf_pointer_extension_func (const char *format,
  * Maybe there is a better way but for now this will do the right
  * thing. */
 G_LOCK_DEFINE_STATIC (win_print_mutex);
+#endif
+
+#ifndef LOG_ERR
+#define LOG_EMERG   0           /* system is unusable */
+#define LOG_ALERT   1           /* action must be taken immediately */
+#define LOG_CRIT    2           /* critical conditions */
+#define LOG_ERR     3           /* error conditions */
+#define LOG_WARNING 4           /* warning conditions */
+#define LOG_NOTICE  5           /* normal but significant condition */
+#define LOG_INFO    6           /* informational */
+#define LOG_DEBUG   7           /* debug-level messages */
 #endif
 
 extern gboolean gst_is_initialized (void);
@@ -1352,13 +1364,14 @@ gst_debug_log_default (GstDebugCategory * category, GstDebugLevel level,
     gmtime_r (&tv.tv_sec, &_tm);
     strftime (iso8601buf, ISO8601_BUF_SIZE, "%FT%T", &_tm);
     gst_debug_escape_json (message_str, message_encoded, MAX_JSON_MSG_LEN);
-#define PRINT_FMT "\"proc!id\":%d,\"proc!tid\":%ju,\"pri\":\"%s\",\"subsys\":\"%s\",\"file!name\":\"%s\",\"file!line\":%d,\"native!function\":\"%s\",\"native!object\":\"%s\",\"msg\":\"%s\",\"pname\":\"%s\",\"appname\":\"%s\",\"hostname\":\"%s\"}\n"
+#define PRINT_FMT "\"proc!id\":\"%d\",\"proc!tid\":%ju,\"pri\":\"%s\",\"subsys\":\"%s\",\"file!name\":\"%s\",\"file!line\":%d,\"native!function\":\"%s\",\"native!object\":\"%s\",\"msg\":\"%s\",\"pname\":\"%s\",\"appname\":\"%s\",\"hostname\":\"%s\",\"gstreamer!level\":%d,\"syslog!level\":%d}\n"
     FPRINTF_DEBUG (log_file,
         "{\"time\":\"%s.%09luZ\",\"native!time!elapsed\":%lu," PRINT_FMT,
         iso8601buf, tv_ns, elapsed, pid, (uintptr_t) g_thread_self (),
         gst_debug_level_get_name_cee (level),
         gst_debug_category_get_name (category), file, line, function, obj,
-        message_encoded, log_pname, log_appname, log_hostname);
+        message_encoded, log_pname, log_appname, log_hostname,
+        level, gst_debug_level_get_syslog (level));
     FFLUSH_DEBUG (log_file);
 #undef PRINT_FMT
   } else if (color_mode != GST_DEBUG_COLOR_MODE_OFF) {
@@ -1496,6 +1509,39 @@ gst_debug_level_get_name_cee (GstDebugLevel level)
     default:
       g_warning ("invalid level specified for gst_debug_level_get_name_cee");
       return "";
+  }
+}
+
+/**
+ * gst_debug_level_get_syslog:
+ * @level: the level to get the Syslog level for
+ *
+ * Get the Syslog level value for the specified GStreamer debug level
+ *
+ * Returns: the Syslog level value
+ */
+int
+gst_debug_level_get_syslog (GstDebugLevel level)
+{
+  switch (level) {
+    case GST_LEVEL_NONE:
+      return LOG_CRIT;
+    case GST_LEVEL_ERROR:
+      return LOG_ERR;
+    case GST_LEVEL_WARNING:
+      return LOG_WARNING;
+    case GST_LEVEL_FIXME:
+      return LOG_NOTICE;
+    case GST_LEVEL_INFO:
+      return LOG_INFO;
+    case GST_LEVEL_DEBUG:
+    case GST_LEVEL_LOG:
+    case GST_LEVEL_TRACE:
+    case GST_LEVEL_MEMDUMP:
+      return LOG_DEBUG;
+    default:
+      g_warning ("invalid level specified for gst_debug_level_get_syslog");
+      return LOG_CRIT;
   }
 }
 
@@ -3390,13 +3436,14 @@ gst_ring_buffer_logger_log (GstDebugCategory * category,
     gmtime_r (&tv.tv_sec, &_tm);
     strftime (iso8601buf, ISO8601_BUF_SIZE, "%FT%T", &_tm);
     gst_debug_escape_json (message_str, message_encoded, MAX_JSON_MSG_LEN);
-#define PRINT_FMT "\"proc!id\":%d,\"proc!tid\":%ju,\"pri\":\"%s\",\"subsys\":\"%s\",\"file!name\":\"%s\",\"file!line\":%d,\"native!function\":\"%s\",\"native!object\":\"%s\",\"msg\":\"%s\",\"pname\":\"%s\",\"appname\":\"%s\",\"hostname\":\"%s\"}\n"
+#define PRINT_FMT "\"proc!id\":\"%d\",\"proc!tid\":%ju,\"pri\":\"%s\",\"subsys\":\"%s\",\"file!name\":\"%s\",\"file!line\":%d,\"native!function\":\"%s\",\"native!object\":\"%s\",\"msg\":\"%s\",\"pname\":\"%s\",\"appname\":\"%s\",\"hostname\":\"%s\",\"gstreamer!level\":%d,\"syslog!level\":%d}\n"
     output =
         g_strdup_printf ("{\"time\":\"%s.%09luZ\",\"native!time!elapsed\":%lu,"
         PRINT_FMT, iso8601buf, tv_ns, elapsed, pid, (uintptr_t) thread,
         gst_debug_level_get_name_cee (level),
         gst_debug_category_get_name (category), file, line, function, obj,
-        message_encoded, log_pname, log_appname, log_hostname);
+        message_encoded, log_pname, log_appname, log_hostname,
+        level, gst_debug_level_get_syslog (level));
 #undef PRINT_FMT
   } else {
     /* no color, all platforms */

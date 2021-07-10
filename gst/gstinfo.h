@@ -440,6 +440,9 @@ GST_API
 const gchar *   gst_debug_level_get_name_cee (GstDebugLevel level);
 
 GST_API
+int             gst_debug_level_get_syslog (GstDebugLevel level);
+
+GST_API
 void            gst_debug_escape_json(const gchar *src, gchar *dest, gsize dest_size);
 
 GST_API
