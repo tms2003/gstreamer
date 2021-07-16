@@ -232,18 +232,37 @@ private:
   gint m_refcount;
 };
 
-class GStreamerMutableVideoFrame:public IDeckLinkMutableVideoFrame
+class GStreamerMutableVideoFrame:public IDeckLinkMutableVideoFrame,
+  public IDeckLinkVideoFrameMetadataExtensions
 {
 public:
   GStreamerMutableVideoFrame (IDeckLinkMutableVideoFrame *frame):
-      m_frame (frame), m_refcount (1)
+      m_frame (frame), m_colorspace (bmdColorspaceRec601), m_transfer_func (0),
+      m_has_hdr_metadata (false), m_refcount (1)
   {
     g_mutex_init (&m_mutex);
   }
 
   virtual HRESULT WINAPI QueryInterface (REFIID iid, LPVOID *ppv)
   {
-    return E_NOINTERFACE;
+    if (!ppv) {
+      return E_INVALIDARG;
+    }
+
+    *ppv = nullptr;
+
+    if (iid == IID_IDeckLinkVideoFrame) {
+      *ppv = static_cast<IDeckLinkVideoFrame*>(this);
+      AddRef();
+    } else if (iid == IID_IDeckLinkVideoFrameMetadataExtensions &&
+          m_has_hdr_metadata) {
+      *ppv = static_cast<IDeckLinkVideoFrameMetadataExtensions*>(this);
+      AddRef();
+    } else {
+      return E_NOINTERFACE;
+    }
+
+    return S_OK;
   }
 
   /* IDeckLinkVideoFrame */
@@ -252,7 +271,15 @@ public:
   virtual long WINAPI GetHeight (void) { return m_frame->GetHeight (); }
   virtual long WINAPI GetRowBytes (void) { return m_frame->GetRowBytes (); }
   virtual BMDPixelFormat WINAPI GetPixelFormat (void) { return m_frame->GetPixelFormat (); }
-  virtual BMDFrameFlags WINAPI GetFlags (void) { return m_frame->GetFlags (); }
+  virtual BMDFrameFlags WINAPI GetFlags (void) {
+    BMDFrameFlags flags = m_frame->GetFlags();
+
+    if (m_has_hdr_metadata) {
+      flags |= bmdFrameContainsHDRMetadata;
+    }
+
+    return flags;
+  }
   virtual HRESULT WINAPI GetBytes (void **buffer) { return m_frame->GetBytes (buffer); }
   virtual HRESULT WINAPI GetTimecode (BMDTimecodeFormat format, IDeckLinkTimecode **timecode)
   {
@@ -287,6 +314,74 @@ public:
     return m_frame->SetTimecodeUserBits (format, userBits);
   }
 
+  /* IDeckLinkVideoFrameMetadataExtensions */
+
+  virtual HRESULT WINAPI GetInt (BMDDeckLinkFrameMetadataID metadataID, int64_t *val)
+  {
+    switch (metadataID) {
+    case bmdDeckLinkFrameMetadataColorspace:
+      *val = m_colorspace;
+      return S_OK;
+    case bmdDeckLinkFrameMetadataHDRElectroOpticalTransferFunc:
+      *val = m_transfer_func;
+      return S_OK;
+    default:
+      return E_INVALIDARG;
+    }
+  }
+
+  virtual HRESULT WINAPI GetFloat (BMDDeckLinkFrameMetadataID metadataID, double *val)
+  {
+    switch (metadataID) {
+      case bmdDeckLinkFrameMetadataHDRDisplayPrimariesRedX:
+        *val = m_mdi.display_primaries[0].x * 0.00002;
+        return S_OK;
+      case bmdDeckLinkFrameMetadataHDRDisplayPrimariesRedY:
+        *val = m_mdi.display_primaries[0].y * 0.00002;
+        return S_OK;
+      case bmdDeckLinkFrameMetadataHDRDisplayPrimariesGreenX:
+        *val = m_mdi.display_primaries[1].x * 0.00002;
+        return S_OK;
+      case bmdDeckLinkFrameMetadataHDRDisplayPrimariesGreenY:
+        *val = m_mdi.display_primaries[1].y * 0.00002;
+        return S_OK;
+      case bmdDeckLinkFrameMetadataHDRDisplayPrimariesBlueX:
+        *val = m_mdi.display_primaries[2].x * 0.00002;
+        return S_OK;
+      case bmdDeckLinkFrameMetadataHDRDisplayPrimariesBlueY:
+        *val = m_mdi.display_primaries[2].y * 0.00002;
+        return S_OK;
+      case bmdDeckLinkFrameMetadataHDRWhitePointX:
+        *val = m_mdi.white_point.x * 0.00002;
+        return S_OK;
+      case bmdDeckLinkFrameMetadataHDRWhitePointY:
+        *val = m_mdi.white_point.y * 0.00002;
+        return S_OK;
+      case bmdDeckLinkFrameMetadataHDRMaxDisplayMasteringLuminance:
+        *val = m_mdi.max_display_mastering_luminance * 0.0001;
+        return S_OK;
+      case bmdDeckLinkFrameMetadataHDRMinDisplayMasteringLuminance:
+        *val = m_mdi.min_display_mastering_luminance * 0.0001;
+        return S_OK;
+      case bmdDeckLinkFrameMetadataHDRMaximumContentLightLevel:
+        *val = m_cll.max_content_light_level;
+        return S_OK;
+      case bmdDeckLinkFrameMetadataHDRMaximumFrameAverageLightLevel:
+        *val = m_cll.max_frame_average_light_level;
+        return S_OK;
+      default:
+        return E_INVALIDARG;
+    }
+  }
+  virtual HRESULT WINAPI GetFlag (BMDDeckLinkFrameMetadataID metadataID, bool *value)
+  {
+    return E_INVALIDARG;
+  }
+  virtual HRESULT WINAPI GetString (BMDDeckLinkFrameMetadataID metadataID, COMSTR_T *value)
+  {
+    return E_INVALIDARG;
+  }
+
   virtual ULONG WINAPI AddRef (void)
   {
     ULONG ret;
@@ -315,6 +410,52 @@ public:
     return ret;
   }
 
+  void SetColorspace (const GstVideoColorimetry &colorimetry)
+  {
+    switch (colorimetry.matrix) {
+      case GST_VIDEO_COLOR_MATRIX_BT601:
+        m_colorspace = bmdColorspaceRec601;
+        break;
+      case GST_VIDEO_COLOR_MATRIX_BT709:
+        m_colorspace = bmdColorspaceRec601;
+        break;
+      case GST_VIDEO_COLOR_MATRIX_BT2020:
+        m_colorspace = bmdColorspaceRec2020;
+        break;
+      default: {
+        gchar *colorimetry_str = gst_video_colorimetry_to_string (&colorimetry);
+        GST_WARNING ("Unsupported colorimetry %s", colorimetry_str);
+        g_clear_pointer (&colorimetry_str, g_free);
+        return;
+      }
+    }
+
+    switch (colorimetry.transfer) {
+      case GST_VIDEO_TRANSFER_BT601:
+      case GST_VIDEO_TRANSFER_BT709:
+      case GST_VIDEO_TRANSFER_BT2020_10:
+        if (m_has_hdr_metadata) {
+          m_transfer_func = 1; // Traditional gamma HDR luminance
+        } else {
+          m_transfer_func = 0; // Traditional gamma SDR luminance
+        }
+        break;
+      case GST_VIDEO_TRANSFER_SMPTE2084:
+        m_transfer_func = 2; // SMPTE ST 2084 HDR EOTF
+        break;
+      default:
+        GST_WARNING ("Unsupported transfer function %d", colorimetry.transfer);
+    }
+  }
+
+  void SetHDRMetadata (const GstVideoMasteringDisplayInfo &mdi,
+      const GstVideoContentLightLevel &cll)
+  {
+    m_has_hdr_metadata = true;
+    m_mdi = mdi;
+    m_cll = cll;
+  }
+
   virtual ~ GStreamerMutableVideoFrame () {
     m_frame->Release();
     g_mutex_clear (&m_mutex);
@@ -334,11 +475,24 @@ public:
       return nullptr;
     }
 
-    return new GStreamerMutableVideoFrame (frame);
+    GStreamerMutableVideoFrame *result = new GStreamerMutableVideoFrame (frame);
+    if (sink->has_hdr_metadata) {
+      result->SetHDRMetadata (sink->mdi, sink->cll);
+    }
+    result->SetColorspace (sink->info.colorimetry);
+
+    return result;
   }
 
 private:
   IDeckLinkMutableVideoFrame *m_frame;
+
+  BMDColorspace m_colorspace;
+  gint m_transfer_func;
+  gboolean m_has_hdr_metadata;
+  GstVideoMasteringDisplayInfo m_mdi;
+  GstVideoContentLightLevel m_cll;
+
   GMutex m_mutex;
   gint m_refcount;
 };
@@ -677,6 +831,9 @@ gst_decklink_video_sink_set_caps (GstBaseSink * bsink, GstCaps * caps)
   if (!gst_video_info_from_caps (&info, caps))
     return FALSE;
 
+  self->has_hdr_metadata =
+      gst_video_mastering_display_info_from_caps (&self->mdi, caps) &&
+      gst_video_content_light_level_from_caps (&self->cll, caps);
 
   g_mutex_lock (&self->output->lock);
   if (self->output->video_enabled) {
