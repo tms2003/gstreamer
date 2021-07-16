@@ -232,6 +232,117 @@ private:
   gint m_refcount;
 };
 
+class GStreamerMutableVideoFrame:public IDeckLinkMutableVideoFrame
+{
+public:
+  GStreamerMutableVideoFrame (IDeckLinkMutableVideoFrame *frame):
+      m_frame (frame), m_refcount (1)
+  {
+    g_mutex_init (&m_mutex);
+  }
+
+  virtual HRESULT WINAPI QueryInterface (REFIID iid, LPVOID *ppv)
+  {
+    return E_NOINTERFACE;
+  }
+
+  /* IDeckLinkVideoFrame */
+
+  virtual long WINAPI GetWidth (void) { return m_frame->GetWidth (); }
+  virtual long WINAPI GetHeight (void) { return m_frame->GetHeight (); }
+  virtual long WINAPI GetRowBytes (void) { return m_frame->GetRowBytes (); }
+  virtual BMDPixelFormat WINAPI GetPixelFormat (void) { return m_frame->GetPixelFormat (); }
+  virtual BMDFrameFlags WINAPI GetFlags (void) { return m_frame->GetFlags (); }
+  virtual HRESULT WINAPI GetBytes (void **buffer) { return m_frame->GetBytes (buffer); }
+  virtual HRESULT WINAPI GetTimecode (BMDTimecodeFormat format, IDeckLinkTimecode **timecode)
+  {
+    return m_frame->GetTimecode (format, timecode);
+  }
+  virtual HRESULT WINAPI GetAncillaryData (IDeckLinkVideoFrameAncillary **ancillary)
+  {
+    return m_frame->GetAncillaryData (ancillary);
+  }
+
+  /* IDeckLinkMutableVideoFrame */
+
+  virtual HRESULT WINAPI SetFlags (BMDFrameFlags newFlags) { return m_frame->SetFlags (newFlags); }
+  virtual HRESULT WINAPI SetTimecode (BMDTimecodeFormat format, IDeckLinkTimecode *timecode)
+  {
+    return m_frame->SetTimecode (format, timecode);
+  }
+  virtual HRESULT WINAPI SetTimecodeFromComponents (BMDTimecodeFormat format,
+      uint8_t hours, uint8_t minutes, uint8_t seconds, uint8_t frames,
+      BMDTimecodeFlags flags)
+  {
+    return m_frame->SetTimecodeFromComponents (format, hours, minutes, seconds,
+        frames, flags);
+  }
+  virtual HRESULT WINAPI SetAncillaryData (IDeckLinkVideoFrameAncillary *ancillary)
+  {
+    return m_frame->SetAncillaryData (ancillary);
+  }
+  virtual HRESULT WINAPI SetTimecodeUserBits (BMDTimecodeFormat format,
+      BMDTimecodeUserBits userBits)
+  {
+    return m_frame->SetTimecodeUserBits (format, userBits);
+  }
+
+  virtual ULONG WINAPI AddRef (void)
+  {
+    ULONG ret;
+
+    g_mutex_lock (&m_mutex);
+    m_refcount++;
+    ret = m_refcount;
+    g_mutex_unlock (&m_mutex);
+
+    return ret;
+  }
+
+  virtual ULONG WINAPI Release (void)
+  {
+    ULONG ret;
+
+    g_mutex_lock (&m_mutex);
+    m_refcount--;
+    ret = m_refcount;
+    g_mutex_unlock (&m_mutex);
+
+    if (ret == 0) {
+      delete this;
+    }
+
+    return ret;
+  }
+
+  virtual ~ GStreamerMutableVideoFrame () {
+    m_frame->Release();
+    g_mutex_clear (&m_mutex);
+  }
+
+  static GStreamerMutableVideoFrame *Create(GstDecklinkVideoSink * sink,
+    BMDPixelFormat format)
+  {
+    IDeckLinkMutableVideoFrame *frame;
+
+    HRESULT ret = sink->output->output->CreateVideoFrame (sink->info.width,
+      sink->info.height, sink->info.stride[0], format, bmdFrameFlagDefault,
+        &frame);
+    if (ret != S_OK) {
+      GST_ELEMENT_ERROR (sink, STREAM, FAILED,
+          (NULL), ("Failed to create video frame: 0x%08lx", (unsigned long) ret));
+      return nullptr;
+    }
+
+    return new GStreamerMutableVideoFrame (frame);
+  }
+
+private:
+  IDeckLinkMutableVideoFrame *m_frame;
+  GMutex m_mutex;
+  gint m_refcount;
+};
+
 enum
 {
   PROP_0,
@@ -1270,12 +1381,8 @@ gst_decklink_video_sink_prepare (GstBaseSink * bsink, GstBuffer * buffer)
   else
     running_time = 0;
 
-  ret = self->output->output->CreateVideoFrame (self->info.width,
-      self->info.height, self->info.stride[0], format, bmdFrameFlagDefault,
-      &frame);
-  if (ret != S_OK) {
-    GST_ELEMENT_ERROR (self, STREAM, FAILED,
-        (NULL), ("Failed to create video frame: 0x%08lx", (unsigned long) ret));
+  frame = GStreamerMutableVideoFrame::Create (self, format);
+  if (!frame) {
     return GST_FLOW_ERROR;
   }
 
