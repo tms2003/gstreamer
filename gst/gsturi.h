@@ -195,6 +195,10 @@ gboolean              gst_uri_handler_set_uri       (GstURIHandler * handler,
  * GstUri:
  *
  * This is a private structure that holds the various parts of a parsed URI.
+ *
+ * Deprecated: 1.20: use #GUri instead (with glib >= 2.66).
+ *
+ * FIXME: mark the API as deprecated once GStreamer depends on glib >= 2.66.
  */
 struct _GstUri;
 typedef struct _GstUri GstUri;

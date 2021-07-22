@@ -156,180 +156,6 @@ gst_uri_error_quark (void)
   return g_quark_from_static_string ("gst-uri-error-quark");
 }
 
-#define HEX_ESCAPE '%'
-
-#ifndef GST_REMOVE_DEPRECATED
-static const guchar acceptable[96] = {  /* X0   X1   X2   X3   X4   X5   X6   X7   X8   X9   XA   XB   XC   XD   XE   XF */
-  0x00, 0x3F, 0x20, 0x20, 0x20, 0x00, 0x2C, 0x3F, 0x3F, 0x3F, 0x3F, 0x22, 0x20, 0x3F, 0x3F, 0x1C,       /* 2X  !"#$%&'()*+,-./   */
-  0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x38, 0x20, 0x20, 0x2C, 0x20, 0x2C,       /* 3X 0123456789:;<=>?   */
-  0x30, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F,       /* 4X @ABCDEFGHIJKLMNO   */
-  0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x20, 0x20, 0x20, 0x20, 0x3F,       /* 5X PQRSTUVWXYZ[\]^_   */
-  0x20, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F,       /* 6X `abcdefghijklmno   */
-  0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x3F, 0x20, 0x20, 0x20, 0x3F, 0x20        /* 7X pqrstuvwxyz{|}~DEL */
-};
-
-typedef enum
-{
-  UNSAFE_ALL = 0x1,             /* Escape all unsafe characters   */
-  UNSAFE_ALLOW_PLUS = 0x2,      /* Allows '+'  */
-  UNSAFE_PATH = 0x4,            /* Allows '/' and '?' and '&' and '='  */
-  UNSAFE_DOS_PATH = 0x8,        /* Allows '/' and '?' and '&' and '=' and ':' */
-  UNSAFE_HOST = 0x10,           /* Allows '/' and ':' and '@' */
-  UNSAFE_SLASHES = 0x20         /* Allows all characters except for '/' and '%' */
-} UnsafeCharacterSet;
-
-/*  Escape undesirable characters using %
- *  -------------------------------------
- *
- * This function takes a pointer to a string in which
- * some characters may be unacceptable unescaped.
- * It returns a string which has these characters
- * represented by a '%' character followed by two hex digits.
- *
- * This routine returns a g_malloced string.
- */
-
-static const gchar hex[16] = "0123456789ABCDEF";
-
-static gchar *
-escape_string_internal (const gchar * string, UnsafeCharacterSet mask)
-{
-#define ACCEPTABLE_CHAR(a) ((a)>=32 && (a)<128 && (acceptable[(a)-32] & use_mask))
-
-  const gchar *p;
-  gchar *q;
-  gchar *result;
-  guchar c;
-  gint unacceptable;
-  UnsafeCharacterSet use_mask;
-
-  g_return_val_if_fail (mask == UNSAFE_ALL
-      || mask == UNSAFE_ALLOW_PLUS
-      || mask == UNSAFE_PATH
-      || mask == UNSAFE_DOS_PATH
-      || mask == UNSAFE_HOST || mask == UNSAFE_SLASHES, NULL);
-
-  if (string == NULL) {
-    return NULL;
-  }
-
-  unacceptable = 0;
-  use_mask = mask;
-  for (p = string; *p != '\0'; p++) {
-    c = *p;
-    if (!ACCEPTABLE_CHAR (c)) {
-      unacceptable++;
-    }
-    if ((use_mask == UNSAFE_HOST) && (unacceptable || (c == '/'))) {
-      /* when escaping a host, if we hit something that needs to be escaped, or we finally
-       * hit a path separator, revert to path mode (the host segment of the url is over).
-       */
-      use_mask = UNSAFE_PATH;
-    }
-  }
-
-  result = g_malloc (p - string + unacceptable * 2 + 1);
-
-  use_mask = mask;
-  for (q = result, p = string; *p != '\0'; p++) {
-    c = *p;
-
-    if (!ACCEPTABLE_CHAR (c)) {
-      *q++ = HEX_ESCAPE;        /* means hex coming */
-      *q++ = hex[c >> 4];
-      *q++ = hex[c & 15];
-    } else {
-      *q++ = c;
-    }
-    if ((use_mask == UNSAFE_HOST) && (!ACCEPTABLE_CHAR (c) || (c == '/'))) {
-      use_mask = UNSAFE_PATH;
-    }
-  }
-
-  *q = '\0';
-
-  return result;
-}
-#endif
-
-static int
-hex_to_int (gchar c)
-{
-  return c >= '0' && c <= '9' ? c - '0'
-      : c >= 'A' && c <= 'F' ? c - 'A' + 10
-      : c >= 'a' && c <= 'f' ? c - 'a' + 10 : -1;
-}
-
-static int
-unescape_character (const char *scanner)
-{
-  int first_digit;
-  int second_digit;
-
-  first_digit = hex_to_int (*scanner++);
-  if (first_digit < 0) {
-    return -1;
-  }
-
-  second_digit = hex_to_int (*scanner);
-  if (second_digit < 0) {
-    return -1;
-  }
-
-  return (first_digit << 4) | second_digit;
-}
-
-/* unescape_string:
- * @escaped_string: an escaped URI, path, or other string
- * @illegal_characters: a string containing a sequence of characters
- * considered "illegal", '\0' is automatically in this list.
- *
- * Decodes escaped characters (i.e. PERCENTxx sequences) in @escaped_string.
- * Characters are encoded in PERCENTxy form, where xy is the ASCII hex code
- * for character 16x+y.
- *
- * Return value: (nullable): a newly allocated string with the
- * unescaped equivalents, or %NULL if @escaped_string contained one of
- * the characters in @illegal_characters.
- **/
-static char *
-unescape_string (const gchar * escaped_string, const gchar * illegal_characters)
-{
-  const gchar *in;
-  gchar *out, *result;
-  gint character;
-
-  if (escaped_string == NULL) {
-    return NULL;
-  }
-
-  result = g_malloc (strlen (escaped_string) + 1);
-
-  out = result;
-  for (in = escaped_string; *in != '\0'; in++) {
-    character = *in;
-    if (*in == HEX_ESCAPE) {
-      character = unescape_character (in + 1);
-
-      /* Check for an illegal character. We consider '\0' illegal here. */
-      if (character <= 0
-          || (illegal_characters != NULL
-              && strchr (illegal_characters, (char) character) != NULL)) {
-        g_free (result);
-        return NULL;
-      }
-      in += 2;
-    }
-    *out++ = (char) character;
-  }
-
-  *out = '\0';
-  g_assert ((gsize) (out - result) <= strlen (escaped_string));
-  return result;
-
-}
-
-
 static void
 gst_uri_protocol_check_internal (const gchar * uri, gchar ** endptr)
 {
@@ -377,7 +203,12 @@ gst_uri_protocol_is_valid (const gchar * protocol)
  * Tests if the given string is a valid URI identifier. URIs start with a valid
  * scheme followed by ":" and maybe a string identifying the location.
  *
+ * Note that this function doesn't check if the URI can be succesfully parsed
+ * and decoded. It merely checks the scheme is valid, followed by ':'.
+ *
  * Returns: %TRUE if the string is a valid URI
+ *
+ * Deprecated: 1.20: Use g_uri_is_valid() instead.
  */
 gboolean
 gst_uri_is_valid (const gchar * uri)
@@ -425,18 +256,29 @@ gst_uri_get_protocol (const gchar * uri)
 gboolean
 gst_uri_has_protocol (const gchar * uri, const gchar * protocol)
 {
-  gchar *colon;
-
   g_return_val_if_fail (uri != NULL, FALSE);
   g_return_val_if_fail (protocol != NULL, FALSE);
   g_return_val_if_fail (gst_uri_is_valid (uri), FALSE);
 
-  colon = strstr (uri, ":");
+#if GLIB_CHECK_VERSION(2,66,0)
+  {
+    char *scheme = g_uri_parse_scheme (uri);
+    gboolean matches =
+        scheme ? g_ascii_strcasecmp (scheme, protocol) == 0 : FALSE;
+    g_free (scheme);
+    return matches;
+  }
+#else
+  {
+    gchar *colon = strstr (uri, ":");
 
-  if (colon == NULL)
-    return FALSE;
+    if (colon == NULL)
+      return FALSE;
 
-  return (g_ascii_strncasecmp (uri, protocol, (gsize) (colon - uri)) == 0);
+    return (colon - uri) == strlen (protocol)
+        && g_ascii_strncasecmp (uri, protocol, (gsize) (colon - uri)) == 0;
+  }
+#endif
 }
 
 /**
@@ -467,7 +309,7 @@ gst_uri_get_location (const gchar * uri)
   if (!colon)
     return NULL;
 
-  unescaped = unescape_string (colon + 3, "/");
+  unescaped = g_uri_unescape_string (colon + 3, "/");
 
   /* On Windows an URI might look like file:///c:/foo/bar.txt or
    * file:///c|/foo/bar.txt (some Netscape versions) and we want to
@@ -513,7 +355,7 @@ gst_uri_construct (const gchar * protocol, const gchar * location)
   g_return_val_if_fail (location != NULL, NULL);
 
   proto_lowercase = g_ascii_strdown (protocol, -1);
-  escaped = escape_string_internal (location, UNSAFE_PATH);
+  escaped = g_uri_escape_string (location, "/?&=", FALSE);
   retval = g_strdup_printf ("%s://%s", proto_lowercase, escaped);
   g_free (escaped);
   g_free (proto_lowercase);
@@ -1156,22 +998,6 @@ _gst_uri_normalize_path (GList ** path)
   return FALSE;
 }
 
-static gboolean
-_gst_uri_normalize_str_noop (gchar * str)
-{
-  return FALSE;
-}
-
-static gboolean
-_gst_uri_normalize_table_noop (GHashTable * table)
-{
-  return FALSE;
-}
-
-#define _gst_uri_normalize_userinfo _gst_uri_normalize_str_noop
-#define _gst_uri_normalize_query _gst_uri_normalize_table_noop
-#define _gst_uri_normalize_fragment _gst_uri_normalize_str_noop
-
 /* RFC 3986 functions */
 
 static GList *
@@ -1233,6 +1059,7 @@ _remove_dot_segments (GList * path)
   return out;
 }
 
+#if !GLIB_CHECK_VERSION(2,66,0)
 static gchar *
 _gst_uri_escape_userinfo (const gchar * userinfo)
 {
@@ -1255,6 +1082,14 @@ _gst_uri_escape_host_colon (const gchar * host)
 }
 
 static gchar *
+_gst_uri_escape_fragment (const gchar * fragment)
+{
+  return g_uri_escape_string (fragment,
+      G_URI_RESERVED_CHARS_ALLOWED_IN_PATH "?", FALSE);
+}
+#endif
+
+static gchar *
 _gst_uri_escape_path_segment (const gchar * segment)
 {
   return g_uri_escape_string (segment,
@@ -1273,81 +1108,43 @@ _gst_uri_escape_http_query_element (const gchar * element)
   return ret;
 }
 
-static gchar *
-_gst_uri_escape_fragment (const gchar * fragment)
-{
-  return g_uri_escape_string (fragment,
-      G_URI_RESERVED_CHARS_ALLOWED_IN_PATH "?", FALSE);
-}
-
 static GList *
-_gst_uri_string_to_list (const gchar * str, const gchar * sep, gboolean convert,
-    gboolean unescape)
+_gst_uri_path_to_list (const gchar * str, gboolean unescape)
 {
   GList *new_list = NULL;
 
   if (str) {
-    guint pct_sep_len = 0;
-    gchar *pct_sep = NULL;
     gchar **split_str;
 
-    if (convert && !unescape) {
-      pct_sep = g_strdup_printf ("%%%2.2X", (guint) (*sep));
-      pct_sep_len = 3;
-    }
-
-    split_str = g_strsplit (str, sep, -1);
+    split_str = g_strsplit (str, "/", -1);
     if (split_str) {
       gchar **next_elem;
       for (next_elem = split_str; *next_elem; next_elem += 1) {
-        gchar *elem = *next_elem;
-        if (*elem == '\0') {
-          new_list = g_list_append (new_list, NULL);
-        } else {
-          if (convert && !unescape) {
-            gchar *next_sep;
-            for (next_sep = strcasestr (elem, pct_sep); next_sep;
-                next_sep = strcasestr (next_sep + 1, pct_sep)) {
-              *next_sep = *sep;
-              memmove (next_sep + 1, next_sep + pct_sep_len,
-                  strlen (next_sep + pct_sep_len) + 1);
-            }
-          }
-          if (unescape) {
-            *next_elem = g_uri_unescape_string (elem, NULL);
-            g_free (elem);
-            elem = *next_elem;
-          }
-          new_list = g_list_append (new_list, g_strdup (elem));
-        }
+        gchar *elem = **next_elem ? *next_elem : NULL;
+
+        elem = unescape ? g_uri_unescape_string (elem, NULL) : g_strdup (elem);
+
+        new_list = g_list_append (new_list, elem);
       }
     }
     g_strfreev (split_str);
-    if (convert && !unescape)
-      g_free (pct_sep);
   }
 
   return new_list;
 }
 
 static GHashTable *
-_gst_uri_string_to_table (const gchar * str, const gchar * part_sep,
-    const gchar * kv_sep, gboolean convert, gboolean unescape)
+_gst_uri_query_to_table (const gchar * str, gboolean unescape)
 {
   GHashTable *new_table = NULL;
 
   if (str) {
-    gchar *pct_part_sep = NULL, *pct_kv_sep = NULL;
+    const gchar *pct_part_sep = "%26", *pct_kv_sep = "%3D";     /*  & and = */
     gchar **split_parts;
 
     new_table = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, g_free);
 
-    if (convert && !unescape) {
-      pct_part_sep = g_strdup_printf ("%%%2.2X", (guint) (*part_sep));
-      pct_kv_sep = g_strdup_printf ("%%%2.2X", (guint) (*kv_sep));
-    }
-
-    split_parts = g_strsplit (str, part_sep, -1);
+    split_parts = g_strsplit (str, "&", -1);
     if (split_parts) {
       gchar **next_part;
       for (next_part = split_parts; *next_part; next_part += 1) {
@@ -1356,16 +1153,16 @@ _gst_uri_string_to_table (const gchar * str, const gchar * part_sep,
         gchar *key, *value;
         /* if we are converting percent encoded versions of separators then
          *  substitute the part separator now. */
-        if (convert && !unescape) {
+        if (!unescape) {
           gchar *next_sep;
           for (next_sep = strcasestr (part, pct_part_sep); next_sep;
               next_sep = strcasestr (next_sep + 1, pct_part_sep)) {
-            *next_sep = *part_sep;
+            *next_sep = '&';
             memmove (next_sep + 1, next_sep + 3, strlen (next_sep + 3) + 1);
           }
         }
         /* find the key/value separator within the part */
-        kv_sep_pos = g_strstr_len (part, -1, kv_sep);
+        kv_sep_pos = g_strstr_len (part, -1, "=");
         if (kv_sep_pos == NULL) {
           if (unescape) {
             key = g_uri_unescape_string (part, NULL);
@@ -1384,17 +1181,17 @@ _gst_uri_string_to_table (const gchar * str, const gchar * part_sep,
         }
         /* if we are converting percent encoded versions of separators then
          *  substitute the key/value separator in both key and value now. */
-        if (convert && !unescape) {
+        if (!unescape) {
           gchar *next_sep;
           for (next_sep = strcasestr (key, pct_kv_sep); next_sep;
               next_sep = strcasestr (next_sep + 1, pct_kv_sep)) {
-            *next_sep = *kv_sep;
+            *next_sep = '=';
             memmove (next_sep + 1, next_sep + 3, strlen (next_sep + 3) + 1);
           }
           if (value) {
             for (next_sep = strcasestr (value, pct_kv_sep); next_sep;
                 next_sep = strcasestr (next_sep + 1, pct_kv_sep)) {
-              *next_sep = *kv_sep;
+              *next_sep = '=';
               memmove (next_sep + 1, next_sep + 3, strlen (next_sep + 3) + 1);
             }
           }
@@ -1405,10 +1202,6 @@ _gst_uri_string_to_table (const gchar * str, const gchar * part_sep,
     }
     /* tidy up */
     g_strfreev (split_parts);
-    if (convert && !unescape) {
-      g_free (pct_part_sep);
-      g_free (pct_kv_sep);
-    }
   }
 
   return new_table;
@@ -1452,8 +1245,8 @@ gst_uri_new (const gchar * scheme, const gchar * userinfo, const gchar * host,
     new_uri->userinfo = g_strdup (userinfo);
     new_uri->host = g_strdup (host);
     new_uri->port = port;
-    new_uri->path = _gst_uri_string_to_list (path, "/", FALSE, FALSE);
-    new_uri->query = _gst_uri_string_to_table (query, "&", "=", TRUE, FALSE);
+    new_uri->path = _gst_uri_path_to_list (path, FALSE);
+    new_uri->query = _gst_uri_query_to_table (query, FALSE);
     new_uri->fragment = g_strdup (fragment);
   }
 
@@ -1501,6 +1294,42 @@ gst_uri_new_with_base (GstUri * base, const gchar * scheme,
 static GstUri *
 _gst_uri_from_string_internal (const gchar * uri, gboolean unescape)
 {
+#if GLIB_CHECK_VERSION(2,66,0)
+  GstUri *gsturi;
+
+  gsturi = _gst_uri_new ();
+  if (gsturi && uri) {
+    GError *err = NULL;
+    char *path = NULL, *query = NULL;
+    gint port;
+
+    /* for compatibility with gsturi, ignore initial spaces */
+    while (*uri == '\v' || g_ascii_isspace (*uri))
+      uri++;
+
+    if (!g_uri_split (uri,
+            unescape ? G_URI_FLAGS_ENCODED_PATH | G_URI_FLAGS_ENCODED_QUERY :
+            G_URI_FLAGS_ENCODED | G_URI_FLAGS_PARSE_RELAXED, &gsturi->scheme,
+            &gsturi->userinfo, &gsturi->host, &port, &path, &query,
+            &gsturi->fragment, &err)) {
+      GST_DEBUG ("Unable to parse URI: %s", err->message);
+      g_error_free (err);
+      gst_uri_unref (gsturi);
+      return NULL;
+    }
+    /* for compatibility with gsturi, don't capture empty host */
+    if (!g_strcmp0 (gsturi->host, "")) {
+      g_clear_pointer (&gsturi->host, g_free);
+    }
+    gsturi->port = port > 0 ? port : 0;
+    gsturi->path = _gst_uri_path_to_list (path, TRUE);
+    gsturi->query = _gst_uri_query_to_table (query, TRUE);
+    g_free (path);
+    g_free (query);
+  }
+
+  return gsturi;
+#else
   const gchar *orig_uri = uri;
   GstUri *uri_obj;
 
@@ -1586,12 +1415,12 @@ _gst_uri_from_string_internal (const gchar * uri, gboolean unescape)
       size_t len;
       len = strcspn (uri, "?#");
       if (uri[len] == '\0') {
-        uri_obj->path = _gst_uri_string_to_list (uri, "/", FALSE, TRUE);
+        uri_obj->path = _gst_uri_path_to_list (uri, TRUE);
         uri = NULL;
       } else {
         if (len > 0) {
           gchar *path_str = g_strndup (uri, len);
-          uri_obj->path = _gst_uri_string_to_list (path_str, "/", FALSE, TRUE);
+          uri_obj->path = _gst_uri_path_to_list (path_str, TRUE);
           g_free (path_str);
         }
         uri += len;
@@ -1602,13 +1431,12 @@ _gst_uri_from_string_internal (const gchar * uri, gboolean unescape)
       gchar *eoq;
       eoq = strchr (++uri, '#');
       if (eoq == NULL) {
-        uri_obj->query = _gst_uri_string_to_table (uri, "&", "=", TRUE, TRUE);
+        uri_obj->query = _gst_uri_query_to_table (uri, TRUE);
         uri = NULL;
       } else {
         if (eoq != uri) {
           gchar *query_str = g_strndup (uri, eoq - uri);
-          uri_obj->query = _gst_uri_string_to_table (query_str, "&", "=", TRUE,
-              TRUE);
+          uri_obj->query = _gst_uri_query_to_table (query_str, TRUE);
           g_free (query_str);
         }
         uri = eoq;
@@ -1623,6 +1451,7 @@ _gst_uri_from_string_internal (const gchar * uri, gboolean unescape)
   }
 
   return uri_obj;
+#endif
 }
 
 /**
@@ -1987,6 +1816,21 @@ gst_uri_make_writable (GstUri * uri)
 gchar *
 gst_uri_to_string (const GstUri * uri)
 {
+#if GLIB_CHECK_VERSION(2,66,0)
+  char *path = NULL, *query = NULL, *str;
+
+  g_return_val_if_fail (GST_IS_URI (uri), NULL);
+
+  path = gst_uri_get_path_string (uri);
+  query = gst_uri_get_query_string (uri);
+  str = g_uri_join (G_URI_FLAGS_ENCODED_PATH | G_URI_FLAGS_ENCODED_QUERY,
+      uri->scheme, uri->userinfo, uri->host, uri->port ? uri->port : -1,
+      path, query, uri->fragment);
+
+  g_free (path);
+  g_free (query);
+  return str;
+#else
   GString *uri_str;
   gchar *escaped;
 
@@ -2042,6 +1886,7 @@ gst_uri_to_string (const GstUri * uri)
   }
 
   return g_string_free (uri_str, FALSE);
+#endif
 }
 
 /**
@@ -2112,11 +1957,8 @@ gst_uri_normalize (GstUri * uri)
   g_return_val_if_fail (GST_IS_URI (uri) && gst_uri_is_writable (uri), FALSE);
 
   return _gst_uri_normalize_scheme (uri->scheme) |
-      _gst_uri_normalize_userinfo (uri->userinfo) |
       _gst_uri_normalize_hostname (uri->host) |
-      _gst_uri_normalize_path (&uri->path) |
-      _gst_uri_normalize_query (uri->query) |
-      _gst_uri_normalize_fragment (uri->fragment);
+      _gst_uri_normalize_path (&uri->path);
 }
 
 /**
@@ -2342,7 +2184,7 @@ gst_uri_set_path (GstUri * uri, const gchar * path)
   g_return_val_if_fail (GST_IS_URI (uri) && gst_uri_is_writable (uri), FALSE);
 
   g_list_free_full (uri->path, g_free);
-  uri->path = _gst_uri_string_to_list (path, "/", FALSE, FALSE);
+  uri->path = _gst_uri_path_to_list (path, FALSE);
 
   return TRUE;
 }
@@ -2408,7 +2250,7 @@ gst_uri_set_path_string (GstUri * uri, const gchar * path)
   g_return_val_if_fail (GST_IS_URI (uri) && gst_uri_is_writable (uri), FALSE);
 
   g_list_free_full (uri->path, g_free);
-  uri->path = _gst_uri_string_to_list (path, "/", FALSE, TRUE);
+  uri->path = _gst_uri_path_to_list (path, TRUE);
   return TRUE;
 }
 
@@ -2497,7 +2339,7 @@ gst_uri_append_path (GstUri * uri, const gchar * relative_path)
       uri->path = g_list_delete_link (uri->path, last_elem);
     }
   }
-  rel_path_list = _gst_uri_string_to_list (relative_path, "/", FALSE, FALSE);
+  rel_path_list = _gst_uri_path_to_list (relative_path, FALSE);
   /* if path was absolute, make it relative by removing initial NULL element */
   if (rel_path_list && rel_path_list->data == NULL) {
     rel_path_list = g_list_delete_link (rel_path_list, rel_path_list);
@@ -2600,7 +2442,7 @@ gst_uri_set_query_string (GstUri * uri, const gchar * query)
 
   if (uri->query)
     g_hash_table_unref (uri->query);
-  uri->query = _gst_uri_string_to_table (query, "&", "=", TRUE, TRUE);
+  uri->query = _gst_uri_query_to_table (query, TRUE);
 
   return TRUE;
 }
@@ -2873,7 +2715,7 @@ gst_uri_get_media_fragment_table (const GstUri * uri)
 
   if (!uri->fragment)
     return NULL;
-  return _gst_uri_string_to_table (uri->fragment, "&", "=", TRUE, TRUE);
+  return _gst_uri_query_to_table (uri->fragment, TRUE);
 }
 
 /**
