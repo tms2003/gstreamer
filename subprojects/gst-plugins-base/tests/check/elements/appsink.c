@@ -550,6 +550,66 @@ GST_START_TEST (test_pull_preroll)
 
 GST_END_TEST;
 
+GST_START_TEST (test_pull_preroll_with_gap)
+{
+  GstElement *sink = NULL;
+  GstSample *pulled_preroll = NULL;
+  GstEvent *gap;
+
+  sink = setup_appsink ();
+
+  ASSERT_SET_STATE (sink, GST_STATE_PLAYING, GST_STATE_CHANGE_ASYNC);
+
+  gap = gst_event_new_gap (0, GST_SECOND);
+  fail_unless (gst_pad_push_event (mysrcpad, gap));
+
+  pulled_preroll = gst_app_sink_pull_preroll (GST_APP_SINK (sink));
+  fail_if (pulled_preroll);
+
+  fail_if (gst_app_sink_try_pull_preroll (GST_APP_SINK (sink), 0));
+
+  ASSERT_SET_STATE (sink, GST_STATE_NULL, GST_STATE_CHANGE_SUCCESS);
+  cleanup_appsink (sink);
+}
+
+GST_END_TEST;
+
+GST_START_TEST (test_pull_preroll_with_buffer_list_support)
+{
+  GstElement *sink = NULL;
+  GstSample *pulled_preroll = NULL;
+  GstBufferList *list, *list_in_sample;
+  GstBuffer *buffer;
+
+  sink = setup_appsink ();
+
+  g_object_set (sink, "buffer-list", TRUE, NULL);
+
+  ASSERT_SET_STATE (sink, GST_STATE_PLAYING, GST_STATE_CHANGE_ASYNC);
+
+  list = create_buffer_list ();
+  fail_unless (gst_pad_push_list (mysrcpad, list) == GST_FLOW_OK);
+
+  pulled_preroll = gst_app_sink_pull_preroll (GST_APP_SINK (sink));
+  fail_unless (pulled_preroll);
+
+  buffer = gst_sample_get_buffer (pulled_preroll);
+  fail_if (buffer);
+
+  list_in_sample = gst_sample_get_buffer_list (pulled_preroll);
+  fail_unless (GST_IS_BUFFER_LIST (list_in_sample));
+
+  /* unmodified buffer list is expected */
+  fail_unless (list == list_in_sample);
+
+  gst_sample_unref (pulled_preroll);
+
+  ASSERT_SET_STATE (sink, GST_STATE_NULL, GST_STATE_CHANGE_SUCCESS);
+  cleanup_appsink (sink);
+}
+
+GST_END_TEST;
+
 GST_START_TEST (test_do_not_care_preroll)
 {
   GstElement *sink = NULL;
@@ -1261,6 +1321,8 @@ appsink_suite (void)
   tcase_add_test (tc_chain, test_pull_with_timeout);
   tcase_add_test (tc_chain, test_query_drain);
   tcase_add_test (tc_chain, test_pull_preroll);
+  tcase_add_test (tc_chain, test_pull_preroll_with_gap);
+  tcase_add_test (tc_chain, test_pull_preroll_with_buffer_list_support);
   tcase_add_test (tc_chain, test_do_not_care_preroll);
   tcase_add_test (tc_chain, test_pull_sample_refcounts);
   tcase_add_test (tc_chain, test_event_callback);

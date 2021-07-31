@@ -152,10 +152,18 @@ If an EOS event was received before any buffers, this function returns
 %NULL. Use gst_app_sink_is_eos () to check for the EOS condition.
 
 This function blocks until a preroll sample or EOS is received or the appsink
-element is set to the READY/NULL state.</doc>
+element is set to the READY/NULL state.
+
+As of 1.24, gst_app_sink_pull_preroll() will be unblocked if the appsink
+is prerolled via GAP event, then this function will return %NULL.
+And if #GstBufferList support was enabled via
+gst_app_sink_set_buffer_list_support(), returned #GstSample will contain
+#GstBufferList instead of #GstBuffer when the preroll object is
+#GstBufferList</doc>
         <source-position filename="../subprojects/gst-plugins-base/gst-libs/gst/app/gstappsink.h"/>
         <return-value transfer-ownership="full" nullable="1">
-          <doc xml:space="preserve" filename="../subprojects/gst-plugins-base/gst-libs/gst/app/gstappsink.c">a #GstSample or NULL when the appsink is stopped or EOS.
+          <doc xml:space="preserve" filename="../subprojects/gst-plugins-base/gst-libs/gst/app/gstappsink.c">a #GstSample or NULL when the appsink is
+         stopped, EOS, or preroll object is GAP event.
          Call gst_sample_unref() after usage.</doc>
           <type name="Gst.Sample" c:type="GstSample*"/>
         </return-value>
@@ -247,10 +255,18 @@ this function returns %NULL. Use gst_app_sink_is_eos () to check for the EOS
 condition.
 
 This function blocks until a preroll sample or EOS is received, the appsink
-element is set to the READY/NULL state, or the timeout expires.</doc>
+element is set to the READY/NULL state, or the timeout expires.
+
+As of 1.24, gst_app_sink_try_pull_preroll() will be unblocked if the appsink
+is prerolled via GAP event, then this function will return %NULL.
+And if #GstBufferList support was enabled via
+gst_app_sink_set_buffer_list_support(), returned #GstSample will contain
+#GstBufferList instead of #GstBuffer when the preroll object is
+#GstBufferList</doc>
         <source-position filename="../subprojects/gst-plugins-base/gst-libs/gst/app/gstappsink.h"/>
         <return-value transfer-ownership="full" nullable="1">
-          <doc xml:space="preserve" filename="../subprojects/gst-plugins-base/gst-libs/gst/app/gstappsink.c">a #GstSample or NULL when the appsink is stopped or EOS or the timeout expires.
+          <doc xml:space="preserve" filename="../subprojects/gst-plugins-base/gst-libs/gst/app/gstappsink.c">a #GstSample or NULL when the appsink is
+         stopped, EOS, or preroll object is GAP event or the timeout expires.
          Call gst_sample_unref() after usage.</doc>
           <type name="Gst.Sample" c:type="GstSample*"/>
         </return-value>
@@ -481,10 +497,18 @@ If an EOS event was received before any buffers, this function returns
 %NULL. Use gst_app_sink_is_eos () to check for the EOS condition.
 
 This function blocks until a preroll sample or EOS is received or the appsink
-element is set to the READY/NULL state.</doc>
+element is set to the READY/NULL state.
+
+As of 1.24, gst_app_sink_pull_preroll() will be unblocked if the appsink
+is prerolled via GAP event, then this function will return %NULL.
+And if #GstBufferList support was enabled via
+gst_app_sink_set_buffer_list_support(), returned #GstSample will contain
+#GstBufferList instead of #GstBuffer when the preroll object is
+#GstBufferList</doc>
         <source-position filename="../subprojects/gst-plugins-base/gst-libs/gst/app/gstappsink.h"/>
         <return-value transfer-ownership="full" nullable="1">
-          <doc xml:space="preserve" filename="../subprojects/gst-plugins-base/gst-libs/gst/app/gstappsink.c">a #GstSample or NULL when the appsink is stopped or EOS.
+          <doc xml:space="preserve" filename="../subprojects/gst-plugins-base/gst-libs/gst/app/gstappsink.c">a #GstSample or NULL when the appsink is
+         stopped, EOS, or preroll object is GAP event.
          Call gst_sample_unref() after usage.</doc>
           <type name="Gst.Sample" c:type="GstSample*"/>
         </return-value>
@@ -763,10 +787,18 @@ this function returns %NULL. Use gst_app_sink_is_eos () to check for the EOS
 condition.
 
 This function blocks until a preroll sample or EOS is received, the appsink
-element is set to the READY/NULL state, or the timeout expires.</doc>
+element is set to the READY/NULL state, or the timeout expires.
+
+As of 1.24, gst_app_sink_try_pull_preroll() will be unblocked if the appsink
+is prerolled via GAP event, then this function will return %NULL.
+And if #GstBufferList support was enabled via
+gst_app_sink_set_buffer_list_support(), returned #GstSample will contain
+#GstBufferList instead of #GstBuffer when the preroll object is
+#GstBufferList</doc>
         <source-position filename="../subprojects/gst-plugins-base/gst-libs/gst/app/gstappsink.h"/>
         <return-value transfer-ownership="full" nullable="1">
-          <doc xml:space="preserve" filename="../subprojects/gst-plugins-base/gst-libs/gst/app/gstappsink.c">a #GstSample or NULL when the appsink is stopped or EOS or the timeout expires.
+          <doc xml:space="preserve" filename="../subprojects/gst-plugins-base/gst-libs/gst/app/gstappsink.c">a #GstSample or NULL when the appsink is
+         stopped, EOS, or preroll object is GAP event or the timeout expires.
          Call gst_sample_unref() after usage.</doc>
           <type name="Gst.Sample" c:type="GstSample*"/>
         </return-value>
@@ -1211,7 +1243,8 @@ gst_app_sink_set_callbacks().</doc>
         <callback name="pull_preroll">
           <source-position filename="../subprojects/gst-plugins-base/gst-libs/gst/app/gstappsink.h"/>
           <return-value transfer-ownership="full" nullable="1">
-            <doc xml:space="preserve" filename="../subprojects/gst-plugins-base/gst-libs/gst/app/gstappsink.c">a #GstSample or NULL when the appsink is stopped or EOS.
+            <doc xml:space="preserve" filename="../subprojects/gst-plugins-base/gst-libs/gst/app/gstappsink.c">a #GstSample or NULL when the appsink is
+         stopped, EOS, or preroll object is GAP event.
          Call gst_sample_unref() after usage.</doc>
             <type name="Gst.Sample" c:type="GstSample*"/>
           </return-value>
@@ -1243,7 +1276,8 @@ gst_app_sink_set_callbacks().</doc>
         <callback name="try_pull_preroll">
           <source-position filename="../subprojects/gst-plugins-base/gst-libs/gst/app/gstappsink.h"/>
           <return-value transfer-ownership="full" nullable="1">
-            <doc xml:space="preserve" filename="../subprojects/gst-plugins-base/gst-libs/gst/app/gstappsink.c">a #GstSample or NULL when the appsink is stopped or EOS or the timeout expires.
+            <doc xml:space="preserve" filename="../subprojects/gst-plugins-base/gst-libs/gst/app/gstappsink.c">a #GstSample or NULL when the appsink is
+         stopped, EOS, or preroll object is GAP event or the timeout expires.
          Call gst_sample_unref() after usage.</doc>
             <type name="Gst.Sample" c:type="GstSample*"/>
           </return-value>
