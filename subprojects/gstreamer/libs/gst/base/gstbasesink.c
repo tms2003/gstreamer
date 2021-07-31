@@ -2487,7 +2487,7 @@ gst_base_sink_do_preroll (GstBaseSink * sink, GstMiniObject * obj)
 
     /* if it's a buffer, we need to call the preroll method */
     if (sink->priv->call_preroll) {
-      GstBaseSinkClass *bclass;
+      GstBaseSinkClass *bclass = GST_BASE_SINK_GET_CLASS (sink);
       GstBuffer *buf;
 
       if (GST_IS_BUFFER_LIST (obj)) {
@@ -2508,8 +2508,6 @@ gst_base_sink_do_preroll (GstBaseSink * sink, GstMiniObject * obj)
         GST_DEBUG_OBJECT (sink, "preroll buffer %" GST_TIME_FORMAT,
             GST_TIME_ARGS (GST_BUFFER_TIMESTAMP (buf)));
 
-        bclass = GST_BASE_SINK_GET_CLASS (sink);
-
         if (bclass->prepare)
           if ((ret = bclass->prepare (sink, buf)) != GST_FLOW_OK)
             goto prepare_canceled;
@@ -2517,6 +2515,15 @@ gst_base_sink_do_preroll (GstBaseSink * sink, GstMiniObject * obj)
         if (bclass->preroll)
           if ((ret = bclass->preroll (sink, buf)) != GST_FLOW_OK)
             goto preroll_canceled;
+
+        sink->priv->call_preroll = FALSE;
+      }
+
+      if (bclass->preroll_object) {
+        if ((ret = bclass->preroll_object (sink, obj)) != GST_FLOW_OK) {
+          sink->priv->call_preroll = TRUE;
+          goto preroll_canceled;
+        }
 
         sink->priv->call_preroll = FALSE;
       }
