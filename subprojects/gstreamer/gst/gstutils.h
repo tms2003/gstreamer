@@ -1236,6 +1236,22 @@ void          gst_type_mark_as_plugin_api       (GType type, GstPluginAPIFlags f
 GST_API
 gboolean      gst_type_is_plugin_api            (GType type, GstPluginAPIFlags *flags);
 
+/**
+ * GstCallAsyncFunc:
+ * @user_data: Data passed in the function where that callback has been passed
+ *
+ * Callback prototype used in #gst_call_async
+ *
+ * Since: 1.24
+ */
+typedef void  (*GstCallAsyncFunc)               (gpointer user_data);
+
+GST_API
+void          gst_call_async                    (GstCallAsyncFunc func,
+                                                 gpointer user_data,
+                                                 GDestroyNotify notify);
+
+
 G_END_DECLS
 
 #endif /* __GST_UTILS_H__ */

@@ -324,6 +324,24 @@ GstClockTime    gst_object_get_control_rate       (GstObject * object);
 GST_API
 void            gst_object_set_control_rate       (GstObject * object, GstClockTime control_rate);
 
+/**
+ * GstObjectCallAsyncFunc:
+ * @object: A #GstObject this function has been called against
+ * @user_data: Data passed in the function where that callback has been passed
+ *
+ * Callback prototype used in #gst_object_call_async
+ *
+ * Since: 1.24
+ */
+typedef void  (*GstObjectCallAsyncFunc)           (GstObject * object,
+                                                   gpointer user_data);
+
+GST_API
+void            gst_object_call_async             (GstObject * object,
+                                                   GstObjectCallAsyncFunc func,
+                                                   gpointer user_data,
+                                                   GDestroyNotify notify);
+
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(GstObject, gst_object_unref)
 
 G_END_DECLS
