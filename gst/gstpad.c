@@ -1495,6 +1495,9 @@ gst_pad_add_probe (GstPad * pad, GstPadProbeType mask,
       /* the pad is idle now, we can signal the idle callback now */
       GST_CAT_LOG_OBJECT (GST_CAT_SCHEDULING, pad,
           "pad is idle, trigger idle callback");
+
+      g_hook_ref (&pad->probes, hook);
+
       GST_OBJECT_UNLOCK (pad);
 
       ret = callback (pad, &info, user_data);
@@ -1523,6 +1526,9 @@ gst_pad_add_probe (GstPad * pad, GstPadProbeType mask,
           GST_DEBUG_OBJECT (pad, "probe returned %d", ret);
           break;
       }
+
+      g_hook_unref (&pad->probes, hook);
+
       pad->priv->idle_running--;
       if (pad->priv->idle_running == 0) {
         GST_PAD_BLOCK_BROADCAST (pad);
@@ -3653,6 +3659,8 @@ probe_hook_marshal (GHook * hook, ProbeMarshall * data)
   if ((flags & GST_PAD_PROBE_TYPE_IDLE))
     pad->priv->idle_running++;
 
+  g_hook_ref (&pad->probes, hook);
+
   GST_OBJECT_UNLOCK (pad);
 
   ret = callback (pad, info, hook->data);
@@ -3710,6 +3718,8 @@ probe_hook_marshal (GHook * hook, ProbeMarshall * data)
       GST_DEBUG_OBJECT (pad, "probe returned %d", ret);
       break;
   }
+
+  g_hook_unref (&pad->probes, hook);
   return;
 
 no_match:
