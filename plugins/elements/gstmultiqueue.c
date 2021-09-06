@@ -1583,10 +1583,10 @@ calculate_interleave (GstMultiQueue * mq, GstSingleQueue * sq)
      * a maximum interleave to allow it to receive more data */
     if (!oq->active) {
       GST_LOG_OBJECT (mq,
-          "queue %d is not active yet, forcing interleave to 5s", oq->id);
+          "queue %d is not active yet, forcing interleave to 0s to disable it", oq->id);
       mq->interleave = 5 * GST_SECOND;
       /* Update max-size time */
-      mq->max_size.time = mq->interleave;
+      mq->max_size.time = 0;
       SET_CHILD_PROPERTY (mq, time);
       goto beach;
     }
