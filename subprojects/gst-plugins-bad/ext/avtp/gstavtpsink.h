@@ -48,6 +48,7 @@ struct _GstAvtpSink
   gchar * ifname;
   gchar * address;
   gint priority;
+  GstClockTime buffer_time;
 
   int sk_fd;
   struct sockaddr_ll sk_addr;

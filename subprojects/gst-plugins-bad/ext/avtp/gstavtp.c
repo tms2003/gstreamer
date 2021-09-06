@@ -128,6 +128,10 @@
  *     $ tc qdisc add dev $IFNAME parent $CBS_HANDLE_ID:1 etf \
  *         clockid CLOCK_TAI delta 500000 offload
  *
+ * If no ETF qdisc can be configured for your hardware then make of use the
+ * "buffer-time" property for avtpsink elements or non-live sources like filesrc
+ * will blast through your memory at full speed.
+ *
  * No Traffic Control configuration is required at the host running as AVTP
  * Listener.
  *
