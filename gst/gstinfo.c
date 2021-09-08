@@ -1386,11 +1386,11 @@ gst_debug_log_default (GstDebugCategory * category, GstDebugLevel level,
     gmtime_r (&tv.tv_sec, &_tm);
     strftime (iso8601buf, ISO8601_BUF_SIZE, "%FT%T", &_tm);
     gst_debug_escape_json (message_str, message_encoded, MAX_JSON_MSG_LEN);
-#define PRINT_FMT "\"proc!id\":\"%d\",\"proc!tid\":%ju,\"pri\":\"%s\",\"subsys\":\"%s\",\"file!name\":\"%s\",\"file!line\":%d,\"native!function\":\"%s\",\"native!object\":\"%s\",\"msg\":\"%s\",\"pname\":\"%s\",\"appname\":\"%s\",\"hostname\":\"%s\",\"gstreamer!level\":%d,\"syslog!level\":%d}\n"
+#define PRINT_FMT "\"proc\":{\"id\":\"%d\",\"tid\":%ju},\"pri\":\"%s\",\"subsys\":\"%s\",\"file\":{\"name\":\"%s\",\"line\":%d},\"native\":{\"function\":\"%s\",\"object\":\"%s\"},\"msg\":\"%s\",\"pname\":\"%s\",\"appname\":\"%s\",\"hostname\":\"%s\",\"gstreamer\":{\"level\":%d},\"syslog\":{\"level\":%d}}\n"
     FPRINTF_DEBUG (log_file,
-        "{\"time\":\"%s.%09luZ\",\"native!time!elapsed\":%lu," PRINT_FMT,
-        iso8601buf, tv_ns, elapsed, pid, (uintptr_t) g_thread_self (),
-        gst_debug_level_get_name_cee (level),
+        "{\"time\":\"%s.%09luZ\",\"native\":{\"time\":{\"elapsed\":%lu}},"
+        PRINT_FMT, iso8601buf, tv_ns, elapsed, pid,
+        (uintptr_t) g_thread_self (), gst_debug_level_get_name_cee (level),
         gst_debug_category_get_name (category), file, line, function, obj,
         message_encoded, log_pname, log_appname, log_hostname,
         level, gst_debug_level_get_syslog (level));
@@ -3460,14 +3460,15 @@ gst_ring_buffer_logger_log (GstDebugCategory * category,
     gmtime_r (&tv.tv_sec, &_tm);
     strftime (iso8601buf, ISO8601_BUF_SIZE, "%FT%T", &_tm);
     gst_debug_escape_json (message_str, message_encoded, MAX_JSON_MSG_LEN);
-#define PRINT_FMT "\"proc!id\":\"%d\",\"proc!tid\":%ju,\"pri\":\"%s\",\"subsys\":\"%s\",\"file!name\":\"%s\",\"file!line\":%d,\"native!function\":\"%s\",\"native!object\":\"%s\",\"msg\":\"%s\",\"pname\":\"%s\",\"appname\":\"%s\",\"hostname\":\"%s\",\"gstreamer!level\":%d,\"syslog!level\":%d}\n"
+#define PRINT_FMT "\"proc\":{\"id\":\"%d\",\"tid\":%ju},\"pri\":\"%s\",\"subsys\":\"%s\",\"file\":{\"name\":\"%s\",\"line\":%d},\"native\":{\"function\":\"%s\",\"object\":\"%s\"},\"msg\":\"%s\",\"pname\":\"%s\",\"appname\":\"%s\",\"hostname\":\"%s\",\"gstreamer\":{\"level\":%d},\"syslog\":{\"level\":%d}}\n"
     output =
-        g_strdup_printf ("{\"time\":\"%s.%09luZ\",\"native!time!elapsed\":%lu,"
+        g_strdup_printf
+        ("{\"time\":\"%s.%09luZ\",\"native\":{\"time\":{\"elapsed\":%lu}},"
         PRINT_FMT, iso8601buf, tv_ns, elapsed, pid, (uintptr_t) thread,
         gst_debug_level_get_name_cee (level),
         gst_debug_category_get_name (category), file, line, function, obj,
-        message_encoded, log_pname, log_appname, log_hostname,
-        level, gst_debug_level_get_syslog (level));
+        message_encoded, log_pname, log_appname, log_hostname, level,
+        gst_debug_level_get_syslog (level));
 #undef PRINT_FMT
   } else {
     /* no color, all platforms */
