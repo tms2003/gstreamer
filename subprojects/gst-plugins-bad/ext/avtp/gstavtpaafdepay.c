@@ -222,6 +222,7 @@ gst_avtp_aaf_depay_chain (GstPad * pad, GstObject * parent, GstBuffer * buffer)
       streamid_valid, data_len;
   GstAvtpBaseDepayload *avtpbasedepayload = GST_AVTP_BASE_DEPAYLOAD (parent);
   GstAvtpAafDepay *avtpaafdepay = GST_AVTP_AAF_DEPAY (avtpbasedepayload);
+  gboolean new_stream = FALSE;
 
   if (!gst_buffer_map (buffer, &info, GST_MAP_READ)) {
     GST_ELEMENT_ERROR (avtpaafdepay, RESOURCE, READ, ("Failed to map memory"),
@@ -282,6 +283,27 @@ gst_avtp_aaf_depay_chain (GstPad * pad, GstObject * parent, GstBuffer * buffer)
   }
 
   if (G_UNLIKELY (!gst_pad_has_current_caps (avtpbasedepayload->srcpad))) {
+    avtpbasedepayload->seqnum = seqnum;
+    new_stream = TRUE;
+  }
+
+  if (seqnum != avtpbasedepayload->seqnum) {
+    GST_INFO_OBJECT (avtpaafdepay, "Sequence number mismatch: expected %u"
+        " received %" G_GUINT64_FORMAT, avtpbasedepayload->seqnum, seqnum);
+    avtpbasedepayload->seqnum = seqnum;
+
+    /* If the incoming sequence number is 0 and AVTPDUs have already been
+     * received then assume this is a brand new stream starting after spending
+     * some time stopped, and the CAPS and SEGMENT need to be re-negotiated */
+    if (G_UNLIKELY (avtpbasedepayload->seqnum == 0)) {
+      GST_INFO_OBJECT (avtpaafdepay,
+          "New stream has started, re-negotiating CAPS and SEGMENT");
+      new_stream = TRUE;
+    }
+  }
+  avtpbasedepayload->seqnum++;
+
+  if (G_UNLIKELY (new_stream)) {
     if (!gst_avtp_aaf_depay_push_caps_event (avtpaafdepay, rate, depth, format,
             channels)) {
       gst_buffer_unref (buffer);
@@ -291,20 +313,11 @@ gst_avtp_aaf_depay_chain (GstPad * pad, GstObject * parent, GstBuffer * buffer)
       gst_buffer_unref (buffer);
       return GST_FLOW_ERROR;
     }
-
-    avtpbasedepayload->seqnum = seqnum;
   }
 
   if (G_UNLIKELY (!gst_avtp_aaf_depay_are_audio_features_valid (avtpaafdepay,
               rate, depth, format, channels)))
     goto discard;
-
-  if (seqnum != avtpbasedepayload->seqnum) {
-    GST_INFO_OBJECT (avtpaafdepay, "Sequence number mismatch: expected %u"
-        " received %" G_GUINT64_FORMAT, avtpbasedepayload->seqnum, seqnum);
-    avtpbasedepayload->seqnum = seqnum;
-  }
-  avtpbasedepayload->seqnum++;
 
   ptime = gst_avtp_base_depayload_tstamp_to_ptime (avtpbasedepayload, tstamp,
       avtpbasedepayload->prev_ptime);
