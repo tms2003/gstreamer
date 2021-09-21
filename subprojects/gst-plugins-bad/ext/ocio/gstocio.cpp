@@ -40,6 +40,9 @@
 #include <gst/video/video.h>
 #include <gst/video/gstvideofilter.h>
 #include "gstocio.h"
+#include <OpenColorIO/OpenColorIO.h>
+
+namespace OCIO = OCIO_NAMESPACE;
 
 GST_DEBUG_CATEGORY_STATIC (gst_ocio_debug_category);
 #define GST_CAT_DEFAULT gst_ocio_debug_category
@@ -62,8 +65,6 @@ static GstFlowReturn gst_ocio_transform_frame (GstVideoFilter * filter,
     GstVideoFrame * inframe, GstVideoFrame * outframe);
 static GstFlowReturn gst_ocio_transform_frame_ip (GstVideoFilter * filter,
     GstVideoFrame * frame);
-static GstFlowReturn gst_ocio_chain (GstPad * pad, GstObject * parent,
-    GstBuffer * buf);
 
 enum
 {
@@ -76,14 +77,22 @@ static GstStaticPadTemplate gst_ocio_src_template =
 GST_STATIC_PAD_TEMPLATE ("src",
   GST_PAD_SRC,
   GST_PAD_ALWAYS,
-  GST_STATIC_CAPS ("video/x-raw")
+  GST_STATIC_CAPS (
+    "video/x-raw, "
+      "formats = "
+        "RGB"
+  )
 );
 
 static GstStaticPadTemplate gst_ocio_sink_template =
 GST_STATIC_PAD_TEMPLATE ("sink",
   GST_PAD_SINK,
   GST_PAD_ALWAYS,
-  GST_STATIC_CAPS ("video/x-raw")
+  GST_STATIC_CAPS (
+    "video/x-raw, "
+      "formats = "
+        "RGB"
+  )
 );
 
 /* class initialization */
@@ -127,11 +136,20 @@ static void
 gst_ocio_init (GstOcio * ocio)
 {
   ocio->sinkpad = GST_BASE_TRANSFORM (ocio)->sinkpad;
-  gst_pad_set_chain_function (ocio->sinkpad, gst_ocio_chain);
-  gst_element_add_pad (GST_ELEMENT (ocio), ocio->sinkpad);
-
   ocio->srcpad = GST_BASE_TRANSFORM (ocio)->srcpad;
-  gst_element_add_pad (GST_ELEMENT (ocio), ocio->srcpad);
+
+  ocio->env = OCIO::GetEnvVariable("OCIO");
+  ocio->config = OCIO::GetCurrentConfig ();
+
+  g_print ("OCIO config file: '%s'\n", ocio->env);
+  g_print ("OCIO config version: %u.%u\n",
+      ocio->config->getMajorVersion(), ocio->config->getMinorVersion());
+  g_print ("OCIO search path: '%s'\n", ocio->config->getSearchPath());
+
+  ocio->processor = ocio->config->getProcessor ("vd8", "srgb8");
+  ocio->cpu = ocio->processor->getOptimizedCPUProcessor (
+      OCIO::BIT_DEPTH_UINT8, OCIO::BIT_DEPTH_UINT8, OCIO::OPTIMIZATION_DEFAULT);
+    
 }
 
 void
@@ -224,29 +242,73 @@ static GstFlowReturn
 gst_ocio_transform_frame (GstVideoFilter * filter, GstVideoFrame * inframe,
     GstVideoFrame * outframe)
 {
-  GstOcio *ocio = GST_OCIO (filter);
+  if (!gst_video_frame_copy (outframe, inframe))
+    return GST_FLOW_ERROR;
 
-  GST_DEBUG_OBJECT (ocio, "transform_frame");
+  return gst_ocio_transform_frame_ip (filter, outframe);
+}
 
-  return GST_FLOW_OK;
+static OCIO::BitDepth
+ocio_bit_depth (guint32 depth)
+{
+  switch (depth)
+  {
+    case 8:
+      return OCIO::BIT_DEPTH_UINT8;
+    case 10:
+      return OCIO::BIT_DEPTH_UINT10;
+    case 12:
+      return OCIO::BIT_DEPTH_UINT12;
+    case 14:
+      return OCIO::BIT_DEPTH_UINT14;
+    case 16:
+      return OCIO::BIT_DEPTH_UINT16;
+    case 32:
+      return OCIO::BIT_DEPTH_UINT32;
+    default:
+      return OCIO::BIT_DEPTH_UNKNOWN;
+  }
 }
 
 static GstFlowReturn
 gst_ocio_transform_frame_ip (GstVideoFilter * filter, GstVideoFrame * frame)
 {
   GstOcio *ocio = GST_OCIO (filter);
+  guint32 bitdepth = GST_VIDEO_FRAME_COMP_DEPTH (frame, 0);
+  guint32 width = GST_VIDEO_FRAME_COMP_WIDTH (frame, 0);
+  guint32 height = GST_VIDEO_FRAME_COMP_HEIGHT (frame, 0);
+  
+  guint32 channel_stride = bitdepth / 8;
+  guint32 x_stride = GST_VIDEO_FRAME_COMP_PSTRIDE (frame, 0);
+  guint32 y_stride = GST_VIDEO_FRAME_COMP_STRIDE (frame, 0);
 
-  GST_DEBUG_OBJECT (ocio, "transform_frame_ip");
+  /*
+  g_print (
+      "channel_stride: %" G_GUINT32_FORMAT "\n"
+      "x_stride: %" G_GUINT32_FORMAT "\n"
+      "y_stride: %" G_GUINT32_FORMAT "\n"
+      "bitdepth: %" G_GUINT32_FORMAT "\n"
+      "width: %" G_GUINT32_FORMAT "\n"
+      "height: %" G_GUINT32_FORMAT "\n",
+      channel_stride, x_stride, y_stride, bitdepth, width, height);
+      */
+
+  OCIO::PackedImageDesc img (
+      GST_VIDEO_FRAME_COMP_DATA (frame, 0),
+      width,
+      height,
+      OCIO::CHANNEL_ORDERING_RGB,
+      ocio_bit_depth (bitdepth),
+      channel_stride, x_stride, y_stride
+  );
+  /*
+  OCIO::PackedImageDesc img (
+      GST_VIDEO_FRAME_COMP_DATA (frame, 0),
+      width, height, channels
+  );*/
+  ocio->cpu->apply(img);
 
   return GST_FLOW_OK;
-}
-
-static GstFlowReturn
-gst_ocio_chain (GstPad * pad, GstObject * parent, GstBuffer * buf)
-{
-  GstOcio *ocio = GST_OCIO (parent);
-
-  return gst_pad_push (ocio->srcpad, buf);
 }
 
 static gboolean

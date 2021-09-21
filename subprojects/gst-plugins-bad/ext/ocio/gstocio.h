@@ -22,6 +22,9 @@
 
 #include <gst/video/video.h>
 #include <gst/video/gstvideofilter.h>
+#include <OpenColorIO/OpenColorIO.h>
+
+namespace OCIO = OCIO_NAMESPACE;
 
 G_BEGIN_DECLS
 
@@ -38,6 +41,11 @@ struct _GstOcio
 {
   GstVideoFilter base_ocio;
   GstPad * sinkpad, *srcpad;
+
+  const char *env;
+  OCIO::ConstConfigRcPtr config;
+  OCIO::ConstProcessorRcPtr processor;
+  OCIO::ConstCPUProcessorRcPtr cpu;
 };
 
 struct _GstOcioClass
