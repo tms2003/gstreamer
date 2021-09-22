@@ -27,7 +27,6 @@ GST_DEBUG_CATEGORY_STATIC (avtpbasepayload_debug);
 #define DEFAULT_STREAMID 0xAABBCCDDEEFF0000
 #define DEFAULT_MTT 50000000
 #define DEFAULT_TU 1000000
-#define DEFAULT_PROCESSING_DEADLINE (20 * GST_MSECOND)
 
 enum
 {
@@ -35,7 +34,6 @@ enum
   PROP_STREAMID,
   PROP_MTT,
   PROP_TU,
-  PROP_PROCESSING_DEADLINE,
 };
 
 static GstStaticPadTemplate src_template = GST_STATIC_PAD_TEMPLATE ("src",
@@ -54,6 +52,8 @@ static void gst_avtp_base_payload_get_property (GObject * object, guint prop_id,
     GValue * value, GParamSpec * pspec);
 
 static gboolean gst_avtp_base_payload_sink_event (GstPad * pad,
+    GstObject * parent, GstEvent * event);
+static gboolean gst_avtp_base_payload_src_event (GstPad * pad,
     GstObject * parent, GstEvent * event);
 
 GType
@@ -104,14 +104,10 @@ gst_avtp_base_payload_class_init (GstAvtpBasePayloadClass * klass)
       g_param_spec_uint ("tu", "Timing Uncertainty",
           "Timing Uncertainty (TU) in nanoseconds", 0,
           G_MAXUINT, DEFAULT_TU, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
-  g_object_class_install_property (object_class, PROP_PROCESSING_DEADLINE,
-      g_param_spec_uint64 ("processing-deadline", "Processing deadline",
-          "Maximum amount of time (in ns) the pipeline can take for processing the buffer",
-          0, G_MAXUINT64, DEFAULT_PROCESSING_DEADLINE, G_PARAM_READWRITE |
-          G_PARAM_STATIC_STRINGS));
 
   klass->chain = NULL;
   klass->sink_event = GST_DEBUG_FUNCPTR (gst_avtp_base_payload_sink_event);
+  klass->src_event = GST_DEBUG_FUNCPTR (gst_avtp_base_payload_src_event);
 
   GST_DEBUG_CATEGORY_INIT (avtpbasepayload_debug, "avtpbasepayload", 0,
       "Base class for AVTP payloaders");
@@ -133,6 +129,8 @@ gst_avtp_base_payload_init (GstAvtpBasePayload * avtpbasepayload,
 
   avtpbasepayload->srcpad = gst_pad_new_from_static_template (&src_template,
       "src");
+  gst_pad_set_event_function (avtpbasepayload->srcpad,
+      avtpbasepayload_class->src_event);
   gst_element_add_pad (element, avtpbasepayload->srcpad);
 
   templ = gst_element_class_get_pad_template (element_class, "sink");
@@ -147,7 +145,6 @@ gst_avtp_base_payload_init (GstAvtpBasePayload * avtpbasepayload,
   avtpbasepayload->streamid = DEFAULT_STREAMID;
   avtpbasepayload->mtt = DEFAULT_MTT;
   avtpbasepayload->tu = DEFAULT_TU;
-  avtpbasepayload->processing_deadline = DEFAULT_PROCESSING_DEADLINE;
 
   avtpbasepayload->latency = GST_CLOCK_TIME_NONE;
   avtpbasepayload->seqnum = 0;
@@ -171,9 +168,6 @@ gst_avtp_base_payload_set_property (GObject * object, guint prop_id,
       break;
     case PROP_TU:
       avtpbasepayload->tu = g_value_get_uint (value);
-      break;
-    case PROP_PROCESSING_DEADLINE:
-      avtpbasepayload->processing_deadline = g_value_get_uint64 (value);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -199,9 +193,6 @@ gst_avtp_base_payload_get_property (GObject * object, guint prop_id,
     case PROP_TU:
       g_value_set_uint (value, avtpbasepayload->tu);
       break;
-    case PROP_PROCESSING_DEADLINE:
-      g_value_set_uint64 (value, avtpbasepayload->processing_deadline);
-      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -214,12 +205,45 @@ gst_avtp_base_payload_sink_event (GstPad * pad, GstObject * parent,
 {
   GstAvtpBasePayload *avtpbasepayload = GST_AVTP_BASE_PAYLOAD (parent);
 
-  GST_DEBUG_OBJECT (avtpbasepayload, "event %s", GST_EVENT_TYPE_NAME (event));
+  GST_DEBUG_OBJECT (avtpbasepayload, "sink event %s",
+      GST_EVENT_TYPE_NAME (event));
 
   switch (GST_EVENT_TYPE (event)) {
     case GST_EVENT_SEGMENT:
       gst_event_copy_segment (event, &avtpbasepayload->segment);
-      /* Fall through */
+      G_GNUC_FALLTHROUGH;
+    default:
+      return gst_pad_event_default (pad, parent, event);
+  }
+}
+
+static gboolean
+gst_avtp_base_payload_src_event (GstPad * pad, GstObject * parent,
+    GstEvent * event)
+{
+  GstAvtpBasePayload *avtpbasepayload = GST_AVTP_BASE_PAYLOAD (parent);
+
+  GST_DEBUG_OBJECT (avtpbasepayload, "src event %s",
+      GST_EVENT_TYPE_NAME (event));
+
+  switch (GST_EVENT_TYPE (event)) {
+    case GST_EVENT_LATENCY:
+    {
+      GstClockTime latency;
+
+      gst_event_parse_latency (event, &latency);
+
+      /* save the latency, we need this to know when an AVTP packet will be
+       * rendered by any sinks in the talker's pipeline before syncing it to
+       * the clock. */
+      avtpbasepayload->latency = latency;
+      GST_DEBUG_OBJECT (avtpbasepayload, "latency set to %" GST_TIME_FORMAT,
+          GST_TIME_ARGS (latency));
+
+      /* We forward this event so that all elements know about the global
+       * pipeline latency. */
+      G_GNUC_FALLTHROUGH;
+    }
     default:
       return gst_pad_event_default (pad, parent, event);
   }
@@ -252,6 +276,5 @@ gst_avtp_base_payload_calc_ptime (GstAvtpBasePayload * avtpbasepayload,
       avtpbasepayload->segment.format, GST_BUFFER_PTS (buffer));
 
   return base_time + running_time + avtpbasepayload->latency +
-      avtpbasepayload->processing_deadline + avtpbasepayload->mtt +
-      avtpbasepayload->tu;
+      avtpbasepayload->mtt + avtpbasepayload->tu;
 }

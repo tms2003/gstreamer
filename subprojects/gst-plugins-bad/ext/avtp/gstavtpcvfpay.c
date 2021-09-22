@@ -541,7 +541,7 @@ gst_avtp_cvf_pay_prepare_avtp_packets (GstAvtpCvfPay * avtpcvfpay,
 
     /* Calculate timestamps. Note that we do it twice, one using DTS as base,
      * the other using PTS - using code inherited from avtpbasepayload.
-     * Also worth noting: `avtpbasepayload->latency` is updated after
+     * Also worth noting: `avtpbasepayload->latency` is checked in the
      * first call to gst_avtp_base_payload_calc_ptime, so we MUST call
      * it before using the latency value */
     h264_time = gst_avtp_base_payload_calc_ptime (avtpbasepayload, nal);
@@ -550,8 +550,7 @@ gst_avtp_cvf_pay_prepare_avtp_packets (GstAvtpCvfPay * avtpcvfpay,
         gst_element_get_base_time (GST_ELEMENT (avtpcvfpay)) +
         gst_segment_to_running_time (&avtpbasepayload->segment, GST_FORMAT_TIME,
         GST_BUFFER_DTS_OR_PTS (nal)) + avtpbasepayload->mtt +
-        avtpbasepayload->tu + avtpbasepayload->processing_deadline +
-        avtpbasepayload->latency;
+        avtpbasepayload->tu + avtpbasepayload->latency;
 
     offset = 0;
     while ((fragment =

@@ -170,12 +170,11 @@
  *   * tu (avtpaafpay, avtpcvfpay): Maximum Time Uncertainty, in nanoseconds, as
  *     defined in AVTP spec.
  *
- *   * processing-deadline (avtpaafpay, avtpcvfpay, avtpsink): Maximum amount of
- *     time, in nanoseconds, that the pipeline is expected to process any
- *     buffer. This value should be in sync between the one used on the
- *     payloader and the sink, as this time is also taken into consideration to
- *     define the correct presentation time of the packets on the AVTP listener
- *     side. It should be as low as possible (zero if possible).
+ *   * processing-deadline (avtpsink): Maximum amount of time, in nanoseconds,
+ *     that the pipeline is expected to process any buffer. This time is taken
+ *     into consideration to define the correct presentation time of the packets
+ *     on the AVTP listener side. It should be as low as possible (zero if
+ *     possible).
  *
  *   * timestamp-mode (avtpaafpay): AAF timestamping mode, as defined in AVTP spec.
  *
@@ -198,8 +197,8 @@
  *
  *     $ gst-launch-1.0 clockselect. \( clockid=ptp \
  *         videotestsrc is-live=true ! clockoverlay ! x264enc ! \
- *         avtpcvfpay processing-deadline=20000000 ! \
- *         avtpcrfsync ifname=$IFNAME ! avtpsink ifname=$IFNAME \)
+ *         avtpcvfpay ! avtpcrfsync ifname=$IFNAME ! \
+ *         avtpsink ifname=$IFNAME processing-deadline=20000000 \)
  *
  * On the AVTP listener host, the following pipeline can be used to get the
  * AVTP stream, depacketize it and show it on the screen:
