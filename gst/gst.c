@@ -322,7 +322,13 @@ gst_init_get_option_group (void)
 
   return group;
 #else
-  return NULL;
+  /*
+   * GST_DISABLE_OPTION_PARSING breaks the semantics of
+   * gst_init_get_options_group() in a way that will likely leave GStreamer
+   * uninitialized. Thus no application should call gst_init_get_options_group()
+   * under this condition.
+   */
+  g_assert_not_reached ();
 #endif
 }
 
@@ -1057,25 +1063,25 @@ parse_goption_arg (const gchar * opt,
     int val;
   } options[] = {
     {
-    "--gst-version", ARG_VERSION}, {
-    "--gst-fatal-warnings", ARG_FATAL_WARNINGS},
+        "--gst-version", ARG_VERSION}, {
+        "--gst-fatal-warnings", ARG_FATAL_WARNINGS},
 #ifndef GST_DISABLE_GST_DEBUG
     {
-    "--gst-debug-level", ARG_DEBUG_LEVEL}, {
-    "--gst-debug", ARG_DEBUG}, {
-    "--gst-debug-disable", ARG_DEBUG_DISABLE}, {
-    "--gst-debug-no-color", ARG_DEBUG_NO_COLOR}, {
-    "--gst-debug-color-mode", ARG_DEBUG_COLOR_MODE}, {
-    "--gst-debug-help", ARG_DEBUG_HELP},
+        "--gst-debug-level", ARG_DEBUG_LEVEL}, {
+        "--gst-debug", ARG_DEBUG}, {
+        "--gst-debug-disable", ARG_DEBUG_DISABLE}, {
+        "--gst-debug-no-color", ARG_DEBUG_NO_COLOR}, {
+        "--gst-debug-color-mode", ARG_DEBUG_COLOR_MODE}, {
+        "--gst-debug-help", ARG_DEBUG_HELP},
 #endif
     {
-    "--gst-plugin-spew", ARG_PLUGIN_SPEW}, {
-    "--gst-plugin-path", ARG_PLUGIN_PATH}, {
-    "--gst-plugin-load", ARG_PLUGIN_LOAD}, {
-    "--gst-disable-segtrap", ARG_SEGTRAP_DISABLE}, {
-    "--gst-disable-registry-update", ARG_REGISTRY_UPDATE_DISABLE}, {
-    "--gst-disable-registry-fork", ARG_REGISTRY_FORK_DISABLE}, {
-    NULL}
+        "--gst-plugin-spew", ARG_PLUGIN_SPEW}, {
+        "--gst-plugin-path", ARG_PLUGIN_PATH}, {
+        "--gst-plugin-load", ARG_PLUGIN_LOAD}, {
+        "--gst-disable-segtrap", ARG_SEGTRAP_DISABLE}, {
+        "--gst-disable-registry-update", ARG_REGISTRY_UPDATE_DISABLE}, {
+        "--gst-disable-registry-fork", ARG_REGISTRY_FORK_DISABLE}, {
+        NULL}
   };
   gint val = 0, n;
 
