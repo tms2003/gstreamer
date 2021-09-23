@@ -228,6 +228,9 @@ create_test_buffer (guint64 num)
   GST_BUFFER_DURATION (buffer) =
       gst_util_uint64_scale_round (GST_SECOND, TEST_VIDEO_FPS_D,
       TEST_VIDEO_FPS_N);
+  GST_BUFFER_OFFSET (buffer) = num * sizeof (guint64);
+  GST_BUFFER_OFFSET_END (buffer) =
+      GST_BUFFER_OFFSET (buffer) + sizeof (guint64);
 
   return buffer;
 }
@@ -503,9 +506,17 @@ _sink_chain_pull_short_read (GstPad * pad, GstObject * parent,
   gint buffer_size = 0;
   gint compare_result = 0;
   gint64 result_offset = GST_BUFFER_OFFSET (buffer);
+  gint64 end_offset = GST_BUFFER_OFFSET_END (buffer);
+
+  GST_LOG_OBJECT (parent, "Got buffer %" GST_PTR_FORMAT, buffer);
 
   gst_buffer_map (buffer, &map, GST_MAP_READ);
   buffer_size = map.size;
+
+  fail_unless (result_offset != GST_BUFFER_OFFSET_NONE);
+
+  if (end_offset != GST_BUFFER_OFFSET_NONE)
+    fail_unless_equals_int (end_offset - result_offset, buffer_size);
 
   fail_unless (result_offset + buffer_size <= raw_buffer_size);
   compare_result = memcmp (map.data, &raw_buffer[result_offset], buffer_size);
@@ -635,6 +646,8 @@ _src_getrange_64k (GstPad * pad, GstObject * parent, guint64 offset,
   /* Return a buffer of the size baseparse asked for */
   data = g_malloc0 (length);
   *buffer = gst_buffer_new_wrapped (data, length);
+  GST_BUFFER_OFFSET (*buffer) = offset;
+  GST_BUFFER_OFFSET_END (*buffer) = offset + length;
 
   return GST_FLOW_OK;
 }
