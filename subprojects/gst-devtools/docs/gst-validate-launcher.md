@@ -9,7 +9,7 @@ providing a set of options and features to help debugging them.
 
 ## Run the GStreamer unit tests
 
-Running GStreamer unit tests inside `gst-build` is as simple as doing:
+Running GStreamer unit tests is as simple as doing:
 
 ```
 gst-validate-launcher check.gst*
@@ -36,10 +36,17 @@ GstValidate comes with a default testsuite to be executed on a default
 set of media samples. Those media samples are stored with `git-lfs` so
 you will need it to be able to launch the default testsuite.
 
-We recommend using `gst-build` to setup everything needed to run the testsuite
-and you can simply do:
+To retrieve all the media files from the `gstreamer` repo you need to run:
 
-    gst-validate-launcher validate
+```
+git lfs pull --exclude=""
+```
+
+Once that is done you can run:
+
+```
+gst-validate-launcher validate
+```
 
 This will only launch the GstValidate tests and not other applications
 that might be supported (currently `ges-launch` is also supported and
