@@ -526,6 +526,12 @@ GST_API
 GstEvent *      gst_event_new_flush_start       (void) G_GNUC_MALLOC;
 
 GST_API
+void            gst_event_set_flush_start_live  (GstEvent *event, gboolean live);
+
+GST_API
+void            gst_event_parse_flush_start     (GstEvent *event, gboolean *live);
+
+GST_API
 GstEvent *      gst_event_new_flush_stop        (gboolean reset_time) G_GNUC_MALLOC;
 
 GST_API
