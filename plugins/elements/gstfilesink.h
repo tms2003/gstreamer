@@ -63,6 +63,19 @@ typedef enum {
 } GstFileSinkBufferMode;
 
 /**
+ * GstFileSinkAccessMode:
+ * @GST_FILE_SINK_ACCESS_MODE_DEFAULT: Default access mode
+ * @GST_FILE_SINK_ACCESS_MODE_NO_CACHING: No caching access mode
+ *
+ * File access mode.
+ */
+typedef enum {
+  GST_FILE_SINK_ACCESS_MODE_DEFAULT    = 0,
+  GST_FILE_SINK_ACCESS_MODE_NO_CACHING = 1,
+} GstFileSinkAccessMode;
+
+
+/**
  * GstFileSink:
  *
  * Opaque #GstFileSink structure.
@@ -78,6 +91,7 @@ struct _GstFileSink {
   gboolean seekable;
   guint64 current_pos;
 
+  gint    access_mode;
   gint    buffer_mode;
   guint   buffer_size;
 
@@ -90,6 +104,10 @@ struct _GstFileSink {
 
   /* For default/full buffer mode */
   gsize current_buffer_size;
+
+  /* for access mode no-caching */
+  gsize   drop_cache_size;
+  guint64 last_cache_drop;
 
   gboolean append;
   gboolean o_sync;

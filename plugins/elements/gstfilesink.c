@@ -102,15 +102,38 @@ gst_file_sink_buffer_mode_get_type (void)
   return buffer_mode_type;
 }
 
+#define GST_TYPE_FILE_SINK_ACCESS_MODE (gst_file_sink_access_mode_get_type ())
+static GType
+gst_file_sink_access_mode_get_type (void)
+{
+  static GType access_mode_type = 0;
+  static const GEnumValue access_mode[] = {
+    {GST_FILE_SINK_ACCESS_MODE_DEFAULT,
+        "The default access mode on this system will be used", "default"},
+    {GST_FILE_SINK_ACCESS_MODE_NO_CACHING,
+        "Advise the system to not cache written data. The interval for this "
+        "advise can be controlled with drop-cache-size", "no-caching"},
+    {0, NULL, NULL},
+  };
+
+  if (!access_mode_type) {
+    access_mode_type =
+        g_enum_register_static ("GstFileSinkAccessMode", access_mode);
+  }
+  return access_mode_type;
+}
+
 GST_DEBUG_CATEGORY_STATIC (gst_file_sink_debug);
 #define GST_CAT_DEFAULT gst_file_sink_debug
 
 #define DEFAULT_LOCATION 	NULL
+#define DEFAULT_ACCESS_MODE     GST_FILE_SINK_ACCESS_MODE_DEFAULT
 #define DEFAULT_BUFFER_MODE 	GST_FILE_SINK_BUFFER_MODE_DEFAULT
 #define DEFAULT_BUFFER_SIZE 	64 * 1024
 #define DEFAULT_APPEND		FALSE
 #define DEFAULT_O_SYNC		FALSE
 #define DEFAULT_MAX_TRANSIENT_ERROR_TIMEOUT	0
+#define DEFAULT_DROP_CACHE_SIZE        0
 
 enum
 {
@@ -121,8 +144,42 @@ enum
   PROP_APPEND,
   PROP_O_SYNC,
   PROP_MAX_TRANSIENT_ERROR_TIMEOUT,
+  PROP_DROP_CACHE_SIZE,
+  PROP_ACCESS_MODE,
   PROP_LAST
 };
+
+static GstFlowReturn
+drop_caches (GstFileSink * sink)
+{
+  GstFlowReturn flow = GST_FLOW_OK;
+
+  sink->last_cache_drop = sink->current_pos;
+
+#if defined (G_OS_UNIX)
+  GST_DEBUG_OBJECT (sink, "drop caches at position %" G_GUINT64_FORMAT,
+      sink->current_pos);
+
+  /* According to the man page fdatasync should be called in case of
+   * POSIX_FADV_DONTNEED
+   */
+  if (fdatasync (fileno (sink->file))) {
+    GST_ELEMENT_ERROR (sink, RESOURCE, WRITE,
+        (_("Error while fdatasync on file \"%s\"."), sink->filename),
+        ("%s", g_strerror (errno)));
+    flow = GST_FLOW_ERROR;
+  }
+
+  if (posix_fadvise (fileno (sink->file), 0, 0, POSIX_FADV_DONTNEED)) {
+    GST_ELEMENT_ERROR (sink, RESOURCE, WRITE,
+        (_("Error from posix_fadvise on file \"%s\"."), sink->filename),
+        ("%s", g_strerror (errno)));
+    flow = GST_FLOW_ERROR;
+  }
+#endif
+
+  return flow;
+}
 
 /* Copy of glib's g_fopen due to win32 libc/cross-DLL brokenness: we can't
  * use the 'file pointer' opened in glib (and returned from this function)
@@ -226,7 +283,17 @@ gst_file_sink_class_init (GstFileSinkClass * klass)
           "Size of buffer in number of bytes for line or full buffer-mode", 0,
           G_MAXUINT, DEFAULT_BUFFER_SIZE,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+  g_object_class_install_property (gobject_class, PROP_DROP_CACHE_SIZE,
+      g_param_spec_uint ("drop-cache-size", "Drop cache size",
+          "Flush and drop caches after this size in number of bytes when "
+          "access-mode is set to no-caching",
+          0, G_MAXUINT, DEFAULT_DROP_CACHE_SIZE,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
+  g_object_class_install_property (gobject_class, PROP_ACCESS_MODE,
+      g_param_spec_enum ("access-mode", "Access mode",
+          "The access mode to use", GST_TYPE_FILE_SINK_ACCESS_MODE,
+          DEFAULT_ACCESS_MODE, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
   /**
    * GstFileSink:append
    *
@@ -281,8 +348,10 @@ gst_file_sink_init (GstFileSink * filesink)
   filesink->filename = NULL;
   filesink->file = NULL;
   filesink->current_pos = 0;
+  filesink->access_mode = DEFAULT_ACCESS_MODE;
   filesink->buffer_mode = DEFAULT_BUFFER_MODE;
   filesink->buffer_size = DEFAULT_BUFFER_SIZE;
+  filesink->drop_cache_size = DEFAULT_DROP_CACHE_SIZE;
   filesink->append = FALSE;
 
   gst_base_sink_set_sync (GST_BASE_SINK (filesink), FALSE);
@@ -361,6 +430,12 @@ gst_file_sink_set_property (GObject * object, guint prop_id,
     case PROP_MAX_TRANSIENT_ERROR_TIMEOUT:
       sink->max_transient_error_timeout = g_value_get_int (value);
       break;
+    case PROP_DROP_CACHE_SIZE:
+      sink->drop_cache_size = g_value_get_uint (value);
+      break;
+    case PROP_ACCESS_MODE:
+      sink->access_mode = g_value_get_enum (value);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -391,6 +466,12 @@ gst_file_sink_get_property (GObject * object, guint prop_id, GValue * value,
       break;
     case PROP_MAX_TRANSIENT_ERROR_TIMEOUT:
       g_value_set_int (value, sink->max_transient_error_timeout);
+      break;
+    case PROP_DROP_CACHE_SIZE:
+      g_value_set_uint (value, sink->drop_cache_size);
+      break;
+    case PROP_ACCESS_MODE:
+      g_value_set_enum (value, sink->access_mode);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -459,6 +540,18 @@ open_failed:
   }
 }
 
+static GstFlowReturn
+gst_file_sink_drop_caches (GstFileSink * sink)
+{
+  GstFlowReturn flow = GST_FLOW_OK;
+
+  if (sink->current_pos > sink->last_cache_drop + sink->drop_cache_size) {
+    flow = drop_caches (sink);
+  }
+
+  return flow;
+}
+
 static void
 gst_file_sink_close_file (GstFileSink * sink)
 {
@@ -466,6 +559,10 @@ gst_file_sink_close_file (GstFileSink * sink)
     if (gst_file_sink_flush_buffer (sink) != GST_FLOW_OK)
       GST_ELEMENT_ERROR (sink, RESOURCE, CLOSE,
           (_("Error closing file \"%s\"."), sink->filename), NULL);
+
+    if (sink->access_mode == GST_FILE_SINK_ACCESS_MODE_NO_CACHING &&
+        sink->current_pos > sink->last_cache_drop)
+      (void) drop_caches (sink);
 
     if (fclose (sink->file) != 0)
       GST_ELEMENT_ERROR (sink, RESOURCE, CLOSE,
@@ -573,6 +670,7 @@ gst_file_sink_do_seek (GstFileSink * filesink, guint64 new_offset)
   /* adjust position reporting after seek;
    * presumably this should basically yield new_offset */
   gst_file_sink_get_current_offset (filesink, &filesink->current_pos);
+  filesink->last_cache_drop = filesink->current_pos;
 
   return TRUE;
 
@@ -736,6 +834,9 @@ gst_file_sink_render_list_internal (GstFileSink * sink,
       return flow;
   }
 
+  if (sink->access_mode == GST_FILE_SINK_ACCESS_MODE_NO_CACHING)
+    flow = gst_file_sink_drop_caches (sink);
+
   return flow;
 
 no_data:
@@ -775,6 +876,8 @@ gst_file_sink_flush_buffer (GstFileSink * filesink)
       if (flow_ret != GST_FLOW_OK)
         break;
     }
+    if (filesink->access_mode == GST_FILE_SINK_ACCESS_MODE_NO_CACHING)
+      flow_ret = gst_file_sink_drop_caches (filesink);
   } else if (filesink->buffer_list && filesink->current_buffer_size) {
     guint length;
 
@@ -842,6 +945,9 @@ render_buffer (GstFileSink * filesink, GstBuffer * buffer)
     if (flow != GST_FLOW_OK)
       break;
   }
+
+  if (filesink->access_mode == GST_FILE_SINK_ACCESS_MODE_NO_CACHING)
+    flow = gst_file_sink_drop_caches (filesink);
 
   return flow;
 }
