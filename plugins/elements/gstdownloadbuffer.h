@@ -110,6 +110,8 @@ struct _GstDownloadBuffer
   gint temp_fd;
   gboolean seeking;
 
+  gboolean eos_sinkpad;        /* Stores whether we have eos on sinkpad */
+
   GstEvent *stream_start_event;
   GstEvent *segment_event;
 };
