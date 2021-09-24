@@ -31,45 +31,8 @@
 
 G_BEGIN_DECLS
 
-#define GST_TYPE_FILE_SRC \
-  (gst_file_src_get_type())
-#define GST_FILE_SRC(obj) \
-  (G_TYPE_CHECK_INSTANCE_CAST((obj),GST_TYPE_FILE_SRC,GstFileSrc))
-#define GST_FILE_SRC_CLASS(klass) \
-  (G_TYPE_CHECK_CLASS_CAST((klass),GST_TYPE_FILE_SRC,GstFileSrcClass))
-#define GST_IS_FILE_SRC(obj) \
-  (G_TYPE_CHECK_INSTANCE_TYPE((obj),GST_TYPE_FILE_SRC))
-#define GST_IS_FILE_SRC_CLASS(klass) \
-  (G_TYPE_CHECK_CLASS_TYPE((klass),GST_TYPE_FILE_SRC))
-#define GST_FILE_SRC_CAST(obj) ((GstFileSrc*) obj)
-
-typedef struct _GstFileSrc GstFileSrc;
-typedef struct _GstFileSrcClass GstFileSrcClass;
-
-/**
- * GstFileSrc:
- *
- * Opaque #GstFileSrc structure.
- */
-struct _GstFileSrc {
-  GstBaseSrc element;
-
-  /*< private >*/
-  gchar *filename;			/* filename */
-  gchar *uri;				/* caching the URI */
-  gint fd;				/* open file descriptor */
-  guint64 read_position;		/* position of fd */
-
-  gboolean seekable;                    /* whether the file is seekable */
-  gboolean is_regular;                  /* whether it's a (symlink to a)
-                                           regular file */
-};
-
-struct _GstFileSrcClass {
-  GstBaseSrcClass parent_class;
-};
-
-G_GNUC_INTERNAL GType gst_file_src_get_type (void);
+#define GST_TYPE_FILE_SRC (gst_file_src_get_type())
+G_DECLARE_FINAL_TYPE (GstFileSrc, gst_file_src, GST, FILE_SRC, GstBaseSrc);
 
 G_END_DECLS
 
