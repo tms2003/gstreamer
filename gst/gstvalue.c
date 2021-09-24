@@ -682,7 +682,7 @@ gst_value_list_append_and_take_value (GValue * value, GValue * append_value)
 
 /**
  * gst_value_list_append_value:
- * @value: a #GValue of type #GST_TYPE_LIST
+ * @value: (inout) (transfer none): a #GValue of type #GST_TYPE_LIST
  * @append_value: (transfer none): the value to append
  *
  * Appends @append_value to the GstValueList in @value.
@@ -703,7 +703,7 @@ gst_value_list_append_value (GValue * value, const GValue * append_value)
 
 /**
  * gst_value_list_prepend_value:
- * @value: a #GValue of type #GST_TYPE_LIST
+ * @value: (inout) (transfer none): a #GValue of type #GST_TYPE_LIST
  * @prepend_value: the value to prepend
  *
  * Prepends @prepend_value to the GstValueList in @value.
@@ -963,8 +963,8 @@ gst_value_list_get_value (const GValue * value, guint index)
 
 /**
  * gst_value_array_append_value:
- * @value: a #GValue of type #GST_TYPE_ARRAY
- * @append_value: the value to append
+ * @value: (inout) (transfer none): a #GValue of type #GST_TYPE_ARRAY
+ * @append_value: (transfer none): the value to append
  *
  * Appends @append_value to the GstValueArray in @value.
  */
@@ -991,7 +991,7 @@ _gst_value_array_append_and_take_value (GValue * value, GValue * append_value)
 
 /**
  * gst_value_array_append_and_take_value:
- * @value: a #GValue of type #GST_TYPE_ARRAY
+ * @value: (inout) (transfer none): a #GValue of type #GST_TYPE_ARRAY
  * @append_value: (transfer full): the value to append
  *
  * Appends @append_value to the GstValueArray in @value.
@@ -1011,7 +1011,7 @@ gst_value_array_append_and_take_value (GValue * value, GValue * append_value)
 
 /**
  * gst_value_array_prepend_value:
- * @value: a #GValue of type #GST_TYPE_ARRAY
+ * @value: (inout) (transfer none): a #GValue of type #GST_TYPE_ARRAY
  * @prepend_value: the value to prepend
  *
  * Prepends @prepend_value to the GstValueArray in @value.
@@ -1621,7 +1621,7 @@ gst_value_set_int64_range_step (GValue * value, gint64 start, gint64 end,
 
 /**
  * gst_value_set_int64_range:
- * @value: a GValue initialized to GST_TYPE_INT64_RANGE
+ * @value: (inout) (transfer none): a GValue initialized to GST_TYPE_INT64_RANGE
  * @start: the start of the range
  * @end: the end of the range
  *
@@ -1796,7 +1796,7 @@ gst_value_lcopy_double_range (const GValue * value, guint n_collect_values,
 
 /**
  * gst_value_set_double_range:
- * @value: a GValue initialized to GST_TYPE_DOUBLE_RANGE
+ * @value: (inout) (transfer none): a GValue initialized to GST_TYPE_DOUBLE_RANGE
  * @start: the start of the range
  * @end: the end of the range
  *
@@ -1996,7 +1996,7 @@ gst_value_lcopy_fraction_range (const GValue * value, guint n_collect_values,
 
 /**
  * gst_value_set_fraction_range:
- * @value: a GValue initialized to GST_TYPE_FRACTION_RANGE
+ * @value: (inout) (transfer none): a GValue initialized to GST_TYPE_FRACTION_RANGE
  * @start: the start of the range (a GST_TYPE_FRACTION GValue)
  * @end: the end of the range (a GST_TYPE_FRACTION GValue)
  *
@@ -2025,7 +2025,7 @@ gst_value_set_fraction_range (GValue * value, const GValue * start,
 
 /**
  * gst_value_set_fraction_range_full:
- * @value: a GValue initialized to GST_TYPE_FRACTION_RANGE
+ * @value: (inout) (transfer none): a GValue initialized to GST_TYPE_FRACTION_RANGE
  * @numerator_start: the numerator start of the range
  * @denominator_start: the denominator start of the range
  * @numerator_end: the numerator end of the range
@@ -2178,7 +2178,7 @@ gst_value_deserialize_fraction_range (GValue * dest, const gchar * s)
 
 /**
  * gst_value_set_caps:
- * @value: a GValue initialized to GST_TYPE_CAPS
+ * @value: (inout) (transfer none): a GValue initialized to GST_TYPE_CAPS
  * @caps: (transfer none): the caps to set the value to
  *
  * Sets the contents of @value to @caps. A reference to the
@@ -2965,7 +2965,7 @@ gst_value_deserialize_segment (GValue * dest, const gchar * s)
 
 /**
  * gst_value_set_structure:
- * @value: a GValue initialized to GST_TYPE_STRUCTURE
+ * @value: (inout) (transfer none): a GValue initialized to GST_TYPE_STRUCTURE
  * @structure: the structure to set the value to
  *
  * Sets the contents of @value to @structure.
@@ -3063,7 +3063,7 @@ gst_value_compare_structure (const GValue * value1, const GValue * value2)
 
 /**
  * gst_value_set_caps_features:
- * @value: a GValue initialized to GST_TYPE_CAPS_FEATURES
+ * @value: (inout) (transfer none): a GValue initialized to GST_TYPE_CAPS_FEATURES
  * @features: the features to set the value to
  *
  * Sets the contents of @value to @features.
@@ -6592,12 +6592,13 @@ gst_value_serialize (const GValue * value)
 
 /**
  * gst_value_deserialize:
- * @dest: (out caller-allocates): #GValue to fill with contents of
+ * @dest: (inout) (transfer none): #GValue to fill with contents of
  *     deserialization
  * @src: string to deserialize
  *
  * Tries to deserialize a string into the type specified by the given GValue.
  * If the operation succeeds, %TRUE is returned, %FALSE otherwise.
+ * @dest must be initialized with the type of value to deserialize.
  *
  * Returns: %TRUE on success
  */
@@ -6639,7 +6640,7 @@ gst_value_deserialize (GValue * dest, const gchar * src)
 
 /**
  * gst_value_deserialize_with_pspec:
- * @dest: (out caller-allocates): #GValue to fill with contents of
+ * @dest: (inout) (transfer none): #GValue to fill with contents of
  *     deserialization
  * @src: string to deserialize
  * @pspec: (nullable): the #GParamSpec describing the expected value
@@ -6904,7 +6905,7 @@ gst_value_lcopy_fraction (const GValue * value, guint n_collect_values,
 
 /**
  * gst_value_set_fraction:
- * @value: a GValue initialized to #GST_TYPE_FRACTION
+ * @value: (inout) (transfer none): a GValue initialized to #GST_TYPE_FRACTION
  * @numerator: the numerator of the fraction
  * @denominator: the denominator of the fraction
  *
@@ -6975,7 +6976,7 @@ gst_value_get_fraction_denominator (const GValue * value)
 
 /**
  * gst_value_fraction_multiply:
- * @product: a GValue initialized to #GST_TYPE_FRACTION
+ * @product: (inout) (transfer none): a GValue initialized to #GST_TYPE_FRACTION
  * @factor1: a GValue initialized to #GST_TYPE_FRACTION
  * @factor2: a GValue initialized to #GST_TYPE_FRACTION
  *
@@ -7010,7 +7011,7 @@ gst_value_fraction_multiply (GValue * product, const GValue * factor1,
 
 /**
  * gst_value_fraction_subtract:
- * @dest: a GValue initialized to #GST_TYPE_FRACTION
+ * @dest: (inout) (transfer none): a GValue initialized to #GST_TYPE_FRACTION
  * @minuend: a GValue initialized to #GST_TYPE_FRACTION
  * @subtrahend: a GValue initialized to #GST_TYPE_FRACTION
  *
@@ -7371,7 +7372,7 @@ gst_value_lcopy_bitmask (const GValue * value, guint n_collect_values,
 
 /**
  * gst_value_set_bitmask:
- * @value: a GValue initialized to #GST_TYPE_BITMASK
+ * @value: (inout) (transfer none): a GValue initialized to #GST_TYPE_BITMASK
  * @bitmask: the bitmask
  *
  * Sets @value to the bitmask specified by @bitmask.
@@ -7523,7 +7524,7 @@ gst_value_lcopy_flagset (const GValue * value, guint n_collect_values,
 
 /**
  * gst_value_set_flagset:
- * @value: a GValue initialized to %GST_TYPE_FLAG_SET
+ * @value: (inout) (transfer none): a GValue initialized to %GST_TYPE_FLAG_SET
  * @flags: The value of the flags set or unset
  * @mask: The mask indicate which flags bits must match for comparisons
  *

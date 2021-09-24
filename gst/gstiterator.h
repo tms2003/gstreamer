@@ -91,7 +91,7 @@ typedef GstIteratorItem   (*GstIteratorItemFunction)    (GstIterator *it, const 
 /**
  * GstIteratorNextFunction:
  * @it: the iterator
- * @result: a pointer to hold the next item
+ * @result: (inout) (transfer none): a pointer to hold the next item
  *
  * The function that will be called when the next element of the iterator
  * should be retrieved.
@@ -141,8 +141,8 @@ typedef void         (*GstIteratorForeachFunction)     (const GValue * item, gpo
 /**
  * GstIteratorFoldFunction:
  * @item: the item to fold
- * @ret: a #GValue collecting the result
- * @user_data: data passed to gst_iterator_fold()
+ * @ret: (inout) (transfer none): a #GValue collecting the result
+ * @user_data: user data that was passed to gst_iterator_fold()
  *
  * A function to be passed to gst_iterator_fold().
  *

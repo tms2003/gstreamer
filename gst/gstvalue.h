@@ -462,10 +462,11 @@ typedef gchar *  (* GstValueSerializeFunc)   (const GValue *value1);
 
 /**
  * GstValueDeserializeFunc:
- * @dest: a #GValue
+ * @dest: (inout) (transfer none): a #GValue
  * @s: a string
  *
  * Used by gst_value_deserialize() to parse a non-binary form into the #GValue.
+ * @dest must be initialized with the type of value to deserialize.
  *
  * Returns: %TRUE for success
  */
