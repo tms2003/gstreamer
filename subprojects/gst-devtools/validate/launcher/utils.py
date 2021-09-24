@@ -49,6 +49,7 @@ from fractions import Fraction
 GST_SECOND = int(1000000000)
 DEFAULT_TIMEOUT = 30
 
+BUILDDIR = config.BUILDDIR
 DEFAULT_MAIN_DIR = os.path.join(config.BUILDDIR, "subprojects", "gst-integration-testsuites")
 DEFAULT_GST_QA_ASSETS = os.path.join(config.SRCDIR, "subprojects", "gst-integration-testsuites")
 USING_SUBPROJECT = os.path.exists(os.path.join(config.BUILDDIR, "subprojects", "gst-integration-testsuites"))
