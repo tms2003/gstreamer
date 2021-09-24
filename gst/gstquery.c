@@ -2590,7 +2590,8 @@ gst_query_set_context (GstQuery * query, GstContext * context)
 
   g_return_if_fail (GST_QUERY_TYPE (query) == GST_QUERY_CONTEXT);
 
-  gst_query_parse_context_type (query, &context_type);
+  if (!gst_query_parse_context_type (query, &context_type))
+    return;
   g_return_if_fail (strcmp (gst_context_get_context_type (context),
           context_type) == 0);
 
@@ -2643,17 +2644,24 @@ gst_query_parse_context_type (GstQuery * query, const gchar ** context_type)
 {
   GstStructure *structure;
   const GValue *value;
+  gboolean ret;
 
   g_return_val_if_fail (GST_QUERY_TYPE (query) == GST_QUERY_CONTEXT, FALSE);
 
   structure = GST_QUERY_STRUCTURE (query);
+  ret = TRUE;
 
   if (context_type) {
     value = gst_structure_id_get_value (structure, GST_QUARK (CONTEXT_TYPE));
-    *context_type = g_value_get_string (value);
+    if (value != NULL) {
+      *context_type = g_value_get_string (value);
+    } else {
+      *context_type = NULL;
+      ret = FALSE;
+    }
   }
 
-  return TRUE;
+  return ret;
 }
 
 /**
