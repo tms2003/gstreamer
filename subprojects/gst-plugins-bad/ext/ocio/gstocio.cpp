@@ -61,6 +61,8 @@ static gboolean gst_ocio_start (GstBaseTransform * trans);
 static gboolean gst_ocio_stop (GstBaseTransform * trans);
 static gboolean gst_ocio_set_info (GstVideoFilter * filter, GstCaps * incaps,
     GstVideoInfo * in_info, GstCaps * outcaps, GstVideoInfo * out_info);
+static GstStateChangeReturn gst_ocio_change_state (GstElement *element,
+    GstStateChange transition);
 static GstFlowReturn gst_ocio_transform_frame (GstVideoFilter * filter,
     GstVideoFrame * inframe, GstVideoFrame * outframe);
 static GstFlowReturn gst_ocio_transform_frame_ip (GstVideoFilter * filter,
@@ -104,6 +106,7 @@ G_DEFINE_TYPE_WITH_CODE (GstOcio, gst_ocio, GST_TYPE_VIDEO_FILTER,
 static void
 gst_ocio_class_init (GstOcioClass * klass)
 {
+  GstElementClass * element_class = GST_ELEMENT_CLASS (klass);
   GObjectClass *gobject_class = G_OBJECT_CLASS (klass);
   GstBaseTransformClass *base_transform_class =
       GST_BASE_TRANSFORM_CLASS (klass);
@@ -118,6 +121,7 @@ gst_ocio_class_init (GstOcioClass * klass)
       "FIXME Long name", "Generic", "FIXME Description",
       "FIXME <fixme@example.com>");
 
+  element_class->change_state = gst_ocio_change_state;
   gobject_class->set_property = gst_ocio_set_property;
   gobject_class->get_property = gst_ocio_get_property;
   gobject_class->dispose = gst_ocio_dispose;
@@ -137,19 +141,6 @@ gst_ocio_init (GstOcio * ocio)
 {
   ocio->sinkpad = GST_BASE_TRANSFORM (ocio)->sinkpad;
   ocio->srcpad = GST_BASE_TRANSFORM (ocio)->srcpad;
-
-  ocio->env = OCIO::GetEnvVariable("OCIO");
-  ocio->config = OCIO::GetCurrentConfig ();
-
-  g_print ("OCIO config file: '%s'\n", ocio->env);
-  g_print ("OCIO config version: %u.%u\n",
-      ocio->config->getMajorVersion(), ocio->config->getMinorVersion());
-  g_print ("OCIO search path: '%s'\n", ocio->config->getSearchPath());
-
-  ocio->processor = ocio->config->getProcessor ("vd8", "srgb8");
-  ocio->cpu = ocio->processor->getOptimizedCPUProcessor (
-      OCIO::BIT_DEPTH_UINT8, OCIO::BIT_DEPTH_UINT8, OCIO::OPTIMIZATION_DEFAULT);
-    
 }
 
 void
@@ -235,6 +226,45 @@ gst_ocio_set_info (GstVideoFilter * filter, GstCaps * incaps,
   GST_DEBUG_OBJECT (ocio, "set_info");
 
   return TRUE;
+}
+
+static GstStateChangeReturn gst_ocio_change_state (GstElement *element,
+    GstStateChange transition)
+{
+  GstStateChangeReturn ret = GST_STATE_CHANGE_SUCCESS;
+  GstOcio *ocio = GST_OCIO (element);
+  
+  switch (transition) {
+    case GST_STATE_CHANGE_NULL_TO_READY:
+      ocio->env = OCIO::GetEnvVariable ("OCIO");
+      g_assert_cmpstr(ocio->env, !=, "");
+      ocio->config = OCIO::GetCurrentConfig ();
+      ocio->processor = ocio->config->getProcessor ("vd8", "srgb8");
+      ocio->cpu = ocio->processor->getOptimizedCPUProcessor (
+          OCIO::BIT_DEPTH_UINT8, OCIO::BIT_DEPTH_UINT8, OCIO::OPTIMIZATION_DEFAULT);
+      break;
+ 
+    default:
+      break;
+  }
+  
+  ret = GST_ELEMENT_CLASS (gst_ocio_parent_class)->change_state (element, transition);
+  if (ret == GST_STATE_CHANGE_FAILURE)
+    return ret;
+  
+  switch (transition) {
+    case GST_STATE_CHANGE_READY_TO_NULL:
+      ocio->cpu = NULL;
+      ocio->processor = NULL;
+      ocio->config = NULL;
+      ocio->env = NULL;
+      break;
+
+    default:
+      break;
+  }
+  
+  return ret;
 }
 
 /* transform */
