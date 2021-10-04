@@ -40,9 +40,10 @@ typedef struct _GstOcioClass GstOcioClass;
 struct _GstOcio
 {
   GstVideoFilter base_ocio;
-  GstPad * sinkpad, *srcpad;
+  GstPad * sinkpad, * srcpad;
 
   const char *env;
+
   OCIO::ConstConfigRcPtr config;
   OCIO::ConstProcessorRcPtr processor;
   OCIO::ConstCPUProcessorRcPtr cpu;

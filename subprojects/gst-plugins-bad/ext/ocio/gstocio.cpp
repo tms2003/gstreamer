@@ -61,7 +61,7 @@ static gboolean gst_ocio_start (GstBaseTransform * trans);
 static gboolean gst_ocio_stop (GstBaseTransform * trans);
 static gboolean gst_ocio_set_info (GstVideoFilter * filter, GstCaps * incaps,
     GstVideoInfo * in_info, GstCaps * outcaps, GstVideoInfo * out_info);
-static GstStateChangeReturn gst_ocio_change_state (GstElement *element,
+static GstStateChangeReturn gst_ocio_change_state (GstElement * element,
     GstStateChange transition);
 static GstFlowReturn gst_ocio_transform_frame (GstVideoFilter * filter,
     GstVideoFrame * inframe, GstVideoFrame * outframe);
@@ -70,7 +70,8 @@ static GstFlowReturn gst_ocio_transform_frame_ip (GstVideoFilter * filter,
 
 enum
 {
-  PROP_0
+  PROP_0,
+  PROP_ENV
 };
 
 /* pad templates */
@@ -134,13 +135,22 @@ gst_ocio_class_init (GstOcioClass * klass)
   video_filter_class->transform_frame_ip =
       GST_DEBUG_FUNCPTR (gst_ocio_transform_frame_ip);
 
+  g_object_class_install_property (gobject_class, PROP_ENV,
+      g_param_spec_string("env", "Environment",
+          "Path to the OCIO config file, is read from $OCIO by default.",
+          NULL, G_PARAM_READWRITE));
 }
 
 static void
 gst_ocio_init (GstOcio * ocio)
 {
+  GST_DEBUG_OBJECT (ocio, "init");
+
   ocio->sinkpad = GST_BASE_TRANSFORM (ocio)->sinkpad;
   ocio->srcpad = GST_BASE_TRANSFORM (ocio)->srcpad;
+  
+  GST_PAD_SET_PROXY_CAPS (ocio->sinkpad);
+  GST_PAD_SET_PROXY_CAPS (ocio->srcpad);
 }
 
 void
@@ -152,6 +162,10 @@ gst_ocio_set_property (GObject * object, guint property_id,
   GST_DEBUG_OBJECT (ocio, "set_property");
 
   switch (property_id) {
+    case PROP_ENV:
+      ocio->env = g_value_dup_string (value);
+      break;
+    
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
       break;
@@ -167,6 +181,10 @@ gst_ocio_get_property (GObject * object, guint property_id,
   GST_DEBUG_OBJECT (ocio, "get_property");
 
   switch (property_id) {
+    case PROP_ENV:
+      g_value_set_string (value, ocio->env);
+      break;
+
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
       break;
@@ -193,7 +211,8 @@ gst_ocio_finalize (GObject * object)
   GST_DEBUG_OBJECT (ocio, "finalize");
 
   /* clean up object here */
-
+  g_free ((gpointer) ocio->env);
+  
   G_OBJECT_CLASS (gst_ocio_parent_class)->finalize (object);
 }
 
@@ -228,7 +247,8 @@ gst_ocio_set_info (GstVideoFilter * filter, GstCaps * incaps,
   return TRUE;
 }
 
-static GstStateChangeReturn gst_ocio_change_state (GstElement *element,
+static GstStateChangeReturn
+gst_ocio_change_state (GstElement *element,
     GstStateChange transition)
 {
   GstStateChangeReturn ret = GST_STATE_CHANGE_SUCCESS;
@@ -236,9 +256,12 @@ static GstStateChangeReturn gst_ocio_change_state (GstElement *element,
   
   switch (transition) {
     case GST_STATE_CHANGE_NULL_TO_READY:
-      ocio->env = OCIO::GetEnvVariable ("OCIO");
-      g_assert_cmpstr(ocio->env, !=, "");
-      ocio->config = OCIO::GetCurrentConfig ();
+      if (ocio->env == NULL)
+        ocio->env = OCIO::GetEnvVariable ("OCIO");
+      if (g_strcmp0 (ocio->env, "") <= 0)
+        return GST_STATE_CHANGE_FAILURE;
+
+      ocio->config = OCIO::Config::CreateFromFile (ocio->env);
       ocio->processor = ocio->config->getProcessor ("vd8", "srgb8");
       ocio->cpu = ocio->processor->getOptimizedCPUProcessor (
           OCIO::BIT_DEPTH_UINT8, OCIO::BIT_DEPTH_UINT8, OCIO::OPTIMIZATION_DEFAULT);
@@ -257,7 +280,6 @@ static GstStateChangeReturn gst_ocio_change_state (GstElement *element,
       ocio->cpu = NULL;
       ocio->processor = NULL;
       ocio->config = NULL;
-      ocio->env = NULL;
       break;
 
     default:
