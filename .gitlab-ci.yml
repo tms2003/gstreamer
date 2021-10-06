@@ -5,6 +5,9 @@ include:
   - project: 'freedesktop/ci-templates'
     ref: 9f0eb526291fe74651fe1430cbd2397f4c0a819b
     file: '/templates/debian.yml'
+  - project: 'freedesktop/ci-templates'
+    ref: 9f0eb526291fe74651fe1430cbd2397f4c0a819b
+    file: '/templates/ci-fairy.yml'
   ###
   # IMPORTANT
   # These are the version tags for the docker images the CI runs against.
@@ -227,6 +230,18 @@ commitlint:
   rules:
     # Only run on MR as we need CI_MERGE_REQUEST_DIFF_BASE_SHA to know
     # what commits to check
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+
+#
+# Check commit messages with ci-fairy
+#
+check commits:
+  extends: '.fdo.ci-fairy'
+  needs: []
+  stage: 'preparation'
+  script:
+    - ci-fairy check-commits $CI_MERGE_REQUEST_DIFF_BASE_SHA..HEAD --textwidth 0 --no-signed-off-by
+  rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
 
 #
