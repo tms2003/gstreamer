@@ -1,5 +1,5 @@
 /* GStreamer
- * Copyright (C) 2021 FIXME <fixme@example.com>
+ * Copyright (C) 2021 Vivienne Watermeier <vwatermeier@igalia.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -19,19 +19,15 @@
 /**
  * SECTION:element-gstocio
  *
- * The ocio element does FIXME stuff.
+ * Does color management using OpenColorIO.
  *
- * <refsect2>
- * <title>Example launch line</title>
+ * ## Example
  * |[
- * gst-launch-1.0 -v fakesrc ! ocio ! FIXME ! fakesink
+ * gst-launch-1.0 gst-launch-1.0 videotestsrc ! video/x-raw,format=RGB ! ocio env=/path/to/ocio/config ! videoconvert ! autovideosink
  * ]|
- * FIXME Describe what the pipeline does.
- * </refsect2>
+ * Converts the video from one colorspace to another.
  */
 
-#include "gst/gstelement.h"
-#include "gst/gstpad.h"
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif
@@ -119,8 +115,10 @@ gst_ocio_class_init (GstOcioClass * klass)
       &gst_ocio_sink_template);
 
   gst_element_class_set_static_metadata (GST_ELEMENT_CLASS (klass),
-      "FIXME Long name", "Generic", "FIXME Description",
-      "FIXME <fixme@example.com>");
+      "OpenColorIO",
+      "Filter/Converter/Video",
+      "Color management using OpenColorIO.",
+      "Vivienne Watermeier <vwatermeier@igalia.com>");
 
   element_class->change_state = gst_ocio_change_state;
   gobject_class->set_property = gst_ocio_set_property;
@@ -135,6 +133,13 @@ gst_ocio_class_init (GstOcioClass * klass)
   video_filter_class->transform_frame_ip =
       GST_DEBUG_FUNCPTR (gst_ocio_transform_frame_ip);
 
+  /**
+   * GstOcio:env:
+   *
+   * Path to the OCIO config file, is read from $OCIO by default.
+   *
+   * Since: 1.20
+   */
   g_object_class_install_property (gobject_class, PROP_ENV,
       g_param_spec_string("env", "Environment",
           "Path to the OCIO config file, is read from $OCIO by default.",
@@ -163,6 +168,7 @@ gst_ocio_set_property (GObject * object, guint property_id,
 
   switch (property_id) {
     case PROP_ENV:
+      g_free ((gpointer) ocio->env);
       ocio->env = g_value_dup_string (value);
       break;
     
@@ -211,6 +217,9 @@ gst_ocio_finalize (GObject * object)
   GST_DEBUG_OBJECT (ocio, "finalize");
 
   /* clean up object here */
+  ocio->cpu.reset();
+  ocio->processor.reset();
+  ocio->config.reset();
   g_free ((gpointer) ocio->env);
   
   G_OBJECT_CLASS (gst_ocio_parent_class)->finalize (object);
@@ -253,13 +262,20 @@ gst_ocio_change_state (GstElement *element,
 {
   GstStateChangeReturn ret = GST_STATE_CHANGE_SUCCESS;
   GstOcio *ocio = GST_OCIO (element);
-  
+  const gchar *msg;
+
   switch (transition) {
     case GST_STATE_CHANGE_NULL_TO_READY:
       if (ocio->env == NULL)
         ocio->env = OCIO::GetEnvVariable ("OCIO");
-      if (g_strcmp0 (ocio->env, "") <= 0)
+
+      if (g_strcmp0 (ocio->env, "") <= 0) {
+        msg = "error: 'env' missing, cannot find OCIO configuration file.";
+        GST_ERROR_OBJECT (ocio, "%s", msg);
+        GST_ELEMENT_ERROR (element, LIBRARY, INIT,
+            (NULL), (NULL));
         return GST_STATE_CHANGE_FAILURE;
+      }
 
       ocio->config = OCIO::Config::CreateFromFile (ocio->env);
       ocio->processor = ocio->config->getProcessor ("vd8", "srgb8");
@@ -334,17 +350,6 @@ gst_ocio_transform_frame_ip (GstVideoFilter * filter, GstVideoFrame * frame)
   guint32 x_stride = GST_VIDEO_FRAME_COMP_PSTRIDE (frame, 0);
   guint32 y_stride = GST_VIDEO_FRAME_COMP_STRIDE (frame, 0);
 
-  /*
-  g_print (
-      "channel_stride: %" G_GUINT32_FORMAT "\n"
-      "x_stride: %" G_GUINT32_FORMAT "\n"
-      "y_stride: %" G_GUINT32_FORMAT "\n"
-      "bitdepth: %" G_GUINT32_FORMAT "\n"
-      "width: %" G_GUINT32_FORMAT "\n"
-      "height: %" G_GUINT32_FORMAT "\n",
-      channel_stride, x_stride, y_stride, bitdepth, width, height);
-      */
-
   OCIO::PackedImageDesc img (
       GST_VIDEO_FRAME_COMP_DATA (frame, 0),
       width,
@@ -353,11 +358,6 @@ gst_ocio_transform_frame_ip (GstVideoFilter * filter, GstVideoFrame * frame)
       ocio_bit_depth (bitdepth),
       channel_stride, x_stride, y_stride
   );
-  /*
-  OCIO::PackedImageDesc img (
-      GST_VIDEO_FRAME_COMP_DATA (frame, 0),
-      width, height, channels
-  );*/
   ocio->cpu->apply(img);
 
   return GST_FLOW_OK;
@@ -366,31 +366,13 @@ gst_ocio_transform_frame_ip (GstVideoFilter * filter, GstVideoFrame * frame)
 static gboolean
 plugin_init (GstPlugin * plugin)
 {
-
-  /* FIXME Remember to set the rank if it's an element that is meant
-     to be autoplugged by decodebin. */
   return gst_element_register (plugin, "ocio", GST_RANK_NONE, GST_TYPE_OCIO);
 }
 
-/* FIXME: these are normally defined by the GStreamer build system.
-   If you are creating an element to be included in gst-plugins-*,
-   remove these, as they're always defined.  Otherwise, edit as
-   appropriate for your external plugin package. */
-#ifndef VERSION
-#define VERSION "0.0.FIXME"
-#endif
-#ifndef PACKAGE
-#define PACKAGE "FIXME_package"
-#endif
-#ifndef PACKAGE_NAME
-#define PACKAGE_NAME "FIXME_package_name"
-#endif
-#ifndef GST_PACKAGE_ORIGIN
-#define GST_PACKAGE_ORIGIN "http://FIXME.org/"
-#endif
-
-GST_PLUGIN_DEFINE (GST_VERSION_MAJOR,
+GST_PLUGIN_DEFINE (
+    GST_VERSION_MAJOR,
     GST_VERSION_MINOR,
     ocio,
-    "FIXME plugin description",
-    plugin_init, VERSION, "LGPL", PACKAGE_NAME, GST_PACKAGE_ORIGIN)
+    "Color management using OpenColorIO.",
+    plugin_init,
+    VERSION, GST_LICENSE, GST_PACKAGE_NAME, GST_PACKAGE_ORIGIN)

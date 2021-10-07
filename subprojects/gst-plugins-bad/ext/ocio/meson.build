@@ -7,12 +7,11 @@ if get_option('ocio').disabled()
 endif
 
 ocio_dep = dependency('OpenColorIO', required: get_option('ocio'))
-have_ocio = ocio_dep.found()
 
-if have_ocio
+if ocio_dep.found()
 	gstocio = library('gstocio',
 		ocio_sources,
-		c_args: gst_plugins_bad_args,
+		cpp_args: gst_plugins_bad_args,
 		include_directories: [configinc],
 		dependencies: [gstbase_dep, gstvideo_dep, ocio_dep],
 		install: true,
@@ -20,6 +19,4 @@ if have_ocio
 	)
 	pkgconfig.generate(gstocio, install_dir: plugins_pkgconfig_install_dir)
 	plugins += [gstocio]
-elif get_option('ocio').enabled()
-	error('ocio plugin enabled but OpenColorIO library or headers not found')
 endif
