@@ -23,7 +23,7 @@
  *
  * ## Example
  * |[
- * gst-launch-1.0 gst-launch-1.0 videotestsrc ! video/x-raw,format=RGB ! ocio env=/path/to/ocio/config ! videoconvert ! autovideosink
+ * gst-launch-1.0 gst-launch-1.0 videotestsrc ! video/x-raw,format=RGB ! ociofilter env=/path/to/ocio/config src_color=colorspace_from dest_color=colorspace_to ! videoconvert ! autovideosink
  * ]|
  * Converts the video from one colorspace to another.
  */
@@ -67,7 +67,9 @@ static GstFlowReturn gst_ocio_transform_frame_ip (GstVideoFilter * filter,
 enum
 {
   PROP_0,
-  PROP_ENV
+  PROP_ENV,
+  PROP_SRC_COLOR,
+  PROP_DEST_COLOR,
 };
 
 /* pad templates */
@@ -97,8 +99,8 @@ GST_STATIC_PAD_TEMPLATE ("sink",
 /* class initialization */
 
 G_DEFINE_TYPE_WITH_CODE (GstOcio, gst_ocio, GST_TYPE_VIDEO_FILTER,
-    GST_DEBUG_CATEGORY_INIT (gst_ocio_debug_category, "ocio", 0,
-        "debug category for ocio element"));
+    GST_DEBUG_CATEGORY_INIT (gst_ocio_debug_category, "ociofilter", 0,
+        "debug category for ociofilter element"));
 
 static void
 gst_ocio_class_init (GstOcioClass * klass)
@@ -144,6 +146,30 @@ gst_ocio_class_init (GstOcioClass * klass)
       g_param_spec_string("env", "Environment",
           "Path to the OCIO config file, is read from $OCIO by default.",
           NULL, G_PARAM_READWRITE));
+
+  /**
+   * GstOcio:in_color:
+   *
+   * The colorspace used by the incoming video data.
+   *
+   * Since: 1.20
+   */
+  g_object_class_install_property (gobject_class, PROP_SRC_COLOR,
+      g_param_spec_string("src_color", "Source Colorspace",
+          "The colorspace used by the incoming video data.",
+          NULL, G_PARAM_READWRITE));
+
+  /**
+   * GstOcio:out_color:
+   *
+   * The colorspace to convert the video data into.
+   *
+   * Since: 1.20
+   */
+  g_object_class_install_property (gobject_class, PROP_DEST_COLOR,
+      g_param_spec_string("dest_color", "Destination Colorspace",
+          "The colorspace to convert the video data into.",
+          NULL, G_PARAM_READWRITE));
 }
 
 static void
@@ -172,6 +198,16 @@ gst_ocio_set_property (GObject * object, guint property_id,
       ocio->env = g_value_dup_string (value);
       break;
     
+    case PROP_SRC_COLOR:
+      g_free ((gpointer) ocio->src_color);
+      ocio->src_color = g_value_dup_string (value);
+      break;
+
+    case PROP_DEST_COLOR:
+      g_free ((gpointer) ocio->dest_color);
+      ocio->dest_color = g_value_dup_string (value);
+      break;
+
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
       break;
@@ -189,6 +225,14 @@ gst_ocio_get_property (GObject * object, guint property_id,
   switch (property_id) {
     case PROP_ENV:
       g_value_set_string (value, ocio->env);
+      break;
+
+    case PROP_SRC_COLOR:
+      g_value_set_string (value, ocio->src_color);
+      break;
+
+    case PROP_DEST_COLOR:
+      g_value_set_string (value, ocio->dest_color);
       break;
 
     default:
@@ -221,6 +265,8 @@ gst_ocio_finalize (GObject * object)
   ocio->processor.reset();
   ocio->config.reset();
   g_free ((gpointer) ocio->env);
+  g_free ((gpointer) ocio->src_color);
+  g_free ((gpointer) ocio->dest_color);
   
   G_OBJECT_CLASS (gst_ocio_parent_class)->finalize (object);
 }
@@ -277,8 +323,18 @@ gst_ocio_change_state (GstElement *element,
         return GST_STATE_CHANGE_FAILURE;
       }
 
+      if (g_strcmp0 (ocio->src_color, "") <= 0
+          || g_strcmp0 (ocio->dest_color, "") <= 0)
+      {
+        msg = "error: missing colorspace";
+        GST_ERROR_OBJECT (ocio, "%s", msg);
+        GST_ELEMENT_ERROR (element, LIBRARY, INIT,
+            (NULL), (NULL));
+        return GST_STATE_CHANGE_FAILURE;
+      }
+
       ocio->config = OCIO::Config::CreateFromFile (ocio->env);
-      ocio->processor = ocio->config->getProcessor ("vd8", "srgb8");
+      ocio->processor = ocio->config->getProcessor (ocio->src_color, ocio->dest_color);
       ocio->cpu = ocio->processor->getOptimizedCPUProcessor (
           OCIO::BIT_DEPTH_UINT8, OCIO::BIT_DEPTH_UINT8, OCIO::OPTIMIZATION_DEFAULT);
       break;
@@ -366,7 +422,7 @@ gst_ocio_transform_frame_ip (GstVideoFilter * filter, GstVideoFrame * frame)
 static gboolean
 plugin_init (GstPlugin * plugin)
 {
-  return gst_element_register (plugin, "ocio", GST_RANK_NONE, GST_TYPE_OCIO);
+  return gst_element_register (plugin, "ociofilter", GST_RANK_NONE, GST_TYPE_OCIO);
 }
 
 GST_PLUGIN_DEFINE (

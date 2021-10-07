@@ -42,7 +42,7 @@ struct _GstOcio
   GstVideoFilter base_ocio;
   GstPad * sinkpad, * srcpad;
 
-  const char *env;
+  const char *env, *src_color, *dest_color;
 
   OCIO::ConstConfigRcPtr config;
   OCIO::ConstProcessorRcPtr processor;
