@@ -45,6 +45,11 @@ GST_DEBUG_CATEGORY_STATIC (gst_ocio_debug_category);
 
 /* prototypes */
 
+static OCIO::BitDepth ocio_bit_depth (guint32 depth);
+static OCIO::ChannelOrdering ocio_channel_ordering_packed (
+    GstVideoFormat format);
+static void ocio_channel_ordering_planar (GstVideoFormat format,
+    GstVideoFrame * frame, gpointer planes[4]);
 
 static void gst_ocio_set_property (GObject * object,
     guint property_id, const GValue * value, GParamSpec * pspec);
@@ -74,14 +79,26 @@ enum
 
 /* pad templates */
 
+/*
+ * Note: there are currently bugs with xBGR and BGRx, which are too bright,
+ * and with BGRA which is too dark.
+ */
+
 static GstStaticPadTemplate gst_ocio_src_template =
 GST_STATIC_PAD_TEMPLATE ("src",
   GST_PAD_SRC,
   GST_PAD_ALWAYS,
   GST_STATIC_CAPS (
     "video/x-raw, "
-      "formats = "
-        "RGB"
+      "formats = (string) { "
+        "xRGB, RGBx, RGB, xBGR, BGRx, BGR, ARGB, RGBA, BGRA, ABGR, "
+        "GBR, GBRA, RGBP, BGRP, "
+#if G_BYTE_ORDER == G_LITTLE_ENDIAN
+        "GBR_10LE, GBRA_10LE, GBR_12LE, GBRA_12LE, ARGB64 "
+#else
+        "GBR_10BE, GBRA_10BE, GBR_12BE, GBRA_12BE "
+#endif
+      "}"
   )
 );
 
@@ -91,8 +108,15 @@ GST_STATIC_PAD_TEMPLATE ("sink",
   GST_PAD_ALWAYS,
   GST_STATIC_CAPS (
     "video/x-raw, "
-      "formats = "
-        "RGB"
+      "formats = (string) { "
+        "xRGB, RGBx, RGB, xBGR, BGRx, BGR, ARGB, RGBA, BGRA, ABGR, "
+        "GBR, GBRA, RGBP, BGRP, "
+#if G_BYTE_ORDER == G_LITTLE_ENDIAN
+        "GBR_10LE, GBRA_10LE, GBR_12LE, GBRA_12LE, ARGB64 "
+#else
+        "GBR_10BE, GBRA_10BE, GBR_12BE, GBRA_12BE "
+#endif
+      "}"
   )
 );
 
@@ -299,6 +323,12 @@ gst_ocio_set_info (GstVideoFilter * filter, GstCaps * incaps,
 
   GST_DEBUG_OBJECT (ocio, "set_info");
 
+  ocio->cpu = ocio->processor->getOptimizedCPUProcessor(
+    ocio_bit_depth (GST_VIDEO_FORMAT_INFO_BITS (in_info->finfo)),
+    ocio_bit_depth (GST_VIDEO_FORMAT_INFO_BITS (out_info->finfo)),
+    OCIO::OPTIMIZATION_DEFAULT
+  );
+
   return TRUE;
 }
 
@@ -335,8 +365,6 @@ gst_ocio_change_state (GstElement *element,
 
       ocio->config = OCIO::Config::CreateFromFile (ocio->env);
       ocio->processor = ocio->config->getProcessor (ocio->src_color, ocio->dest_color);
-      ocio->cpu = ocio->processor->getOptimizedCPUProcessor (
-          OCIO::BIT_DEPTH_UINT8, OCIO::BIT_DEPTH_UINT8, OCIO::OPTIMIZATION_DEFAULT);
       break;
  
     default:
@@ -390,7 +418,79 @@ ocio_bit_depth (guint32 depth)
     case 32:
       return OCIO::BIT_DEPTH_UINT32;
     default:
+      g_assert_not_reached();
       return OCIO::BIT_DEPTH_UNKNOWN;
+  }
+}
+
+static OCIO::ChannelOrdering
+ocio_channel_ordering_packed (GstVideoFormat format)
+{
+  switch (format)
+  {
+    case GST_VIDEO_FORMAT_xRGB:
+    case GST_VIDEO_FORMAT_RGBx:
+    case GST_VIDEO_FORMAT_RGB:
+      return OCIO::CHANNEL_ORDERING_RGB;
+
+    case GST_VIDEO_FORMAT_xBGR:
+    case GST_VIDEO_FORMAT_BGRx:
+    case GST_VIDEO_FORMAT_BGR:
+      return OCIO::CHANNEL_ORDERING_BGR;
+
+    case GST_VIDEO_FORMAT_RGBA:
+      return OCIO::CHANNEL_ORDERING_RGBA;
+
+    case GST_VIDEO_FORMAT_BGRA:
+      return OCIO::CHANNEL_ORDERING_BGRA;
+
+    case GST_VIDEO_FORMAT_ABGR:
+      return OCIO::CHANNEL_ORDERING_ABGR;
+
+    default:
+      g_assert_not_reached();
+      return OCIO::CHANNEL_ORDERING_ABGR;
+  }
+}
+
+static void
+ocio_channel_ordering_planar (GstVideoFormat format, GstVideoFrame * frame,
+    gpointer planes[4])
+{
+  switch (format)
+  {
+    case GST_VIDEO_FORMAT_GBR:
+    case GST_VIDEO_FORMAT_RGBP:
+    case GST_VIDEO_FORMAT_GBR_10LE:
+    case GST_VIDEO_FORMAT_GBR_10BE:
+    case GST_VIDEO_FORMAT_GBR_12LE:
+    case GST_VIDEO_FORMAT_GBR_12BE:
+      planes[0] = GST_VIDEO_FRAME_PLANE_DATA (frame, 0);
+      planes[1] = GST_VIDEO_FRAME_PLANE_DATA (frame, 1);
+      planes[2] = GST_VIDEO_FRAME_PLANE_DATA (frame, 2);
+      planes[3] = NULL;
+      break;
+    
+    case GST_VIDEO_FORMAT_BGRP:
+      planes[0] = GST_VIDEO_FRAME_PLANE_DATA (frame, 2);
+      planes[1] = GST_VIDEO_FRAME_PLANE_DATA (frame, 1);
+      planes[2] = GST_VIDEO_FRAME_PLANE_DATA (frame, 0);
+      planes[3] = NULL;
+      break;
+
+    case GST_VIDEO_FORMAT_GBRA:
+    case GST_VIDEO_FORMAT_GBRA_10LE:
+    case GST_VIDEO_FORMAT_GBRA_10BE:
+    case GST_VIDEO_FORMAT_GBRA_12LE:
+    case GST_VIDEO_FORMAT_GBRA_12BE:
+      planes[0] = GST_VIDEO_FRAME_PLANE_DATA (frame, 0);
+      planes[1] = GST_VIDEO_FRAME_PLANE_DATA (frame, 1);
+      planes[2] = GST_VIDEO_FRAME_PLANE_DATA (frame, 2);
+      planes[3] = GST_VIDEO_FRAME_PLANE_DATA (frame, 3);
+      break;
+
+    default:
+      g_assert_not_reached();
   }
 }
 
@@ -405,16 +505,55 @@ gst_ocio_transform_frame_ip (GstVideoFilter * filter, GstVideoFrame * frame)
   guint32 channel_stride = bitdepth / 8;
   guint32 x_stride = GST_VIDEO_FRAME_COMP_PSTRIDE (frame, 0);
   guint32 y_stride = GST_VIDEO_FRAME_COMP_STRIDE (frame, 0);
+  GstVideoFormat format = GST_VIDEO_FRAME_FORMAT (frame);
 
-  OCIO::PackedImageDesc img (
-      GST_VIDEO_FRAME_COMP_DATA (frame, 0),
-      width,
-      height,
-      OCIO::CHANNEL_ORDERING_RGB,
-      ocio_bit_depth (bitdepth),
-      channel_stride, x_stride, y_stride
-  );
-  ocio->cpu->apply(img);
+  /* Since PackedImageDesc has no support for ARGB, it needs to be expressed
+   * as a PlanarImageDesc instead.
+   */
+  if (format == GST_VIDEO_FORMAT_ARGB || format == GST_VIDEO_FORMAT_ARGB64) {
+    OCIO::PlanarImageDesc img (
+        GST_VIDEO_FRAME_COMP_DATA(frame, 1),
+        GST_VIDEO_FRAME_COMP_DATA(frame, 2),
+        GST_VIDEO_FRAME_COMP_DATA(frame, 3),
+        GST_VIDEO_FRAME_COMP_DATA(frame, 0),
+        width,
+        height,
+        ocio_bit_depth (bitdepth),
+        x_stride,
+        y_stride
+    );
+    ocio->cpu->apply(img);
+  }
+  else if (GST_VIDEO_FORMAT_INFO_N_PLANES (frame->info.finfo) == 1) {
+    OCIO::PackedImageDesc img (
+        GST_VIDEO_FRAME_COMP_DATA (frame, 0),
+        width,
+        height,
+        ocio_channel_ordering_packed (format),
+        ocio_bit_depth (bitdepth),
+        channel_stride,
+        x_stride,
+        y_stride
+    );
+    ocio->cpu->apply(img);
+  }
+  else {
+    gpointer planes[4];
+    ocio_channel_ordering_planar (format, frame, planes);
+
+    OCIO::PlanarImageDesc img (
+        planes[0],
+        planes[1],
+        planes[2],
+        planes[3],
+        width,
+        height,
+        ocio_bit_depth (bitdepth),
+        x_stride,
+        y_stride
+    );
+    ocio->cpu->apply(img);
+  }
 
   return GST_FLOW_OK;
 }
