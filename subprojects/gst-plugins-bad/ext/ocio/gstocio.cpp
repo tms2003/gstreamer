@@ -25,7 +25,8 @@
  * |[
  * gst-launch-1.0 gst-launch-1.0 videotestsrc ! video/x-raw,format=RGB ! ociofilter env=/path/to/ocio/config src_color=colorspace_from dest_color=colorspace_to ! videoconvert ! autovideosink
  * ]|
- * Converts the video from one colorspace to another.
+ * Converts the video from one colorspace to another. src_color` and `dest_color`
+ * are names referring to color spaces defined in the config file.
  */
 
 #ifdef HAVE_CONFIG_H
@@ -163,6 +164,7 @@ gst_ocio_class_init (GstOcioClass * klass)
    * GstOcio:env:
    *
    * Path to the OCIO config file, is read from $OCIO by default.
+   * See: https://opencolorio.readthedocs.io/en/latest/api/config.html
    *
    * Since: 1.20
    */
@@ -174,7 +176,9 @@ gst_ocio_class_init (GstOcioClass * klass)
   /**
    * GstOcio:in_color:
    *
-   * The colorspace used by the incoming video data.
+   * The colorspace used by the incoming video data, passed as either a
+   * color space name or a role name.
+   * See: https://opencolorio.readthedocs.io/en/latest/api/colorspace.html
    *
    * Since: 1.20
    */
@@ -186,7 +190,9 @@ gst_ocio_class_init (GstOcioClass * klass)
   /**
    * GstOcio:out_color:
    *
-   * The colorspace to convert the video data into.
+   * The colorspace to convert the video data into, passed as either a
+   * color space name or a role name.
+   * See: https://opencolorio.readthedocs.io/en/latest/api/colorspace.html
    *
    * Since: 1.20
    */
@@ -338,33 +344,22 @@ gst_ocio_change_state (GstElement *element,
 {
   GstStateChangeReturn ret = GST_STATE_CHANGE_SUCCESS;
   GstOcio *ocio = GST_OCIO (element);
-  const gchar *msg;
 
   switch (transition) {
     case GST_STATE_CHANGE_NULL_TO_READY:
-      if (ocio->env == NULL)
-        ocio->env = OCIO::GetEnvVariable ("OCIO");
-
-      if (g_strcmp0 (ocio->env, "") <= 0) {
-        msg = "error: 'env' missing, cannot find OCIO configuration file.";
-        GST_ERROR_OBJECT (ocio, "%s", msg);
-        GST_ELEMENT_ERROR (element, LIBRARY, INIT,
-            (NULL), (NULL));
+      try {
+        if (ocio->env)
+          ocio->config = OCIO::Config::CreateFromFile (ocio->env);
+        else
+          ocio->config = OCIO::GetCurrentConfig ();
+        ocio->processor = ocio->config->getProcessor (ocio->src_color, ocio->dest_color);
+      }
+      catch (const OCIO::Exception &e) {
+        GST_ERROR_OBJECT (ocio, "error: failed to initialize OpenColorIO (%s)",
+          e.what());
+        GST_ELEMENT_ERROR (element, LIBRARY, INIT, (NULL), ("%s", e.what()));
         return GST_STATE_CHANGE_FAILURE;
       }
-
-      if (g_strcmp0 (ocio->src_color, "") <= 0
-          || g_strcmp0 (ocio->dest_color, "") <= 0)
-      {
-        msg = "error: missing colorspace";
-        GST_ERROR_OBJECT (ocio, "%s", msg);
-        GST_ELEMENT_ERROR (element, LIBRARY, INIT,
-            (NULL), (NULL));
-        return GST_STATE_CHANGE_FAILURE;
-      }
-
-      ocio->config = OCIO::Config::CreateFromFile (ocio->env);
-      ocio->processor = ocio->config->getProcessor (ocio->src_color, ocio->dest_color);
       break;
  
     default:
