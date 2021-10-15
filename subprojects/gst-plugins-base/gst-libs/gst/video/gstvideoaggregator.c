@@ -1875,7 +1875,15 @@ gst_video_aggregator_fill_queues (GstVideoAggregator * vagg,
         GST_DEBUG_OBJECT (pad,
             "Taking new buffer with start time %" GST_TIME_FORMAT,
             GST_TIME_ARGS (start_time));
-        gst_buffer_replace (&pad->priv->buffer, buf);
+
+        if ((gst_buffer_get_size (buf) == 0 &&
+                GST_BUFFER_FLAG_IS_SET (buf, GST_BUFFER_FLAG_GAP) &&
+                GST_BUFFER_FLAG_IS_SET (buf, GST_BUFFER_FLAG_CORRUPTED))) {
+          GST_DEBUG_OBJECT (pad, "Consuming gap but keeping old buffer around");
+        } else {
+          gst_buffer_replace (&pad->priv->buffer, buf);
+        }
+
         if (pad->priv->pending_vinfo.finfo) {
           gst_caps_replace (&pad->priv->caps, pad->priv->pending_caps);
           gst_caps_replace (&pad->priv->pending_caps, NULL);
@@ -1895,7 +1903,14 @@ gst_video_aggregator_fill_queues (GstVideoAggregator * vagg,
         gst_buffer_unref (buf);
         eos = FALSE;
       } else {
-        gst_buffer_replace (&pad->priv->buffer, buf);
+        if ((gst_buffer_get_size (buf) == 0 &&
+                GST_BUFFER_FLAG_IS_SET (buf, GST_BUFFER_FLAG_GAP) &&
+                GST_BUFFER_FLAG_IS_SET (buf, GST_BUFFER_FLAG_CORRUPTED))) {
+          GST_DEBUG_OBJECT (pad, "Consuming gap but keeping old buffer around");
+        } else {
+          gst_buffer_replace (&pad->priv->buffer, buf);
+        }
+
         if (pad->priv->pending_vinfo.finfo) {
           gst_caps_replace (&pad->priv->caps, pad->priv->pending_caps);
           gst_caps_replace (&pad->priv->pending_caps, NULL);
