@@ -1,0 +1,61 @@
+/* GStreamer
+ * Copyright (C) 2021 FIXME <fixme@example.com>
+ *
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Library General Public
+ * License as published by the Free Software Foundation; either
+ * version 2 of the License, or (at your option) any later version.
+ *
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Library General Public License for more details.
+ *
+ * You should have received a copy of the GNU Library General Public
+ * License along with this library; if not, write to the
+ * Free Software Foundation, Inc., 51 Franklin St, Fifth Floor,
+ * Boston, MA 02110-1301, USA.
+ */
+
+#ifndef _GST_OCIO_H_
+#define _GST_OCIO_H_
+
+#include <gst/video/video.h>
+#include <gst/video/gstvideofilter.h>
+#include <OpenColorIO/OpenColorIO.h>
+
+namespace OCIO = OCIO_NAMESPACE;
+
+G_BEGIN_DECLS
+
+#define GST_TYPE_OCIO   (gst_ocio_get_type())
+#define GST_OCIO(obj)   (G_TYPE_CHECK_INSTANCE_CAST((obj),GST_TYPE_OCIO,GstOcio))
+#define GST_OCIO_CLASS(klass)   (G_TYPE_CHECK_CLASS_CAST((klass),GST_TYPE_OCIO,GstOcioClass))
+#define GST_IS_OCIO(obj)   (G_TYPE_CHECK_INSTANCE_TYPE((obj),GST_TYPE_OCIO))
+#define GST_IS_OCIO_CLASS(obj)   (G_TYPE_CHECK_CLASS_TYPE((klass),GST_TYPE_OCIO))
+
+typedef struct _GstOcio GstOcio;
+typedef struct _GstOcioClass GstOcioClass;
+
+struct _GstOcio
+{
+  GstVideoFilter base_ocio;
+  GstPad * sinkpad, * srcpad;
+
+  const char *env, *src_color, *dest_color;
+
+  OCIO::ConstConfigRcPtr config;
+  OCIO::ConstProcessorRcPtr processor;
+  OCIO::ConstCPUProcessorRcPtr cpu;
+};
+
+struct _GstOcioClass
+{
+  GstVideoFilterClass base_ocio_class;
+};
+
+GType gst_ocio_get_type (void);
+
+G_END_DECLS
+
+#endif
