@@ -94,6 +94,8 @@
 #  include "config.h"
 #endif
 
+#define G_LOG_DOMAIN "GStreamer-multiqueue"
+
 #include <gst/gst.h>
 #include <gst/glib-compat-private.h>
 #include <stdio.h>

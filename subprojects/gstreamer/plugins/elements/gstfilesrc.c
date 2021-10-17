@@ -37,6 +37,8 @@
 #  include "config.h"
 #endif
 
+#define G_LOG_DOMAIN "GStreamer-filesrc"
+
 #include <gst/gst.h>
 #include <glib/gstdio.h>
 #include "gstfilesrc.h"
