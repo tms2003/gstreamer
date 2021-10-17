@@ -49,6 +49,8 @@
 #include "config.h"
 #endif
 
+#define G_LOG_DOMAIN "GStreamer-socketsrc"
+
 #include <gst/gst-i18n-plugin.h>
 #include <gst/net/gstnetcontrolmessagemeta.h>
 #include "gsttcpelements.h"

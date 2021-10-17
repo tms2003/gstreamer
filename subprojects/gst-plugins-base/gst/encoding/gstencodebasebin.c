@@ -24,6 +24,8 @@
 #include "config.h"
 #endif
 
+#define G_LOG_DOMAIN "GStreamer-encodebin"
+
 #include <string.h>
 #include "gstencodebin.h"
 #include "gstsmartencoder.h"

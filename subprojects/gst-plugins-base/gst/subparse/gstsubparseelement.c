@@ -21,6 +21,8 @@
 #include "config.h"
 #endif
 
+#define G_LOG_DOMAIN "GStreamer-subparse"
+
 #include <stdio.h>
 
 #include "gstsubparseelements.h"

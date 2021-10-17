@@ -38,6 +38,8 @@
 #include "config.h"
 #endif
 
+#define G_LOG_DOMAIN "GStreamer-oggmux"
+
 #include <gst/gst.h>
 #include <gst/base/gstbytewriter.h>
 #include <gst/audio/audio.h>

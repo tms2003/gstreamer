@@ -33,6 +33,8 @@
 #  include "config.h"
 #endif
 
+#define G_LOG_DOMAIN "GStreamer-uridecodebin"
+
 #include <string.h>
 
 #include <gst/gst.h>

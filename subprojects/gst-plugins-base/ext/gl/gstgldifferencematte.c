@@ -36,6 +36,8 @@
 #include "config.h"
 #endif
 
+#define G_LOG_DOMAIN "GStreamer-differencematte"
+
 #include <stdlib.h>
 #include <png.h>
 
