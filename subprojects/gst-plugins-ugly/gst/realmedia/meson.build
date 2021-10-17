@@ -15,7 +15,7 @@ real_sources = [
 
 gstrmdemux = library('gstrealmedia',
   real_sources,
-  c_args : ugly_args,
+  c_args : ugly_args + ['-DG_LOG_DOMAIN="GStreamer-realmedia"'],
   include_directories : [configinc, libsinc],
   dependencies : [gstbase_dep, gstrtsp_dep, gstsdp_dep, gstpbutils_dep],
   install : true,

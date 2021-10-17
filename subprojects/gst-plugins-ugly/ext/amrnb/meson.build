@@ -3,7 +3,7 @@ amrnb_dep = dependency('opencore-amrnb', version : '>= 0.1.3', required : get_op
 if amrnb_dep.found()
   amrnb = library('gstamrnb',
     ['amrnb.c', 'amrnbdec.c', 'amrnbenc.c'],
-    c_args : ugly_args,
+    c_args : ugly_args + ['-DG_LOG_DOMAIN="GStreamer-amrnb"'],
     include_directories : [configinc],
     dependencies : [gstaudio_dep, amrnb_dep],
     install : true,
