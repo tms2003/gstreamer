@@ -167,7 +167,7 @@ glib_dep = dependency('glib-2.0', version : glib_req, fallback: ['glib', 'libgli
 gio_dep = dependency('gio-2.0', version : glib_req, fallback: ['glib', 'libgio_dep'] )
 gmodule_dep = dependency('gmodule-2.0', version : glib_req, fallback: ['glib', 'libgmodule_dep'])
 
-gst_omx_args = ['-DHAVE_CONFIG_H']
+gst_omx_args = ['-DHAVE_CONFIG_H', '-DG_LOG_DOMAIN="GStreamer-OMX"']
 configinc = include_directories('.')
 omx_header_path = get_option('header_path')
 if omx_header_path != ''
