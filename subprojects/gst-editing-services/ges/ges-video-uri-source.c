@@ -226,8 +226,8 @@ ges_video_uri_source_create_filters (GESVideoSource * source,
               "deinterlace"), ("deinterlacing won't work"));
     } else {
       /* Right after the queue */
-      g_ptr_array_insert (elements, 1, gst_element_factory_make ("videoconvert",
-              NULL));
+      g_ptr_array_insert (elements, 1,
+          gst_element_factory_create (ges_get_videoconvert_factory (), NULL));
       g_ptr_array_insert (elements, 2, deinterlace);
       ges_track_element_add_children_props (GES_TRACK_ELEMENT (source),
           deinterlace, NULL, NULL, deinterlace_props);

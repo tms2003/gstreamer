@@ -127,9 +127,6 @@ ges_video_source_create_filters (GESVideoSource * self, GPtrArray * elements,
       G_MAXUINT - GES_TIMELINE_ELEMENT_PRIORITY (self), NULL);
   g_ptr_array_add (elements, positioner);
 
-  if (needs_converters)
-    g_ptr_array_add (elements, gst_element_factory_make ("videoconvert", NULL));
-
   /* If there's image-orientation tag, make sure the image is correctly oriented
    * before we scale it. */
   videoflip = gst_element_factory_make ("videoflip", "track-element-videoflip");
@@ -139,9 +136,10 @@ ges_video_source_create_filters (GESVideoSource * self, GPtrArray * elements,
   if (needs_converters) {
     g_ptr_array_add (elements, gst_element_factory_make ("videoscale",
             "track-element-videoscale"));
-    g_ptr_array_add (elements, gst_element_factory_make ("videoconvert",
-            "track-element-videoconvert"));
+    g_ptr_array_add (elements,
+        gst_element_factory_create (ges_get_videoconvert_factory (), NULL));
   }
+
   g_ptr_array_add (elements, gst_element_factory_make ("videorate",
           "track-element-videorate"));
 
