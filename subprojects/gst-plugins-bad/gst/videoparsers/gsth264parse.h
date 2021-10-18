@@ -147,6 +147,7 @@ struct _GstH264Parse
   /* props */
   gint interval;
   gboolean update_timecode;
+  gboolean insert_a53_cc;
 
   GstClockTime pending_key_unit_ts;
   GstEvent *force_key_unit_event;
