@@ -307,6 +307,8 @@ gst_ebml_read_skip (GstEbmlRead * ebml)
   return ret;
 }
 
+#define MAX_ELEMENT_SIZE (15 * 1024 * 1024)
+
 /*
  * Read the next element as a GstBuffer (binary).
  */
@@ -325,6 +327,14 @@ gst_ebml_read_buffer (GstEbmlRead * ebml, guint32 * id, GstBuffer ** buf)
   /* we just at least peeked the id */
   if (!gst_byte_reader_skip (gst_ebml_read_br (ebml), prefix))
     return GST_FLOW_ERROR;      /* FIXME: do proper error handling */
+
+  if (G_UNLIKELY (length > MAX_ELEMENT_SIZE)) {
+    GST_WARNING_OBJECT (ebml->el, "Skipping EBML attachment 0x%x, "
+        "size %" G_GUINT64_FORMAT " too large", *id, length);
+    gst_ebml_read_skip (ebml);
+    *buf = gst_buffer_new ();
+    return GST_FLOW_OK;
+  }
 
   if (G_LIKELY (length > 0)) {
     guint offset;
@@ -377,6 +387,15 @@ gst_ebml_read_bytes (GstEbmlRead * ebml, guint32 * id, const guint8 ** data,
     GST_ERROR_OBJECT (ebml->el, "element 0x%x too large, "
         "size %" G_GUINT64_FORMAT, *id, length);
     return GST_FLOW_ERROR;
+  }
+
+  if (G_UNLIKELY (length > MAX_ELEMENT_SIZE)) {
+    GST_WARNING_OBJECT (ebml->el, "Skipping EBML attachment 0x%x, "
+        "size %" G_GUINT64_FORMAT " too large", *id, length);
+    gst_ebml_read_skip (ebml);
+    *size = 0;
+    *data = NULL;
+    return GST_FLOW_OK;
   }
 
   *data = NULL;
