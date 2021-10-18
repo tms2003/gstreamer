@@ -143,6 +143,8 @@ struct _GstH264Parse
   gboolean frame_start;
   /* AU state */
   gboolean picture_start;
+  /* Position of the first picture NAL */
+  gint picture_start_pos;
 
   /* props */
   gint interval;

@@ -242,6 +242,7 @@ gst_h264_parse_reset_frame (GstH264Parse * h264parse)
   h264parse->update_caps = FALSE;
   h264parse->idr_pos = -1;
   h264parse->sei_pos = -1;
+  h264parse->picture_start_pos = -1;
   h264parse->pic_timing_sei_pos = -1;
   h264parse->pic_timing_sei_size = -1;
   h264parse->keyframe = FALSE;
@@ -1070,6 +1071,16 @@ gst_h264_parse_process_nal (GstH264Parse * h264parse, GstH264NalUnit * nalu)
       /* This is similar to the GOT_SLICE state, but is only reset when the
        * AU is complete. This is used to keep track of AU */
       h264parse->picture_start = TRUE;
+      if (h264parse->picture_start_pos == -1) {
+        if (h264parse->transform)
+          h264parse->picture_start_pos =
+              gst_adapter_available (h264parse->frame_out);
+        else
+          h264parse->picture_start_pos = nalu->sc_offset;
+        GST_DEBUG_OBJECT (h264parse,
+            "marking picture start in frame at offset %d",
+            h264parse->picture_start_pos);
+      }
 
       /* don't need to parse the whole slice (header) here */
       if (*(nalu->data + nalu->offset + nalu->header_bytes) & 0x80) {
@@ -3085,6 +3096,10 @@ gst_h264_parse_create_pic_timing_sei (GstH264Parse * h264parse,
       h264parse->idr_pos += mem_size;
       h264parse->idr_pos -= h264parse->pic_timing_sei_size;
     }
+    if (h264parse->picture_start_pos >= 0) {
+      h264parse->picture_start_pos += mem_size;
+      h264parse->picture_start_pos -= h264parse->pic_timing_sei_size;
+    }
   }
 
   return out_buf;
@@ -3184,29 +3199,33 @@ gst_h264_parse_create_a53_cc_sei (GstH264Parse * h264parse, GstBuffer * buffer)
     gst_buffer_append_memory (out_buf, mem);
   } else {
     gsize mem_size;
+
+    if (h264parse->picture_start_pos < 0) {
+      GST_WARNING_OBJECT (h264parse,
+          "No picture VCL NAL in frame, nowhere to insert SEI NAL unit");
+      return NULL;
+    }
     mem_size = gst_memory_get_sizes (mem, NULL, NULL);
 
     /* Order defined in Rec. ITU-T H.264 §7.4.1.2.3, Figure 7-1.
-     * AU (access unit) delimiter NAL unit must be first.
-     * This always gets inserted by an earlier stage.
+     * SEI NALs must be after the AUD, SPS and PPS NALs, and preceed the 
+     * first VCL NAL of a primary coded picture. Because the AUD, SPS, PPS
+     * and SEI are all optional, insert before the first VCL NAL.
      */
     gst_buffer_copy_into (out_buf, buffer, GST_BUFFER_COPY_MEMORY, 0,
-        sizeof (au_delim));
-
-    /* FIXME: do we need to track SPS and PPS NAL unit positions, and ensure
-     * the inserted SEI is after this? They don't appear in every frame, and
-     * not every frame already has an SEI. */
+        h264parse->picture_start_pos);
 
     /* Insert new SEI NAL unit; this must preceed any picture data NAL. */
     gst_buffer_append_memory (out_buf, mem);
 
     /* Copy the remaining NALs. */
     gst_buffer_copy_into (out_buf, buffer, GST_BUFFER_COPY_MEMORY,
-        sizeof (au_delim), -1);
+        h264parse->picture_start_pos, -1);
 
     if (h264parse->idr_pos >= 0) {
       h264parse->idr_pos += mem_size;
     }
+    h264parse->picture_start_pos += mem_size;
   }
 
   return out_buf;
@@ -3266,6 +3285,8 @@ gst_h264_parse_pre_push_frame (GstBaseParse * parse, GstBaseParseFrame * frame)
       gst_buffer_prepend_memory (frame->out_buffer, mem);
       if (h264parse->idr_pos >= 0)
         h264parse->idr_pos += sizeof (au_delim);
+      if (h264parse->picture_start_pos >= 0)
+        h264parse->picture_start_pos += sizeof (au_delim);
 
       buffer = frame->out_buffer;
     } else {
