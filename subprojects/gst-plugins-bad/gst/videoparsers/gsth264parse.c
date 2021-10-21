@@ -3125,7 +3125,7 @@ gst_h264_parse_create_a53_cc_sei (GstH264Parse * h264parse, GstBuffer * buffer)
               &iter, GST_VIDEO_CAPTION_META_API_TYPE))) {
     GstH264SEIMessage sei;
     GstH264RegisteredUserData *rud;
-    guint8 *data;
+    GstByteWriter *bw;
 
     /* While this only allows `closedcaption/x-cea-708,format=cc_data`,
      * you can still insert EIA-608 captions delivered in the DTVCC
@@ -3139,30 +3139,30 @@ gst_h264_parse_create_a53_cc_sei (GstH264Parse * h264parse, GstBuffer * buffer)
     memset (&sei, 0, sizeof (GstH264SEIMessage));
     sei.payloadType = GST_H264_SEI_REGISTERED_USER_DATA;
     rud = &sei.payload.registered_user_data;
-    rud->country_code = 181;    /* United States */
+    rud->country_code = ITU_T_T35_COUNTRY_CODE_US;
     rud->size = cc_meta->size + 10;
 
-    data = g_malloc (rud->size);
-    memcpy (data + 9, cc_meta->data, cc_meta->size);
-
-    data[0] = 0;                /* 16-bits itu_t_t35_provider_code */
-    data[1] = 49;
-    data[2] = 'G';              /* 32-bits ATSC_user_identifier */
-    data[3] = 'A';
-    data[4] = '9';
-    data[5] = '4';
-    data[6] = 3;                /* 8-bits ATSC1_data_user_data_type_code */
+    bw = gst_byte_writer_new_with_size (rud->size, TRUE);
+    /* 16-bits itu_t_t35_provider_code */
+    gst_byte_writer_put_uint16_be (bw, ITU_T_T35_MANUFACTURER_US_ATSC);
+    /* 32-bits ATSC_user_identifier */
+    gst_byte_writer_put_uint32_be (bw, A53_USER_DATA_ID_GA94);
+    /* 8-bits ATSC1_data_user_data_type_code */
+    gst_byte_writer_put_uint8 (bw, A53_USER_DATA_TYPE_CODE_CC_DATA);
     /* 8-bits:
      * 1 bit process_em_data_flag (0)
      * 1 bit process_cc_data_flag (1)
      * 1 bit additional_data_flag (0)
      * 5-bits cc_count
      */
-    data[7] = ((cc_meta->size / 3) & 0x1f) | 0x40;
-    data[8] = 255;              /* 8 bits em_data, unused */
-    data[cc_meta->size + 9] = 255;      /* 8 marker bits */
+    gst_byte_writer_put_uint8 (bw, ((cc_meta->size / 3) & 0x1f) | 0x40);
+    /* 8 bits em_data, unused */
+    gst_byte_writer_put_uint8 (bw, 255);
+    gst_byte_writer_put_data (bw, cc_meta->data, cc_meta->size);
+    /* 8 marker bits */
+    gst_byte_writer_put_uint8 (bw, 255);
 
-    rud->data = data;
+    rud->data = gst_byte_writer_free_and_get_data (bw);
     if (!cc_sei_array) {
       cc_sei_array = g_array_new (FALSE, FALSE, sizeof (GstH264SEIMessage));
       g_array_set_clear_func (cc_sei_array,
