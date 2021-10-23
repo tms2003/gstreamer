@@ -15,6 +15,7 @@
         "ranges": "c",
         "functional": "c",
         "*.dat": "c",
-        "*.tcc": "c"
+        "*.tcc": "c",
+        "cstdlib": "c"
     }
 }

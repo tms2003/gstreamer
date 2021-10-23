@@ -8,6 +8,7 @@
 #include <gst/gst.h>
 #include <gst/video/video.h>
 #include <gst/video/gstvideoaggregator.h>
+#include "vmafenums.h"
 
 G_BEGIN_DECLS
 #define GST_TYPE_VMAF (gst_vmaf_get_type())
@@ -21,19 +22,6 @@ G_BEGIN_DECLS
         (G_TYPE_CHECK_CLASS_TYPE((klass),GST_TYPE_VMAF))
 typedef struct _GstVmaf GstVmaf;
 typedef struct _GstVmafClass GstVmafClass;
-
-typedef enum _GstVmafLogFmtEnum
-{
-  JSON_LOG_FMT = 0,
-  //XML_LOG_FMT = 1,
-} GstVmafLogFmtEnum;
-
-typedef enum _GstVmafPoolMethodEnum
-{
-  MIN_POOL_METHOD = 0,
-  MEAN_POOL_METHOD = 1,
-  HARMONIC_MEAN_POOL_METHOD = 2
-} GstVmafPoolMethodEnum;
 
 typedef struct
 {
@@ -62,16 +50,12 @@ typedef struct
   VmafModelCollection *vmaf_model_collection;
 } GstVmafThreadHelper;
 
-/**
- * GstIqaVmaf:
- *
- * The opaque #GstIqaVmaf structure.
- */
 struct _GstVmaf
 {
   GstVideoAggregator videoaggregator;
   // VMAF settings from cmd
-  gchar *model_filename;
+  GstVmafPoolMethodEnum vmaf_config_pool_method;
+  gchar *vmaf_config_model_filename;
   gboolean vmaf_config_disable_clip;
   gboolean vmaf_config_disable_avx;
   gboolean vmaf_config_enable_transform;
@@ -79,14 +63,12 @@ struct _GstVmaf
   gboolean vmaf_config_psnr;
   gboolean vmaf_config_ssim;
   gboolean vmaf_config_ms_ssim;
-  GstVmafPoolMethodEnum pool_method;
-  guint num_threads;
-  guint subsample;
+  guint vmaf_config_num_threads;
+  guint vmaf_config_subsample;
   gboolean vmaf_config_conf_int;
   // Thread helpers
   GstVmafThreadHelper *helper_struct_pointer;
   gint number_of_input_streams;
-
   gboolean finish_threads;
   GMutex finish_mutex;
 };
