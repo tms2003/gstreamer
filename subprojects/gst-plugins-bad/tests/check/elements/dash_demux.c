@@ -1391,6 +1391,14 @@ testContentProtectionDashdemuxSendsEvent (GstAdaptiveDemuxTestEngine * engine,
     fail_if (str == NULL);
     str = strstr (value, "<mspr:pro>dGVzdA==</mspr:pro>");
     fail_if (str == NULL);
+  } else if (g_strcmp0 (system_id, "dash:mp4protection:2011") == 0) {
+    const gchar *str;
+
+    fail_unless (g_strcmp0 (origin, "dash/mpd") == 0);
+    str = strstr (value, "<ContentProtection");
+    fail_if (str == NULL);
+    str = strstr (value, "value=\"cenc\"");
+    fail_if (str == NULL);
   } else {
     fail ("unexpected content protection event '%s'", system_id);
   }
@@ -1512,7 +1520,187 @@ GST_START_TEST (testContentProtection)
 
   gst_structure_get_uint (testData->countContentProtectionEvents, "video_00",
       &event_count);
-  fail_unless (event_count == 3);
+  fail_unless (event_count == 4);
+
+  g_object_unref (testData);
+  if (http_src_test_data.data)
+    gst_structure_free (http_src_test_data.data);
+}
+
+GST_END_TEST;
+
+static gboolean
+testContentProtectionClearKeyDashdemuxSendsEvent (GstAdaptiveDemuxTestEngine *
+    engine, GstAdaptiveDemuxTestOutputStream * stream, GstEvent * event,
+    gpointer user_data)
+{
+  GstDashDemuxTestCase *test_case = GST_DASH_DEMUX_TEST_CASE (user_data);
+  const gchar *system_id;
+  GstBuffer *data;
+  const gchar *origin;
+  GstMapInfo info;
+  gchar *value;
+  gchar *name;
+  guint event_count = 0;
+
+  GST_DEBUG ("received event %s", GST_EVENT_TYPE_NAME (event));
+
+  if (GST_EVENT_TYPE (event) != GST_EVENT_PROTECTION) {
+    return TRUE;
+  }
+
+  /* we expect content protection events only on video pad */
+  name = gst_pad_get_name (stream->pad);
+  fail_unless (g_strcmp0 (name, "video_00") == 0);
+  gst_event_parse_protection (event, &system_id, &data, &origin);
+
+  gst_buffer_map (data, &info, GST_MAP_READ);
+
+  value = g_malloc (info.size + 1);
+  strncpy (value, (gchar *) info.data, info.size);
+  value[info.size] = 0;
+  gst_buffer_unmap (data, &info);
+
+  /* We can't do a simple compare of value (which should be an XML dump
+     of the ContentProtection element), because the whitespace
+     formatting from xmlDump might differ between versions of libxml */
+  if (g_strcmp0 (system_id, "11111111-AAAA-BBBB-CCCC-123456789ABC") == 0) {
+    const gchar *str;
+
+    fail_unless (g_strcmp0 (origin, "dash/mpd") == 0);
+    str = strstr (value, "<ContentProtection");
+    fail_if (str == NULL);
+    str = strstr (value, "value=\"test value\"");
+    fail_if (str == NULL);
+  } else if (g_strcmp0 (system_id, "5e629af5-38da-4063-8977-97ffbd9902d4") == 0) {
+    const gchar *str;
+
+    fail_unless (g_strcmp0 (origin, "dash/mpd") == 0);
+
+    str = strstr (value, "<ContentProtection");
+    fail_if (str == NULL);
+    str = strstr (value, "<mas:MarlinContentIds>");
+    fail_if (str == NULL);
+    str = strstr (value, "<mas:MarlinContentId>");
+    fail_if (str == NULL);
+    str = strstr (value, "urn:marlin:kid:02020202020202020202020202020202");
+    fail_if (str == NULL);
+    str = strstr (value, "</ContentProtection>");
+    fail_if (str == NULL);
+  } else if (g_strcmp0 (system_id, "9a04f079-9840-4286-ab92-e65be0885f95") == 0) {
+    const gchar *str;
+
+    fail_unless (g_strcmp0 (origin, "dash/mpd") == 0);
+    str = strstr (value, "<ContentProtection");
+    fail_if (str == NULL);
+    str = strstr (value, "<mspr:pro>dGVzdA==</mspr:pro>");
+    fail_if (str == NULL);
+  } else if (g_strcmp0 (system_id, "dash:mp4protection:2011") == 0) {
+    const gchar *str;
+
+    fail_unless (g_strcmp0 (origin, "dash/mpd") == 0);
+    str = strstr (value, "<ContentProtection");
+    fail_if (str == NULL);
+    str =
+        strstr (value,
+        "cenc:default_KID=\"9eb4050d-e44b-4802-932e-27d75083e266\"");
+    fail_if (str == NULL);
+  } else if (g_strcmp0 (system_id, "e2719d58-a985-b3c9-781a-b030af78d30e") == 0) {
+    const gchar *str;
+
+    fail_unless (g_strcmp0 (origin, "dash/mpd") == 0);
+    str = strstr (value, "<ContentProtection");
+    fail_if (str == NULL);
+    str =
+        strstr (value,
+        "<clearkey:Laurl Lic_type=\"EME-1.0\">https://drm-clearkey-testvectors.axtest.net/AcquireLicense</clearkey:Laurl>");
+    fail_if (str == NULL);
+  } else {
+    fail ("unexpected content protection event '%s'", system_id);
+  }
+
+  g_free (value);
+
+  fail_if (test_case->countContentProtectionEvents == NULL);
+  gst_structure_get_uint (test_case->countContentProtectionEvents, name,
+      &event_count);
+  event_count++;
+  gst_structure_set (test_case->countContentProtectionEvents, name, G_TYPE_UINT,
+      event_count, NULL);
+
+  g_free (name);
+  return TRUE;
+}
+
+
+GST_START_TEST (testContentProtectionClearKey)
+{
+  const gchar *mpd =
+      "<?xml version=\"1.0\" encoding=\"utf-8\"?>"
+      "<MPD xmlns=\"urn:mpeg:dash:schema:mpd:2011\" minBufferTime=\"PT1.500S\""
+      "     type=\"static\" mediaPresentationDuration=\"PT135.743S\""
+      "     profiles=\"urn:mpeg:dash:profile:isoff-on-demand:2011\""
+      "     xmlns:cenc=\"urn:mpeg:cenc:2013\""
+      "     xmlns:clearkey=\"http://dashif.org/guidelines/clearKey\">"
+      "<Period>"
+      "  <AdaptationSet segmentAlignment=\"true\" mimeType=\"video/mp4\">"
+      "    <ContentProtection schemeIdUri=\"urn:mpeg:dash:mp4protection:2011\" value=\"cenc\""
+      "                       cenc:default_KID=\"9eb4050d-e44b-4802-932e-27d75083e266\"/>"
+      "    <ContentProtection value=\"ClearKey1.0\""
+      "                       schemeIdUri=\"urn:uuid:e2719d58-a985-b3c9-781a-b030af78d30e\">"
+      "      <clearkey:Laurl Lic_type=\"EME-1.0\">https://drm-clearkey-testvectors.axtest.net/AcquireLicense</clearkey:Laurl>"
+      "    </ContentProtection>"
+      "    <Representation id=\"1\" mimeType=\"video/mp4\" codecs=\"avc1.64001f\""
+      "                    width=\"512\" height=\"288\" frameRate=\"24\" sar=\"1:1\""
+      "                    startWithSAP=\"1\" bandwidth=\"389802\">"
+      "      <BaseURL>video.mp4</BaseURL>"
+      "      <SegmentBase indexRange=\"0-682\""
+      "                   indexRangeExact=\"true\">"
+      "        <Initialization range=\"0-233\"/>"
+      "      </SegmentBase>"
+      "    </Representation></AdaptationSet></Period></MPD>";
+
+  GstDashDemuxTestInputData inputTestData[] = {
+    {"http://unit.test/test.mpd", (guint8 *) mpd, 0},
+    {"http://unit.test/video.mp4", NULL, 16},
+    {NULL, NULL, 0},
+  };
+  GstAdaptiveDemuxTestExpectedOutput outputTestData[] = {
+    /* {"audio_00", 5000, NULL}, */
+    {"video_00", 24, NULL},
+  };
+  GstTestHTTPSrcCallbacks http_src_callbacks = { 0 };
+  GstTestHTTPSrcTestData http_src_test_data = { 0 };
+  GstAdaptiveDemuxTestCallbacks test_callbacks = { 0 };
+  GstDashDemuxTestCase *testData;
+  guint event_count = 0;
+
+  http_src_callbacks.src_start = gst_dashdemux_http_src_start;
+  http_src_callbacks.src_create = gst_dashdemux_http_src_create;
+  http_src_test_data.input = inputTestData;
+  gst_test_http_src_install_callbacks (&http_src_callbacks,
+      &http_src_test_data);
+
+  test_callbacks.appsink_received_data =
+      gst_adaptive_demux_test_check_received_data;
+  test_callbacks.appsink_eos =
+      gst_adaptive_demux_test_check_size_of_received_data;
+  test_callbacks.demux_sent_event =
+      testContentProtectionClearKeyDashdemuxSendsEvent;
+
+  testData = gst_dash_demux_test_case_new ();
+  COPY_OUTPUT_TEST_DATA (outputTestData, testData);
+  testData->countContentProtectionEvents =
+      gst_structure_new_empty ("countContentProtectionEvents");
+  gst_adaptive_demux_test_run (DEMUX_ELEMENT_NAME, "http://unit.test/test.mpd",
+      &test_callbacks, testData);
+
+  fail_unless (gst_structure_has_field_typed
+      (testData->countContentProtectionEvents, "video_00", G_TYPE_UINT));
+
+  gst_structure_get_uint (testData->countContentProtectionEvents, "video_00",
+      &event_count);
+  fail_unless (event_count == 2);
 
   g_object_unref (testData);
   if (http_src_test_data.data)
@@ -1546,6 +1734,7 @@ dash_demux_suite (void)
   tcase_add_test (tc_basicTest, testMediaDownloadErrorMiddleFragment);
   tcase_add_test (tc_basicTest, testQuery);
   tcase_add_test (tc_basicTest, testContentProtection);
+  tcase_add_test (tc_basicTest, testContentProtectionClearKey);
 
   tcase_add_unchecked_fixture (tc_basicTest, gst_adaptive_demux_test_setup,
       gst_adaptive_demux_test_teardown);
