@@ -352,6 +352,7 @@ on_demuxNewPad (GstElement * demux, GstPad * pad, gpointer user_data)
   gst_object_ref (sink);
   stream->appsink = GST_APP_SINK (sink);
 
+  appSinkCallbacks.new_event = NULL;
   appSinkCallbacks.eos = on_appSinkEOS;
   appSinkCallbacks.new_preroll = NULL;
   appSinkCallbacks.new_sample = on_appSinkNewSample;

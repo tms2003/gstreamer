@@ -2851,8 +2851,6 @@ gst_dash_demux_parse_isobmff (GstAdaptiveDemux * demux,
     if (size == 0) {
       /* We assume this is mdat, anything else with "size until end"
        * does not seem to make sense */
-      g_assert (dash_stream->isobmff_parser.current_fourcc ==
-          GST_ISOFF_FOURCC_MDAT);
       dash_stream->isobmff_parser.current_size = -1;
       break;
     }

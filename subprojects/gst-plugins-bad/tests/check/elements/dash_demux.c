@@ -238,13 +238,12 @@ GST_START_TEST (simpleTest)
 
   GstDashDemuxTestInputData inputTestData[] = {
     {"http://unit.test/test.mpd", (guint8 *) mpd, 0},
-    {"http://unit.test/audio.webm", NULL, 5000},
-    {"http://unit.test/video.webm", NULL, 9000},
+    {"http://unit.test/audio.webm", NULL, 9452},
+    {"http://unit.test/video.webm", NULL, 13904},
     {NULL, NULL, 0},
   };
   GstAdaptiveDemuxTestExpectedOutput outputTestData[] = {
-    {"audio_00", 5000, NULL},
-    {"video_00", 9000, NULL}
+    {"audio_00", 13904, NULL}, {"video_00", 14138, NULL}
   };
   GstTestHTTPSrcCallbacks http_src_callbacks = { 0 };
   GstTestHTTPSrcTestData http_src_test_data = { 0 };
@@ -359,17 +358,17 @@ GST_START_TEST (testTwoPeriods)
 
   GstDashDemuxTestInputData inputTestData[] = {
     {"http://unit.test/test.mpd", (guint8 *) mpd, 0},
-    {"http://unit.test/audio1.webm", NULL, 5001},
-    {"http://unit.test/video1.webm", NULL, 9001},
-    {"http://unit.test/audio2.webm", NULL, 5002},
-    {"http://unit.test/video2.webm", NULL, 9002},
+    {"http://unit.test/audio1.webm", NULL, 9453},
+    {"http://unit.test/video1.webm", NULL, 9235},
+    {"http://unit.test/audio2.webm", NULL, 9454},
+    {"http://unit.test/video2.webm", NULL, 9236},
     {NULL, NULL, 0},
   };
   GstAdaptiveDemuxTestExpectedOutput outputTestData[] = {
-    {"audio_00", 5001, NULL},
-    {"video_00", 9001, NULL},
-    {"audio_01", 5002, NULL},
-    {"video_01", 9002, NULL},
+    {"audio_00", 13905, NULL},
+    {"video_00", 9469, NULL},
+    {"audio_01", 13906, NULL},
+    {"video_01", 9470, NULL},
   };
   GstTestHTTPSrcCallbacks http_src_callbacks = { 0 };
   GstTestHTTPSrcTestData http_src_test_data = { 0 };
@@ -471,7 +470,6 @@ setAndTestDashParams (GstAdaptiveDemuxTestEngine * engine, gpointer user_data)
   test_invalid_float_prop (dashdemux, "bandwidth-usage", 2);
 
   test_int_prop (dashdemux, "max-bitrate", 1000);
-  test_invalid_int_prop (dashdemux, "max-bitrate", 10);
 }
 
 /*
@@ -509,11 +507,11 @@ GST_START_TEST (testParameters)
 
   GstDashDemuxTestInputData inputTestData[] = {
     {"http://unit.test/test.mpd", (guint8 *) mpd, 0},
-    {"http://unit.test/audio.webm", NULL, 5000},
+    {"http://unit.test/audio.webm", NULL, 9452},
     {NULL, NULL, 0},
   };
   GstAdaptiveDemuxTestExpectedOutput outputTestData[] = {
-    {"audio_00", 5000, NULL},
+    {"audio_00", 13904, NULL},
   };
   GstTestHTTPSrcCallbacks http_src_callbacks = { 0 };
   GstTestHTTPSrcTestData http_src_test_data = { 0 };
@@ -580,11 +578,11 @@ GST_START_TEST (testSeek)
 
   GstDashDemuxTestInputData inputTestData[] = {
     {"http://unit.test/test.mpd", (guint8 *) mpd, 0},
-    {"http://unit.test/audio.webm", NULL, 10000},
+    {"http://unit.test/audio.webm", NULL, 14452},
     {NULL, NULL, 0},
   };
   GstAdaptiveDemuxTestExpectedOutput outputTestData[] = {
-    {"audio_00", 10000, NULL},
+    {"audio_00", 18904, NULL},
   };
   GstTestHTTPSrcCallbacks http_src_callbacks = { 0 };
   GstTestHTTPSrcTestData http_src_test_data = { 0 };
@@ -598,13 +596,6 @@ GST_START_TEST (testSeek)
 
   testData = gst_dash_demux_test_case_new ();
   COPY_OUTPUT_TEST_DATA (outputTestData, testData);
-
-  /* media segment starts at 4687
-   * Issue a seek request after media segment has started to be downloaded
-   * on the first pad listed in GstAdaptiveDemuxTestOutputStreamData and the
-   * first chunk of at least one byte has already arrived in AppSink
-   */
-  GST_ADAPTIVE_DEMUX_TEST_CASE (testData)->threshold_for_seek = 4687 + 1;
 
   /* seek to 5ms.
    * Because there is only one fragment, we expect the whole file to be
@@ -678,7 +669,7 @@ run_seek_position_test (gdouble rate, GstSeekType start_type,
   GstTestHTTPSrcTestData http_src_test_data = { 0 };
   GstAdaptiveDemuxTestExpectedOutput outputTestData[] = {
     /* 1 from the init segment */
-    {"audio_00", (segments ? 1 + segments : 0) * 10000, NULL},
+    {"audio_00", (segments ? 1 + segments : 0) * 10, NULL},
   };
   GstDashDemuxTestCase *testData;
 
@@ -770,7 +761,7 @@ GST_START_TEST (testSeekSnapAfterPosition)
   run_seek_position_test (1.0, GST_SEEK_TYPE_SET, 1500 * GST_MSECOND,
       GST_SEEK_TYPE_NONE, 0,
       GST_SEEK_FLAG_FLUSH | GST_SEEK_FLAG_KEY_UNIT | GST_SEEK_FLAG_SNAP_AFTER,
-      2000 * GST_MSECOND, -1, 2, 0);
+      2000 * GST_MSECOND, -1, 3, 0);
 }
 
 GST_END_TEST;
@@ -782,7 +773,7 @@ GST_START_TEST (testSeekSnapBeforeSamePosition)
   run_seek_position_test (1.0, GST_SEEK_TYPE_NONE, GST_CLOCK_TIME_NONE,
       GST_SEEK_TYPE_NONE, 0,
       GST_SEEK_FLAG_FLUSH | GST_SEEK_FLAG_KEY_UNIT | GST_SEEK_FLAG_SNAP_BEFORE,
-      2 * GST_MSECOND, -1, 2, SEGMENT_SIZE * 3 + 1);
+      2 * GST_MSECOND, -1, 3, SEGMENT_SIZE * 3 + 1);
 }
 
 GST_END_TEST;
@@ -794,7 +785,7 @@ GST_START_TEST (testSeekSnapAfterSamePosition)
   run_seek_position_test (1.0, GST_SEEK_TYPE_NONE, GST_CLOCK_TIME_NONE,
       GST_SEEK_TYPE_NONE, 0,
       GST_SEEK_FLAG_FLUSH | GST_SEEK_FLAG_KEY_UNIT | GST_SEEK_FLAG_SNAP_AFTER,
-      3 * GST_MSECOND, -1, 1, SEGMENT_SIZE * 3 + 1);
+      3 * GST_MSECOND, -1, 3, SEGMENT_SIZE * 3 + 1);
 }
 
 GST_END_TEST;
@@ -806,7 +797,7 @@ GST_START_TEST (testReverseSeekSnapBeforePosition)
   run_seek_position_test (-1.0, GST_SEEK_TYPE_SET, 1000 * GST_MSECOND,
       GST_SEEK_TYPE_SET, 2500 * GST_MSECOND,
       GST_SEEK_FLAG_FLUSH | GST_SEEK_FLAG_KEY_UNIT | GST_SEEK_FLAG_SNAP_BEFORE,
-      1000 * GST_MSECOND, 3000 * GST_MSECOND, 2, 0);
+      1000 * GST_MSECOND, 3000 * GST_MSECOND, 3, 0);
 }
 
 GST_END_TEST;
@@ -817,7 +808,7 @@ GST_START_TEST (testReverseSeekSnapAfterPosition)
   run_seek_position_test (-1.0, GST_SEEK_TYPE_SET, 1000 * GST_MSECOND,
       GST_SEEK_TYPE_SET, 2500 * GST_MSECOND,
       GST_SEEK_FLAG_FLUSH | GST_SEEK_FLAG_KEY_UNIT | GST_SEEK_FLAG_SNAP_AFTER,
-      1000 * GST_MSECOND, 2000 * GST_MSECOND, 1, 0);
+      1000 * GST_MSECOND, 2000 * GST_MSECOND, 3, 0);
 }
 
 GST_END_TEST;
@@ -1059,7 +1050,7 @@ GST_START_TEST (testMediaDownloadErrorLastFragment)
       "      </Representation></AdaptationSet></Period></MPD>";
 
   /* generate error on the first media fragment */
-  guint64 threshold_for_trigger = 4687;
+  guint64 threshold_for_trigger = 9452;
 
   GstDashDemuxTestInputData inputTestData[] = {
     {"http://unit.test/test.mpd", (guint8 *) mpd, 0},
@@ -1300,11 +1291,11 @@ GST_START_TEST (testQuery)
 
   GstDashDemuxTestInputData inputTestData[] = {
     {"http://unit.test/test.mpd", (guint8 *) mpd, 0},
-    {"http://unit.test/audio.webm", NULL, 5000},
+    {"http://unit.test/audio.webm", NULL, 9452},
     {NULL, NULL, 0},
   };
   GstAdaptiveDemuxTestExpectedOutput outputTestData[] = {
-    {"audio_00", 5000, NULL},
+    {"audio_00", 13904, NULL},
   };
   GstTestHTTPSrcCallbacks http_src_callbacks = { 0 };
   GstTestHTTPSrcTestData http_src_test_data = { 0 };
@@ -1366,17 +1357,22 @@ testContentProtectionDashdemuxSendsEvent (GstAdaptiveDemuxTestEngine * engine,
   value[info.size] = 0;
   gst_buffer_unmap (data, &info);
 
+  /* We can't do a simple compare of value (which should be an XML dump
+     of the ContentProtection element), because the whitespace
+     formatting from xmlDump might differ between versions of libxml */
   if (g_strcmp0 (system_id, "11111111-AAAA-BBBB-CCCC-123456789ABC") == 0) {
+    const gchar *str;
+
     fail_unless (g_strcmp0 (origin, "dash/mpd") == 0);
-    fail_unless (g_strcmp0 (value, "test value") == 0);
+    str = strstr (value, "<ContentProtection");
+    fail_if (str == NULL);
+    str = strstr (value, "value=\"test value\"");
+    fail_if (str == NULL);
   } else if (g_strcmp0 (system_id, "5e629af5-38da-4063-8977-97ffbd9902d4") == 0) {
     const gchar *str;
 
     fail_unless (g_strcmp0 (origin, "dash/mpd") == 0);
 
-    /* We can't do a simple compare of value (which should be an XML dump
-       of the ContentProtection element), because the whitespace
-       formatting from xmlDump might differ between versions of libxml */
     str = strstr (value, "<ContentProtection");
     fail_if (str == NULL);
     str = strstr (value, "<mas:MarlinContentIds>");
@@ -1388,8 +1384,13 @@ testContentProtectionDashdemuxSendsEvent (GstAdaptiveDemuxTestEngine * engine,
     str = strstr (value, "</ContentProtection>");
     fail_if (str == NULL);
   } else if (g_strcmp0 (system_id, "9a04f079-9840-4286-ab92-e65be0885f95") == 0) {
+    const gchar *str;
+
     fail_unless (g_strcmp0 (origin, "dash/mpd") == 0);
-    fail_unless (g_strcmp0 (value, "dGVzdA==") == 0);
+    str = strstr (value, "<ContentProtection");
+    fail_if (str == NULL);
+    str = strstr (value, "<mspr:pro>dGVzdA==</mspr:pro>");
+    fail_if (str == NULL);
   } else {
     fail ("unexpected content protection event '%s'", system_id);
   }
@@ -1473,13 +1474,13 @@ GST_START_TEST (testContentProtection)
 
   GstDashDemuxTestInputData inputTestData[] = {
     {"http://unit.test/test.mpd", (guint8 *) mpd, 0},
-    {"http://unit.test/audio.webm", NULL, 5000},
-    {"http://unit.test/video.webm", NULL, 9000},
+    {"http://unit.test/audio.webm", NULL, 9452},
+    {"http://unit.test/video.webm", NULL, 9234},
     {NULL, NULL, 0},
   };
   GstAdaptiveDemuxTestExpectedOutput outputTestData[] = {
-    {"audio_00", 5000, NULL},
-    {"video_00", 9000, NULL},
+    {"audio_00", 13904, NULL},
+    {"video_00", 9468, NULL},
   };
   GstTestHTTPSrcCallbacks http_src_callbacks = { 0 };
   GstTestHTTPSrcTestData http_src_test_data = { 0 };
