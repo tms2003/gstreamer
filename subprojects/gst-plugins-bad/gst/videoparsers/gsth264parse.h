@@ -48,6 +48,13 @@ typedef struct _H264Params H264Params;
 
 GType gst_h264_parse_get_type (void);
 
+
+typedef enum
+{
+  GST_H264_PARSE_CC_MODE_NONE = 0,
+  GST_H264_PARSE_CC_MODE_A53 = 1,
+} GstH264CCMode;
+
 typedef struct _GstH264Parse GstH264Parse;
 typedef struct _GstH264ParseClass GstH264ParseClass;
 
@@ -149,7 +156,7 @@ struct _GstH264Parse
   /* props */
   gint interval;
   gboolean update_timecode;
-  gboolean insert_a53_cc;
+  GstH264CCMode insert_cc;
 
   GstClockTime pending_key_unit_ts;
   GstEvent *force_key_unit_event;

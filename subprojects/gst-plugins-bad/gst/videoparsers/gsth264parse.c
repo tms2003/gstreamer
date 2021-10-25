@@ -39,14 +39,31 @@ GST_DEBUG_CATEGORY (h264_parse_debug);
 
 #define DEFAULT_CONFIG_INTERVAL      (0)
 #define DEFAULT_UPDATE_TIMECODE       FALSE
-#define DEFAULT_INSERT_A53_CC         FALSE
+#define DEFAULT_INSERT_CC             GST_H264_PARSE_CC_MODE_NONE
+
+#define GST_TYPE_H264_CC_MODE (gst_h264_cc_mode_get_type())
+static GType
+gst_h264_cc_mode_get_type (void)
+{
+  static GType type = 0;
+  static const GEnumValue data[] = {
+    {GST_H264_PARSE_CC_MODE_NONE, "Do not insert closed caption SEIs", "none"},
+    {GST_H264_PARSE_CC_MODE_A53, "Inserts ATSC A/53 Part 4 SEI NALs", "a53"},
+    {0, NULL, NULL},
+  };
+
+  if (!type) {
+    type = g_enum_register_static ("GstH264CCMode", data);
+  }
+  return type;
+}
 
 enum
 {
   PROP_0,
   PROP_CONFIG_INTERVAL,
   PROP_UPDATE_TIMECODE,
-  PROP_INSERT_A53_CC,
+  PROP_INSERT_CC,
 };
 
 enum
@@ -175,16 +192,16 @@ gst_h264_parse_class_init (GstH264ParseClass * klass)
           "VUI and pic_struct_present_flag of VUI must be non-zero",
           DEFAULT_UPDATE_TIMECODE, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
-  g_object_class_install_property (gobject_class, PROP_INSERT_A53_CC,
-      g_param_spec_boolean ("insert-a53-cc",
-          "Insert ATSC A/53 Closed Captions",
-          "Inserts ATSC A/53 Part 4 SEI NALs from a GstVideoCaptionMeta "
-          "DTVCC stream without transcoding. Use "
+  g_object_class_install_property (gobject_class, PROP_INSERT_CC,
+      g_param_spec_enum ("insert-cc",
+          "Insert Closed Captions",
+          "Inserts SEI NALs from a GstVideoCaptionMeta DTVCC stream without "
+          "transcoding. Use "
           "`ccconverter ! closedcaption/x-cea-708,format=cc_data` to convert "
           "EIA-608/CEA-708 captions to the DTVCC transport layer format, and "
           "`cccombiner` to attach them a H.264 stream as "
-          "GstVideoCaptionMeta.",
-          DEFAULT_INSERT_A53_CC, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+          "GstVideoCaptionMeta.", GST_TYPE_H264_CC_MODE,
+          DEFAULT_INSERT_CC, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   /* Override BaseParse vfuncs */
   parse_class->start = GST_DEBUG_FUNCPTR (gst_h264_parse_start);
@@ -218,7 +235,7 @@ gst_h264_parse_init (GstH264Parse * h264parse)
   h264parse->aud_needed = TRUE;
   h264parse->aud_insert = TRUE;
   h264parse->update_timecode = DEFAULT_UPDATE_TIMECODE;
-  h264parse->insert_a53_cc = DEFAULT_INSERT_A53_CC;
+  h264parse->insert_cc = DEFAULT_INSERT_CC;
 }
 
 static void
@@ -3106,7 +3123,7 @@ gst_h264_parse_create_pic_timing_sei (GstH264Parse * h264parse,
 }
 
 static GstBuffer *
-gst_h264_parse_create_a53_cc_sei (GstH264Parse * h264parse, GstBuffer * buffer)
+gst_h264_parse_create_cc_sei (GstH264Parse * h264parse, GstBuffer * buffer)
 {
   GstVideoCaptionMeta *cc_meta;
   gpointer iter = NULL;
@@ -3114,7 +3131,7 @@ gst_h264_parse_create_a53_cc_sei (GstH264Parse * h264parse, GstBuffer * buffer)
   GArray *cc_sei_array = NULL;
   GstBuffer *out_buf = NULL;
 
-  if (!h264parse->insert_a53_cc)
+  if (!h264parse->insert_cc)
     return NULL;
 
   /* Collect all caption data from GstVideoCaptionMeta on the buffer.
@@ -3317,8 +3334,8 @@ gst_h264_parse_pre_push_frame (GstBaseParse * parse, GstBaseParseFrame * frame)
     buffer = frame->out_buffer = new_buf;
   }
 
-  /* handle A/53 closed captions */
-  new_buf = gst_h264_parse_create_a53_cc_sei (h264parse, buffer);
+  /* handle closed captions */
+  new_buf = gst_h264_parse_create_cc_sei (h264parse, buffer);
   if (new_buf) {
     if (frame->out_buffer)
       gst_buffer_unref (frame->out_buffer);
@@ -3937,8 +3954,8 @@ gst_h264_parse_set_property (GObject * object, guint prop_id,
     case PROP_UPDATE_TIMECODE:
       parse->update_timecode = g_value_get_boolean (value);
       break;
-    case PROP_INSERT_A53_CC:
-      parse->insert_a53_cc = g_value_get_boolean (value);
+    case PROP_INSERT_CC:
+      parse->insert_cc = (GstH264CCMode) g_value_get_enum (value);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -3961,8 +3978,8 @@ gst_h264_parse_get_property (GObject * object, guint prop_id,
     case PROP_UPDATE_TIMECODE:
       g_value_set_boolean (value, parse->update_timecode);
       break;
-    case PROP_INSERT_A53_CC:
-      g_value_set_boolean (value, parse->insert_a53_cc);
+    case PROP_INSERT_CC:
+      g_value_set_enum (value, parse->insert_cc);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
