@@ -332,8 +332,8 @@ gst_vmaf_post_pooled_score (GstVmafThreadHelper * thread_data)
   if (thread_data->gst_vmaf_p->vmaf_config_conf_int) {
     err = vmaf_score_pooled_model_collection (thread_data->vmaf_ctx,
         thread_data->vmaf_model_collection,
-        vmaf_map_pooling_method (thread_data->
-            gst_vmaf_p->vmaf_config_pool_method), &model_collection_score, 0,
+        vmaf_map_pooling_method (thread_data->gst_vmaf_p->
+            vmaf_config_pool_method), &model_collection_score, 0,
         thread_data->frame_index);
     if (err) {
       return EXIT_FAILURE;
@@ -342,9 +342,8 @@ gst_vmaf_post_pooled_score (GstVmafThreadHelper * thread_data)
 
   err = vmaf_score_pooled (thread_data->vmaf_ctx,
       thread_data->vmaf_model,
-      vmaf_map_pooling_method (thread_data->
-          gst_vmaf_p->vmaf_config_pool_method), &vmaf_score, 0,
-      thread_data->frame_index);
+      vmaf_map_pooling_method (thread_data->gst_vmaf_p->
+          vmaf_config_pool_method), &vmaf_score, 0, thread_data->frame_index);
   if (err) {
     return EXIT_FAILURE;
   }
@@ -360,7 +359,8 @@ gst_vmaf_post_pooled_score (GstVmafThreadHelper * thread_data)
       vmaf_message);
   if (err) {
     GST_WARNING_OBJECT (thread_data->gst_vmaf_p,
-        "Could not post pooled VMAF on message bus.");
+        "Could not post pooled VMAF on message bus. score:%f stream:%d",
+        vmaf_score, thread_data->stream_index);
   }
 
   if (vmaf_output_format == VMAF_OUTPUT_FORMAT_NONE
@@ -421,7 +421,8 @@ gst_vmaf_post_frame_score (GstVmafThreadHelper * thread_data, gint frame_index)
         vmaf_message);
     if (err) {
       GST_WARNING_OBJECT (thread_data->gst_vmaf_p,
-          "Could not post frame VMAF on message bus.");
+          "Could not post frame VMAF on message bus. score:%f stream:%d frame:%d",
+          vmaf_score, thread_data->stream_index, frame_index);
     }
   }
   return EXIT_SUCCESS;
