@@ -37,8 +37,10 @@ typedef struct
   GRecMutex vmaf_thread_mutex;
   GAsyncQueue *frame_queue;
   GMutex check_thread_failure;
+  gboolean thread_eos;
   gboolean thread_failure;
   gchar *error_msg;
+  gint stream_index;
   gint vmaf_pix_fmt;
   gint frame_height;
   gint frame_width;
@@ -55,6 +57,7 @@ struct _GstVmaf
   GstVideoAggregator videoaggregator;
   // VMAF settings from cmd
   GstVmafPoolMethodEnum vmaf_config_pool_method;
+  GstVmafLogFormats vmaf_config_log_format;
   gchar *vmaf_config_model_filename;
   gboolean vmaf_config_disable_clip;
   gboolean vmaf_config_disable_avx;
@@ -66,6 +69,8 @@ struct _GstVmaf
   guint vmaf_config_num_threads;
   guint vmaf_config_subsample;
   gboolean vmaf_config_conf_int;
+  gboolean vmaf_config_frame_messaging;
+  gchar *vmaf_config_log_filename;
   // Thread helpers
   GstVmafThreadHelper *helper_struct_pointer;
   gint number_of_input_streams;

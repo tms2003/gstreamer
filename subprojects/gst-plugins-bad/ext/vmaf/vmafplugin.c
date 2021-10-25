@@ -11,20 +11,24 @@ GST_DEBUG_CATEGORY_STATIC (gst_vmaf_debug);
 #define GST_CAT_DEFAULT gst_vmaf_debug
 #define SINK_FORMATS " { I420, NV12, YV12, Y42B, Y444, I420_10LE, I422_10LE, Y444_10LE } "
 #define SRC_FORMAT " { I420, NV12, YV12, Y42B, Y444, I420_10LE, I422_10LE, Y444_10LE } "
-#define DEFAULT_MODEL_FILENAME   "vmaf_v0.6.1"
-#define DEFAULT_DISABLE_CLIP     FALSE
-#define DEFAULT_DISABLE_AVX      FALSE
-#define DEFAULT_ENABLE_TRANSFORM FALSE
-#define DEFAULT_PHONE_MODEL      FALSE
-#define DEFAULT_PSNR             FALSE
-#define DEFAULT_SSIM             FALSE
-#define DEFAULT_MS_SSIM          FALSE
-#define DEFAULT_POOL_METHOD      POOL_METHOD_MEAN
-#define DEFAULT_NUM_THREADS      0
-#define DEFAULT_SUBSAMPLE        1
-#define DEFAULT_CONF_INT         FALSE
-#define DEFAULT_VMAF_LOG_LEVEL   VMAF_LOG_LEVEL_NONE
-#define GST_TYPE_VMAF_POOL_METHOD (gst_vmaf_pool_method_get_type ())
+#define DEFAULT_MODEL_FILENAME     "vmaf_v0.6.1"
+#define DEFAULT_DISABLE_CLIP       FALSE
+#define DEFAULT_DISABLE_AVX        FALSE
+#define DEFAULT_ENABLE_TRANSFORM   FALSE
+#define DEFAULT_PHONE_MODEL        FALSE
+#define DEFAULT_PSNR               FALSE
+#define DEFAULT_SSIM               FALSE
+#define DEFAULT_MS_SSIM            FALSE
+#define DEFAULT_FRAME_MESSAGING    FALSE
+#define DEFAULT_POOL_METHOD        POOL_METHOD_MEAN
+#define DEFAULT_NUM_THREADS        0
+#define DEFAULT_SUBSAMPLE          1
+#define DEFAULT_CONF_INT           FALSE
+#define DEFAULT_VMAF_LOG_LEVEL     VMAF_LOG_LEVEL_NONE
+#define DEFAULT_VMAF_LOG_FORMAT    VMAF_OUTPUT_FORMAT_NONE
+#define DEFAULT_VMAF_LOG_FILENAME  NULL
+#define GST_TYPE_VMAF_POOL_METHOD  (gst_vmaf_pool_method_get_type ())
+#define GST_TYPE_VMAF_LOG_FORMATS  (gst_vmaf_log_format_get_type ())
 
 static GstStaticPadTemplate src_factory = GST_STATIC_PAD_TEMPLATE ("src",
     GST_PAD_SRC,
@@ -81,6 +85,46 @@ gst_vmaf_set_pool_method (GstVmaf * self, gint pool_method)
   }
 }
 
+static GType
+gst_vmaf_log_format_get_type (void)
+{
+  static const GEnumValue types[] = {
+    {OUTPUT_FORMAT_CSV, "Comma Separated File (csv)", "csv"},
+    {OUTPUT_FORMAT_JSON, "JSON", "json"},
+    {OUTPUT_FORMAT_XML, "XML", "xml"},
+    {OUTPUT_FORMAT_NONE, "None", "none"},
+    {0, NULL, NULL},
+  };
+  static gsize id = 0;
+
+  if (g_once_init_enter (&id)) {
+    GType _id = g_enum_register_static ("GstVmafLogFormats", types);
+    g_once_init_leave (&id, _id);
+  }
+
+  return (GType) id;
+}
+
+static void
+gst_vmaf_set_log_format (GstVmaf * self, gint log_fmt)
+{
+  switch (log_fmt) {
+    case OUTPUT_FORMAT_CSV:
+      self->vmaf_config_log_format = OUTPUT_FORMAT_CSV;
+      break;
+    case OUTPUT_FORMAT_JSON:
+      self->vmaf_config_log_format = OUTPUT_FORMAT_JSON;
+      break;
+    case OUTPUT_FORMAT_XML:
+      self->vmaf_config_log_format = OUTPUT_FORMAT_XML;
+      break;
+    case OUTPUT_FORMAT_NONE:
+      self->vmaf_config_log_format = OUTPUT_FORMAT_NONE;
+      break;
+    default:
+      g_assert_not_reached ();
+  }
+}
 
 static inline float
 get_data_from_ptr (void *ptr, int i, int j, int frame_width, gint bpc)
@@ -199,8 +243,6 @@ gst_vmaf_models_create (GstVmaf * self, GstVmafThreadHelper * thread_data)
     .cpumask = self->vmaf_config_disable_avx ? -1 : 0,
   };
 
-  GST_WARNING_OBJECT (self, "[vmaf] gst_vmaf_models_create called.");
-
   err = vmaf_init (&thread_data->vmaf_ctx, cfg);
   if (err) {
     GST_ELEMENT_ERROR (self, RESOURCE, FAILED,
@@ -278,12 +320,20 @@ gst_vmaf_post_pooled_score (GstVmafThreadHelper * thread_data)
 {
   gint err = 0;
   gdouble vmaf_score = 0;
+  gchar *location;
   VmafModelCollectionScore model_collection_score;
+  enum VmafOutputFormat vmaf_output_format =
+      vmaf_map_log_fmt (thread_data->gst_vmaf_p->vmaf_config_log_format);
+  GstStructure *vmaf_message_structure = gst_structure_new_empty ("VMAF");
+  GstMessage *vmaf_message =
+      gst_message_new_element (GST_OBJECT (thread_data->gst_vmaf_p),
+      vmaf_message_structure);
+
   if (thread_data->gst_vmaf_p->vmaf_config_conf_int) {
     err = vmaf_score_pooled_model_collection (thread_data->vmaf_ctx,
         thread_data->vmaf_model_collection,
-        vmaf_map_pooling_method (thread_data->gst_vmaf_p->
-            vmaf_config_pool_method), &model_collection_score, 0,
+        vmaf_map_pooling_method (thread_data->
+            gst_vmaf_p->vmaf_config_pool_method), &model_collection_score, 0,
         thread_data->frame_index);
     if (err) {
       return EXIT_FAILURE;
@@ -292,14 +342,47 @@ gst_vmaf_post_pooled_score (GstVmafThreadHelper * thread_data)
 
   err = vmaf_score_pooled (thread_data->vmaf_ctx,
       thread_data->vmaf_model,
-      vmaf_map_pooling_method (thread_data->gst_vmaf_p->
-          vmaf_config_pool_method), &vmaf_score, 0, thread_data->frame_index);
+      vmaf_map_pooling_method (thread_data->
+          gst_vmaf_p->vmaf_config_pool_method), &vmaf_score, 0,
+      thread_data->frame_index);
   if (err) {
     return EXIT_FAILURE;
   }
 
-  GST_WARNING_OBJECT (thread_data->gst_vmaf_p, "[vmaf] VMAF err:%d score:%f.",
-      err, vmaf_score);
+  gst_structure_set (vmaf_message_structure, "score", G_TYPE_DOUBLE, vmaf_score,
+      NULL);
+  gst_structure_set (vmaf_message_structure, "type", G_TYPE_INT,
+      MESSAGE_TYPE_POOLED, NULL);
+  gst_structure_set (vmaf_message_structure, "stream", G_TYPE_INT,
+      thread_data->stream_index, NULL);
+  err =
+      gst_element_post_message (GST_ELEMENT (thread_data->gst_vmaf_p),
+      vmaf_message);
+  if (err) {
+    GST_WARNING_OBJECT (thread_data->gst_vmaf_p,
+        "Could not post pooled VMAF on message bus.");
+  }
+
+  if (vmaf_output_format == VMAF_OUTPUT_FORMAT_NONE
+      && thread_data->gst_vmaf_p->vmaf_config_log_filename) {
+    vmaf_output_format = VMAF_OUTPUT_FORMAT_JSON;
+    GST_LOG_OBJECT (thread_data->gst_vmaf_p,
+        "Using default JSON style logging.");
+  }
+
+  if (vmaf_output_format) {
+    vmaf_use_vmafossexec_aliases ();
+    location =
+        g_strdup_printf (thread_data->gst_vmaf_p->vmaf_config_log_filename,
+        thread_data->stream_index);
+    err =
+        vmaf_write_output (thread_data->vmaf_ctx, location, vmaf_output_format);
+    if (err) {
+      GST_WARNING_OBJECT (thread_data->gst_vmaf_p,
+          "Could not write VMAF output:%s.", location);
+      return EXIT_FAILURE;
+    }
+  }
 
   return EXIT_SUCCESS;
 }
@@ -309,15 +392,36 @@ gst_vmaf_post_frame_score (GstVmafThreadHelper * thread_data, gint frame_index)
 {
   gint err = 0;
   gdouble vmaf_score = 0;
-  if (frame_index > 0) {
+  gint scored_frame = frame_index - 1;
+  gint mod_frame =
+      !(scored_frame % thread_data->gst_vmaf_p->vmaf_config_subsample);
+  GstStructure *vmaf_message_structure = gst_structure_new_empty ("VMAF");
+  GstMessage *vmaf_message =
+      gst_message_new_element (GST_OBJECT (thread_data->gst_vmaf_p),
+      vmaf_message_structure);
+  if (thread_data->gst_vmaf_p->vmaf_config_frame_messaging && frame_index > 0
+      && mod_frame) {
     err =
         vmaf_score_at_index (thread_data->vmaf_ctx, thread_data->vmaf_model,
-        &vmaf_score, frame_index - 1);
-    GST_WARNING_OBJECT (thread_data->gst_vmaf_p,
-        "[vmaf] VMAF err:%d frame:%d score:%f.", err, frame_index - 1,
-        vmaf_score);
+        &vmaf_score, scored_frame);
     if (err) {
       return EXIT_FAILURE;
+    }
+
+    gst_structure_set (vmaf_message_structure, "score", G_TYPE_DOUBLE,
+        vmaf_score, NULL);
+    gst_structure_set (vmaf_message_structure, "index", G_TYPE_INT,
+        scored_frame, NULL);
+    gst_structure_set (vmaf_message_structure, "type", G_TYPE_INT,
+        MESSAGE_TYPE_FRAME, NULL);
+    gst_structure_set (vmaf_message_structure, "stream", G_TYPE_INT,
+        thread_data->stream_index, NULL);
+    err =
+        gst_element_post_message (GST_ELEMENT (thread_data->gst_vmaf_p),
+        vmaf_message);
+    if (err) {
+      GST_WARNING_OBJECT (thread_data->gst_vmaf_p,
+          "Could not post frame VMAF on message bus.");
     }
   }
   return EXIT_SUCCESS;
@@ -391,6 +495,7 @@ gst_vmaf_stream_thread_read_pictures (GstVmafThreadHelper * thread_data)
     goto end;
   } else if (err == 2) {
     //this signals an EOS
+    thread_data->thread_eos = TRUE;
     err = vmaf_read_pictures (thread_data->vmaf_ctx, NULL, NULL, 0);
     if (err) {
       GST_ELEMENT_ERROR (thread_data->gst_vmaf_p, RESOURCE, FAILED,
@@ -650,6 +755,16 @@ _set_property (GObject * object, guint prop_id, const GValue * value,
     case PROP_CONF_INT:
       self->vmaf_config_conf_int = g_value_get_boolean (value);
       break;
+    case PROP_FRAME_MESSAGING:
+      self->vmaf_config_frame_messaging = g_value_get_boolean (value);
+      break;
+    case PROP_VMAF_LOG_FORMAT:
+      gst_vmaf_set_log_format (self, g_value_get_enum (value));
+      break;
+    case PROP_VMAF_LOG_FILENAME:
+      g_free (self->vmaf_config_log_filename);
+      self->vmaf_config_log_filename = g_value_dup_string (value);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -701,6 +816,15 @@ _get_property (GObject * object, guint prop_id, GValue * value,
     case PROP_CONF_INT:
       g_value_set_boolean (value, self->vmaf_config_conf_int);
       break;
+    case PROP_FRAME_MESSAGING:
+      g_value_set_boolean (value, self->vmaf_config_frame_messaging);
+      break;
+    case PROP_VMAF_LOG_FORMAT:
+      g_value_set_enum (value, self->vmaf_config_log_format);
+      break;
+    case PROP_VMAF_LOG_FILENAME:
+      g_value_set_string (value, self->vmaf_config_log_filename);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -712,7 +836,6 @@ static void
 gst_vmaf_init (GstVmaf * self)
 {
   GValue tmp = G_VALUE_INIT;
-  GST_WARNING_OBJECT (self, "[vmaf] gst_vmaf_init called.");
   g_value_init (&tmp, G_TYPE_STRING);
   g_value_set_static_string (&tmp, DEFAULT_MODEL_FILENAME);
   self->vmaf_config_model_filename = g_value_dup_string (&tmp);
@@ -727,6 +850,9 @@ gst_vmaf_init (GstVmaf * self)
   self->vmaf_config_subsample = DEFAULT_SUBSAMPLE;
   self->vmaf_config_conf_int = DEFAULT_CONF_INT;
   self->vmaf_config_pool_method = DEFAULT_POOL_METHOD;
+  self->vmaf_config_frame_messaging = DEFAULT_FRAME_MESSAGING;
+  self->vmaf_config_log_filename = DEFAULT_VMAF_LOG_FILENAME;
+  self->vmaf_config_log_format = DEFAULT_VMAF_LOG_FORMAT;
 
   g_mutex_init (&self->finish_mutex);
 }
@@ -735,7 +861,6 @@ static void
 gst_vmaf_finalize (GObject * object)
 {
   GstVmaf *self = GST_VMAF (object);
-  GST_WARNING_OBJECT (self, "[vmaf] gst_vmaf_finalize called.");
 
   for (guint i = 0; i < self->number_of_input_streams; ++i) {
     gst_vmaf_models_destroy (&self->helper_struct_pointer[i]);
@@ -757,7 +882,6 @@ gst_vmaf_negotiated_src_caps (GstAggregator * agg, GstCaps * caps)
   const gchar *format;
   GList *sinkpads_list = GST_ELEMENT (agg)->sinkpads;
   GstStructure *caps_structure = gst_caps_get_structure (caps, 0);
-  GST_WARNING_OBJECT (self, "[vmaf] gst_vmaf_negotiated_src_caps called.");
 
   gst_structure_get_int (caps_structure, "height", &height);
   gst_structure_get_int (caps_structure, "width", &width);
@@ -765,22 +889,19 @@ gst_vmaf_negotiated_src_caps (GstAggregator * agg, GstCaps * caps)
   bpc = vmaf_map_bit_depth (format);
   vmaf_pix_fmt = vmaf_map_pix_fmt (format);
 
-  GST_WARNING_OBJECT (self,
-      "[vmaf] srcformat w:%d h:%d format:%s bpc:%d pf:%d.", width, height,
-      format, bpc, vmaf_pix_fmt);
-
   self->number_of_input_streams = g_list_length (GST_ELEMENT (agg)->sinkpads);
   --self->number_of_input_streams;      // Without reference
   sinkpads_list = sinkpads_list->next;  // Skip reference
   self->finish_threads = FALSE;
   self->helper_struct_pointer =
       g_malloc (sizeof (GstVmafThreadHelper) * self->number_of_input_streams);
-  GST_WARNING_OBJECT (self, "[vmaf] number of sinkstreams:%d.",
-      self->number_of_input_streams);
+
   for (guint i = 0; i < self->number_of_input_streams; ++i) {
     //set stream information
     self->helper_struct_pointer[i].gst_vmaf_p = self;
+    self->helper_struct_pointer[i].stream_index = i;
     self->helper_struct_pointer[i].thread_failure = FALSE;
+    self->helper_struct_pointer[i].thread_eos = FALSE;
     self->helper_struct_pointer[i].frame_height = height;
     self->helper_struct_pointer[i].frame_width = width;
     self->helper_struct_pointer[i].vmaf_pix_fmt = vmaf_pix_fmt;
@@ -817,7 +938,6 @@ gst_vmaf_stop_plugin (GstAggregator * aggregator)
 {
   GstVmafThreadHelper *helper = NULL;
   GstVmaf *self = GST_VMAF (aggregator);
-  GST_WARNING_OBJECT (self, "[vmaf] gst_vmaf_stop_plugin called.");
   g_mutex_lock (&self->finish_mutex);
   if (!self->finish_threads) {
     for (int i = 0; i < self->number_of_input_streams; ++i) {
@@ -844,9 +964,16 @@ gst_vmaf_stop_plugin (GstAggregator * aggregator)
         frames_data->dist_ptr = NULL;
         g_async_queue_push (helper->frame_queue, frames_data);
       }
+
+
     }
+
     for (int i = 0; i < self->number_of_input_streams; ++i) {
       helper = &self->helper_struct_pointer[i];
+      //post pooled scores, unless posted by EOS
+      if (!helper->thread_eos)
+        gst_vmaf_post_pooled_score (helper);
+
       gst_task_join (helper->vmaf_thread);
       g_free (helper->error_msg);
       g_free (helper->padname);
@@ -868,7 +995,6 @@ static gboolean
 gst_vmaf_sink_event (GstAggregator * aggregator,
     GstAggregatorPad * aggregator_pad, GstEvent * event)
 {
-  GST_WARNING_OBJECT (aggregator, "[vmaf] gst_vmaf_sink_event called.");
   if (GST_EVENT_TYPE (event) == GST_EVENT_EOS)
     gst_vmaf_stop_plugin (aggregator);
   return GST_AGGREGATOR_CLASS (parent_class)->sink_event (aggregator,
@@ -878,7 +1004,6 @@ gst_vmaf_sink_event (GstAggregator * aggregator,
 static gboolean
 gst_vmaf_stop (GstAggregator * aggregator)
 {
-  GST_WARNING_OBJECT (aggregator, "[vmaf] gst_vmaf_stop called.");
   gst_vmaf_stop_plugin (aggregator);
   return TRUE;
 }
@@ -891,8 +1016,6 @@ gst_vmaf_class_init (GstVmafClass * klass)
   GstVideoAggregatorClass *videoaggregator_class =
       (GstVideoAggregatorClass *) klass;
   GstAggregatorClass *aggregator_class = (GstAggregatorClass *) klass;
-
-  GST_WARNING_OBJECT (klass, "[vmaf] gst_vmaf_class_init called.");
 
   videoaggregator_class->aggregate_frames = gst_vmaf_aggregate_frames;
 
@@ -912,7 +1035,7 @@ gst_vmaf_class_init (GstVmafClass * klass)
   g_object_class_install_property (gobject_class, PROP_MODEL_FILENAME,
       g_param_spec_string ("model-filename",
           "model-filename",
-          "Model *.pkl abs filename",
+          "Model *.pkl abs filename, or file version for built in models",
           DEFAULT_MODEL_FILENAME, G_PARAM_READWRITE));
 
   g_object_class_install_property (gobject_class, PROP_DISABLE_CLIP,
@@ -972,6 +1095,24 @@ gst_vmaf_class_init (GstVmafClass * klass)
           "conf-interval",
           "Enable confidence intervals", DEFAULT_CONF_INT, G_PARAM_READWRITE));
 
+  g_object_class_install_property (gobject_class, PROP_FRAME_MESSAGING,
+      g_param_spec_boolean ("frame-message",
+          "frame-message",
+          "Enable frame level score messaging", DEFAULT_FRAME_MESSAGING,
+          G_PARAM_READWRITE));
+
+  g_object_class_install_property (gobject_class, PROP_VMAF_LOG_FILENAME,
+      g_param_spec_string ("log-filename",
+          "log-filename",
+          "VMAF log filename for scores",
+          DEFAULT_VMAF_LOG_FILENAME, G_PARAM_READWRITE));
+
+  g_object_class_install_property (gobject_class, PROP_VMAF_LOG_FORMAT,
+      g_param_spec_enum ("log-format", "log-format",
+          "VMAF log file format used for scores (csv, xml, json)",
+          GST_TYPE_VMAF_LOG_FORMATS, DEFAULT_VMAF_LOG_FORMAT,
+          (GParamFlags) (G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS)));
+
   gst_element_class_set_static_metadata (gstelement_class, "vmaf",
       "Filter/Analyzer/Video",
       "Provides Video Multi-Method Assessment Fusion metric",
@@ -984,7 +1125,6 @@ plugin_init (GstPlugin * plugin)
 {
   gboolean result =
       gst_element_register (plugin, "vmaf", GST_RANK_PRIMARY, GST_TYPE_VMAF);
-  GST_WARNING_OBJECT (plugin, "[vmaf] plugin_init called.");
   return result;
 }
 

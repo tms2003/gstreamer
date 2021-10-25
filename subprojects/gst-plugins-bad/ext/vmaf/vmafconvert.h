@@ -6,6 +6,7 @@
 #include "vmafenums.h"
 
 G_BEGIN_DECLS 
+enum VmafOutputFormat vmaf_map_log_fmt (GstVmafLogFormats log_fmt);
 gint vmaf_map_pix_fmt (char *fmt);
 gint vmaf_map_bit_depth (char *fmt);
 enum VmafPoolingMethod vmaf_map_pooling_method(GstVmafPoolMethodEnum pool_method);

@@ -1,6 +1,18 @@
 #include "vmafconvert.h"
 #include "vmafenums.h"
 
+enum VmafOutputFormat
+vmaf_map_log_fmt (GstVmafLogFormats log_fmt)
+{
+  if (log_fmt == OUTPUT_FORMAT_CSV)
+    return VMAF_OUTPUT_FORMAT_CSV;
+  if (log_fmt == OUTPUT_FORMAT_XML)
+    return VMAF_OUTPUT_FORMAT_XML;
+  if (log_fmt == OUTPUT_FORMAT_JSON)
+    return VMAF_OUTPUT_FORMAT_JSON;
+  return VMAF_OUTPUT_FORMAT_NONE;
+}
+
 gint
 vmaf_map_pix_fmt (gchar * fmt)
 {
