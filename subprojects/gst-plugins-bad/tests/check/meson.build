@@ -41,6 +41,7 @@ base_tests = [
   [['elements/h264parse.c'], false, [libparser_dep, gstcodecparsers_dep]],
   [['elements/h265parse.c'], false, [libparser_dep, gstcodecparsers_dep]],
   [['elements/hlsdemux_m3u8.c'], not hls_dep.found(), [hls_dep]],
+  [['elements/hls_demux.c'], not hls_dep.found(), [hls_dep], ['elements/test_http_src.c', 'elements/adaptive_demux_common.c', 'elements/adaptive_demux_engine.c']],
   [['elements/id3mux.c']],
   [['elements/interlace.c']],
   [['elements/jpeg2000parse.c'], false, [libparser_dep, gstcodecparsers_dep]],
