@@ -45,6 +45,7 @@ typedef struct
   gint frame_height;
   gint frame_width;
   gint frame_index;
+  gint frames_processed;
   gint bpc;
   gchar *padname;
   VmafContext *vmaf_ctx;

@@ -332,9 +332,9 @@ gst_vmaf_post_pooled_score (GstVmafThreadHelper * thread_data)
   if (thread_data->gst_vmaf_p->vmaf_config_conf_int) {
     err = vmaf_score_pooled_model_collection (thread_data->vmaf_ctx,
         thread_data->vmaf_model_collection,
-        vmaf_map_pooling_method (thread_data->gst_vmaf_p->
-            vmaf_config_pool_method), &model_collection_score, 0,
-        thread_data->frame_index);
+        vmaf_map_pooling_method (thread_data->
+            gst_vmaf_p->vmaf_config_pool_method), &model_collection_score, 0,
+        thread_data->frames_processed);
     if (err) {
       return EXIT_FAILURE;
     }
@@ -342,8 +342,9 @@ gst_vmaf_post_pooled_score (GstVmafThreadHelper * thread_data)
 
   err = vmaf_score_pooled (thread_data->vmaf_ctx,
       thread_data->vmaf_model,
-      vmaf_map_pooling_method (thread_data->gst_vmaf_p->
-          vmaf_config_pool_method), &vmaf_score, 0, thread_data->frame_index);
+      vmaf_map_pooling_method (thread_data->
+          gst_vmaf_p->vmaf_config_pool_method), &vmaf_score, 0,
+      thread_data->frames_processed);
   if (err) {
     return EXIT_FAILURE;
   }
@@ -547,6 +548,7 @@ gst_vmaf_stream_thread_read_pictures (GstVmafThreadHelper * thread_data)
   err =
       vmaf_read_pictures (thread_data->vmaf_ctx, &pic_ref, &pic_dist,
       frame_index);
+  thread_data->frames_processed = frame_index;
   if (err) {
     GST_ELEMENT_ERROR (thread_data->gst_vmaf_p, RESOURCE, FAILED,
         ("Failed to allocate VMAF picture memory"),
