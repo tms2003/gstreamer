@@ -66,6 +66,7 @@ G_DEFINE_TYPE_WITH_CODE (GstVaDisplay, gst_va_display, GST_TYPE_OBJECT,
 enum
 {
   PROP_VA_DISPLAY = 1,
+  PROP_VA_SUB_DEVICE_ID = 2,
   N_PROPERTIES
 };
 
@@ -135,6 +136,7 @@ gst_va_display_set_property (GObject * object, guint prop_id,
     const GValue * value, GParamSpec * pspec)
 {
   GstVaDisplay *self = GST_VA_DISPLAY (object);
+  GstVaDisplayPrivate *priv = GET_PRIV (object);
 
   switch (prop_id) {
     case PROP_VA_DISPLAY:{
@@ -142,6 +144,9 @@ gst_va_display_set_property (GObject * object, guint prop_id,
       gst_va_display_set_display (self, display);
       break;
     }
+    case PROP_VA_SUB_DEVICE_ID:
+      priv->sub_device_id = g_value_get_int (value);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -157,6 +162,9 @@ gst_va_display_get_property (GObject * object, guint prop_id, GValue * value,
   switch (prop_id) {
     case PROP_VA_DISPLAY:
       g_value_set_pointer (value, priv->display);
+      break;
+    case PROP_VA_SUB_DEVICE_ID:
+      g_value_set_int (value, priv->sub_device_id);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -212,6 +220,12 @@ gst_va_display_class_init (GstVaDisplayClass * klass)
 
   g_properties[PROP_VA_DISPLAY] =
       g_param_spec_pointer ("va-display", "VADisplay", "VA Display handler",
+      G_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY | G_PARAM_STATIC_STRINGS);
+
+  g_properties[PROP_VA_SUB_DEVICE_ID] =
+      g_param_spec_int ("sub-device", "Sub Device", "Sub Device ID",
+      GST_VA_DISPLAY_SUB_DEVICE_INVALID_ID, 15,
+      GST_VA_DISPLAY_SUB_DEVICE_INVALID_ID,
       G_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY | G_PARAM_STATIC_STRINGS);
 
   g_object_class_install_properties (gobject_class, N_PROPERTIES, g_properties);
@@ -482,6 +496,28 @@ gst_va_display_get_va_dpy (GstVaDisplay * self)
 
   g_object_get (self, "va-display", &dpy, NULL);
   return dpy;
+}
+
+/**
+ * gst_va_display_get_sub_device_id:
+ * @self: a #GstVaDisplay type display.
+ *
+ * Get the sub device id of the @self.
+ *
+ * Returns: the sub device id.
+ *
+ * Since: 1.22
+ */
+gint
+gst_va_display_get_sub_device_id (GstVaDisplay * self)
+{
+  gint id;
+
+  g_return_val_if_fail (GST_IS_VA_DISPLAY (self),
+      GST_VA_DISPLAY_SUB_DEVICE_INVALID_ID);
+
+  g_object_get (self, "sub-device", &id, NULL);
+  return id;
 }
 
 /**
