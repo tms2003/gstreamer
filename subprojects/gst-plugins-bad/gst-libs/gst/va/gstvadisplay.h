@@ -73,6 +73,13 @@ typedef enum
 #define GST_VA_DISPLAY_IS_IMPLEMENTATION(display, impl) \
   (gst_va_display_is_implementation (display, G_PASTE (GST_VA_IMPLEMENTATION_, impl)))
 
+/**
+ * GST_VA_DISPLAY_SUB_DEVICE_ID_INVALID:
+ *
+ * Since: 1.22
+ */
+#define GST_VA_DISPLAY_SUB_DEVICE_INVALID_ID -1
+
 #define GST_TYPE_VA_DISPLAY            (gst_va_display_get_type())
 #define GST_VA_DISPLAY(obj)            (G_TYPE_CHECK_INSTANCE_CAST((obj), GST_TYPE_VA_DISPLAY, GstVaDisplay))
 #define GST_VA_DISPLAY_CLASS(klass)    (G_TYPE_CHECK_CLASS_CAST((klass), GST_TYPE_VA_DISPLAY, GstVaDisplayClass))

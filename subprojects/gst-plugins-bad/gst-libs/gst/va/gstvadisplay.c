@@ -51,6 +51,7 @@ struct _GstVaDisplayPrivate
 {
   GRecMutex lock;
   VADisplay display;
+  gint sub_device_id;
 
   gboolean foreign;
   gboolean init;
@@ -223,6 +224,7 @@ gst_va_display_init (GstVaDisplay * self)
 
   g_rec_mutex_init (&priv->lock);
   priv->impl = GST_VA_IMPLEMENTATION_INVALID;
+  priv->sub_device_id = GST_VA_DISPLAY_SUB_DEVICE_INVALID_ID;
 }
 
 /**
@@ -302,6 +304,51 @@ _va_info (gpointer object, const char *message)
 }
 #endif
 
+static gboolean
+_get_sub_device_info (GstVaDisplay * self, VADisplay display,
+    VADisplayAttribValSubDevice * sub_device)
+{
+  VADisplayAttribute attr = { };
+  VAStatus status;
+
+  attr.type = VADisplayAttribSubDevice;
+  attr.flags = VA_DISPLAY_ATTRIB_GETTABLE;
+
+  status = vaGetDisplayAttributes (display, &attr, 1);
+  if (status != VA_STATUS_SUCCESS) {
+    GST_INFO_OBJECT (self, "vaGetDisplayAttributes: %s", vaErrorStr (status));
+    return FALSE;
+  }
+
+  if (attr.value == VA_ATTRIB_NOT_SUPPORTED) {
+    GST_INFO_OBJECT (self, "Sub Device is not supported");
+    return FALSE;
+  }
+
+  sub_device->value = attr.value;
+  return TRUE;
+}
+
+static gboolean
+_set_sub_device_info (GstVaDisplay * self, VADisplay display,
+    VADisplayAttribValSubDevice * sub_device)
+{
+  VADisplayAttribute attr = { };
+  VAStatus status;
+
+  attr.type = VADisplayAttribSubDevice;
+  attr.flags = VA_DISPLAY_ATTRIB_SETTABLE;
+  attr.value = sub_device->value;
+
+  status = vaSetDisplayAttributes (display, &attr, 1);
+  if (status != VA_STATUS_SUCCESS) {
+    GST_INFO_OBJECT (self, "vaSetDisplayAttributes: %s", vaErrorStr (status));
+    return FALSE;
+  }
+
+  return TRUE;
+}
+
 /**
  * gst_va_display_initialize:
  * @self: a #GstVaDisplay
@@ -325,6 +372,8 @@ gst_va_display_initialize (GstVaDisplay * self)
 {
   GstVaDisplayPrivate *priv;
   VAStatus status;
+  VADisplayAttribValSubDevice sub_device;
+  gint i;
   int major_version = -1, minor_version = -1;
 
   g_return_val_if_fail (GST_IS_VA_DISPLAY (self), FALSE);
@@ -342,13 +391,69 @@ gst_va_display_initialize (GstVaDisplay * self)
   vaSetInfoCallback (priv->display, _va_info, self);
 #endif
 
+  /* The sub_device_id specifies which sub device we want
+     to work on. If it is invalid, just choose it by drivers.
+     We should choose the sub device ID before we call the
+     vaInitialize(). After that, the sub device ID of the
+     display is binded and fixed, we can not change it any
+     more during its whole life time. */
+  if (priv->sub_device_id != GST_VA_DISPLAY_SUB_DEVICE_INVALID_ID) {
+    if (!_get_sub_device_info (self, priv->display, &sub_device)) {
+      GST_ERROR_OBJECT (self, "Failed to get sub device info.");
+      return FALSE;
+    }
+
+    for (i = 0; i < sub_device.bits.sub_device_count; i++) {
+      if ((1 << i) & sub_device.bits.sub_device_mask) {
+        if (i == priv->sub_device_id)
+          break;
+      }
+    }
+
+    if (i == sub_device.bits.sub_device_count) {
+      GST_ERROR_OBJECT (self, "sub device %d is not available",
+          priv->sub_device_id);
+      return FALSE;
+    }
+
+    /* Now set the device ID */
+    sub_device.value = 0;
+    sub_device.bits.current_sub_device = priv->sub_device_id;
+    if (!_set_sub_device_info (self, priv->display, &sub_device)) {
+      GST_ERROR_OBJECT (self, "Failed to set sub device info.");
+      return FALSE;
+    }
+  }
+
   status = vaInitialize (priv->display, &major_version, &minor_version);
   if (status != VA_STATUS_SUCCESS) {
     GST_ERROR_OBJECT (self, "vaInitialize: %s", vaErrorStr (status));
     return FALSE;
   }
 
-  GST_INFO_OBJECT (self, "VA-API version %d.%d", major_version, minor_version);
+  /* get and store the sub device id. */
+  if (!_get_sub_device_info (self, priv->display, &sub_device)) {
+    if (priv->sub_device_id != GST_VA_DISPLAY_SUB_DEVICE_INVALID_ID) {
+      GST_ERROR_OBJECT (self, "failed to verify sub device ID,"
+          " vaGetDisplayAttributes: %s", vaErrorStr (status));
+      return FALSE;
+    }
+
+    /* Assume the first one. */
+    priv->sub_device_id = 0;
+  } else {
+    if (priv->sub_device_id == GST_VA_DISPLAY_SUB_DEVICE_INVALID_ID)
+      priv->sub_device_id = sub_device.bits.current_sub_device;
+
+    if (priv->sub_device_id != sub_device.bits.current_sub_device) {
+      GST_ERROR_OBJECT (self, "failed to set sub device ID: %d",
+          priv->sub_device_id);
+      return FALSE;
+    }
+  }
+
+  GST_INFO_OBJECT (self, "working on sub device: %d, VA-API version %d.%d",
+      priv->sub_device_id, major_version, minor_version);
 
   priv->init = TRUE;
 
