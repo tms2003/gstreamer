@@ -332,8 +332,8 @@ gst_vmaf_post_pooled_score (GstVmafThreadHelper * thread_data)
   if (thread_data->gst_vmaf_p->vmaf_config_conf_int) {
     err = vmaf_score_pooled_model_collection (thread_data->vmaf_ctx,
         thread_data->vmaf_model_collection,
-        vmaf_map_pooling_method (thread_data->
-            gst_vmaf_p->vmaf_config_pool_method), &model_collection_score, 0,
+        vmaf_map_pooling_method (thread_data->gst_vmaf_p->
+            vmaf_config_pool_method), &model_collection_score, 0,
         thread_data->frames_processed);
     if (err) {
       return EXIT_FAILURE;
@@ -342,8 +342,8 @@ gst_vmaf_post_pooled_score (GstVmafThreadHelper * thread_data)
 
   err = vmaf_score_pooled (thread_data->vmaf_ctx,
       thread_data->vmaf_model,
-      vmaf_map_pooling_method (thread_data->
-          gst_vmaf_p->vmaf_config_pool_method), &vmaf_score, 0,
+      vmaf_map_pooling_method (thread_data->gst_vmaf_p->
+          vmaf_config_pool_method), &vmaf_score, 0,
       thread_data->frames_processed);
   if (err) {
     return EXIT_FAILURE;
@@ -355,10 +355,10 @@ gst_vmaf_post_pooled_score (GstVmafThreadHelper * thread_data)
       MESSAGE_TYPE_POOLED, NULL);
   gst_structure_set (vmaf_message_structure, "stream", G_TYPE_INT,
       thread_data->stream_index, NULL);
-  err =
+  bool successfulPost =
       gst_element_post_message (GST_ELEMENT (thread_data->gst_vmaf_p),
       vmaf_message);
-  if (err) {
+  if (!successfulPost) {
     GST_WARNING_OBJECT (thread_data->gst_vmaf_p,
         "Could not post pooled VMAF on message bus. score:%f stream:%d",
         vmaf_score, thread_data->stream_index);
@@ -417,10 +417,10 @@ gst_vmaf_post_frame_score (GstVmafThreadHelper * thread_data, gint frame_index)
         MESSAGE_TYPE_FRAME, NULL);
     gst_structure_set (vmaf_message_structure, "stream", G_TYPE_INT,
         thread_data->stream_index, NULL);
-    err =
+    bool successfulPost =
         gst_element_post_message (GST_ELEMENT (thread_data->gst_vmaf_p),
         vmaf_message);
-    if (err) {
+    if (!successfulPost) {
       GST_WARNING_OBJECT (thread_data->gst_vmaf_p,
           "Could not post frame VMAF on message bus. score:%f stream:%d frame:%d",
           vmaf_score, thread_data->stream_index, frame_index);
@@ -675,7 +675,6 @@ gst_vmaf_aggregate_frames (GstVideoAggregator * vagg, GstBuffer * outbuf)
   GstVmaf *self = GST_VMAF (vagg);
   gboolean res = TRUE;
   guint stream_index = 0;
-
 
   GST_OBJECT_LOCK (vagg);
   for (l = GST_ELEMENT (vagg)->sinkpads; l; l = l->next) {
