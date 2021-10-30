@@ -16,6 +16,11 @@
         "functional": "c",
         "*.dat": "c",
         "*.tcc": "c",
-        "cstdlib": "c"
+        "cstdlib": "c",
+        "queue": "c",
+        "numeric": "c",
+        "streambuf": "c",
+        "tuple": "c",
+        "utility": "c"
     }
 }

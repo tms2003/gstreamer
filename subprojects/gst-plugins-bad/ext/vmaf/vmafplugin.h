@@ -39,7 +39,6 @@ typedef struct
   GMutex check_thread_failure;
   gboolean thread_eos;
   gboolean thread_failure;
-  gchar *error_msg;
   gint stream_index;
   gint vmaf_pix_fmt;
   gint frame_height;

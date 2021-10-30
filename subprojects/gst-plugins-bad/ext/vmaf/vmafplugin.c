@@ -319,110 +319,111 @@ static gint
 gst_vmaf_post_pooled_score (GstVmafThreadHelper * thread_data)
 {
   gint err = 0;
+  gint res = EXIT_SUCCESS;
   gdouble vmaf_score = 0;
+  gboolean successfulPost = TRUE;
   gchar *location;
+  GstVmaf *self = thread_data->gst_vmaf_p;
   VmafModelCollectionScore model_collection_score;
   enum VmafOutputFormat vmaf_output_format =
-      vmaf_map_log_fmt (thread_data->gst_vmaf_p->vmaf_config_log_format);
+      vmaf_map_log_fmt (self->vmaf_config_log_format);
+  enum VmafPoolingMethod vmaf_pooling_method =
+      vmaf_map_pooling_method (self->vmaf_config_pool_method);
   GstStructure *vmaf_message_structure = gst_structure_new_empty ("VMAF");
-  GstMessage *vmaf_message =
-      gst_message_new_element (GST_OBJECT (thread_data->gst_vmaf_p),
+  GstMessage *vmaf_message = gst_message_new_element (GST_OBJECT (self),
       vmaf_message_structure);
 
-  if (thread_data->gst_vmaf_p->vmaf_config_conf_int) {
+  if (self->vmaf_config_conf_int) {
     err = vmaf_score_pooled_model_collection (thread_data->vmaf_ctx,
         thread_data->vmaf_model_collection,
-        vmaf_map_pooling_method (thread_data->gst_vmaf_p->
-            vmaf_config_pool_method), &model_collection_score, 0,
+        vmaf_pooling_method, &model_collection_score, 0,
         thread_data->frames_processed);
     if (err) {
-      return EXIT_FAILURE;
+      GST_DEBUG_OBJECT (self,
+          "could not calculate pooled vmaf score on range 0 to %d, for model collection",
+          thread_data->frames_processed);
+      res = EXIT_FAILURE;
     }
   }
 
   err = vmaf_score_pooled (thread_data->vmaf_ctx,
       thread_data->vmaf_model,
-      vmaf_map_pooling_method (thread_data->gst_vmaf_p->
-          vmaf_config_pool_method), &vmaf_score, 0,
+      vmaf_map_pooling_method (self->vmaf_config_pool_method), &vmaf_score, 0,
       thread_data->frames_processed);
   if (err) {
-    return EXIT_FAILURE;
-  }
-
-  gst_structure_set (vmaf_message_structure, "score", G_TYPE_DOUBLE, vmaf_score,
-      NULL);
-  gst_structure_set (vmaf_message_structure, "type", G_TYPE_INT,
-      MESSAGE_TYPE_POOLED, NULL);
-  gst_structure_set (vmaf_message_structure, "stream", G_TYPE_INT,
-      thread_data->stream_index, NULL);
-  bool successfulPost =
-      gst_element_post_message (GST_ELEMENT (thread_data->gst_vmaf_p),
-      vmaf_message);
-  if (!successfulPost) {
-    GST_WARNING_OBJECT (thread_data->gst_vmaf_p,
-        "Could not post pooled VMAF on message bus. score:%f stream:%d",
-        vmaf_score, thread_data->stream_index);
+    GST_WARNING_OBJECT (self,
+        "could not calculate pooled vmaf score on range 0 to %d",
+        thread_data->frames_processed);
+    res = EXIT_FAILURE;
+  } else {
+    gst_structure_set (vmaf_message_structure,
+        "score", G_TYPE_DOUBLE, vmaf_score,
+        "type", G_TYPE_INT, MESSAGE_TYPE_POOLED,
+        "stream", G_TYPE_INT, thread_data->stream_index, NULL);
+    successfulPost =
+        gst_element_post_message (GST_ELEMENT (self), vmaf_message);
+    if (!successfulPost) {
+      GST_WARNING_OBJECT (self,
+          "could not post pooled VMAF on message bus. score:%f stream:%d",
+          vmaf_score, thread_data->stream_index);
+    }
   }
 
   if (vmaf_output_format == VMAF_OUTPUT_FORMAT_NONE
-      && thread_data->gst_vmaf_p->vmaf_config_log_filename) {
+      && self->vmaf_config_log_filename) {
     vmaf_output_format = VMAF_OUTPUT_FORMAT_JSON;
-    GST_LOG_OBJECT (thread_data->gst_vmaf_p,
-        "Using default JSON style logging.");
+    GST_DEBUG_OBJECT (self, "using default JSON style logging.");
   }
 
   if (vmaf_output_format) {
+    GST_DEBUG_OBJECT (self,
+        "writing VMAF score data to location:%s.", location);
     vmaf_use_vmafossexec_aliases ();
-    location =
-        g_strdup_printf (thread_data->gst_vmaf_p->vmaf_config_log_filename,
+    location = g_strdup_printf (self->vmaf_config_log_filename,
         thread_data->stream_index);
     err =
         vmaf_write_output (thread_data->vmaf_ctx, location, vmaf_output_format);
     if (err) {
-      GST_WARNING_OBJECT (thread_data->gst_vmaf_p,
-          "Could not write VMAF output:%s.", location);
-      return EXIT_FAILURE;
+      GST_WARNING_OBJECT (self, "could not write VMAF output:%s.", location);
+      res = EXIT_FAILURE;
     }
   }
 
-  return EXIT_SUCCESS;
+  return res;
 }
 
 static gint
 gst_vmaf_post_frame_score (GstVmafThreadHelper * thread_data, gint frame_index)
 {
   gint err = 0;
+  gboolean res = TRUE;
   gdouble vmaf_score = 0;
   gint scored_frame = frame_index - 1;
-  gint mod_frame =
-      !(scored_frame % thread_data->gst_vmaf_p->vmaf_config_subsample);
+  GstVmaf *self = thread_data->gst_vmaf_p;
+  gint mod_frame = !(scored_frame % self->vmaf_config_subsample);
   GstStructure *vmaf_message_structure = gst_structure_new_empty ("VMAF");
-  GstMessage *vmaf_message =
-      gst_message_new_element (GST_OBJECT (thread_data->gst_vmaf_p),
+  GstMessage *vmaf_message = gst_message_new_element (GST_OBJECT (self),
       vmaf_message_structure);
-  if (thread_data->gst_vmaf_p->vmaf_config_frame_messaging && frame_index > 0
-      && mod_frame) {
+  if (self->vmaf_config_frame_messaging && frame_index > 0 && mod_frame) {
     err =
         vmaf_score_at_index (thread_data->vmaf_ctx, thread_data->vmaf_model,
         &vmaf_score, scored_frame);
     if (err) {
+      GST_WARNING_OBJECT (self,
+          "could not calculate vmaf score on stream:%d frame:%d",
+          thread_data->stream_index, scored_frame);
       return EXIT_FAILURE;
     }
 
-    gst_structure_set (vmaf_message_structure, "score", G_TYPE_DOUBLE,
-        vmaf_score, NULL);
-    gst_structure_set (vmaf_message_structure, "index", G_TYPE_INT,
-        scored_frame, NULL);
-    gst_structure_set (vmaf_message_structure, "type", G_TYPE_INT,
-        MESSAGE_TYPE_FRAME, NULL);
-    gst_structure_set (vmaf_message_structure, "stream", G_TYPE_INT,
-        thread_data->stream_index, NULL);
-    bool successfulPost =
-        gst_element_post_message (GST_ELEMENT (thread_data->gst_vmaf_p),
-        vmaf_message);
-    if (!successfulPost) {
-      GST_WARNING_OBJECT (thread_data->gst_vmaf_p,
-          "Could not post frame VMAF on message bus. score:%f stream:%d frame:%d",
+    gst_structure_set (vmaf_message_structure,
+        "score", G_TYPE_DOUBLE, vmaf_score,
+        "index", G_TYPE_INT, scored_frame,
+        "type", G_TYPE_INT, MESSAGE_TYPE_FRAME,
+        "stream", G_TYPE_INT, thread_data->stream_index, NULL);
+    res = gst_element_post_message (GST_ELEMENT (self), vmaf_message);
+    if (!res) {
+      GST_WARNING_OBJECT (self,
+          "could not post frame VMAF on message bus. score:%f stream:%d frame:%d",
           vmaf_score, thread_data->stream_index, frame_index);
     }
   }
@@ -435,6 +436,7 @@ gst_vmaf_read_frame_from_queue (float *ref_data, float *dist_data,
 {
   int ret;
   GstVmafThreadHelper *helper = (GstVmafThreadHelper *) h;
+  GstVmaf *self = helper->gst_vmaf_p;
   GstVmafQueueElem *frames_data;
   frames_data = g_async_queue_pop (helper->frame_queue);
   if (frames_data->ref_ptr && frames_data->dist_ptr) {
@@ -456,6 +458,7 @@ gst_vmaf_read_frame_from_queue (float *ref_data, float *dist_data,
     *frame_index = frames_data->frame_index;
     ret = READING_SUCCESSFUL;
   } else {
+    GST_DEBUG_OBJECT (self, "unable to read frame data from queue");
     ret = READING_FAILED;
   }
   if (frames_data) {
@@ -473,6 +476,7 @@ gst_vmaf_stream_thread_read_pictures (GstVmafThreadHelper * thread_data)
   int frame_index = 0;
   gboolean result = TRUE;
   VmafPicture pic_ref, pic_dist;
+  GstVmaf *self = thread_data->gst_vmaf_p;
 
   //allocate local picture buffer memory
   gint stride = thread_data->frame_width * sizeof (float);
@@ -480,9 +484,9 @@ gst_vmaf_stream_thread_read_pictures (GstVmafThreadHelper * thread_data)
   gfloat *dist_data = g_malloc (thread_data->frame_height * stride);
   gfloat *temp_data = g_malloc (thread_data->frame_height * stride);
   if (!ref_data | !dist_data | !temp_data) {
-    GST_ELEMENT_ERROR (thread_data->gst_vmaf_p, RESOURCE, FAILED,
-        ("Problem allocating picture buffer memory"),
-        ("Problem allocating picture buffer memory"));
+    GST_ELEMENT_ERROR (self, RESOURCE, FAILED,
+        ("problem allocating picture buffer memory"),
+        ("problem allocating picture buffer memory"));
     result = FALSE;
     goto end;
   }
@@ -491,26 +495,28 @@ gst_vmaf_stream_thread_read_pictures (GstVmafThreadHelper * thread_data)
       gst_vmaf_read_frame_from_queue (ref_data, dist_data, temp_data, stride,
       &frame_index, thread_data);
   if (err == 1) {
-    GST_ELEMENT_ERROR (thread_data->gst_vmaf_p, RESOURCE, FAILED,
-        ("Failed to read frame"), ("Failed to read frame"));
+    GST_ELEMENT_ERROR (self, RESOURCE, FAILED,
+        ("failed to read frame"), ("failed to read frame"));
     result = FALSE;
     goto end;
   } else if (err == 2) {
     //this signals an EOS
+    GST_DEBUG_OBJECT (self,
+        "EOS reached, flusing buffers and calculating pooled score.");
     thread_data->thread_eos = TRUE;
     err = vmaf_read_pictures (thread_data->vmaf_ctx, NULL, NULL, 0);
     if (err) {
-      GST_ELEMENT_ERROR (thread_data->gst_vmaf_p, RESOURCE, FAILED,
-          ("Failed to flush VMAF context"), ("Failed to flush VMAF context"));
+      GST_ELEMENT_ERROR (self, RESOURCE, FAILED,
+          ("failed to flush VMAF context"), ("failed to flush VMAF context"));
       result = FALSE;
       goto end;
     }
 
     err = gst_vmaf_post_pooled_score (thread_data);
     if (err) {
-      GST_ELEMENT_ERROR (thread_data->gst_vmaf_p, RESOURCE, FAILED,
-          ("Failed to calculate pooled VMAF score"),
-          ("Failed to calculate pooled VMAF score"));
+      GST_ELEMENT_ERROR (self, RESOURCE, FAILED,
+          ("failed to calculate pooled VMAF score"),
+          ("failed to calculate pooled VMAF score"));
       result = FALSE;
     }
 
@@ -524,9 +530,9 @@ gst_vmaf_stream_thread_read_pictures (GstVmafThreadHelper * thread_data)
       vmaf_picture_alloc (&pic_dist, thread_data->vmaf_pix_fmt,
       thread_data->bpc, thread_data->frame_width, thread_data->frame_height);
   if (err) {
-    GST_ELEMENT_ERROR (thread_data->gst_vmaf_p, RESOURCE, FAILED,
-        ("Failed to allocate VMAF picture memory"),
-        ("Failed to allocate VMAF picture memory"));
+    GST_ELEMENT_ERROR (self, RESOURCE, FAILED,
+        ("failed to allocate VMAF picture memory"),
+        ("failed to allocate VMAF picture memory"));
     result = FALSE;
     goto end;
   }
@@ -545,14 +551,18 @@ gst_vmaf_stream_thread_read_pictures (GstVmafThreadHelper * thread_data)
   }
 
   //read pictures, run calculation
+  GST_DEBUG_OBJECT (self,
+      "reading images into vmaf context. ref:%p dist:%p count:%d",
+      &pic_ref, &pic_dist, frame_index);
+
   err =
       vmaf_read_pictures (thread_data->vmaf_ctx, &pic_ref, &pic_dist,
       frame_index);
   thread_data->frames_processed = frame_index;
   if (err) {
-    GST_ELEMENT_ERROR (thread_data->gst_vmaf_p, RESOURCE, FAILED,
-        ("Failed to allocate VMAF picture memory"),
-        ("Failed to allocate VMAF picture memory"));
+    GST_ELEMENT_ERROR (self, RESOURCE, FAILED,
+        ("failed to allocate VMAF picture memory"),
+        ("failed to allocate VMAF picture memory"));
     result = FALSE;
     goto end;
   }
@@ -596,10 +606,6 @@ gst_vmaf_stream_thread_call (void *vs)
   g_mutex_lock (&helper->check_thread_failure);
   helper->thread_failure = !ret_status;
   g_mutex_unlock (&helper->check_thread_failure);
-  if (helper->error_msg)
-    GST_ELEMENT_ERROR (helper->gst_vmaf_p, RESOURCE, FAILED,
-        ("Launhing LibVMAF error: %s", helper->error_msg),
-        ("Launhing LibVMAF error: %s", helper->error_msg));
 }
 
 static gboolean
@@ -681,14 +687,18 @@ gst_vmaf_aggregate_frames (GstVideoAggregator * vagg, GstBuffer * outbuf)
     GstVideoAggregatorPad *pad = l->data;
     GstVideoFrame *prepared_frame =
         gst_video_aggregator_pad_get_prepared_frame (pad);
+    GstVmafThreadHelper *thread_data =
+        &self->helper_struct_pointer[stream_index];
 
     if (prepared_frame != NULL) {
       if (!ref_frame) {
         //this means this is the source frame, in other words, the first sink for the vmaf filter.
         ref_frame = prepared_frame;
+        GST_DEBUG_OBJECT (self, "pulling reference frame:%d for sink:0",
+            thread_data->frame_index);
       } else {
-        GstVmafThreadHelper *thread_data =
-            &self->helper_struct_pointer[stream_index];
+        GST_DEBUG_OBJECT (self, "pulling distorted frame:%d for sink:%d",
+            thread_data->frame_index, (stream_index + 1));
         GstVideoFrame *cmp_frame = prepared_frame;
 
         res &=
@@ -892,11 +902,13 @@ gst_vmaf_negotiated_src_caps (GstAggregator * agg, GstCaps * caps)
   vmaf_pix_fmt = vmaf_map_pix_fmt (format);
 
   self->number_of_input_streams = g_list_length (GST_ELEMENT (agg)->sinkpads);
-  --self->number_of_input_streams;      // Without reference
-  sinkpads_list = sinkpads_list->next;  // Skip reference
+  --self->number_of_input_streams;      // Without reference sink
+  sinkpads_list = sinkpads_list->next;  // Skip reference sink
   self->finish_threads = FALSE;
   self->helper_struct_pointer =
       g_malloc (sizeof (GstVmafThreadHelper) * self->number_of_input_streams);
+  GST_DEBUG_OBJECT (self, "setting up vmaf for comparison %d streams",
+      self->number_of_input_streams);
 
   for (guint i = 0; i < self->number_of_input_streams; ++i) {
     //set stream information
@@ -908,7 +920,6 @@ gst_vmaf_negotiated_src_caps (GstAggregator * agg, GstCaps * caps)
     self->helper_struct_pointer[i].frame_width = width;
     self->helper_struct_pointer[i].vmaf_pix_fmt = vmaf_pix_fmt;
     self->helper_struct_pointer[i].bpc = bpc;
-    self->helper_struct_pointer[i].error_msg = NULL;
     self->helper_struct_pointer[i].frame_index = 0;
     self->helper_struct_pointer[i].padname =
         gst_pad_get_name (sinkpads_list->data);
@@ -940,6 +951,8 @@ gst_vmaf_stop_plugin (GstAggregator * aggregator)
 {
   GstVmafThreadHelper *helper = NULL;
   GstVmaf *self = GST_VMAF (aggregator);
+  GST_DEBUG_OBJECT (self, "stopping vmaf plugin and flusing queues");
+
   g_mutex_lock (&self->finish_mutex);
   if (!self->finish_threads) {
     for (int i = 0; i < self->number_of_input_streams; ++i) {
@@ -966,8 +979,6 @@ gst_vmaf_stop_plugin (GstAggregator * aggregator)
         frames_data->dist_ptr = NULL;
         g_async_queue_push (helper->frame_queue, frames_data);
       }
-
-
     }
 
     for (int i = 0; i < self->number_of_input_streams; ++i) {
@@ -977,7 +988,6 @@ gst_vmaf_stop_plugin (GstAggregator * aggregator)
         gst_vmaf_post_pooled_score (helper);
 
       gst_task_join (helper->vmaf_thread);
-      g_free (helper->error_msg);
       g_free (helper->padname);
       gst_object_unref (helper->vmaf_thread);
       g_rec_mutex_clear (&helper->vmaf_thread_mutex);
