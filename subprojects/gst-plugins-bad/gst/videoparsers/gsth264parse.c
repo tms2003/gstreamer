@@ -47,8 +47,13 @@ gst_h264_cc_mode_get_type (void)
 {
   static GType type = 0;
   static const GEnumValue data[] = {
-    {GST_H264_PARSE_CC_MODE_NONE, "Do not insert closed caption SEIs", "none"},
-    {GST_H264_PARSE_CC_MODE_A53, "Inserts ATSC A/53 Part 4 SEI NALs", "a53"},
+    {GST_H264_PARSE_CC_MODE_NONE,
+        "Do not insert closed caption SEIs", "none"},
+    {GST_H264_PARSE_CC_MODE_A53,
+          "Inserts a DTVCC transport stream "
+          "(closedcaption/x-cea-708,format=cc_data) as ATSC A/53 Part 4 SEI "
+          "NALs",
+        "a53"},
     {0, NULL, NULL},
   };
 
@@ -192,15 +197,35 @@ gst_h264_parse_class_init (GstH264ParseClass * klass)
           "VUI and pic_struct_present_flag of VUI must be non-zero",
           DEFAULT_UPDATE_TIMECODE, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
+  /**
+   * GstH264Parse:insert-cc:
+   *
+   * Inserts closed captions from GstVideoCaptionMeta into the H.264 bitstream.
+   * This is extremely fast, because it does not require transcoding!
+   *
+   * The following pipeline takes a MacCaption file `input.mcc` containing
+   * EIA-608 and/or CEA-708 captions, and converts it to a DTVCC stream. It
+   * then takes an ISO MP4 file `input.mp4` containing a H.264 video stream,
+   * and inserts the DTVCC stream as ATSC A/53 SEI NALs, and writes that and
+   * the original audio track to `output.mp4`:
+   *
+   * ```
+   * gst-launch-1.0 \
+   *   cccombiner name=ccc schedule=false ! h264parse insert-cc=a53 ! \
+   *     mp4mux ! filesink location=output.mp4 \
+   *   filesrc location=input.mcc ! mccparse ! ccconverter ! \
+   *     closedcaption/x-cea-708,format=cc_data ! ccc.caption \
+   *   filesrc location=input.mp4 ! qtdemux name=qt ! queue ! ccc. \
+   *   qt.audio_0 ! queue ! mp4.
+   * ```
+   *
+   * Since: 1.20
+   */
   g_object_class_install_property (gobject_class, PROP_INSERT_CC,
       g_param_spec_enum ("insert-cc",
           "Insert Closed Captions",
-          "Inserts SEI NALs from a GstVideoCaptionMeta DTVCC stream without "
-          "transcoding. Use "
-          "`ccconverter ! closedcaption/x-cea-708,format=cc_data` to convert "
-          "EIA-608/CEA-708 captions to the DTVCC transport layer format, and "
-          "`cccombiner` to attach them a H.264 stream as "
-          "GstVideoCaptionMeta.", GST_TYPE_H264_CC_MODE,
+          "Inserts closed captions from GstVideoCaptionMeta into the H.264 "
+          "bitstream without transcoding.", GST_TYPE_H264_CC_MODE,
           DEFAULT_INSERT_CC, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   /* Override BaseParse vfuncs */
