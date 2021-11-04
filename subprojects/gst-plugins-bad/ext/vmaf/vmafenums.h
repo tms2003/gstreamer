@@ -18,7 +18,8 @@ typedef enum _GstVmafPoolMethodEnum
 typedef enum _GstReadFrameReturnCodes
 {
   READING_SUCCESSFUL = 0,
-  READING_FAILED = 2
+  READING_ERROR = 1,
+  READING_EOS = 2,
 } GstReadFrameReturnCodes;
 
 typedef enum _GstVmafPropertyTypes

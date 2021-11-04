@@ -14,7 +14,7 @@ vmaf_map_log_fmt (GstVmafLogFormats log_fmt)
 }
 
 gint
-vmaf_map_pix_fmt (gchar * fmt)
+vmaf_map_pix_fmt (const char *fmt)
 {
   if (fmt) {
     if (!strcmp (fmt, "I420"))
@@ -38,7 +38,7 @@ vmaf_map_pix_fmt (gchar * fmt)
 }
 
 gint
-vmaf_map_bit_depth (gchar * fmt)
+vmaf_map_bit_depth (const char *fmt)
 {
   if (fmt) {
     if (!strcmp (fmt, "I420_10LE"))
