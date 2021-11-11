@@ -16,7 +16,10 @@
 # License along with this program; if not, write to the
 # Free Software Foundation, Inc., 51 Franklin St, Fifth Floor,
 # Boston, MA 02110-1301, USA.
-import collections
+try:
+    import collections.abc as collections_abc
+except ImportError:
+    import collections as collections_abc
 import errno
 import fnmatch
 import os
@@ -765,7 +768,7 @@ def addLogHandler(func):
         TypeError: When func is not a callable.
     """
 
-    if not isinstance(func, collections.Callable):
+    if not isinstance(func, collections_abc.Callable):
         raise TypeError("func must be callable")
 
     if func not in _log_handlers:
@@ -787,7 +790,7 @@ def addLimitedLogHandler(func):
     Raises:
         TypeError: When func is not a callable.
     """
-    if not isinstance(func, collections.Callable):
+    if not isinstance(func, collections_abc.Callable):
         raise TypeError("func must be callable")
 
     if func not in _log_handlers_limited:
