@@ -291,6 +291,11 @@ struct _MpegTSPacketizer2 {
   /* Extra time offset to handle values before initial PCR.
    * This will be added to all converted timestamps */
   GstClockTime extra_shift;
+
+  /* Only used when ignore-pcr and calculate_offset are TRUE, in order to track
+   * raw PTS wraparounds */
+  GstClockTime first_raw_pts;
+  GstClockTime pts_wrap_offset;
 };
 
 struct _MpegTSPacketizer2Class {
