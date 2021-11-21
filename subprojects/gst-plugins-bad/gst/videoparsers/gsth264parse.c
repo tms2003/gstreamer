@@ -41,14 +41,14 @@ GST_DEBUG_CATEGORY (h264_parse_debug);
 #define DEFAULT_UPDATE_TIMECODE       FALSE
 #define DEFAULT_INSERT_CC             GST_H264_PARSE_CC_MODE_NONE
 
-#define GST_TYPE_H264_CC_MODE (gst_h264_cc_mode_get_type())
+#define GST_H264_PARSE_CC_MODE_TYPE (gst_h264_parse_cc_mode_get_type())
 static GType
-gst_h264_cc_mode_get_type (void)
+gst_h264_parse_cc_mode_get_type (void)
 {
   static GType type = 0;
   static const GEnumValue data[] = {
     {GST_H264_PARSE_CC_MODE_NONE,
-        "Do not insert closed caption SEIs", "none"},
+        "Don't insert caption SEIs into the bitstream", "none"},
     {GST_H264_PARSE_CC_MODE_A53,
           "Inserts a DTVCC transport stream "
           "(closedcaption/x-cea-708,format=cc_data) as ATSC A/53 Part 4 SEI "
@@ -58,7 +58,7 @@ gst_h264_cc_mode_get_type (void)
   };
 
   if (!type) {
-    type = g_enum_register_static ("GstH264CCMode", data);
+    type = g_enum_register_static ("GstH264ParseCCMode", data);
   }
   return type;
 }
@@ -200,11 +200,12 @@ gst_h264_parse_class_init (GstH264ParseClass * klass)
   /**
    * GstH264Parse:insert-cc:
    *
-   * Inserts closed captions from GstVideoCaptionMeta into the H.264 bitstream.
-   * This is extremely fast, because it does not require transcoding!
+   * Inserts closed captions from #GstVideoCaptionMeta into the H.264
+   * bitstream. This is extremely fast, because it does not require
+   * transcoding!
    *
    * The following pipeline takes a MacCaption file `input.mcc` containing
-   * EIA-608 and/or CEA-708 captions, and converts it to a DTVCC stream. It
+   * EIA/CEA/CTA-608 and/or 708 captions, and converts it to a DTVCC stream. It
    * then takes an ISO MP4 file `input.mp4` containing a H.264 video stream,
    * and inserts the DTVCC stream as ATSC A/53 SEI NALs, and writes that and
    * the original audio track to `output.mp4`:
@@ -212,7 +213,7 @@ gst_h264_parse_class_init (GstH264ParseClass * klass)
    * ```
    * gst-launch-1.0 \
    *   cccombiner name=ccc schedule=false ! h264parse insert-cc=a53 ! \
-   *     mp4mux ! filesink location=output.mp4 \
+   *     mp4mux name=mp4 ! filesink location=output.mp4 \
    *   filesrc location=input.mcc ! mccparse ! ccconverter ! \
    *     closedcaption/x-cea-708,format=cc_data ! ccc.caption \
    *   filesrc location=input.mp4 ! qtdemux name=qt ! queue ! ccc. \
@@ -225,8 +226,9 @@ gst_h264_parse_class_init (GstH264ParseClass * klass)
       g_param_spec_enum ("insert-cc",
           "Insert Closed Captions",
           "Inserts closed captions from GstVideoCaptionMeta into the H.264 "
-          "bitstream without transcoding.", GST_TYPE_H264_CC_MODE,
+          "bitstream without transcoding.", GST_H264_PARSE_CC_MODE_TYPE,
           DEFAULT_INSERT_CC, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+  gst_type_mark_as_plugin_api (GST_H264_PARSE_CC_MODE_TYPE, 0);
 
   /* Override BaseParse vfuncs */
   parse_class->start = GST_DEBUG_FUNCPTR (gst_h264_parse_start);
@@ -3980,7 +3982,7 @@ gst_h264_parse_set_property (GObject * object, guint prop_id,
       parse->update_timecode = g_value_get_boolean (value);
       break;
     case PROP_INSERT_CC:
-      parse->insert_cc = (GstH264CCMode) g_value_get_enum (value);
+      parse->insert_cc = g_value_get_enum (value);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
