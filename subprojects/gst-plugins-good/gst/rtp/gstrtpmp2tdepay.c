@@ -202,7 +202,7 @@ gst_rtp_tts_buffer_get_payload_subbuffer (GstRTPBuffer * rtp, guint offset,
     GST_DEBUG ("Filling  %u'th TS packet. Signature:%02X", i, tmp_buf[0]);
     gst_buffer_fill (outbuf, i * 188, tmp_buf, 188);
   }
-
+  /* TODO: Use the additional timestamp from each packet for resynchronization. */
   return outbuf;
 
   /* ERRORS */
