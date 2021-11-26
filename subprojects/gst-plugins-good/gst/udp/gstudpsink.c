@@ -111,6 +111,8 @@ gst_udpsink_init (GstUDPSink * udpsink)
 
   gst_multiudpsink_add (GST_MULTIUDPSINK (udpsink), udpsink->host,
       udpsink->port);
+
+  gst_base_sink_set_drop_out_of_segment (GST_BASE_SINK (udpsink), FALSE);
 }
 
 static void
