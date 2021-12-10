@@ -1250,7 +1250,8 @@ gst_ogg_pad_submit_packet (GstOggPad * pad, ogg_packet * packet)
       }
 
       if (event) {
-        gst_event_set_seqnum (event, ogg->seqnum);
+        if (ogg->seqnum != GST_SEQNUM_INVALID)
+          gst_event_set_seqnum (event, ogg->seqnum);
 
         gst_ogg_demux_activate_chain (ogg, chain, event);
 
@@ -1950,7 +1951,8 @@ gst_ogg_pad_handle_push_mode_state (GstOggPad * pad, ogg_page * page)
           gst_event_new_seek (ogg->push_seek_rate, GST_FORMAT_BYTES,
           ogg->push_seek_flags, GST_SEEK_TYPE_SET, best,
           GST_SEEK_TYPE_NONE, -1);
-      gst_event_set_seqnum (sevent, ogg->seqnum);
+      if (ogg->seqnum != GST_SEQNUM_INVALID)
+        gst_event_set_seqnum (sevent, ogg->seqnum);
 
       gst_event_replace (&ogg->seek_event, sevent);
       gst_event_unref (sevent);
@@ -2882,7 +2884,8 @@ gst_ogg_demux_deactivate_current_chain (GstOggDemux * ogg)
       continue;
 
     event = gst_event_new_eos ();
-    gst_event_set_seqnum (event, ogg->seqnum);
+    if (ogg->seqnum != GST_SEQNUM_INVALID)
+      gst_event_set_seqnum (event, ogg->seqnum);
     gst_pad_push_event (GST_PAD_CAST (pad), event);
 
     GST_DEBUG_OBJECT (ogg, "removing pad %" GST_PTR_FORMAT, pad);
@@ -4597,7 +4600,8 @@ gst_ogg_demux_handle_page (GstOggDemux * ogg, ogg_page * page, gboolean discont)
       segment.time = chain->begin_time;
       segment.base += chain->begin_time;
       event = gst_event_new_segment (&segment);
-      gst_event_set_seqnum (event, ogg->seqnum);
+      if (ogg->seqnum != GST_SEQNUM_INVALID)
+        gst_event_set_seqnum (event, ogg->seqnum);
 
       GST_DEBUG_OBJECT (ogg,
           "segment: start %" GST_TIME_FORMAT ", stop %" GST_TIME_FORMAT
@@ -5001,7 +5005,8 @@ pause:
         gst_element_post_message (GST_ELEMENT (ogg), message);
 
         event = gst_event_new_segment_done (GST_FORMAT_TIME, stop);
-        gst_event_set_seqnum (event, ogg->seqnum);
+        if (ogg->seqnum != GST_SEQNUM_INVALID)
+          gst_event_set_seqnum (event, ogg->seqnum);
         gst_ogg_demux_send_event (ogg, event);
         event = NULL;
       } else {
@@ -5024,7 +5029,8 @@ pause:
          before prerolling is done and a chain created. If we have no
          chain to send the event to, error out. */
       if (ogg->current_chain || ogg->building_chain) {
-        gst_event_set_seqnum (event, ogg->seqnum);
+        if (ogg->seqnum != GST_SEQNUM_INVALID)
+          gst_event_set_seqnum (event, ogg->seqnum);
         gst_ogg_demux_send_event (ogg, event);
       } else {
         gst_event_unref (event);
