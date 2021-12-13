@@ -1,3 +1,58 @@
+/* VMAF plugin
+ * Copyright (C) 2015 Casey Bateman <Casey.Bateman@hudl.com>
+ *
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Library General Public
+ * License as published by the Free Software Foundation; either
+ * version 2 of the License, or (at your option) any later version.
+ *
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Library General Public License for more details.
+ *
+ * You should have received a copy of the GNU Library General Public
+ * License along with this library; if not, write to the
+ * Free Software Foundation, Inc., 51 Franklin St, Fifth Floor,
+ * Boston, MA 02110-1301, USA.
+ */
+/**
+ * SECTION:element-vmaf
+ * @title: vmaf
+ * @short_description: Provides Video Multi-Method Assessment Fusion quality metrics
+ *
+ * VMAF will perform perceptive video quality analysis on a set of input 
+ * pads, the first pad is the reference video. 
+ *
+ * It will perform comparisons on video streams with the same geometry.
+ *
+ * The image output will be the be the reference video pad, the first pad.
+ *
+ * VMAF will post a message containing a structure named VMAF, at the end for
+ * each supplied pad, or every reference frame if the property for 
+ * frame-message=true.1
+ *
+ * It is possible to configure and run PSNR, SSIM, MS-SSIM together with VMAF
+ * by setting the appropriate properties to true. 
+ *
+ * The message will contain a field for "type" this field will be one of two values:
+ *  (int)0: score for the individual frame
+ *  (int)1: pooled score for the entire stream
+ *
+ * The message will also contain a "stream" field, which is the index of the distorted pad.
+ *
+ * For example, if ms-ssim, ssim, psnr are set to true, and there are
+ * two compared streams, the emitted structure will look like this:
+ *
+ * VMAF, score=(double)78.910751757633022, index=(int)26, type=(int)0, stream=(int)0, ms-ssim=(double)0.96676034472760064, ssim=(double)0.8706783652305603, psnr=(double)30.758853484390933;
+ *
+ * ## Example launch line
+ * |[
+ * gst-launch-1.0 -m filesrc location=test1.yuv ! rawvideoparse ! video/x-raw,fromat=I420 ! v.sink_0 vmaf name=v frame-message=true log-filename=scores%05d.json psnr=true ssim=true ms-ssim=true   filesrc location=test2.yuv ! rawvideoparse ! video/x-raw,fromat=I420 ! v.sink_1  v.src ! videoconvert ! autovideosink 
+ * ]| This pipeline will output messages to the console for each set of compared frames.
+ *
+ */
+
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif
@@ -324,7 +379,7 @@ gst_vmaf_post_pooled_score (GstVmafThreadHelper * thread_data)
 {
   gint err = 0;
   gint res = EXIT_SUCCESS;
-  gdouble vmaf_score = 0;
+  gdouble vmaf_score = 0, ms_ssim_score = 0, ssim_score = 0, psnr_score = 0;
   gboolean successfulPost = TRUE;
   gchar *location;
   GstVmaf *self = thread_data->gst_vmaf_p;
@@ -352,8 +407,7 @@ gst_vmaf_post_pooled_score (GstVmafThreadHelper * thread_data)
 
   err = vmaf_score_pooled (thread_data->vmaf_ctx,
       thread_data->vmaf_model,
-      vmaf_map_pooling_method (self->vmaf_config_pool_method), &vmaf_score, 0,
-      thread_data->last_frame_processed);
+      vmaf_pooling_method, &vmaf_score, 0, thread_data->last_frame_processed);
   if (err) {
     GST_WARNING_OBJECT (self,
         "could not calculate pooled vmaf score on range 0 to %d",
@@ -369,6 +423,49 @@ gst_vmaf_post_pooled_score (GstVmafThreadHelper * thread_data)
         "score", G_TYPE_DOUBLE, vmaf_score,
         "type", G_TYPE_INT, MESSAGE_TYPE_POOLED,
         "stream", G_TYPE_INT, thread_data->stream_index, NULL);
+    if (self->vmaf_config_ms_ssim) {
+      err =
+          vmaf_feature_score_pooled (thread_data->vmaf_ctx, "float_ms_ssim",
+          vmaf_pooling_method, &ms_ssim_score, 0,
+          thread_data->last_frame_processed);
+      if (err) {
+        GST_WARNING_OBJECT (self,
+            "could not calculate ms-ssim score on stream:%d range:0-%d err:%d",
+            thread_data->stream_index, thread_data->last_frame_processed, err);
+      } else {
+        gst_structure_set (vmaf_message_structure,
+            "ms-ssim", G_TYPE_DOUBLE, ms_ssim_score, NULL);
+      }
+    }
+    if (self->vmaf_config_ssim) {
+      err =
+          vmaf_feature_score_pooled (thread_data->vmaf_ctx, "float_ssim",
+          vmaf_pooling_method, &ssim_score, 0,
+          thread_data->last_frame_processed);
+      if (err) {
+        GST_WARNING_OBJECT (self,
+            "could not calculate ssim score on stream:%d range:0-%d err:%d",
+            thread_data->stream_index, thread_data->last_frame_processed, err);
+      } else {
+        gst_structure_set (vmaf_message_structure,
+            "ssim", G_TYPE_DOUBLE, ssim_score, NULL);
+      }
+    }
+    if (self->vmaf_config_psnr) {
+      err =
+          vmaf_feature_score_pooled (thread_data->vmaf_ctx, "psnr_y",
+          vmaf_pooling_method, &psnr_score, 0,
+          thread_data->last_frame_processed);
+      if (err) {
+        GST_WARNING_OBJECT (self,
+            "could not calculate psnr score on stream:%d range:0-%d err:%d",
+            thread_data->stream_index, thread_data->last_frame_processed, err);
+      } else {
+        gst_structure_set (vmaf_message_structure,
+            "psnr", G_TYPE_DOUBLE, psnr_score, NULL);
+      }
+    }
+
     successfulPost =
         gst_element_post_message (GST_ELEMENT (self), vmaf_message);
     if (!successfulPost) {
@@ -406,7 +503,7 @@ gst_vmaf_post_frame_score (GstVmafThreadHelper * thread_data, gint frame_index)
 {
   gint err = 0;
   gboolean res = TRUE;
-  gdouble vmaf_score = 0;
+  gdouble vmaf_score = 0, ms_ssim_score = 0, ssim_score = 0, psnr_score = 0;
   GstVmaf *self = thread_data->gst_vmaf_p;
   gint scored_frame = frame_index - self->vmaf_config_subsample;
   gint mod_frame = !(scored_frame % self->vmaf_config_subsample);
@@ -434,6 +531,46 @@ gst_vmaf_post_frame_score (GstVmafThreadHelper * thread_data, gint frame_index)
         "index", G_TYPE_INT, scored_frame,
         "type", G_TYPE_INT, MESSAGE_TYPE_FRAME,
         "stream", G_TYPE_INT, thread_data->stream_index, NULL);
+
+    if (self->vmaf_config_ms_ssim) {
+      err =
+          vmaf_feature_score_at_index (thread_data->vmaf_ctx, "float_ms_ssim",
+          &ms_ssim_score, scored_frame);
+      if (err) {
+        GST_WARNING_OBJECT (self,
+            "could not calculate ms-ssim score on stream:%d frame:%d err:%d",
+            thread_data->stream_index, scored_frame, err);
+      } else {
+        gst_structure_set (vmaf_message_structure,
+            "ms-ssim", G_TYPE_DOUBLE, ms_ssim_score, NULL);
+      }
+    }
+    if (self->vmaf_config_ssim) {
+      err =
+          vmaf_feature_score_at_index (thread_data->vmaf_ctx, "float_ssim",
+          &ssim_score, scored_frame);
+      if (err) {
+        GST_WARNING_OBJECT (self,
+            "could not calculate ssim score on stream:%d frame:%d err:%d",
+            thread_data->stream_index, scored_frame, err);
+      } else {
+        gst_structure_set (vmaf_message_structure,
+            "ssim", G_TYPE_DOUBLE, ssim_score, NULL);
+      }
+    }
+    if (self->vmaf_config_psnr) {
+      err =
+          vmaf_feature_score_at_index (thread_data->vmaf_ctx, "psnr_y",
+          &psnr_score, scored_frame);
+      if (err) {
+        GST_WARNING_OBJECT (self,
+            "could not calculate psnr score on stream:%d frame:%d err:%d",
+            thread_data->stream_index, scored_frame, err);
+      } else {
+        gst_structure_set (vmaf_message_structure,
+            "psnr", G_TYPE_DOUBLE, psnr_score, NULL);
+      }
+    }
     res = gst_element_post_message (GST_ELEMENT (self), vmaf_message);
     if (!res) {
       GST_WARNING_OBJECT (self,
@@ -759,7 +896,7 @@ gst_vmaf_aggregate_frames (GstVideoAggregator * vagg, GstBuffer * outbuf)
       }
     }
 
-    if (sink_index > 1)
+    if (sink_index >= 1)
       ++dist_stream_index;
     if (sink_index > 0)
       ++thread_data->frame_index;
@@ -1059,10 +1196,11 @@ gst_vmaf_sink_event (GstAggregator * aggregator,
   GstVmaf *self = GST_VMAF (aggregator);
   GST_DEBUG_OBJECT (self, "sink event fired %s",
       gst_event_type_get_name (GST_EVENT_TYPE (event)));
-  if (GST_EVENT_TYPE (event) == GST_EVENT_EOS)
+  if (GST_EVENT_TYPE (event) == GST_EVENT_EOS) {
     gst_vmaf_stop_plugin (aggregator);
+    GST_DEBUG_OBJECT (self, "plugin stopped through EOS event");
+  }
 
-  GST_DEBUG_OBJECT (self, "plugin stopped through EOS event");
   return GST_AGGREGATOR_CLASS (parent_class)->sink_event (aggregator,
       aggregator_pad, event);
 }
