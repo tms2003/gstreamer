@@ -1,6 +1,7 @@
 vmaf_sources = [
-  'vmafplugin.c',
-  'vmafconvert.c',
+  'gstvmafconvert.c',
+  'gstvmafelement.c',
+  'gstvmafplugin.c',
 ]
 
 libvmaf_dep = dependency('libvmaf', required : get_option('vmaf'))

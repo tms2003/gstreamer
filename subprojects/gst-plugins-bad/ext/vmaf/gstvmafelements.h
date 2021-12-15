@@ -1,5 +1,6 @@
 /* VMAF plugin
- * Copyright (C) 2015 Casey Bateman <Casey.Bateman@hudl.com>
+ * Copyright (C) 2021 Hudl
+ *   @author: Casey Bateman <Casey.Bateman@hudl.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -16,14 +17,14 @@
  * Free Software Foundation, Inc., 51 Franklin St, Fifth Floor,
  * Boston, MA 02110-1301, USA.
  */
-#ifndef __GST_VMAF_H__
-#define __GST_VMAF_H__
+#ifndef __GST_VMAFELEMENT_H__
+#define __GST_VMAFELEMENT_H__
 
 #include <libvmaf.h>
 #include <gst/gst.h>
 #include <gst/video/video.h>
 #include <gst/video/gstvideoaggregator.h>
-#include "vmafenums.h"
+#include "gstvmafenums.h"
 
 G_BEGIN_DECLS
 #define GST_TYPE_VMAF (gst_vmaf_get_type())
@@ -101,4 +102,4 @@ struct _GstVmafClass
 GType gst_vmaf_get_type (void);
 
 G_END_DECLS
-#endif /* __GST_VMAF_H__ */
+#endif /* __GST_VMAFELEMENT_H__ */

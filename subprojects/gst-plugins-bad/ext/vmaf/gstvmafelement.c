@@ -1,5 +1,6 @@
 /* VMAF plugin
- * Copyright (C) 2015 Casey Bateman <Casey.Bateman@hudl.com>
+ * Copyright (C) 2021 Hudl
+ *   @author: Casey Bateman <Casey.Bateman@hudl.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -59,9 +60,9 @@
 
 #include <stdio.h>
 #include <libvmaf.h>
-#include "vmafplugin.h"
-#include "vmafconvert.h"
-#include "vmafenums.h"
+#include "gstvmafelements.h"
+#include "gstvmafconvert.h"
+#include "gstvmafenums.h"
 
 GST_DEBUG_CATEGORY_STATIC (gst_vmaf_debug);
 #define GST_CAT_DEFAULT gst_vmaf_debug
@@ -835,11 +836,8 @@ gst_vmaf_read_and_queue_frames (GstVmaf * self, GstVideoFrame * ref,
 
   g_mutex_lock (&thread_data->check_thread_failure);
   if (!thread_data->thread_failure) {
-    gint i;
+    gst_buffer_copy_into (outbuf, ref->buffer, GST_BUFFER_COPY_ALL, 0, -1);
     result = TRUE;
-    for (i = 0; i < ref_info.size; i++) {
-      out_info.data[i] = ref_info.data[i];
-    }
   } else {
     vmaf_stream_thread_stop (thread_data->vmaf_thread);
     result = FALSE;
@@ -1323,17 +1321,3 @@ gst_vmaf_class_init (GstVmafClass * klass)
       "Casey Bateman <casey.bateman@hudl.com>");
   GST_DEBUG_CATEGORY_INIT (gst_vmaf_debug, "vmaf", 0, "vmaf");
 }
-
-static gboolean
-plugin_init (GstPlugin * plugin)
-{
-  gboolean result =
-      gst_element_register (plugin, "vmaf", GST_RANK_PRIMARY, GST_TYPE_VMAF);
-  return result;
-}
-
-GST_PLUGIN_DEFINE (GST_VERSION_MAJOR,
-    GST_VERSION_MINOR,
-    vmaf,
-    "Netflix VMAF quality metric plugin",
-    plugin_init, VERSION, "GPL", GST_PACKAGE_NAME, GST_PACKAGE_ORIGIN)

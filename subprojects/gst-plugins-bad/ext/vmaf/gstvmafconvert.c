@@ -1,5 +1,6 @@
 /* VMAF plugin
- * Copyright (C) 2015 Casey Bateman <Casey.Bateman@hudl.com>
+ * Copyright (C) 2021 Hudl
+ *   @author: Casey Bateman <Casey.Bateman@hudl.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -16,8 +17,8 @@
  * Free Software Foundation, Inc., 51 Franklin St, Fifth Floor,
  * Boston, MA 02110-1301, USA.
  */
-#include "vmafconvert.h"
-#include "vmafenums.h"
+#include "gstvmafconvert.h"
+#include "gstvmafenums.h"
 
 enum VmafOutputFormat
 vmaf_map_log_fmt (GstVmafLogFormats log_fmt)
