@@ -23,7 +23,7 @@
  *
  * ## Example
  * |[
- * gst-launch-1.0 gst-launch-1.0 videotestsrc ! video/x-raw,format=RGB ! ociofilter env=/path/to/ocio/config src_color=colorspace_from dest_color=colorspace_to ! videoconvert ! autovideosink
+ * gst-launch-1.0 gst-launch-1.0 videotestsrc ! video/x-raw,format=RGB ! ociofilter env=/path/to/ocio/config src_color={colorspace_from} dest_color={colorspace_to} ! videoconvert ! autovideosink
  * ]|
  * Converts the video from one colorspace to another. src_color` and `dest_color`
  * are names referring to color spaces defined in the config file.
@@ -65,6 +65,8 @@ static gboolean gst_ocio_set_info (GstVideoFilter * filter, GstCaps * incaps,
     GstVideoInfo * in_info, GstCaps * outcaps, GstVideoInfo * out_info);
 static GstStateChangeReturn gst_ocio_change_state (GstElement * element,
     GstStateChange transition);
+static GstCaps * gst_ocio_transform_caps (GstBaseTransform * trans,
+    GstPadDirection direction, GstCaps * caps, GstCaps * filter);
 static GstFlowReturn gst_ocio_transform_frame (GstVideoFilter * filter,
     GstVideoFrame * inframe, GstVideoFrame * outframe);
 static GstFlowReturn gst_ocio_transform_frame_ip (GstVideoFilter * filter,
@@ -91,7 +93,7 @@ GST_STATIC_PAD_TEMPLATE ("src",
   GST_PAD_ALWAYS,
   GST_STATIC_CAPS (
     "video/x-raw, "
-      "formats = (string) { "
+      "format = (string) { "
         "xRGB, RGBx, RGB, xBGR, BGRx, BGR, ARGB, RGBA, BGRA, ABGR, "
         "GBR, GBRA, RGBP, BGRP, "
 #if G_BYTE_ORDER == G_LITTLE_ENDIAN
@@ -109,7 +111,7 @@ GST_STATIC_PAD_TEMPLATE ("sink",
   GST_PAD_ALWAYS,
   GST_STATIC_CAPS (
     "video/x-raw, "
-      "formats = (string) { "
+      "format = (string) { "
         "xRGB, RGBx, RGB, xBGR, BGRx, BGR, ARGB, RGBA, BGRA, ABGR, "
         "GBR, GBRA, RGBP, BGRP, "
 #if G_BYTE_ORDER == G_LITTLE_ENDIAN
@@ -154,6 +156,8 @@ gst_ocio_class_init (GstOcioClass * klass)
   gobject_class->finalize = gst_ocio_finalize;
   base_transform_class->start = GST_DEBUG_FUNCPTR (gst_ocio_start);
   base_transform_class->stop = GST_DEBUG_FUNCPTR (gst_ocio_stop);
+  base_transform_class->transform_caps =
+      GST_DEBUG_FUNCPTR (gst_ocio_transform_caps);
   video_filter_class->set_info = GST_DEBUG_FUNCPTR (gst_ocio_set_info);
   video_filter_class->transform_frame =
       GST_DEBUG_FUNCPTR (gst_ocio_transform_frame);
@@ -382,6 +386,47 @@ gst_ocio_change_state (GstElement *element,
   }
   
   return ret;
+}
+
+
+static GstCaps *
+gst_ocio_transform_caps (GstBaseTransform * trans, GstPadDirection direction,
+    GstCaps * caps, GstCaps * filter)
+{
+  GstStructure *structure;
+  GstCapsFeatures *features;
+  GstCaps *result, *tmp;
+  gint i, size;
+
+  result = gst_caps_new_empty ();
+  size = gst_caps_get_size (caps);
+  for (i = 0; i < size; i++) {
+    structure = gst_caps_get_structure (caps, i);
+    features = gst_caps_get_features (caps, i);
+
+    if ((i > 0) &&
+        gst_caps_is_subset_structure_full (result, structure, features)) {
+      continue;
+    }
+
+    structure = gst_structure_copy (structure);
+    if (!gst_caps_features_is_any (features)
+        && gst_caps_features_is_equal(
+          features, GST_CAPS_FEATURES_MEMORY_SYSTEM_MEMORY)) {
+      gst_structure_remove_fields (structure, "colorimetry", NULL);
+    }
+
+    gst_caps_append_structure_full (
+        result, structure, gst_caps_features_copy (features));
+  }
+
+  if (filter) {
+    tmp = gst_caps_intersect_full (filter, result, GST_CAPS_INTERSECT_FIRST);
+    gst_caps_unref (result);
+    result = tmp;
+  }
+
+  return result;
 }
 
 /* transform */
