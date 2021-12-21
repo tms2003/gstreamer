@@ -29,6 +29,12 @@
  * are names referring to color spaces defined in the config file.
  */
 
+/**
+ * plugin-ocio:
+ *
+ * Since: 1.22
+ */
+
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif
@@ -169,8 +175,6 @@ gst_ocio_class_init (GstOcioClass * klass)
    *
    * Path to the OCIO config file, is read from $OCIO by default.
    * See: https://opencolorio.readthedocs.io/en/latest/api/config.html
-   *
-   * Since: 1.20
    */
   g_object_class_install_property (gobject_class, PROP_ENV,
       g_param_spec_string("env", "Environment",
@@ -178,13 +182,11 @@ gst_ocio_class_init (GstOcioClass * klass)
           NULL, G_PARAM_READWRITE));
 
   /**
-   * GstOcio:in_color:
+   * GstOcio:src_color:
    *
    * The colorspace used by the incoming video data, passed as either a
    * color space name or a role name.
    * See: https://opencolorio.readthedocs.io/en/latest/api/colorspace.html
-   *
-   * Since: 1.20
    */
   g_object_class_install_property (gobject_class, PROP_SRC_COLOR,
       g_param_spec_string("src_color", "Source Colorspace",
@@ -192,13 +194,11 @@ gst_ocio_class_init (GstOcioClass * klass)
           NULL, G_PARAM_READWRITE));
 
   /**
-   * GstOcio:out_color:
+   * GstOcio:dest_color:
    *
    * The colorspace to convert the video data into, passed as either a
    * color space name or a role name.
    * See: https://opencolorio.readthedocs.io/en/latest/api/colorspace.html
-   *
-   * Since: 1.20
    */
   g_object_class_install_property (gobject_class, PROP_DEST_COLOR,
       g_param_spec_string("dest_color", "Destination Colorspace",
