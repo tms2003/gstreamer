@@ -35,9 +35,11 @@ typedef struct _GstHLSMedia GstHLSMedia;
 typedef struct _GstM3U8Client GstM3U8Client;
 typedef struct _GstHLSVariantStream GstHLSVariantStream;
 typedef struct _GstHLSMasterPlaylist GstHLSMasterPlaylist;
+typedef struct _GstHLSTimeEvent GstHLSTimeEvent;
 
 #define GST_M3U8(m) ((GstM3U8*)m)
 #define GST_M3U8_MEDIA_FILE(f) ((GstM3U8MediaFile*)f)
+#define GST_M3U8_TIME_EVENT(te) ((GstHLSTimeEvent*)te)
 
 #define GST_M3U8_LOCK(m) g_mutex_lock (&m->lock);
 #define GST_M3U8_UNLOCK(m) g_mutex_unlock (&m->lock);
@@ -65,6 +67,7 @@ struct _GstM3U8
   gboolean allowcache;          /* last EXT-X-ALLOWCACHE */
 
   GList *files;
+  GHashTable *time_events;
 
   /* state */
   GList *current_file;
@@ -94,6 +97,7 @@ struct _GstM3U8MediaFile
   gchar *title;
   GstClockTime duration;
   gchar *uri;
+  GList *time_events;
   gint64 sequence;               /* the sequence nb of this file */
   gboolean discont;             /* this file marks a discontinuity */
   gchar *key;
@@ -229,6 +233,20 @@ struct _GstHLSMasterPlaylist
 
   /*< private > */
   gchar   *last_data;
+};
+
+struct _GstHLSTimeEvent
+{
+  gchar *id;
+  gchar *type;
+
+  gboolean finalized;
+  gboolean listed;
+
+  GstDateTime *time;
+  GstClockTime duration;
+
+  GstStructure *attributes;
 };
 
 GstHLSMasterPlaylist * gst_hls_master_playlist_new_from_data (gchar       * data,

@@ -151,6 +151,8 @@ struct _GstHLSDemux
   /* The previous variant, used to transition streams over */
   GstHLSVariantStream  *previous_variant;
 
+  gboolean send_scte35_events;
+
   gboolean streams_aware;
 };
 

@@ -45,6 +45,10 @@
 #include <gst/base/gsttypefindhelper.h>
 #include "gsthlselements.h"
 #include "gsthlsdemux.h"
+#include <gst/mpegts/gstmpegtssection.h>
+#include <gst/mpegts/gst-scte-section.h>
+/* for MPEGTS time conversion macros */
+#include <gst/mpegtsdemux/gstmpegdefs.h>
 
 static GstStaticPadTemplate srctemplate = GST_STATIC_PAD_TEMPLATE ("src_%u",
     GST_PAD_SRC,
@@ -62,7 +66,18 @@ GST_DEBUG_CATEGORY (gst_hls_demux_debug);
 #define GST_M3U8_CLIENT_LOCK(l) /* FIXME */
 #define GST_M3U8_CLIENT_UNLOCK(l)       /* FIXME */
 
+enum
+{
+  PROP_0,
+  PROP_SEND_SCTE35_EVENTS,
+  /* FILL ME */
+};
+
 /* GObject */
+static void gst_hls_demux_set_property (GObject * object, guint prop_id,
+    const GValue * value, GParamSpec * pspec);
+static void gst_hls_demux_get_property (GObject * object, guint prop_id,
+    GValue * value, GParamSpec * pspec);
 static void gst_hls_demux_finalize (GObject * obj);
 
 /* GstElement */
@@ -149,6 +164,8 @@ gst_hls_demux_class_init (GstHLSDemuxClass * klass)
   element_class = (GstElementClass *) klass;
   adaptivedemux_class = (GstAdaptiveDemuxClass *) klass;
 
+  gobject_class->set_property = gst_hls_demux_set_property;
+  gobject_class->get_property = gst_hls_demux_get_property;
   gobject_class->finalize = gst_hls_demux_finalize;
 
   element_class->change_state = GST_DEBUG_FUNCPTR (gst_hls_demux_change_state);
@@ -162,6 +179,22 @@ gst_hls_demux_class_init (GstHLSDemuxClass * klass)
       "HTTP Live Streaming demuxer",
       "Marc-Andre Lureau <marcandre.lureau@gmail.com>\n"
       "Andoni Morales Alastruey <ylatuya@gmail.com>");
+
+  /**
+   * hlsdemux:send-scte35-events:
+   *
+   * Whether SCTE 35 sections should be forwarded as events.
+   *
+   * When forwarding those, potential splice times are converted
+   * to running time, and can be used by a downstream muxer to reinject
+   * the sections.
+   *
+   * Since: 1.22
+   */
+  g_object_class_install_property (gobject_class, PROP_SEND_SCTE35_EVENTS,
+      g_param_spec_boolean ("send-scte35-events", "Send SCTE 35 events",
+          "Whether SCTE 35 sections should be forwarded as events", FALSE,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   adaptivedemux_class->is_live = gst_hls_demux_is_live;
   adaptivedemux_class->get_live_seek_range = gst_hls_demux_get_live_seek_range;
@@ -197,6 +230,36 @@ gst_hls_demux_init (GstHLSDemux * demux)
 
   demux->keys = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, g_free);
   g_mutex_init (&demux->keys_lock);
+}
+
+static void
+gst_hls_demux_set_property (GObject * object, guint prop_id,
+    const GValue * value, GParamSpec * pspec)
+{
+  GstHLSDemux *demux = GST_HLS_DEMUX (object);
+
+  switch (prop_id) {
+    case PROP_SEND_SCTE35_EVENTS:
+      demux->send_scte35_events = g_value_get_boolean (value);
+      break;
+    default:
+      G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
+  }
+}
+
+static void
+gst_hls_demux_get_property (GObject * object, guint prop_id,
+    GValue * value, GParamSpec * pspec)
+{
+  GstHLSDemux *demux = GST_HLS_DEMUX (object);
+
+  switch (prop_id) {
+    case PROP_SEND_SCTE35_EVENTS:
+      g_value_set_boolean (value, demux->send_scte35_events);
+      break;
+    default:
+      G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
+  }
 }
 
 static GstStateChangeReturn
@@ -1241,6 +1304,131 @@ gst_hls_demux_advance_fragment (GstAdaptiveDemuxStream * stream)
   return GST_FLOW_OK;
 }
 
+struct te_foreach_func_user_data
+{
+  GstAdaptiveDemuxStream *stream;
+  GstM3U8 *m3u8;
+  GstM3U8MediaFile *file;
+};
+
+static void
+send_time_events_foreach_func (gpointer value, gpointer user_data)
+{
+  struct te_foreach_func_user_data *data =
+      (struct te_foreach_func_user_data *) user_data;
+  GstHLSDemuxStream *stream = GST_HLS_DEMUX_STREAM_CAST (data->stream);
+  GstHLSTimeEvent *te = NULL;
+  GBytes *scte_bytes = NULL;
+  gboolean is_out = FALSE;
+
+  if ((te = GST_M3U8_TIME_EVENT (value)) == NULL)
+    return;
+
+  gst_structure_get (te->attributes, "SCTE35-OUT", G_TYPE_BYTES, &scte_bytes,
+      NULL);
+  if (scte_bytes != NULL) {
+    is_out = TRUE;
+  } else {
+    gst_structure_get (te->attributes, "SCTE35-IN", G_TYPE_BYTES, &scte_bytes,
+        NULL);
+    if (scte_bytes == NULL)
+      gst_structure_get (te->attributes, "SCTE35-CMD", G_TYPE_BYTES,
+          &scte_bytes, NULL);
+  }
+
+  if (scte_bytes != NULL) {
+    GstMpegtsSection *section = NULL;
+    const GstMpegtsSCTESIT *sit = NULL;
+    GstMpegtsSCTESpliceEvent *sit_event = NULL;
+    GstEvent *event = NULL;
+    GstStructure *event_struct = NULL;
+    GstStructure *time_map = NULL;
+    guint8 *scte_data = NULL;
+    gsize scte_size = 0;
+    GstClockTime rt = 0;
+    gchar *field_name = NULL;
+
+    scte_size = g_bytes_get_size (scte_bytes);
+    scte_data = g_memdup (g_bytes_get_data (scte_bytes, NULL), scte_size);
+
+    /*  G_MAXUINT16 for pid value, pid past 13 bits is invalid,
+     *  there is no pid value so not using a valid one
+     */
+    if (scte_data == NULL ||
+        (section =
+            gst_mpegts_section_new (G_MAXUINT16, scte_data,
+                scte_size)) == NULL) {
+      GST_WARNING ("could not derive scte35 section from data for event %s",
+          te->id);
+      g_bytes_unref (scte_bytes);
+      return;
+    }
+
+    /* remove SCTE35-OUT so next time the time_event is output, the SCTE35-IN is used */
+    if (is_out && te->finalized)
+      gst_structure_remove_field (te->attributes, "SCTE35-OUT");
+    g_bytes_unref (scte_bytes);
+
+    /* find scte event that matches time event id if it exists */
+    if ((sit = gst_mpegts_section_get_scte_sit (section)) != NULL) {
+      GstMpegtsSCTESpliceEvent *t = NULL;
+      gchar id_s[16];
+      for (gsize i = 0; i < sit->splices->len; i++) {
+        t = g_ptr_array_index (sit->splices, i);
+        g_snprintf (id_s, sizeof id_s, "%d", t->splice_event_id);
+        if (g_strrstr (te->id, id_s) != NULL) {
+          sit_event = t;
+          break;
+        }
+      }
+    } else {
+      GST_WARNING ("could not get scte35 section, id %s", te->id);
+      return;
+    }
+
+    if (!(event = gst_event_new_mpegts_section (section))) {
+      GST_WARNING ("could not get event from SCTE35 section for event %s",
+          te->id);
+      gst_mpegts_section_unref (section);
+      return;
+    }
+    event_struct = gst_event_writable_structure (event);
+
+    if (sit_event != NULL && te->duration > 0) {
+      sit_event->break_duration = GSTTIME_TO_MPEGTIME (te->duration);
+    }
+
+    time_map = gst_structure_new_empty ("running-time-map");
+    if (gst_segment_to_running_time_full (&stream->
+            adaptive_demux_stream.segment, GST_FORMAT_TIME,
+            data->m3u8->sequence_position, &rt) < 0) {
+      rt = 0;
+    }
+
+    if (te->time != NULL && data->file->program_dt != NULL) {
+      GDateTime *d1 = gst_date_time_to_g_date_time (te->time);
+      GDateTime *d2 = gst_date_time_to_g_date_time (data->file->program_dt);
+      rt += g_date_time_difference (d1, d2) * GST_USECOND;
+
+      g_date_time_unref (d1);
+      g_date_time_unref (d2);
+    }
+    field_name =
+        g_strdup_printf ("event-%u-splice-time", sit_event->splice_event_id);
+    gst_structure_set (time_map, field_name, G_TYPE_UINT64, rt, NULL);
+    g_free (field_name);
+
+    gst_structure_set (event_struct, gst_structure_get_name (time_map),
+        GST_TYPE_STRUCTURE, time_map, NULL);
+    gst_structure_free (time_map);
+
+    gst_adaptive_demux_stream_queue_event (&(stream->adaptive_demux_stream),
+        event);
+  }
+
+  return;
+}
+
 static GstFlowReturn
 gst_hls_demux_update_fragment_info (GstAdaptiveDemuxStream * stream)
 {
@@ -1303,6 +1491,13 @@ gst_hls_demux_update_fragment_info (GstAdaptiveDemuxStream * stream)
     stream->fragment.range_end = -1;
 
   stream->fragment.duration = file->duration;
+
+  if (file->time_events != NULL && hlsdemux->send_scte35_events) {
+    struct te_foreach_func_user_data user_data = { stream, m3u8, file };
+    g_list_foreach (file->time_events, send_time_events_foreach_func,
+        &user_data);
+    g_list_free (g_steal_pointer (&file->time_events));
+  }
 
   if (discont)
     stream->discont = TRUE;
