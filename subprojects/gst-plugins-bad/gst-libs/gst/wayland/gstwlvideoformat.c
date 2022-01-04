@@ -1,4 +1,4 @@
-/* GStreamer Wayland video sink
+/* GStreamer Wayland Library
  *
  * Copyright (C) 2011 Intel Corporation
  * Copyright (C) 2011 Sreerenj Balachandran <sreerenj.balachandran@intel.com>
@@ -25,10 +25,25 @@
 #include <config.h>
 #endif
 
-#include "wlvideoformat.h"
+#include "gstwlvideoformat.h"
 
-GST_DEBUG_CATEGORY_EXTERN (gstwayland_debug);
-#define GST_CAT_DEFAULT gstwayland_debug
+#include <drm_fourcc.h>
+
+#define GST_CAT_DEFAULT gst_wl_videoformat_debug
+GST_DEBUG_CATEGORY_STATIC (GST_CAT_DEFAULT);
+
+void
+gst_wl_videoformat_init_once (void)
+{
+  static gsize _init = 0;
+
+  if (g_once_init_enter (&_init)) {
+    GST_DEBUG_CATEGORY_INIT (gst_wl_videoformat_debug, "wl_videoformat", 0,
+        "wl_videoformat library");
+
+    g_once_init_leave (&_init, 1);
+  }
+}
 
 typedef struct
 {

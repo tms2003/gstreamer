@@ -1,4 +1,4 @@
-/* GStreamer Wayland video sink
+/* GStreamer Wayland Library
  *
  * Copyright (C) 2011 Intel Corporation
  * Copyright (C) 2011 Sreerenj Balachandran <sreerenj.balachandran@intel.com>
@@ -21,22 +21,33 @@
  * Boston, MA 02110-1301 USA.
  */
 
-#ifndef __GST_WL_VIDEO_FORMAT_H__
-#define __GST_WL_VIDEO_FORMAT_H__
+#pragma once
 
-#include <wayland-client-protocol.h>
+#include <gst/wayland/wayland.h>
+
 #include <gst/video/video.h>
-#include <drm_fourcc.h>
 
 G_BEGIN_DECLS
 
+GST_WL_API
+void gst_wl_videoformat_init_once (void);
+
+GST_WL_API
 enum wl_shm_format gst_video_format_to_wl_shm_format (GstVideoFormat format);
+
+GST_WL_API
 gint gst_video_format_to_wl_dmabuf_format (GstVideoFormat format);
+
+GST_WL_API
 GstVideoFormat gst_wl_shm_format_to_video_format (enum wl_shm_format wl_format);
+
+GST_WL_API
 GstVideoFormat gst_wl_dmabuf_format_to_video_format (guint wl_format);
+
+GST_WL_API
 const gchar *gst_wl_shm_format_to_string (enum wl_shm_format wl_format);
+
+GST_WL_API
 const gchar *gst_wl_dmabuf_format_to_string (guint wl_format);
 
 G_END_DECLS
-
-#endif

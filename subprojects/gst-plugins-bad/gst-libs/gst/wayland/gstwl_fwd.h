@@ -1,6 +1,6 @@
-/*
- * GStreamer Wayland Library
- * Copyright (C) 2014 Collabora Ltd.
+/* GStreamer Wayland Library
+ *
+ * Copyright (C) 2022 Collabora Ltd.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -20,20 +20,12 @@
 
 #pragma once
 
-#ifndef GST_USE_UNSTABLE_API
-#warning "The GStreamer wayland library is unstable API and may change in future."
-#warning "You can define GST_USE_UNSTABLE_API to avoid this warning."
-#endif
+G_BEGIN_DECLS
 
-#include <wayland-client.h>
+typedef struct _GstWlBuffer GstWlBuffer;
+typedef struct _GstWlDisplay GstWlDisplay;
+typedef struct _GstWlShmAllocator GstWlShmAllocator;
+typedef struct _GstWlVideoBufferPool GstWlVideoBufferPool;
+typedef struct _GstWlWindow GstWlWindow;
 
-#include <gst/wayland/wayland-prelude.h>
-#include <gst/wayland/gstwl_fwd.h>
-#include <gst/wayland/gstwlbuffer.h>
-#include <gst/wayland/gstwlcontext.h>
-#include <gst/wayland/gstwldisplay.h>
-#include <gst/wayland/gstwllinuxdmabuf.h>
-#include <gst/wayland/gstwlshmallocator.h>
-#include <gst/wayland/gstwlvideobufferpool.h>
-#include <gst/wayland/gstwlvideoformat.h>
-#include <gst/wayland/gstwlwindow.h>
+G_END_DECLS

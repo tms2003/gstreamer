@@ -1,7 +1,8 @@
-/* GStreamer Wayland video sink
+/* GStreamer Wayland Library
  *
  * Copyright (C) 2016 STMicroelectronics SA
  * Copyright (C) 2016 Fabien Dessenne <fabien.dessenne@st.com>
+ * Copyright (C) 2022 Collabora Ltd.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -23,13 +24,25 @@
 #include <config.h>
 #endif
 
-#include <gst/allocators/gstdmabuf.h>
+#include "gstwllinuxdmabuf.h"
 
-#include "wllinuxdmabuf.h"
-#include "wlvideoformat.h"
+#include "linux-dmabuf-unstable-v1-client-protocol.h"
 
-GST_DEBUG_CATEGORY_EXTERN (gstwayland_debug);
-#define GST_CAT_DEFAULT gstwayland_debug
+GST_DEBUG_CATEGORY (gst_wl_dmabuf_debug);
+#define GST_CAT_DEFAULT gst_wl_dmabuf_debug
+
+void
+gst_wl_linux_dmabuf_init_once (void)
+{
+  static gsize _init = 0;
+
+  if (g_once_init_enter (&_init)) {
+    GST_DEBUG_CATEGORY_INIT (gst_wl_dmabuf_debug, "wl_dmabuf", 0,
+        "wl_dmabuf library");
+
+    g_once_init_leave (&_init, 1);
+  }
+}
 
 typedef struct
 {
@@ -99,7 +112,8 @@ gst_wl_linux_dmabuf_construct_wl_buffer (GstBuffer * buf,
       gst_wl_dmabuf_format_to_string (format));
 
   /* Creation and configuration of planes  */
-  params = zwp_linux_dmabuf_v1_create_params (display->dmabuf);
+  params = zwp_linux_dmabuf_v1_create_params (gst_wl_display_get_dmabuf_v1
+      (display));
 
   for (i = 0; i < nplanes; i++) {
     guint offset, stride, mem_idx, length;
@@ -136,7 +150,7 @@ gst_wl_linux_dmabuf_construct_wl_buffer (GstBuffer * buf,
   zwp_linux_buffer_params_v1_create (params, width, height, format, flags);
 
   /* Wait for the request answer */
-  wl_display_flush (display->display);
+  wl_display_flush (gst_wl_display_get_display (display));
   data.wbuf = (gpointer) 0x1;
   timeout = g_get_monotonic_time () + G_TIME_SPAN_SECOND;
   while (data.wbuf == (gpointer) 0x1) {

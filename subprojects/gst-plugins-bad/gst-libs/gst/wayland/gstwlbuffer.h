@@ -1,4 +1,4 @@
-/* GStreamer Wayland video sink
+/* GStreamer Wayland Library
  *
  * Copyright (C) 2014 Collabora Ltd.
  *
@@ -18,51 +18,34 @@
  * Boston, MA 02110-1301 USA.
  */
 
-#ifndef __GST_WL_BUFFER_H__
-#define __GST_WL_BUFFER_H__
+#pragma once
 
-#include "wldisplay.h"
+#include <gst/wayland/wayland.h>
 
 G_BEGIN_DECLS
 
-#define GST_TYPE_WL_BUFFER                  (gst_wl_buffer_get_type ())
-#define GST_WL_BUFFER(obj)                  (G_TYPE_CHECK_INSTANCE_CAST ((obj), GST_TYPE_WL_BUFFER, GstWlBuffer))
-#define GST_IS_WL_BUFFER(obj)               (G_TYPE_CHECK_INSTANCE_TYPE ((obj), GST_TYPE_WL_BUFFER))
-#define GST_WL_BUFFER_CLASS(klass)          (G_TYPE_CHECK_CLASS_CAST ((klass), GST_TYPE_WL_BUFFER, GstWlBufferClass))
-#define GST_IS_WL_BUFFER_CLASS(klass)       (G_TYPE_CHECK_CLASS_TYPE ((klass), GST_TYPE_WL_BUFFER))
-#define GST_WL_BUFFER_GET_CLASS(obj)        (G_TYPE_INSTANCE_GET_CLASS ((obj), GST_TYPE_WL_BUFFER, GstWlBufferClass))
-
-typedef struct _GstWlBuffer GstWlBuffer;
-typedef struct _GstWlBufferClass GstWlBufferClass;
+#define GST_TYPE_WL_BUFFER gst_wl_buffer_get_type ()
+G_DECLARE_FINAL_TYPE (GstWlBuffer, gst_wl_buffer, GST, WL_BUFFER, GObject);
 
 struct _GstWlBuffer
 {
   GObject parent_instance;
-
-  struct wl_buffer * wlbuffer;
-  GstBuffer *current_gstbuffer;
-  GstMemory *gstmem;
-
-  GstWlDisplay *display;
-
-  gboolean used_by_compositor;
 };
 
-struct _GstWlBufferClass
-{
-  GObjectClass parent_class;
-};
-
-GType gst_wl_buffer_get_type (void);
-
+GST_WL_API
 GstWlBuffer * gst_buffer_add_wl_buffer (GstBuffer * gstbuffer,
     struct wl_buffer * wlbuffer, GstWlDisplay * display);
+
+GST_WL_API
 GstWlBuffer * gst_buffer_get_wl_buffer (GstWlDisplay * display, GstBuffer * gstbuffer);
 
+GST_WL_API
 void gst_wl_buffer_force_release_and_unref (GstBuffer *buf, GstWlBuffer * self);
 
+GST_WL_API
 void gst_wl_buffer_attach (GstWlBuffer * self, struct wl_surface *surface);
 
-G_END_DECLS
+GST_WL_API
+GstWlDisplay *gst_wl_buffer_get_display (GstWlBuffer * self);
 
-#endif /* __GST_WL_BUFFER_H__ */
+G_END_DECLS

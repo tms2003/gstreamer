@@ -1,4 +1,4 @@
-/* GStreamer Wayland video sink
+/* GStreamer Wayland Library
  *
  * Copyright (C) 2012 Intel Corporation
  * Copyright (C) 2012 Sreerenj Balachandran <sreerenj.balachandran@intel.com>
@@ -20,21 +20,28 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "wlshmallocator.h"
-#include "wlvideoformat.h"
+#ifdef HAVE_CONFIG_H
+#include <config.h>
+#endif
 
+#include "gstwlshmallocator.h"
+
+#include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <errno.h>
-#include <unistd.h>
 #include <sys/mman.h>
 #include <sys/types.h>
+#include <unistd.h>
 
-GST_DEBUG_CATEGORY_EXTERN (gstwayland_debug);
-#define GST_CAT_DEFAULT gstwayland_debug
+#define GST_CAT_DEFAULT gst_wl_shm_debug
+GST_DEBUG_CATEGORY_STATIC (GST_CAT_DEFAULT);
 
-G_DEFINE_TYPE (GstWlShmAllocator, gst_wl_shm_allocator, GST_TYPE_FD_ALLOCATOR);
+G_DEFINE_TYPE_WITH_CODE (GstWlShmAllocator, gst_wl_shm_allocator,
+    GST_TYPE_FD_ALLOCATOR,
+    GST_DEBUG_CATEGORY_INIT (gst_wl_shm_debug, "wlshm", 0, "wlshm library");
+    );
 
 static GstMemory *
 gst_wl_shm_allocator_alloc (GstAllocator * allocator, gsize size,
@@ -123,13 +130,19 @@ gst_wl_shm_allocator_init (GstWlShmAllocator * self)
 }
 
 void
-gst_wl_shm_allocator_register (void)
+gst_wl_shm_allocator_init_once (void)
 {
-  GstAllocator *alloc;
+  static gsize _init = 0;
 
-  alloc = g_object_new (GST_TYPE_WL_SHM_ALLOCATOR, NULL);
-  gst_object_ref_sink (alloc);
-  gst_allocator_register (GST_ALLOCATOR_WL_SHM, alloc);
+  if (g_once_init_enter (&_init)) {
+    GstAllocator *alloc;
+
+    alloc = g_object_new (GST_TYPE_WL_SHM_ALLOCATOR, NULL);
+    gst_object_ref_sink (alloc);
+    gst_allocator_register (GST_ALLOCATOR_WL_SHM, alloc);
+
+    g_once_init_leave (&_init, 1);
+  }
 }
 
 GstAllocator *
@@ -212,8 +225,8 @@ gst_wl_shm_memory_construct_wl_buffer (GstMemory * mem, GstWlDisplay * display,
       G_GSSIZE_FORMAT " (%d x %d, stride %d), format %s", size, width, height,
       stride, gst_wl_shm_format_to_string (format));
 
-  wl_pool = wl_shm_create_pool (display->shm, gst_fd_memory_get_fd (mem),
-      memsize);
+  wl_pool = wl_shm_create_pool (gst_wl_display_get_shm (display),
+      gst_fd_memory_get_fd (mem), memsize);
   wbuffer = wl_shm_pool_create_buffer (wl_pool, offset, width, height, stride,
       format);
   wl_shm_pool_destroy (wl_pool);

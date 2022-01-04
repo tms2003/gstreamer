@@ -1,7 +1,6 @@
-/* GStreamer Wayland video sink
+/* GStreamer Wayland Library
  *
- * Copyright (C) 2016 STMicroelectronics SA
- * Copyright (C) 2016 Fabien Dessenne <fabien.dessenne@st.com>
+ * Copyright (C) 2022 Collabora Ltd.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -19,20 +18,25 @@
  * Boston, MA 02110-1301 USA.
  */
 
-#ifndef __GST_WL_LINUX_DMABUF_H__
-#define __GST_WL_LINUX_DMABUF_H__
+#pragma once
 
-#include "gstwaylandsink.h"
+#include <gst/wayland/wayland.h>
 
 G_BEGIN_DECLS
 
-#ifndef GST_CAPS_FEATURE_MEMORY_DMABUF
-#define GST_CAPS_FEATURE_MEMORY_DMABUF "memory:DMABuf"
-#endif
+/* The type of GstContext used to pass the wl_display pointer
+ * from the application to the sink */
+#define GST_WL_DISPLAY_HANDLE_CONTEXT_TYPE "GstWlDisplayHandleContextType"
 
-struct wl_buffer * gst_wl_linux_dmabuf_construct_wl_buffer (GstBuffer * buf,
-    GstWlDisplay * display, const GstVideoInfo * info);
+GST_WL_API
+gboolean gst_is_wl_display_handle_need_context_message (GstMessage * msg);
+
+GST_WL_API
+GstContext *
+gst_wl_display_handle_context_new (struct wl_display * display);
+
+GST_WL_API
+struct wl_display *
+gst_wl_display_handle_context_get_handle (GstContext * context);
 
 G_END_DECLS
-
-#endif /* __GST_WL_LINUX_DMABUF_H__ */

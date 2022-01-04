@@ -1,4 +1,4 @@
-/* GStreamer Wayland video sink
+/* GStreamer Wayland Library
  *
  * Copyright (C) 2012 Intel Corporation
  * Copyright (C) 2012 Sreerenj Balachandran <sreerenj.balachandran@intel.com>
@@ -20,47 +20,36 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#ifndef __GST_WL_SHM_ALLOCATOR_H__
-#define __GST_WL_SHM_ALLOCATOR_H__
+#pragma once
 
-#include <gst/video/video.h>
+#include <gst/wayland/wayland.h>
+
 #include <gst/allocators/allocators.h>
-#include <wayland-client-protocol.h>
-#include "wldisplay.h"
+#include <gst/video/video.h>
 
 G_BEGIN_DECLS
 
-#define GST_TYPE_WL_SHM_ALLOCATOR                  (gst_wl_shm_allocator_get_type ())
-#define GST_WL_SHM_ALLOCATOR(obj)                  (G_TYPE_CHECK_INSTANCE_CAST ((obj), GST_TYPE_WL_SHM_ALLOCATOR, GstWlShmAllocator))
-#define GST_IS_WL_SHM_ALLOCATOR(obj)               (G_TYPE_CHECK_INSTANCE_TYPE ((obj), GST_TYPE_WL_SHM_ALLOCATOR))
-#define GST_WL_SHM_ALLOCATOR_CLASS(klass)          (G_TYPE_CHECK_CLASS_CAST ((klass), GST_TYPE_WL_SHM_ALLOCATOR, GstWlShmAllocatorClass))
-#define GST_IS_WL_SHM_ALLOCATOR_CLASS(klass)       (G_TYPE_CHECK_CLASS_TYPE ((klass), GST_TYPE_WL_SHM_ALLOCATOR))
-#define GST_WL_SHM_ALLOCATOR_GET_CLASS(obj)        (G_TYPE_INSTANCE_GET_CLASS ((obj), GST_TYPE_WL_SHM_ALLOCATOR, GstWlShmAllocatorClass))
+#define GST_TYPE_WL_SHM_ALLOCATOR (gst_wl_shm_allocator_get_type ())
+G_DECLARE_FINAL_TYPE (GstWlShmAllocator, gst_wl_shm_allocator, GST, WL_SHM_ALLOCATOR, GstFdAllocator);
 
 #define GST_ALLOCATOR_WL_SHM "wl_shm"
-
-typedef struct _GstWlShmAllocator GstWlShmAllocator;
-typedef struct _GstWlShmAllocatorClass GstWlShmAllocatorClass;
 
 struct _GstWlShmAllocator
 {
   GstFdAllocator parent_instance;
 };
 
-struct _GstWlShmAllocatorClass
-{
-  GstFdAllocatorClass parent_class;
-};
+GST_WL_API
+void gst_wl_shm_allocator_init_once (void);
 
-GType gst_wl_shm_allocator_get_type (void);
-
-void gst_wl_shm_allocator_register (void);
+GST_WL_API
 GstAllocator * gst_wl_shm_allocator_get (void);
 
+GST_WL_API
 gboolean gst_is_wl_shm_memory (GstMemory * mem);
+
+GST_WL_API
 struct wl_buffer * gst_wl_shm_memory_construct_wl_buffer (GstMemory * mem,
     GstWlDisplay * display, const GstVideoInfo * info);
 
 G_END_DECLS
-
-#endif /* __GST_WL_SHM_ALLOCATOR_H__ */
