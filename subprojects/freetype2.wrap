@@ -1,0 +1,5 @@
+[wrap-git]
+directory=freetype2
+url=https://gitlab.freedesktop.org/freetype/freetype.git
+depth=1
+revision=943a6bf7e67869fdb8a47b9dd83d13fa77b76aea
