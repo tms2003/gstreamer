@@ -1055,6 +1055,13 @@ gst_webrtc_ice_get_property (GObject * object, guint prop_id,
 }
 
 static void
+nice_agent_close_cb (GObject * nice_agent, GAsyncResult * res,
+    gpointer user_data)
+{
+  g_object_unref (nice_agent);
+}
+
+static void
 gst_webrtc_ice_finalize (GObject * object)
 {
   GstWebRTCICE *ice = GST_WEBRTC_ICE (object);
@@ -1078,7 +1085,8 @@ gst_webrtc_ice_finalize (GObject * object)
 
   g_array_free (ice->priv->nice_stream_map, TRUE);
 
-  g_object_unref (ice->priv->nice_agent);
+  // close the agent before destroying it
+  nice_agent_close_async (ice->priv->nice_agent, nice_agent_close_cb, NULL);
 
   g_hash_table_unref (ice->turn_servers);
 
