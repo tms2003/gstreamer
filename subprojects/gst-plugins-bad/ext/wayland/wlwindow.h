@@ -71,7 +71,6 @@ struct _GstWlWindow
   /* this will be set when viewporter is available and black background has
    * already been set on the area_subsurface */
   gboolean no_border_update;
-
 };
 
 struct _GstWlWindowClass
