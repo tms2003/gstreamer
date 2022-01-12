@@ -306,7 +306,7 @@ gst_clocksync_do_sync (GstClockSync * clocksync, GstClockTime running_time)
     return GST_FLOW_FLUSHING;
   }
 
-  if ((clock = GST_ELEMENT (clocksync)->clock)) {
+  if (G_LIKELY ((clock = GST_ELEMENT (clocksync)->clock))) {
     GstClockReturn cret;
     GstClockTime timestamp;
     GstClockTimeDiff ts_offset = clocksync->ts_offset;
@@ -355,6 +355,10 @@ gst_clocksync_do_sync (GstClockSync * clocksync, GstClockTime running_time)
     }
     if (cret == GST_CLOCK_UNSCHEDULED || clocksync->flushing)
       ret = GST_FLOW_FLUSHING;
+  } else {
+    GST_ELEMENT_WARNING (clocksync, CORE, CLOCK,
+        ("Clock not found, dropping buffer"), NULL);
+    ret = GST_FLOW_FLUSHING;
   }
   GST_OBJECT_UNLOCK (clocksync);
 
