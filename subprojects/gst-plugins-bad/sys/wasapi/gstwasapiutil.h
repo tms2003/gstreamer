@@ -134,6 +134,6 @@ gboolean gst_wasapi_util_initialize_audioclient (GstElement * element,
 gboolean gst_wasapi_util_initialize_audioclient3 (GstElement * element,
     GstAudioRingBufferSpec * spec, IAudioClient3 * client,
     WAVEFORMATEX * format, gboolean low_latency, gboolean loopback,
-    guint * ret_devicep_frames);
+    guint min_period, guint * ret_devicep_frames);
 
 #endif /* __GST_WASAPI_UTIL_H__ */

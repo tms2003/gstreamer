@@ -67,6 +67,7 @@ struct _GstWasapiSink
   gboolean mute;
   gboolean low_latency;
   gboolean try_audioclient3;
+  guint min_period;
   wchar_t *device_strid;
 };
 
