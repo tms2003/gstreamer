@@ -315,6 +315,9 @@ struct _GammaData
   gpointer gamma_table;
   gint width;
   void (*gamma_func) (GammaData * data, gpointer dest, gpointer src);
+
+  /* HLG */
+  gdouble system_gamma;
 };
 
 typedef enum
@@ -455,6 +458,9 @@ struct _GstVideoConverter
   const GstVideoFrame *src;
   GstVideoFrame *dest;
 
+  GstVideoMasteringDisplayInfo in_minfo;
+  GstVideoMasteringDisplayInfo out_minfo;
+
   /* fastpath */
   GstVideoFormat fformat[4];
   gint fin_x[4];
@@ -480,6 +486,10 @@ struct _GstVideoConverter
   gpointer tasks[4];
   gpointer tasks_p[4];
 };
+
+typedef gboolean (*GammaDecodeSetupFunc) (GstVideoConverter * convert);
+typedef void (*GammaEncodeSetupFunc) (GstVideoConverter * convert,
+    gint target_bits);
 
 typedef gpointer (*GstLineCacheAllocLineFunc) (GstLineCache * cache, gint idx,
     gpointer user_data);
@@ -1496,7 +1506,7 @@ gamma_convert_u16_u16 (GammaData * data, gpointer dest, gpointer src)
   }
 }
 
-static void
+static gboolean
 setup_gamma_decode (GstVideoConverter * convert)
 {
   GstVideoTransferFunction func;
@@ -1529,6 +1539,409 @@ setup_gamma_decode (GstVideoConverter * convert)
   convert->current_bits = 16;
   convert->current_pstride = 8;
   convert->current_format = GST_VIDEO_FORMAT_ARGB64;
+
+  return TRUE;
+}
+
+static gdouble
+compute_hlg_system_gamma (gdouble display_peak_luminance)
+{
+  gdouble rst;
+
+  if (display_peak_luminance != 1000.0f) {
+    if (display_peak_luminance < 400.0f || display_peak_luminance > 2000.0f) {
+      rst = 1.2 * pow (1.111, log2 (display_peak_luminance / 1000.0f));
+    } else {
+      rst = 1.2 + 0.42 * log10 (display_peak_luminance / 1000.0f);
+    }
+  } else {
+    rst = 1.2;
+  }
+
+  return rst;
+}
+
+static void
+gamma_decode_u8_u16_hlg_eotf (GammaData * data, gpointer dest, gpointer src)
+{
+  gint i;
+  guint8 *s = src;
+  guint16 *d = dest;
+  gdouble *table = data->gamma_table;
+  gint width = data->width * 4;
+
+  for (i = 0; i < width; i += 4) {
+    gdouble Ys;
+    gdouble Rs, Gs, Bs;
+    gdouble Rd, Gd, Bd;
+
+    d[i + 0] = (s[i] << 8) | s[i];
+
+    Rs = table[s[i + 1]];
+    Gs = table[s[i + 2]];
+    Bs = table[s[i + 3]];
+
+    /* See Recommendation ITU-R BT.2100-2 TABLE 5 */
+    Ys = 0.2627 * Rs + 0.6780 * Gs + 0.0593 * Bs;
+    Ys = pow (Ys, data->system_gamma);
+
+    Rd = round (Ys * Rs * 65535.0);
+    Gd = round (Ys * Gs * 65535.0);
+    Bd = round (Ys * Bs * 65535.0);
+
+    d[i + 1] = (guint16) CLAMP (Rd, 0, 65535);
+    d[i + 2] = (guint16) CLAMP (Gd, 0, 65535);
+    d[i + 3] = (guint16) CLAMP (Bd, 0, 65535);
+  }
+}
+
+static void
+gamma_decode_u16_u16_hlg_eotf (GammaData * data, gpointer dest, gpointer src)
+{
+  gint i;
+  guint16 *s = src;
+  guint16 *d = dest;
+  gdouble *table = data->gamma_table;
+  gint width = data->width * 4;
+
+  for (i = 0; i < width; i += 4) {
+    gdouble Ys;
+    gdouble Rs, Gs, Bs;
+    gdouble Rd, Gd, Bd;
+
+    d[i + 0] = s[i];
+
+    Rs = table[s[i + 1]];
+    Gs = table[s[i + 2]];
+    Bs = table[s[i + 3]];
+
+    /* See Recommendation ITU-R BT.2100-2 TABLE 5 */
+    Ys = 0.2627 * Rs + 0.6780 * Gs + 0.0593 * Bs;
+    Ys = pow (Ys, data->system_gamma);
+
+    Rd = round (Ys * Rs * 65535.0);
+    Gd = round (Ys * Gs * 65535.0);
+    Bd = round (Ys * Bs * 65535.0);
+
+    d[i + 1] = (guint16) CLAMP (Rd, 0, 65535);
+    d[i + 2] = (guint16) CLAMP (Gd, 0, 65535);
+    d[i + 3] = (guint16) CLAMP (Bd, 0, 65535);
+  }
+}
+
+/* Recommendation ITU-R BT.2100-2
+ * https://www.itu.int/rec/R-REC-BT.2100
+ */
+static gboolean
+setup_gamma_decode_hlg_eotf (GstVideoConverter * convert)
+{
+  GstVideoTransferFunction func;
+  gdouble *t;
+  gint i;
+  gdouble b, inv_b, system_gamma;
+  gdouble max_luminance, min_luminance;
+
+  func = convert->in_info.colorimetry.transfer;
+
+  min_luminance = 0;
+  max_luminance = 1000.0;
+
+  system_gamma = compute_hlg_system_gamma (max_luminance);
+  b = sqrt (3 * pow (min_luminance / max_luminance, 1.0 / system_gamma));
+  inv_b = 1.0f - b;
+
+  convert->gamma_dec.width = convert->current_width;
+  convert->gamma_dec.system_gamma = system_gamma - 1.0f;
+  if (convert->gamma_dec.gamma_table) {
+    GST_DEBUG ("gamma decode already set up");
+  } else if (convert->current_bits == 8) {
+    GST_DEBUG ("gamma decode 8->16: %d", func);
+    convert->gamma_dec.gamma_func = gamma_decode_u8_u16_hlg_eotf;
+    t = convert->gamma_dec.gamma_table = g_malloc (sizeof (gdouble) * 256);
+
+    for (i = 0; i < 256; i++) {
+      gdouble val = (inv_b * (i / 255.0)) + b;
+      val = MAX (val, 0.0f);
+      t[i] = gst_video_transfer_function_decode (func, val);
+    }
+  } else {
+    GST_DEBUG ("gamma decode 16->16: %d", func);
+    convert->gamma_dec.gamma_func = gamma_decode_u16_u16_hlg_eotf;
+    t = convert->gamma_dec.gamma_table = g_malloc (sizeof (gdouble) * 65536);
+
+    for (i = 0; i < 65536; i++) {
+      gdouble val = (inv_b * (i / 65535.0)) + b;
+      val = MAX (val, 0.0f);
+      t[i] = gst_video_transfer_function_decode (func, val);
+    }
+  }
+  convert->current_bits = 16;
+  convert->current_pstride = 8;
+  convert->current_format = GST_VIDEO_FORMAT_ARGB64;
+
+  return TRUE;
+}
+
+/* Inverse of BT.2390-3-2017
+ * 10.1.2.4 Simplification of the HLG mapping process */
+static gboolean
+setup_gamma_decode_hlg_to_sdr_simple (GstVideoConverter * convert)
+{
+  GstVideoTransferFunction func;
+  guint16 *t;
+  gint i;
+
+  func = convert->in_info.colorimetry.transfer;
+
+  convert->gamma_dec.width = convert->current_width;
+  if (convert->gamma_dec.gamma_table) {
+    GST_DEBUG ("gamma decode already set up");
+  } else if (convert->current_bits == 8) {
+    GST_DEBUG ("gamma decode 8->16: %d", func);
+    convert->gamma_dec.gamma_func = gamma_convert_u8_u16;
+    t = convert->gamma_dec.gamma_table = g_malloc (sizeof (guint16) * 256);
+
+    for (i = 0; i < 256; i++) {
+      gdouble val = i / 255.0f;
+
+      val = gst_video_transfer_function_decode (func, val);
+      val = pow (val, 1.03) / 0.2546;
+
+      val = CLAMP (val, 0.0f, 1.0f);
+      t[i] = rint (val * 65535.0);
+    }
+  } else {
+    GST_DEBUG ("gamma decode 16->16: %d", func);
+    convert->gamma_dec.gamma_func = gamma_convert_u16_u16;
+    t = convert->gamma_dec.gamma_table = g_malloc (sizeof (guint16) * 65536);
+
+    for (i = 0; i < 65536; i++) {
+      gdouble val = i / 65535.0f;
+
+      val = gst_video_transfer_function_decode (func, val);
+      val = pow (val, 1.03) / 0.2546;
+
+      val = CLAMP (val, 0.0f, 1.0f);
+      t[i] = rint (val * 65535.0);
+    }
+  }
+  convert->current_bits = 16;
+  convert->current_pstride = 8;
+  convert->current_format = GST_VIDEO_FORMAT_ARGB64;
+
+  return TRUE;
+}
+
+static inline gdouble
+pq_eetf_hermite_spline_equation (gdouble val, gdouble max_lum,
+    gdouble knee_start)
+{
+  gdouble t;
+
+  g_assert (knee_start != 1.0f);
+
+  t = (val - knee_start) / (1.0f - knee_start);
+
+  return (2 * pow (t, 3) - 3 * pow (t, 2) + 1.0f) * knee_start +
+      (pow (t, 3) - 2 * pow (t, 2) + t) * (1.0f - knee_start) +
+      (-2 * pow (t, 3) + 3 * pow (t, 2)) * max_lum;
+}
+
+static inline gdouble
+pq_eetf_func (gdouble val, gdouble Lb, gdouble min_lum, gdouble max_lum,
+    gdouble lum_den, gdouble knee_start)
+{
+  gdouble ret;
+
+  if (val <= knee_start || knee_start == 1.0f) {
+    ret = val;
+  } else {
+    ret = pq_eetf_hermite_spline_equation (val, max_lum, knee_start);
+  }
+
+  ret = ret + min_lum * pow (1 - ret, 4);
+  ret = ret * lum_den + Lb;
+
+  return CLAMP (ret, 0.0f, 1.0f);
+}
+
+/* Calculate EETF, scales input dynamic range to target range
+ * in non-linear spcace */
+static gboolean
+compute_pq_eetf_params (gdouble in_min_luminance, gdouble in_max_luminance,
+    gdouble out_min_luminance, gdouble out_max_luminance,
+    gdouble * min_lum, gdouble * max_lum, gdouble * lum_den, gdouble * Lb,
+    gdouble * knee_start)
+{
+  GstVideoTransferFunction func = GST_VIDEO_TRANSFER_SMPTE2084;
+  gdouble min_l, max_l, lum_d, lb, ks;
+
+  if (in_min_luminance < 0.0f || in_min_luminance >= 1.0f)
+    return FALSE;
+
+  if (in_max_luminance <= 0.0f || in_max_luminance > 1.0f)
+    return FALSE;
+
+  if (out_min_luminance < 0.0f || out_min_luminance >= 1.0f)
+    return FALSE;
+
+  if (out_max_luminance <= 0.0f || out_max_luminance > 1.0f)
+    return FALSE;
+
+  lb = gst_video_transfer_function_encode (func, in_min_luminance);
+  lum_d = gst_video_transfer_function_encode (func, in_max_luminance) - lb;
+
+  if (lum_d <= 0.f) {
+    GST_WARNING ("Unable to calculate PQ EETF function");
+    return FALSE;
+  }
+
+  min_l = gst_video_transfer_function_encode (func, out_min_luminance) - lb;
+  max_l = gst_video_transfer_function_encode (func, out_max_luminance) - lb;
+
+  min_l /= lum_d;
+  max_l /= lum_d;
+
+  if (min_l < 0.0f || max_l > 1.0f) {
+    GST_WARNING ("Unable to calculate PQ EETF function");
+    return FALSE;
+  }
+
+  ks = 1.5 * max_l - 0.5;
+  if (ks > 1.0) {
+    GST_WARNING ("Unable to compute knee start");
+    return FALSE;
+  }
+
+  *min_lum = min_l;
+  *max_lum = max_l;
+  *lum_den = lum_d;
+  *Lb = lb;
+  *knee_start = ks;
+
+  return TRUE;
+}
+
+/* BT.2390-3-2017
+ * 5.4.1 Mapping to display with limited brightness range */
+static gboolean
+setup_gamma_decode_pq_eotf (GstVideoConverter * convert)
+{
+  GstVideoTransferFunction func;
+  guint16 *t;
+  gint i;
+  gdouble min_lum, max_lum, lum_den, Lb;
+  gdouble knee_start;
+  gdouble in_min_luminance, in_max_luminance;
+  gdouble out_min_luminance, out_max_luminance;
+
+  func = convert->in_info.colorimetry.transfer;
+
+  in_min_luminance =
+      convert->in_minfo.min_display_mastering_luminance / 10000.0f;
+  in_max_luminance =
+      convert->in_minfo.max_display_mastering_luminance / 10000.0f;
+
+  out_min_luminance =
+      convert->out_minfo.min_display_mastering_luminance / 10000.0f;
+  out_max_luminance =
+      convert->out_minfo.max_display_mastering_luminance / 10000.0f;
+
+  /* normalize values to [0, 1] */
+  in_min_luminance /= 10000.0f;
+  in_max_luminance /= 10000.0f;
+  out_min_luminance /= 10000.0f;
+  out_max_luminance /= 10000.0f;
+
+  if (!compute_pq_eetf_params (in_min_luminance, in_max_luminance,
+          out_min_luminance, out_max_luminance, &min_lum, &max_lum, &lum_den,
+          &Lb, &knee_start)) {
+    return FALSE;
+  }
+
+  GST_DEBUG ("min_lum: %lf, max_lum: %lf, knee_start: %lf",
+      min_lum, max_lum, knee_start);
+
+  convert->gamma_dec.width = convert->current_width;
+  if (convert->gamma_dec.gamma_table) {
+    GST_DEBUG ("gamma decode already set up");
+  } else if (convert->current_bits == 8) {
+    GST_DEBUG ("gamma decode 8->16: %d", func);
+    convert->gamma_dec.gamma_func = gamma_convert_u8_u16;
+    t = convert->gamma_dec.gamma_table = g_malloc (sizeof (guint16) * 256);
+
+    for (i = 0; i < 256; i++) {
+      gdouble val = i / 255.0;
+
+      val = pq_eetf_func (val, Lb, min_lum, max_lum, lum_den, knee_start);
+      val = gst_video_transfer_function_decode (func, val) *
+          (in_max_luminance / out_max_luminance) * 65535.0;
+      val = CLAMP (val, 0, 65535.0f);
+      t[i] = rint (val);
+    }
+  } else {
+    GST_DEBUG ("gamma decode 16->16: %d", func);
+    convert->gamma_dec.gamma_func = gamma_convert_u16_u16;
+    t = convert->gamma_dec.gamma_table = g_malloc (sizeof (guint16) * 65536);
+
+    for (i = 0; i < 65536; i++) {
+      gdouble val = i / 65535.0;
+
+      val = pq_eetf_func (val, Lb, min_lum, max_lum, lum_den, knee_start);
+      val = gst_video_transfer_function_decode (func, val) *
+          (in_max_luminance / out_max_luminance) * 65535.0;
+      val = CLAMP (val, 0, 65535.0f);
+      t[i] = rint (val);
+    }
+  }
+  convert->current_bits = 16;
+  convert->current_pstride = 8;
+  convert->current_format = GST_VIDEO_FORMAT_ARGB64;
+
+  return TRUE;
+}
+
+/* Convert SDR non-linear signal to PQ linear signal via PQ OOTF
+ * REC-BT.2100-2 TABLE 4 */
+static gboolean
+setup_gamma_decode_pq_ootf (GstVideoConverter * convert)
+{
+  guint16 *t;
+  gint i;
+
+  convert->gamma_dec.width = convert->current_width;
+  if (convert->gamma_dec.gamma_table) {
+    GST_DEBUG ("gamma decode already set up");
+  } else if (convert->current_bits == 8) {
+    GST_DEBUG ("gamma decode 8->16");
+    convert->gamma_dec.gamma_func = gamma_convert_u8_u16;
+    t = convert->gamma_dec.gamma_table = g_malloc (sizeof (guint16) * 256);
+
+    for (i = 0; i < 256; i++) {
+      gdouble val = i / 255.0;
+
+      val = pow (val, 2.4) * 65535.0;
+      val = CLAMP (val, 0, 65535.0);
+      t[i] = rint (val);
+    }
+  } else {
+    GST_DEBUG ("gamma decode 16->16");
+    convert->gamma_dec.gamma_func = gamma_convert_u16_u16;
+    t = convert->gamma_dec.gamma_table = g_malloc (sizeof (guint16) * 65536);
+
+    for (i = 0; i < 65536; i++) {
+      gdouble val = i / 65535.0;
+
+      val = pow (val, 2.4) * 65535.0;
+      val = CLAMP (val, 0, 65535.0);
+      t[i] = rint (val);
+    }
+  }
+  convert->current_bits = 16;
+  convert->current_pstride = 8;
+  convert->current_format = GST_VIDEO_FORMAT_ARGB64;
+
+  return TRUE;
 }
 
 static void
@@ -1566,6 +1979,240 @@ setup_gamma_encode (GstVideoConverter * convert, gint target_bits)
   }
 }
 
+static void
+gamma_encode_u16_u8_hlg_inv_eotf (GammaData * data, gpointer dest, gpointer src)
+{
+  gint i;
+  guint16 *s = src;
+  guint8 *d = dest;
+  guint8 *table = data->gamma_table;
+  gint width = data->width * 4;
+
+  for (i = 0; i < width; i += 4) {
+    gdouble Yd;
+    gdouble Rd, Gd, Bd;
+    gdouble Rs, Gs, Bs;
+
+    d[i + 0] = s[i];
+
+    /* See Recommendation ITU-R BT.2100-2 TABLE 5 */
+    Rd = s[i + 1] / 65535.0;
+    Gd = s[i + 2] / 65535.0;
+    Bd = s[i + 3] / 65535.0;
+
+    Yd = 0.2627 * Rd + 0.6780 * Gd + 0.0593 * Bd;
+    Yd = pow (Yd, data->system_gamma);
+
+    Rs = round (Yd * Rd * 65535.0);
+    Gs = round (Yd * Gd * 65535.0);
+    Bs = round (Yd * Bd * 65535.0);
+
+    Rs = CLAMP (Rs, 0, 65535);
+    Gs = CLAMP (Gs, 0, 65535);
+    Bs = CLAMP (Bs, 0, 65535);
+
+    d[i + 1] = table[(guint16) Rs];
+    d[i + 2] = table[(guint16) Gs];
+    d[i + 3] = table[(guint16) Bs];
+  }
+}
+
+static void
+gamma_encode_u16_u16_hlg_inv_eotf (GammaData * data, gpointer dest,
+    gpointer src)
+{
+  gint i;
+  guint16 *s = src;
+  guint16 *d = dest;
+  guint16 *table = data->gamma_table;
+  gint width = data->width * 4;
+
+  for (i = 0; i < width; i += 4) {
+    gdouble Yd;
+    gdouble Rd, Gd, Bd;
+    gdouble Rs, Gs, Bs;
+
+    d[i + 0] = s[i];
+
+    /* See Recommendation ITU-R BT.2100-2 TABLE 5 */
+    Rd = s[i + 1] / 65535.0;
+    Gd = s[i + 2] / 65535.0;
+    Bd = s[i + 3] / 65535.0;
+
+    Yd = 0.2627 * Rd + 0.6780 * Gd + 0.0593 * Bd;
+    Yd = pow (Yd, data->system_gamma);
+
+    Rs = round (Yd * Rd * 65535.0);
+    Gs = round (Yd * Gd * 65535.0);
+    Bs = round (Yd * Bd * 65535.0);
+
+    Rs = CLAMP (Rs, 0, 65535);
+    Gs = CLAMP (Gs, 0, 65535);
+    Bs = CLAMP (Bs, 0, 65535);
+
+    d[i + 1] = table[(guint16) Rs];
+    d[i + 2] = table[(guint16) Gs];
+    d[i + 3] = table[(guint16) Bs];
+  }
+}
+
+static void
+setup_gamma_encode_hlg_inv_eotf (GstVideoConverter * convert, gint target_bits)
+{
+  GstVideoTransferFunction func;
+  gint i;
+  gdouble system_gamma;
+  gdouble max_luminance;
+
+  func = convert->out_info.colorimetry.transfer;
+
+  max_luminance = 1000.0f;
+
+  system_gamma = compute_hlg_system_gamma (max_luminance);
+
+  convert->gamma_enc.width = convert->current_width;
+  convert->gamma_enc.system_gamma = (1.0f - system_gamma) / system_gamma;
+  if (convert->gamma_enc.gamma_table) {
+    GST_DEBUG ("gamma encode already set up");
+  } else if (target_bits == 8) {
+    guint8 *t;
+
+    GST_DEBUG ("gamma encode 16->8: %d", func);
+    convert->gamma_enc.gamma_func = gamma_encode_u16_u8_hlg_inv_eotf;
+    t = convert->gamma_enc.gamma_table = g_malloc (sizeof (guint8) * 65536);
+
+    for (i = 0; i < 65536; i++) {
+      gdouble val = i / 65535.0;
+
+      val = gst_video_transfer_function_encode (func, val) * 255.0;
+      val = CLAMP (val, 0.0f, 255.0f);
+      t[i] = rint (val);
+    }
+  } else {
+    guint16 *t;
+
+    GST_DEBUG ("gamma encode 16->16: %d", func);
+    convert->gamma_enc.gamma_func = gamma_encode_u16_u16_hlg_inv_eotf;
+    t = convert->gamma_enc.gamma_table = g_malloc (sizeof (guint16) * 65536);
+
+    for (i = 0; i < 65536; i++) {
+      gdouble val = i / 65535.0;
+
+      val = gst_video_transfer_function_encode (func, val) * 65535.0;
+      val = CLAMP (val, 0.0f, 65535.0f);
+      t[i] = rint (val);
+    }
+  }
+}
+
+/* BT.2390-3-2017
+ * 10.1.2.4 Simplification of the HLG mapping process */
+static void
+setup_gamma_encode_hlg_from_sdr_simple (GstVideoConverter * convert,
+    gint target_bits)
+{
+  GstVideoTransferFunction func;
+  gint i;
+  const gdouble power = 1 / 1.03;
+
+  func = convert->out_info.colorimetry.transfer;
+
+  convert->gamma_enc.width = convert->current_width;
+  if (convert->gamma_enc.gamma_table) {
+    GST_DEBUG ("gamma encode already set up");
+  } else if (target_bits == 8) {
+    guint8 *t;
+
+    GST_DEBUG ("gamma encode 16->8: %d", func);
+    convert->gamma_enc.gamma_func = gamma_convert_u16_u8;
+    t = convert->gamma_enc.gamma_table = g_malloc (sizeof (guint8) * 65536);
+
+    for (i = 0; i < 65536; i++) {
+      gdouble val = i * 0.2546 / 65535.0;
+
+      val = pow (val, power);
+      val = CLAMP (val, 0.0f, 1.0f);
+      val = gst_video_transfer_function_encode (func, val) * 255.0;
+      val = CLAMP (val, 0.0f, 255.0f);
+
+      t[i] = rint (val);
+    }
+  } else {
+    guint16 *t;
+
+    GST_DEBUG ("gamma encode 16->16: %d", func);
+    convert->gamma_enc.gamma_func = gamma_convert_u16_u16;
+    t = convert->gamma_enc.gamma_table = g_malloc (sizeof (guint16) * 65536);
+
+    for (i = 0; i < 65536; i++) {
+      gdouble val = i * 0.2546 / 65535.0;
+
+      val = CLAMP (val, 0.0f, 1.0f);
+      val = gst_video_transfer_function_encode (func, val) * 65535.0;
+      val = CLAMP (val, 0.0f, 65535.0f);
+
+      t[i] = rint (val);
+    }
+  }
+}
+
+static void
+setup_gamma_encode_pq_inv_eotf (GstVideoConverter * convert, gint target_bits)
+{
+  GstVideoTransferFunction func;
+  gint i;
+  gdouble scale_factor;
+
+  /* Scale linear signal to be [0, 10000] cd/m^2 scale, since the input value
+   * to PQ inverse EOTF 1.0 means 10000 cd/m^2  */
+  switch (convert->in_info.colorimetry.transfer) {
+    case GST_VIDEO_TRANSFER_SMPTE2084:
+      scale_factor = 1.0;
+      break;
+    case GST_VIDEO_TRANSFER_ARIB_STD_B67:
+      scale_factor = 0.1;
+      break;
+    default:
+      scale_factor = 0.01;
+      break;
+  }
+
+  func = convert->out_info.colorimetry.transfer;
+
+  convert->gamma_enc.width = convert->current_width;
+  if (convert->gamma_enc.gamma_table) {
+    GST_DEBUG ("gamma encode already set up");
+  } else if (target_bits == 8) {
+    guint8 *t;
+
+    GST_DEBUG ("gamma encode 16->8: %d", func);
+    convert->gamma_enc.gamma_func = gamma_convert_u16_u8;
+    t = convert->gamma_enc.gamma_table = g_malloc (sizeof (guint8) * 65536);
+
+    for (i = 0; i < 65536; i++) {
+      gdouble val = i / 65535.0 * scale_factor;
+
+      val = gst_video_transfer_function_encode (func, val) * 255.0;
+      val = CLAMP (val, 0, 255.0);
+      t[i] = rint (val);
+    }
+  } else {
+    guint16 *t;
+
+    GST_DEBUG ("gamma encode 16->16: %d", func);
+    convert->gamma_enc.gamma_func = gamma_convert_u16_u16;
+    t = convert->gamma_enc.gamma_table = g_malloc (sizeof (guint16) * 65536);
+
+    for (i = 0; i < 65536; i++) {
+      gdouble val = i / 65535.0 * scale_factor;
+
+      val = gst_video_transfer_function_encode (func, val) * 65535.0;
+      val = CLAMP (val, 0, 65535.0);
+      t[i] = rint (val);
+    }
+  }
+}
+
 static GstLineCache *
 chain_convert_to_RGB (GstVideoConverter * convert, GstLineCache * prev,
     gint idx)
@@ -1576,6 +2223,11 @@ chain_convert_to_RGB (GstVideoConverter * convert, GstLineCache * prev,
 
   if (do_gamma) {
     gint scale;
+    GstVideoTransferFunction in_transfer, out_transfer;
+    GammaDecodeSetupFunc setup_func;
+
+    in_transfer = convert->in_info.colorimetry.transfer;
+    out_transfer = convert->out_info.colorimetry.transfer;
 
     /* Set up conversion matrices if needed, but only for the first thread */
     if (idx == 0 && !convert->unpack_rgb) {
@@ -1605,7 +2257,27 @@ chain_convert_to_RGB (GstVideoConverter * convert, GstLineCache * prev,
         do_convert_to_RGB_lines, idx, convert, NULL);
 
     GST_DEBUG ("chain gamma decode");
-    setup_gamma_decode (convert);
+    setup_func = setup_gamma_decode;
+    if (in_transfer == GST_VIDEO_TRANSFER_ARIB_STD_B67 &&
+        out_transfer != GST_VIDEO_TRANSFER_ARIB_STD_B67) {
+      if (out_transfer == GST_VIDEO_TRANSFER_SMPTE2084) {
+        setup_func = setup_gamma_decode_hlg_eotf;
+      } else {
+        setup_func = setup_gamma_decode_hlg_to_sdr_simple;
+      }
+    } else if (in_transfer == GST_VIDEO_TRANSFER_SMPTE2084 &&
+        out_transfer != GST_VIDEO_TRANSFER_SMPTE2084) {
+      setup_func = setup_gamma_decode_pq_eotf;
+    } else if (in_transfer != GST_VIDEO_TRANSFER_SMPTE2084 &&
+        out_transfer == GST_VIDEO_TRANSFER_SMPTE2084) {
+      /* FIXME: This method is assuming input colorimetry is bt709.
+       * We need another conversion for non-bt709 signal */
+      setup_func = setup_gamma_decode_pq_ootf;
+    }
+
+    /* PQ gamma decode setup can fail */
+    if (!setup_func (convert))
+      setup_gamma_decode (convert);
   }
   return prev;
 }
@@ -1965,9 +2637,26 @@ chain_convert_to_YUV (GstVideoConverter * convert, GstLineCache * prev,
 
   if (do_gamma) {
     gint scale;
+    GstVideoTransferFunction in_transfer, out_transfer;
+    GammaEncodeSetupFunc setup_func = setup_gamma_encode;
+
+    in_transfer = convert->in_info.colorimetry.transfer;
+    out_transfer = convert->out_info.colorimetry.transfer;
 
     GST_DEBUG ("chain gamma encode");
-    setup_gamma_encode (convert, convert->pack_bits);
+    if (out_transfer == GST_VIDEO_TRANSFER_ARIB_STD_B67 &&
+        in_transfer != GST_VIDEO_TRANSFER_ARIB_STD_B67) {
+      if (in_transfer == GST_VIDEO_TRANSFER_SMPTE2084) {
+        setup_func = setup_gamma_encode_hlg_inv_eotf;
+      } else {
+        setup_func = setup_gamma_encode_hlg_from_sdr_simple;
+      }
+    } else if (out_transfer == GST_VIDEO_TRANSFER_SMPTE2084 &&
+        in_transfer != GST_VIDEO_TRANSFER_SMPTE2084) {
+      setup_func = setup_gamma_encode_pq_inv_eotf;
+    }
+
+    setup_func (convert, convert->pack_bits);
 
     convert->current_bits = convert->pack_bits;
     convert->current_pstride = convert->current_bits >> 1;
@@ -2296,6 +2985,28 @@ convert_get_alpha_mode (GstVideoConverter * convert)
   return ALPHA_MODE_SET;
 }
 
+static void
+fill_mastering_display_info (const GstVideoInfo * info,
+    GstVideoMasteringDisplayInfo * minfo)
+{
+  gst_video_mastering_display_info_init (minfo);
+
+  switch (info->colorimetry.transfer) {
+    case GST_VIDEO_TRANSFER_SMPTE2084:
+      /* PQ supports up to 10000 cd/m^2 */
+      minfo->max_display_mastering_luminance = 10000 * 10000;
+      break;
+    case GST_VIDEO_TRANSFER_ARIB_STD_B67:
+      /* 1000 cd/m^2 */
+      minfo->max_display_mastering_luminance = 1000 * 10000;
+      break;
+    default:
+      /* SDR */
+      minfo->max_display_mastering_luminance = 100 * 10000;
+      break;
+  }
+}
+
 /**
  * gst_video_converter_new_with_pool: (skip)
  * @in_info: a #GstVideoInfo
@@ -2464,6 +3175,10 @@ gst_video_converter_new_with_pool (const GstVideoInfo * in_info,
 
   if (out_info->finfo->pack_func == NULL)
     goto no_pack_func;
+
+  /* TODO: support user provided GstVideoMasteringDisplayInfo */
+  fill_mastering_display_info (&convert->in_info, &convert->in_minfo);
+  fill_mastering_display_info (&convert->out_info, &convert->out_minfo);
 
   convert->convert = video_converter_generic;
 
