@@ -314,6 +314,8 @@ struct _RTPSession {
   RTPTWCCStats *twcc_stats;
   guint8 twcc_recv_ext_id;
   guint8 twcc_send_ext_id;
+
+  GHashTable *media_ssrc_to_sender_ssrc;
 };
 
 /**
