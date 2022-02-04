@@ -218,6 +218,10 @@ _gst_parse_escape (const gchar * str)
  * @error will contain an error message if an erroneous pipeline is specified.
  * An error does not mean that the pipeline could not be constructed.
  *
+ * Application is responsible to pop messages from the returned pipeline's
+ * #GstBus using for example gst_bus_pop() or gst_bus_add_watch(), otherwise
+ * they will accumulate and consume memory infinitely.
+ *
  * Returns: (transfer floating): a new element on success and %NULL
  * on failure.
  */
@@ -238,6 +242,10 @@ gst_parse_launchv (const gchar ** argv, GError ** error)
  * Create a new element based on command line syntax.
  * @error will contain an error message if an erroneous pipeline is specified.
  * An error does not mean that the pipeline could not be constructed.
+ *
+ * Application is responsible to pop messages from the returned pipeline's
+ * #GstBus using for example gst_bus_pop() or gst_bus_add_watch(), otherwise
+ * they will accumulate and consume memory infinitely.
  *
  * Returns: (transfer floating): a new element on success; on
  *   failure, either %NULL or a partially-constructed bin or element will be
@@ -296,6 +304,10 @@ gst_parse_launchv_full (const gchar ** argv, GstParseContext * context,
  * To create a sub-pipeline (bin) for embedding into an existing pipeline
  * use gst_parse_bin_from_description().
  *
+ * Application is responsible to pop messages from the returned pipeline's
+ * #GstBus using for example gst_bus_pop() or gst_bus_add_watch(), otherwise
+ * they will accumulate and consume memory infinitely.
+ *
  * Returns: (transfer floating): a new element on success, %NULL on
  *   failure. If more than one toplevel element is specified by the
  *   @pipeline_description, all elements are put into a #GstPipeline, which
@@ -323,6 +335,10 @@ gst_parse_launch (const gchar * pipeline_description, GError ** error)
  *
  * To create a sub-pipeline (bin) for embedding into an existing pipeline
  * use gst_parse_bin_from_description_full().
+ *
+ * Application is responsible to pop messages from the returned pipeline's
+ * #GstBus using for example gst_bus_pop() or gst_bus_add_watch(), otherwise
+ * they will accumulate and consume memory infinitely.
  *
  * Returns: (transfer floating): a new element on success, %NULL on
  *    failure. If more than one toplevel element is specified by the
