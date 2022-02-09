@@ -381,6 +381,8 @@ gst_avdtp_util_parse_sbc_raw (void *config)
         MIN (sbc->min_bitpool, TEMPLATE_MAX_BITPOOL),
         MIN (sbc->max_bitpool, TEMPLATE_MAX_BITPOOL));
   }
+  gst_structure_set_value (structure, "bitpool", value);
+  g_value_unset (value);
 
   /* channels */
   mono = FALSE;
