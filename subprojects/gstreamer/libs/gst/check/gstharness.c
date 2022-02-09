@@ -176,7 +176,9 @@ struct _GstHarnessPrivate
   gint recv_events;
   gint recv_upstream_events;
 
-  GAsyncQueue *buffer_queue;
+  /* Access should be protected by buf_or_eos_mutex */
+  GQueue *buffer_queue;
+
   GAsyncQueue *src_event_queue;
   GAsyncQueue *sink_event_queue;
 
@@ -222,11 +224,10 @@ gst_harness_chain (GstPad * pad, GstObject * parent, GstBuffer * buffer)
     gst_buffer_unref (buffer);
   } else {
     g_mutex_lock (&priv->buf_or_eos_mutex);
-    g_async_queue_push (priv->buffer_queue, buffer);
+    g_queue_push_tail (priv->buffer_queue, buffer);
     g_cond_signal (&priv->buf_or_eos_cond);
     g_mutex_unlock (&priv->buf_or_eos_mutex);
   }
-
 
   if (priv->blocking_push_mode) {
     g_cond_wait (&priv->blocking_push_cond, &priv->blocking_push_mutex);
@@ -692,8 +693,8 @@ gst_harness_new_empty (void)
   priv->drop_buffers = FALSE;
   priv->testclock = GST_TEST_CLOCK_CAST (gst_test_clock_new ());
 
-  priv->buffer_queue = g_async_queue_new_full (
-      (GDestroyNotify) gst_buffer_unref);
+  priv->buffer_queue = g_queue_new ();
+
   priv->src_event_queue = g_async_queue_new_full (
       (GDestroyNotify) gst_event_unref);
   priv->sink_event_queue = g_async_queue_new_full (
@@ -1061,6 +1062,7 @@ void
 gst_harness_teardown (GstHarness * h)
 {
   GstHarnessPrivate *priv = h->priv;
+  GstBuffer *buf;
 
   if (priv->blocking_push_mode) {
     g_mutex_lock (&priv->blocking_push_mutex);
@@ -1153,8 +1155,12 @@ gst_harness_teardown (GstHarness * h)
   g_cond_clear (&priv->buf_or_eos_cond);
   priv->eos_received = FALSE;
 
-  g_async_queue_unref (priv->buffer_queue);
+  while ((buf = g_queue_pop_head (priv->buffer_queue)) != NULL) {
+    gst_buffer_unref (buf);
+  }
+  g_queue_free (priv->buffer_queue);
   priv->buffer_queue = NULL;
+
   g_async_queue_unref (priv->src_event_queue);
   priv->src_event_queue = NULL;
   g_async_queue_unref (priv->sink_event_queue);
@@ -1683,9 +1689,19 @@ gst_harness_push (GstHarness * h, GstBuffer * buffer)
 GstBuffer *
 gst_harness_pull (GstHarness * h)
 {
+  GstBuffer *buf;
+  gint64 end_time;
   GstHarnessPrivate *priv = h->priv;
-  GstBuffer *buf = (GstBuffer *) g_async_queue_timeout_pop (priv->buffer_queue,
-      G_USEC_PER_SEC * 60);
+
+  g_mutex_lock (&priv->buf_or_eos_mutex);
+  buf = g_queue_pop_head (priv->buffer_queue);
+  end_time = g_get_monotonic_time () + 60 * G_TIME_SPAN_SECOND;
+  if (buf == NULL) {
+    g_cond_wait_until (&priv->buf_or_eos_cond, &priv->buf_or_eos_mutex,
+        end_time);
+    buf = g_queue_pop_head (priv->buffer_queue);
+  }
+  g_mutex_unlock (&priv->buf_or_eos_mutex);
 
   if (priv->blocking_push_mode) {
     g_mutex_lock (&priv->blocking_push_mutex);
@@ -1719,7 +1735,7 @@ gst_harness_pull_until_eos (GstHarness * h, GstBuffer ** buf)
 
   g_mutex_lock (&priv->buf_or_eos_mutex);
   while (success) {
-    *buf = g_async_queue_try_pop (priv->buffer_queue);
+    *buf = g_queue_pop_head (priv->buffer_queue);
     if (*buf || priv->eos_received)
       break;
     success = g_cond_wait_until (&priv->buf_or_eos_cond,
@@ -1747,8 +1763,11 @@ gst_harness_pull_until_eos (GstHarness * h, GstBuffer ** buf)
 GstBuffer *
 gst_harness_try_pull (GstHarness * h)
 {
+  GstBuffer *buf;
   GstHarnessPrivate *priv = h->priv;
-  GstBuffer *buf = (GstBuffer *) g_async_queue_try_pop (priv->buffer_queue);
+  g_mutex_lock (&priv->buf_or_eos_mutex);
+  buf = (GstBuffer *) g_queue_pop_head (priv->buffer_queue);
+  g_mutex_unlock (&priv->buf_or_eos_mutex);
 
   if (priv->blocking_push_mode) {
     g_mutex_lock (&priv->blocking_push_mutex);
@@ -1782,7 +1801,7 @@ gst_harness_push_and_pull (GstHarness * h, GstBuffer * buffer)
 }
 
 /**
- * gst_harness_buffers_received:
+ * gst_ha
  * @h: a #GstHarness
  *
  * The total number of #GstBuffers that has arrived on the #GstHarness sinkpad.
@@ -1817,8 +1836,12 @@ gst_harness_buffers_received (GstHarness * h)
 guint
 gst_harness_buffers_in_queue (GstHarness * h)
 {
+  guint ret;
   GstHarnessPrivate *priv = h->priv;
-  return g_async_queue_length (priv->buffer_queue);
+  g_mutex_lock (&priv->buf_or_eos_mutex);
+  ret = g_queue_get_length (priv->buffer_queue);
+  g_mutex_unlock (&priv->buf_or_eos_mutex);
+  return ret;
 }
 
 /**
@@ -1861,9 +1884,9 @@ gst_harness_take_all_data_as_buffer (GstHarness * h)
 
   priv = h->priv;
 
-  g_async_queue_lock (priv->buffer_queue);
+  g_mutex_lock (&priv->buf_or_eos_mutex);
 
-  ret = g_async_queue_try_pop_unlocked (priv->buffer_queue);
+  ret = g_queue_pop_head (priv->buffer_queue);
 
   if (ret == NULL) {
     ret = gst_buffer_new ();
@@ -1871,11 +1894,11 @@ gst_harness_take_all_data_as_buffer (GstHarness * h)
     /* buffer appending isn't very efficient for larger numbers of buffers
      * or lots of memories, but this function is not performance critical and
      * we can still improve it if and when the need arises. For now KISS. */
-    while ((buf = g_async_queue_try_pop_unlocked (priv->buffer_queue)))
+    while ((buf = g_queue_pop_head (priv->buffer_queue)))
       ret = gst_buffer_append (ret, buf);
   }
 
-  g_async_queue_unlock (priv->buffer_queue);
+  g_mutex_unlock (&priv->buf_or_eos_mutex);
 
   return ret;
 }
