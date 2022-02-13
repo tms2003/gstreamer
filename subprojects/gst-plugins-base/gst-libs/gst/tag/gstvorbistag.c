@@ -166,6 +166,32 @@ gst_tag_to_vorbis_tag (const gchar * gst_tag)
   return NULL;
 }
 
+static char *
+parse_language_tag (const char *value, char **comment)
+{
+  const gchar *s = strchr (value, '[');
+  gchar *valid = NULL;
+
+  if (!s) {
+    /* free-form */
+    *comment = g_strdup (value);
+    return NULL;
+  }
+  if (s != value) {
+    *comment = g_strndup (value, s - value);
+  }
+
+  /* Accept both ISO-639-1 and ISO-639-2 codes */
+  if (s && strchr (s, ']') == s + 4) {
+    valid = g_strndup (s + 1, 3);
+  } else if (s && strchr (s, ']') == s + 3) {
+    valid = g_strndup (s + 1, 2);
+  } else if (strlen (value) != 2 && strlen (value) != 3) {
+    GST_WARNING ("doesn't contain an ISO-639 language code: %s", value);
+  }
+
+  return valid;
+}
 
 /**
  * gst_vorbis_tag_add:
@@ -238,19 +264,11 @@ gst_vorbis_tag_add (GstTagList * list, const gchar * tag, const gchar * value)
     }
     case G_TYPE_STRING:{
       gchar *valid = NULL;
+      gchar *comment = NULL;
 
       /* specialcase for language code */
       if (strcmp (tag, "LANGUAGE") == 0) {
-        const gchar *s = strchr (value, '[');
-
-        /* Accept both ISO-639-1 and ISO-639-2 codes */
-        if (s && strchr (s, ']') == s + 4) {
-          valid = g_strndup (s + 1, 3);
-        } else if (s && strchr (s, ']') == s + 3) {
-          valid = g_strndup (s + 1, 2);
-        } else if (strlen (value) != 2 && strlen (value) != 3) {
-          GST_WARNING ("doesn't contain an ISO-639 language code: %s", value);
-        }
+        valid = parse_language_tag (value, &comment);
       } else if (strcmp (tag, "LICENSE") == 0) {
         /* license tags in vorbis comments must contain an URI representing
          * the license and nothing more, at least according to:
@@ -263,7 +281,12 @@ gst_vorbis_tag_add (GstTagList * list, const gchar * tag, const gchar * value)
         valid = g_strdup (value);
       }
       gst_tag_list_add (list, GST_TAG_MERGE_APPEND, gst_tag, valid, NULL);
+      if (comment) {
+        gst_tag_list_add (list, GST_TAG_MERGE_APPEND, GST_TAG_TITLE, comment,
+            NULL);
+      }
       g_free (valid);
+      g_free (comment);
       break;
     }
     case G_TYPE_DOUBLE:{
