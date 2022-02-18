@@ -1011,12 +1011,38 @@ dequeue_object (GstAppSink * appsink)
 static GstMiniObject *
 dequeue_buffer (GstAppSink * appsink)
 {
+  GstAppSinkPrivate *priv = appsink->priv;
   GstMiniObject *obj;
 
   do {
-    obj = dequeue_object (appsink);
+    obj = gst_queue_array_peek_head (priv->queue);
 
-    if (GST_IS_BUFFER (obj) || GST_IS_BUFFER_LIST (obj)) {
+    if (GST_IS_BUFFER_LIST (obj)) {
+      GstBufferList *l =
+          gst_buffer_list_make_writable (GST_BUFFER_LIST_CAST (obj));
+      GstBuffer *oldest = NULL;
+      if (gst_buffer_list_length (l) > 0) {
+        oldest = gst_buffer_ref (gst_buffer_list_get (l, 0));
+        gst_buffer_list_remove (l, 0, 1);
+        priv->num_buffers--;
+      }
+
+      if (gst_buffer_list_length (l) == 0) {
+        // Remove the empty list from the queue
+        gst_queue_array_pop_head (priv->queue);
+        gst_buffer_list_unref (l);
+      }
+
+      if (oldest == NULL) {
+        continue;
+      }
+
+      obj = GST_MINI_OBJECT_CAST (oldest);
+    } else {
+      obj = dequeue_object (appsink);
+    }
+
+    if (GST_IS_BUFFER (obj)) {
       break;
     }
 
