@@ -969,9 +969,13 @@ dequeue_object (GstAppSink * appsink)
 
   obj = gst_queue_array_pop_head (priv->queue);
 
-  if (GST_IS_BUFFER (obj) || GST_IS_BUFFER_LIST (obj)) {
-    GST_DEBUG_OBJECT (appsink, "dequeued buffer/list %p", obj);
+  if (GST_IS_BUFFER (obj)) {
+    GST_DEBUG_OBJECT (appsink, "dequeued buffer %p", obj);
     priv->num_buffers--;
+  } else if (GST_IS_BUFFER_LIST (obj)) {
+    GST_DEBUG_OBJECT (appsink, "dequeued buffer list %p", obj);
+    priv->num_buffers =
+        priv->num_buffers - gst_buffer_list_length (GST_BUFFER_LIST_CAST (obj));
   } else if (GST_IS_EVENT (obj)) {
     GstEvent *event = GST_EVENT_CAST (obj);
 
@@ -1084,7 +1088,14 @@ restart:
   }
   /* we need to ref the buffer/list when pushing it in the queue */
   gst_queue_array_push_tail (priv->queue, gst_mini_object_ref (data));
-  priv->num_buffers++;
+
+  if (GST_IS_BUFFER (data)) {
+    priv->num_buffers++;
+  } else if (GST_IS_BUFFER_LIST (data)) {
+    priv->num_buffers =
+        priv->num_buffers +
+        gst_buffer_list_length (GST_BUFFER_LIST_CAST (data));
+  }
 
   if ((priv->wait_status & APP_WAITING))
     g_cond_signal (&priv->cond);
