@@ -307,7 +307,7 @@ static void
 gst_color_effects_transform_rgb (GstColorEffects * filter,
     GstVideoFrame * frame)
 {
-  gint i, j;
+  gint i, j, k;
   gint width, height;
   gint pixel_stride, row_stride, row_wrap;
   guint32 r, g, b;
@@ -328,13 +328,25 @@ gst_color_effects_transform_rgb (GstColorEffects * filter,
   row_wrap = row_stride - pixel_stride * width;
 
   /* transform */
-
   for (i = 0; i < height; i++) {
     for (j = 0; j < width; j++) {
       r = data[offsets[0]];
       g = data[offsets[1]];
       b = data[offsets[2]];
-      if (filter->map_luma) {
+      if (filter->lut != NULL) {
+        gdouble in[] = {
+          (r / 255.) * (filter->lut->size - 1),
+          (g / 255.) * (filter->lut->size - 1),
+          (b / 255.) * (filter->lut->size - 1)
+        };
+
+        gdouble out[3];
+        cube_lut_interp_nearest (filter->lut, in, out);
+
+        for (k = 0; k < 3; k++) {
+          data[offsets[k]] = (guint8) (255. * CLAMP (out[k], 0., 1.));
+        }
+      } else if (filter->map_luma) {
         /* BT. 709 coefficients in B8 fixed point */
         /* 0.2126 R + 0.7152 G + 0.0722 B */
         luma = ((r << 8) * 54) + ((g << 8) * 183) + ((b << 8) * 19);
@@ -415,13 +427,28 @@ gst_color_effects_transform_ayuv (GstColorEffects * filter,
         g = CLAMP (g, 0, 255);
         b = CLAMP (b, 0, 255);
 
-        /* map each color component to the correspondent lut color */
-        /* src.r |-> table[r].r */
-        /* src.g |-> table[g].g */
-        /* src.b |-> table[b].b */
-        r = filter->table[r * 3];
-        g = filter->table[g * 3 + 1];
-        b = filter->table[b * 3 + 2];
+        if (filter->lut != NULL) {
+          gdouble in[] = {
+            (r / 255.) * (filter->lut->size - 1),
+            (g / 255.) * (filter->lut->size - 1),
+            (b / 255.) * (filter->lut->size - 1)
+          };
+
+          gdouble out[3];
+          cube_lut_interp_nearest (filter->lut, in, out);
+
+          r = (guint8) (255. * CLAMP (out[0], 0., 1.));
+          g = (guint8) (255. * CLAMP (out[1], 0., 1.));
+          b = (guint8) (255. * CLAMP (out[2], 0., 1.));
+        } else {
+          /* map each color component to the correspondent lut color */
+          /* src.r |-> table[r].r */
+          /* src.g |-> table[g].g */
+          /* src.b |-> table[b].b */
+          r = filter->table[r * 3];
+          g = filter->table[g * 3 + 1];
+          b = filter->table[b * 3 + 2];
+        }
 
         y = APPLY_MATRIX (cog_rgb_to_ycbcr_matrix_8bit_sdtv, 0, r, g, b);
         u = APPLY_MATRIX (cog_rgb_to_ycbcr_matrix_8bit_sdtv, 1, r, g, b);
@@ -489,7 +516,7 @@ gst_color_effects_transform_frame_ip (GstVideoFilter * vfilter,
     goto not_negotiated;
 
   /* do nothing if there is no table ("none" preset) */
-  if (filter->table == NULL)
+  if ((filter->table == NULL) && (filter->lut == NULL))
     return GST_FLOW_OK;
 
   GST_OBJECT_LOCK (filter);
@@ -630,5 +657,5 @@ gst_color_effects_init (GstColorEffects * filter)
   filter->preset = GST_COLOR_EFFECTS_PRESET_NONE;
   filter->table = NULL;
   filter->lut = NULL;
-  filter->map_luma = TRUE;
+  filter->map_luma = FALSE;
 }

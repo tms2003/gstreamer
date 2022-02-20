@@ -28,6 +28,7 @@
 #include <gstcoloreffects.h>
 #include "cubelut.h"
 
+
 #define GST_CAT_DEFAULT (coloreffects_debug)
 
 enum
@@ -38,6 +39,27 @@ enum
   CUBE_DOMAIN_MIN,
   CUBE_DOMAIN_MAX
 };
+
+#define ROUND(x) ((int) ((x) + .5))
+gdouble
+cube_lut_lookup (CubeLUT * lut, gint r, gint g, gint b, gint comp)
+{
+  glong index = b * lut->size * lut->size + g * lut->size + r;
+  return lut->table[index * 3 + comp];
+}
+
+
+
+/* Nearest Neighbour interpolation */
+void
+cube_lut_interp_nearest (CubeLUT * lut, const gdouble in[], gdouble out[])
+{
+  gint i;
+  for (i = 0; i < 3; i++) {
+    out[i] =
+        cube_lut_lookup (lut, ROUND (in[0]), ROUND (in[1]), ROUND (in[2]), i);
+  }
+}
 
 static const gboolean
 cube_lut_parse_title (GScanner * scanner, gchar ** title)
