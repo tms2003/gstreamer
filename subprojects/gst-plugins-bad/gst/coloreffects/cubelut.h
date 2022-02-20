@@ -42,7 +42,11 @@ typedef struct {
 CubeLUT *cube_lut_load(const char *filename);
 void     cube_lut_free(CubeLUT *lut);
 gdouble  cube_lut_lookup (CubeLUT * lut, gint r, gint g, gint b, gint comp);
+
+typedef void (*CubeLUTInterpFunc) (CubeLUT *lut, const gdouble in[], gdouble out[]);
 void     cube_lut_interp_nearest (CubeLUT * lut, const gdouble in[], gdouble out[]);
+void     cube_lut_interp_trilinear (CubeLUT * lut, const gdouble in[], gdouble out[]);
+void     cube_lut_interp_tetrahedral (CubeLUT * lut, const gdouble in[], gdouble out[]);
 
 G_END_DECLS
 

@@ -62,6 +62,20 @@ typedef enum
   GST_COLOR_EFFECTS_PRESET_YELLOWBLUE,
 } GstColorEffectsPreset;
 
+
+/**
+ * GstColorEffectsInterp:
+ @GST_COLOR_EFFECTS_INTERP_NEAREST: Cube LUT nearest neighbour interpolation (fastest)
+ @GST_COLOR_EFFECTS_INTERP_TRILINEAR: Cube LUT trilinear interpolation
+ @GST_COLOR_EFFECTS_INTERP_TETRAHEDRAL: Cube LUT tetrahedral interpolation
+ */
+typedef enum
+{
+  GST_COLOR_EFFECTS_INTERP_NEAREST,
+  GST_COLOR_EFFECTS_INTERP_TRILINEAR,
+  GST_COLOR_EFFECTS_INTERP_TETRAHEDRAL
+} GstColorEffectsInterp;
+
 /**
  * GstColorEffects:
  *
@@ -73,10 +87,13 @@ struct _GstColorEffects
 
   /* < private > */
   GstColorEffectsPreset preset;
-  const gchar *lut_filename;
-  CubeLUT *lut;
   const guint8 *table;
   gboolean map_luma;
+
+  const gchar *lut_filename;
+  CubeLUT *lut;
+  GstColorEffectsInterp lut_interp_type;
+  CubeLUTInterpFunc lut_interp_func;
 
   /* video format */
   GstVideoFormat format;

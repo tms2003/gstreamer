@@ -40,15 +40,24 @@ enum
   CUBE_DOMAIN_MAX
 };
 
+/* Cube Look-up and interpolation */
+
 #define ROUND(x) ((int) ((x) + .5))
+#define PREV(x) ((int) floor(x))
+#define NEXT(x) (MIN((int) ceil(x), lut->size - 1))
+
+static inline float
+lerp (gdouble x0, gdouble x1, gdouble x)
+{
+  return x0 + (x1 - x0) * x;
+}
+
 gdouble
 cube_lut_lookup (CubeLUT * lut, gint r, gint g, gint b, gint comp)
 {
   glong index = b * lut->size * lut->size + g * lut->size + r;
   return lut->table[index * 3 + comp];
 }
-
-
 
 /* Nearest Neighbour interpolation */
 void
@@ -60,6 +69,136 @@ cube_lut_interp_nearest (CubeLUT * lut, const gdouble in[], gdouble out[])
         cube_lut_lookup (lut, ROUND (in[0]), ROUND (in[1]), ROUND (in[2]), i);
   }
 }
+
+/* Trilinear interpolation
+   https://en.m.wikipedia.org/wiki/Trilinear_interpolation
+ */
+void
+cube_lut_interp_trilinear (CubeLUT * lut, const gdouble in[], gdouble out[])
+{
+  gint i;
+  gint prev[3];
+  gint next[3];
+
+  gdouble d[3];
+  gdouble c000[3], c001[3], c010[3], c011[3];
+  gdouble c100[3], c101[3], c110[3], c111[3];
+  gdouble c00[3], c10[3], c01[3], c11[3];
+  gdouble c0[3], c1[3];
+
+  for (i = 0; i < 3; i++) {
+    prev[i] = PREV (in[i]);
+    next[i] = NEXT (in[i]);
+    d[i] = in[i] - prev[i];
+  }
+
+  for (i = 0; i < 3; i++) {
+    c000[i] = cube_lut_lookup (lut, prev[0], prev[1], prev[2], i);
+    c001[i] = cube_lut_lookup (lut, prev[0], prev[1], next[2], i);
+    c010[i] = cube_lut_lookup (lut, prev[0], next[1], prev[2], i);
+    c011[i] = cube_lut_lookup (lut, prev[0], next[1], next[2], i);
+    c100[i] = cube_lut_lookup (lut, next[0], prev[1], prev[2], i);
+    c101[i] = cube_lut_lookup (lut, next[0], prev[1], next[2], i);
+    c110[i] = cube_lut_lookup (lut, next[0], next[1], prev[2], i);
+    c111[i] = cube_lut_lookup (lut, next[0], next[1], next[2], i);
+
+    c00[i] = lerp (c000[i], c100[i], d[0]);
+    c10[i] = lerp (c010[i], c110[i], d[0]);
+    c01[i] = lerp (c001[i], c101[i], d[0]);
+    c11[i] = lerp (c011[i], c111[i], d[0]);
+
+    c0[i] = lerp (c00[i], c10[i], d[1]);
+    c1[i] = lerp (c01[i], c11[i], d[1]);
+
+    out[i] = lerp (c0[i], c1[i], d[2]);
+  }
+}
+
+/* Tetrahedral interpolation
+
+   This should be the preferred interpolation method as per the Adobe
+   spec. They don't give any detail about the implementation.
+
+   Below are some references, best I could find, the Nvidia GTC poster
+   has a nice quick summary of the algorithm. There's probably room
+   for optimization.
+
+   James M. Kasson, Wil Plouffe, Sigfredo I. Nin, "Tetrahedral
+   interpolation technique for color space conversion," Proc. SPIE
+   1909, Device-Independent Color Imaging and Imaging Systems
+   Integration, (4 August 1993)
+
+   H. Lee, K. Kim and D. Han, "A real time color gamut mapping using
+   tetrahedral interpolation for digital tv color reproduction
+   enhancement," in IEEE Transactions on Consumer Electronics,
+   vol. 55, no. 2, pp. 599-605
+
+   https://www.nvidia.com/content/GTC/posters/2010/V01-Real-Time-Color-Space-Conversion-for-High-Resolution-Video.pdf */
+void
+cube_lut_interp_tetrahedral (CubeLUT * lut, const gdouble in[], gdouble out[])
+{
+  gint i;
+  gint prev[3];
+  gint next[3];
+
+  gdouble d[3];
+  gdouble c000[3], c001[3], c010[3], c011[3];
+  gdouble c100[3], c101[3], c110[3], c111[3];
+
+  for (i = 0; i < 3; i++) {
+    prev[i] = PREV (in[i]);
+    next[i] = NEXT (in[i]);
+    d[i] = in[i] - prev[i];
+  }
+
+  for (i = 0; i < 3; i++) {
+    /* look up neighbour vertices */
+    /* we could probably save some lookup here, c000 and c111 are
+     * always needed, the other ones could go inside branches */
+    c000[i] = cube_lut_lookup (lut, prev[0], prev[1], prev[2], i);
+    c001[i] = cube_lut_lookup (lut, prev[0], prev[1], next[2], i);
+    c010[i] = cube_lut_lookup (lut, prev[0], next[1], prev[2], i);
+    c011[i] = cube_lut_lookup (lut, prev[0], next[1], next[2], i);
+    c100[i] = cube_lut_lookup (lut, next[0], prev[1], prev[2], i);
+    c101[i] = cube_lut_lookup (lut, next[0], prev[1], next[2], i);
+    c110[i] = cube_lut_lookup (lut, next[0], next[1], prev[2], i);
+    c111[i] = cube_lut_lookup (lut, next[0], next[1], next[2], i);
+
+
+    if (d[0] > d[1]) {
+      if (d[1] > d[2]) {
+        out[i] =
+            (1 - d[0]) * c000[i] + (d[0] - d[1]) * c100[i] + (d[1] -
+            d[2]) * c110[i] + d[2] * c111[i];
+      } else if (d[0] > d[2]) {
+        out[i] =
+            (1 - d[0]) * c000[i] + (d[0] - d[2]) * c100[i] + (d[2] -
+            d[1]) * c101[i] + d[1] * c111[i];
+      } else {
+        out[i] =
+            (1 - d[2]) * c000[i] + (d[2] - d[0]) * c001[i] + (d[0] -
+            d[1]) * c101[i] + d[1] * c111[i];
+      }
+    } else {
+      if (d[2] > d[1]) {
+        out[i] =
+            (1 - d[2]) * c000[i] + (d[2] - d[1]) * c001[i] + (d[1] -
+            d[0]) * c011[i] + d[0] * c111[i];
+      } else if (d[2] > d[0]) {
+        out[i] =
+            (1 - d[1]) * c000[i] + (d[1] - d[2]) * c010[i] + (d[2] -
+            d[0]) * c011[i] + d[0] * c111[i];
+      } else {
+        out[i] =
+            (1 - d[1]) * c000[i] + (d[1] - d[0]) * c010[i] + (d[0] -
+            d[2]) * c110[i] + d[2] * c111[i];
+      }
+    }
+  }
+}
+
+
+/* 3D Cube file parsing */
 
 static const gboolean
 cube_lut_parse_title (GScanner * scanner, gchar ** title)

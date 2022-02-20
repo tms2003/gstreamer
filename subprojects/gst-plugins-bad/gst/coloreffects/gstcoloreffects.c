@@ -39,6 +39,7 @@
 #include "gstcoloreffects.h"
 #include "cubelut.h"
 
+#define DEFAULT_PROP_CUBEINTERP GST_COLOR_EFFECTS_INTERP_TETRAHEDRAL
 #define DEFAULT_PROP_PRESET GST_COLOR_EFFECTS_PRESET_NONE
 
 GST_DEBUG_CATEGORY (coloreffects_debug);
@@ -48,6 +49,7 @@ enum
 {
   PROP_0,
   PROP_CUBELUT,
+  PROP_CUBEINTERP,
   PROP_PRESET
 };
 
@@ -73,6 +75,28 @@ GST_STATIC_PAD_TEMPLATE ("sink",
     GST_PAD_ALWAYS,
     GST_STATIC_CAPS (CAPS_STR)
     );
+
+#define GST_TYPE_COLOR_EFFECTS_INTERP (gst_color_effects_interp_get_type())
+static GType
+gst_color_effects_interp_get_type (void)
+{
+  static GType interp_type = 0;
+
+  static const GEnumValue interps[] = {
+    {GST_COLOR_EFFECTS_INTERP_NEAREST, "Nearest neighbour interpolation",
+        "nearest"},
+    {GST_COLOR_EFFECTS_INTERP_TRILINEAR, "Trilinear interpolation",
+        "trilinear"},
+    {GST_COLOR_EFFECTS_INTERP_TETRAHEDRAL, "Tetrahedral interpolation",
+        "tetrahedral"},
+    {0, NULL, NULL},
+  };
+
+  if (!interp_type) {
+    interp_type = g_enum_register_static ("GstColorEffectsInterp", interps);
+  }
+  return interp_type;
+}
 
 #define GST_TYPE_COLOR_EFFECTS_PRESET (gst_color_effects_preset_get_type())
 static GType
@@ -341,7 +365,7 @@ gst_color_effects_transform_rgb (GstColorEffects * filter,
         };
 
         gdouble out[3];
-        cube_lut_interp_nearest (filter->lut, in, out);
+        filter->lut_interp_func (filter->lut, in, out);
 
         for (k = 0; k < 3; k++) {
           data[offsets[k]] = (guint8) (255. * CLAMP (out[k], 0., 1.));
@@ -435,7 +459,7 @@ gst_color_effects_transform_ayuv (GstColorEffects * filter,
           };
 
           gdouble out[3];
-          cube_lut_interp_nearest (filter->lut, in, out);
+          filter->lut_interp_func (filter->lut, in, out);
 
           r = (guint8) (255. * CLAMP (out[0], 0., 1.));
           g = (guint8) (255. * CLAMP (out[1], 0., 1.));
@@ -549,6 +573,24 @@ gst_color_effects_set_property (GObject * object, guint prop_id,
       }
       GST_OBJECT_UNLOCK (filter);
       break;
+    case PROP_CUBEINTERP:
+      GST_OBJECT_LOCK (filter);
+      filter->lut_interp_type = g_value_get_enum (value);
+      switch (filter->lut_interp_type) {
+        case GST_COLOR_EFFECTS_INTERP_NEAREST:
+          filter->lut_interp_func = cube_lut_interp_nearest;
+          break;
+        case GST_COLOR_EFFECTS_INTERP_TRILINEAR:
+          filter->lut_interp_func = cube_lut_interp_trilinear;
+          break;
+        case GST_COLOR_EFFECTS_INTERP_TETRAHEDRAL:
+          filter->lut_interp_func = cube_lut_interp_tetrahedral;
+          break;
+        default:
+          g_assert_not_reached ();
+      }
+      GST_OBJECT_UNLOCK (filter);
+      break;
     case PROP_PRESET:
       GST_OBJECT_LOCK (filter);
       filter->preset = g_value_get_enum (value);
@@ -601,6 +643,11 @@ gst_color_effects_get_property (GObject * object, guint prop_id, GValue * value,
       g_value_set_string (value, filter->lut_filename);
       GST_OBJECT_UNLOCK (filter);
       break;
+    case PROP_CUBEINTERP:
+      GST_OBJECT_LOCK (filter);
+      g_value_set_enum (value, filter->lut_interp_type);
+      GST_OBJECT_UNLOCK (filter);
+      break;
     case PROP_PRESET:
       GST_OBJECT_LOCK (filter);
       g_value_set_enum (value, filter->preset);
@@ -629,6 +676,10 @@ gst_color_effects_class_init (GstColorEffectsClass * klass)
       g_param_spec_string ("cubelut", "CubeLUT",
           "Load 3D Look-up Table from .cube file. If defined overrides preset property.",
           NULL, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+  g_object_class_install_property (gobject_class, PROP_CUBEINTERP,
+      g_param_spec_enum ("interpolation", "Interpolation",
+          "3D Cube interpolation type", GST_TYPE_COLOR_EFFECTS_INTERP,
+          DEFAULT_PROP_CUBEINTERP, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
   g_object_class_install_property (gobject_class, PROP_PRESET,
       g_param_spec_enum ("preset", "Preset", "Color effect preset to use",
           GST_TYPE_COLOR_EFFECTS_PRESET, DEFAULT_PROP_PRESET,
@@ -656,6 +707,7 @@ gst_color_effects_init (GstColorEffects * filter)
 {
   filter->preset = GST_COLOR_EFFECTS_PRESET_NONE;
   filter->table = NULL;
-  filter->lut = NULL;
   filter->map_luma = FALSE;
+  filter->lut = NULL;
+  filter->lut_interp_func = cube_lut_interp_tetrahedral;
 }
