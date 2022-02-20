@@ -1,5 +1,5 @@
 /* GStreamer
- * Copyright (C) <2010> Filippo Argiolas <filippo.argiolas@gmail.com>
+ * Copyright (C) 2010-2022 Filippo Argiolas <filippo.argiolas@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -23,8 +23,11 @@
 #include <gst/gst.h>
 #include <gst/video/video.h>
 #include <gst/video/gstvideofilter.h>
+#include "cubelut.h"
 
 G_BEGIN_DECLS
+GST_DEBUG_CATEGORY_EXTERN(coloreffects_debug);
+
 #define GST_TYPE_COLOR_EFFECTS \
   (gst_color_effects_get_type())
 #define GST_COLOR_EFFECTS(obj) \
@@ -70,6 +73,8 @@ struct _GstColorEffects
 
   /* < private > */
   GstColorEffectsPreset preset;
+  const gchar *lut_filename;
+  CubeLUT *lut;
   const guint8 *table;
   gboolean map_luma;
 

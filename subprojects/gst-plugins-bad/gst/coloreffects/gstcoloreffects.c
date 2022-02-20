@@ -1,5 +1,5 @@
 /* GStreamer
- * Copyright (C) <2010> Filippo Argiolas <filippo.argiolas@gmail.com>
+ * Copyright (C) 2010-2022 Filippo Argiolas <filippo.argiolas@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -37,15 +37,17 @@
 
 #include <gst/video/video.h>
 #include "gstcoloreffects.h"
+#include "cubelut.h"
 
 #define DEFAULT_PROP_PRESET GST_COLOR_EFFECTS_PRESET_NONE
 
-GST_DEBUG_CATEGORY_STATIC (coloreffects_debug);
+GST_DEBUG_CATEGORY (coloreffects_debug);
 #define GST_CAT_DEFAULT (coloreffects_debug)
 
 enum
 {
   PROP_0,
+  PROP_CUBELUT,
   PROP_PRESET
 };
 
@@ -56,6 +58,7 @@ GST_ELEMENT_REGISTER_DEFINE (coloreffects, "coloreffects",
 
 #define CAPS_STR GST_VIDEO_CAPS_MAKE ("{ " \
     "ARGB, BGRA, ABGR, RGBA, xRGB, BGRx, xBGR, RGBx, RGB, BGR, AYUV }")
+
 
 static GstStaticPadTemplate gst_color_effects_src_template =
 GST_STATIC_PAD_TEMPLATE ("src",
@@ -507,6 +510,18 @@ gst_color_effects_set_property (GObject * object, guint prop_id,
   GstColorEffects *filter = GST_COLOR_EFFECTS (object);
 
   switch (prop_id) {
+    case PROP_CUBELUT:
+      GST_OBJECT_LOCK (filter);
+      filter->lut_filename = g_value_get_string (value);
+      if (g_file_test (filter->lut_filename,
+              G_FILE_TEST_IS_REGULAR | G_FILE_TEST_EXISTS)) {
+        GST_INFO ("found Cube LUT file: %s", filter->lut_filename);
+        filter->lut = cube_lut_load (filter->lut_filename);
+      } else {
+        GST_WARNING ("Couldn't load Cube LUT file: %s", filter->lut_filename);
+      }
+      GST_OBJECT_UNLOCK (filter);
+      break;
     case PROP_PRESET:
       GST_OBJECT_LOCK (filter);
       filter->preset = g_value_get_enum (value);
@@ -554,6 +569,11 @@ gst_color_effects_get_property (GObject * object, guint prop_id, GValue * value,
   GstColorEffects *filter = GST_COLOR_EFFECTS (object);
 
   switch (prop_id) {
+    case PROP_CUBELUT:
+      GST_OBJECT_LOCK (filter);
+      g_value_set_string (value, filter->lut_filename);
+      GST_OBJECT_UNLOCK (filter);
+      break;
     case PROP_PRESET:
       GST_OBJECT_LOCK (filter);
       g_value_set_enum (value, filter->preset);
@@ -578,6 +598,10 @@ gst_color_effects_class_init (GstColorEffectsClass * klass)
   gobject_class->set_property = gst_color_effects_set_property;
   gobject_class->get_property = gst_color_effects_get_property;
 
+  g_object_class_install_property (gobject_class, PROP_CUBELUT,
+      g_param_spec_string ("cubelut", "CubeLUT",
+          "Load 3D Look-up Table from .cube file. If defined overrides preset property.",
+          NULL, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
   g_object_class_install_property (gobject_class, PROP_PRESET,
       g_param_spec_enum ("preset", "Preset", "Color effect preset to use",
           GST_TYPE_COLOR_EFFECTS_PRESET, DEFAULT_PROP_PRESET,
@@ -605,5 +629,6 @@ gst_color_effects_init (GstColorEffects * filter)
 {
   filter->preset = GST_COLOR_EFFECTS_PRESET_NONE;
   filter->table = NULL;
+  filter->lut = NULL;
   filter->map_luma = TRUE;
 }
