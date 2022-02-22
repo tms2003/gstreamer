@@ -17,37 +17,22 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#ifndef __CUBELUT_H__
-#define __CUBELUT_H__
-
+#pragma once
 #include <gst/gst.h>
 
 G_BEGIN_DECLS
 
-typedef enum {
-  CUBE_LUT_1D,
-  CUBE_LUT_3D,
-} CubeLUTType;
+#define CUBE_TYPE_LUT cube_lut_get_type()
+G_DECLARE_FINAL_TYPE(CubeLUT, cube_lut, CUBE, LUT, GObject)
 
-typedef struct {
-  gchar *title;
-  double *table;
-  CubeLUTType type;
-  gint size;
-  glong length;
-  gdouble domain_min[3];
-  gdouble domain_max[3];
-} CubeLUT;
+typedef enum
+{
+  CUBE_LUT_INTERP_NEAREST,
+  CUBE_LUT_INTERP_TRILINEAR,
+  CUBE_LUT_INTERP_TETRAHEDRAL
+} CubeLUTInterpType;
 
-CubeLUT *cube_lut_load(const char *filename);
-void     cube_lut_free(CubeLUT *lut);
-gdouble  cube_lut_lookup (CubeLUT * lut, gint r, gint g, gint b, gint comp);
-
-typedef void (*CubeLUTInterpFunc) (CubeLUT *lut, const gdouble in[], gdouble out[]);
-void     cube_lut_interp_nearest (CubeLUT * lut, const gdouble in[], gdouble out[]);
-void     cube_lut_interp_trilinear (CubeLUT * lut, const gdouble in[], gdouble out[]);
-void     cube_lut_interp_tetrahedral (CubeLUT * lut, const gdouble in[], gdouble out[]);
+CubeLUT *cube_lut_new (const gchar *filename);
+void     cube_lut_transform (CubeLUT *lut, guint8 in[], guint8 out[]);
 
 G_END_DECLS
-
-#endif /* __CUBELUT_H__ */

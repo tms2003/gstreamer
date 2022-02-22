@@ -33,6 +33,44 @@
 
 enum
 {
+  PROP_FILENAME = 1,
+  PROP_INTERP,
+  N_PROPERTIES
+};
+
+static GParamSpec *obj_properties[N_PROPERTIES] = { NULL, };
+
+typedef void (*CubeLUTInterpFunc) (CubeLUT * lut, const gdouble in[],
+    gdouble out[]);
+
+#define CUBE_LUT_TYPE_INTERP (cube_lut_interp_get_type())
+static GType
+cube_lut_interp_get_type (void)
+{
+  static GType interp_type = 0;
+
+  static const GEnumValue interps[] = {
+    {CUBE_LUT_INTERP_NEAREST,
+        "Nearest Neighbour", "nearest"},
+    {CUBE_LUT_INTERP_TRILINEAR,
+        "Trilinear", "trilinear"},
+    {CUBE_LUT_INTERP_TETRAHEDRAL,
+        "Tetrahedral", "tetrahedral"},
+    {0, NULL, NULL},
+  };
+
+  if (!interp_type) {
+    interp_type = g_enum_register_static ("CubeLUTInterp", interps);
+  }
+  return interp_type;
+}
+
+/*
+ * Symbol tokens for GScanner
+ * one for each valid keyword in the Cube file spec
+ */
+enum
+{
   CUBE_TITLE = G_TOKEN_LAST + 1,
   CUBE_LUT_1D_SIZE,
   CUBE_LUT_3D_SIZE,
@@ -40,11 +78,65 @@ enum
   CUBE_DOMAIN_MAX
 };
 
-/* Cube Look-up and interpolation */
+typedef enum
+{
+  CUBE_LUT_1D,
+  CUBE_LUT_3D,
+} CubeLUTType;
 
+/*
+ * CubeLUT private members
+ */
+struct _CubeLUT
+{
+  /* private */
+  GObject parent_instance;
+
+  GScanner *scanner;
+  const gchar *filename;
+  gchar *title;
+  CubeLUTType type;
+  gint size;
+  glong length;
+  gdouble domain_min[3];
+  gdouble domain_max[3];
+
+  gdouble *table;
+  CubeLUTInterpType interp_type;
+  CubeLUTInterpFunc interp_func;
+
+  gpointer padding[16];
+};
+
+G_DEFINE_TYPE (CubeLUT, cube_lut, G_TYPE_OBJECT)
+/*
+  CubeLUT serves mainly two purposes:
+  - parsing Cube files
+  - looking up rgb data from the 3D LUT using preferred interpolation method
+
+  The first section includes public and helper methods for 3D LUT lookup and interpolation
+  The second section includes helper function for Cube parsing
+*/
+/* 3D LUT look-up and interpolation methods */
 #define ROUND(x) ((int) ((x) + .5))
 #define PREV(x) ((int) floor(x))
 #define NEXT(x) (MIN((int) ceil(x), lut->size - 1))
+     void cube_lut_transform (CubeLUT * lut, guint8 in[], guint8 out[])
+{
+  int i;
+  gdouble scaled_in[3];
+  gdouble scaled_out[3];
+
+  for (i = 0; i < 3; i++) {
+    scaled_in[i] = (in[i] / 255.) * (lut->size - 1);
+  }
+
+  lut->interp_func (lut, scaled_in, scaled_out);
+
+  for (i = 0; i < 3; i++) {
+    out[i] = (guint8) (255. * CLAMP (scaled_out[i], 0., 1.));
+  }
+}
 
 static inline float
 lerp (gdouble x0, gdouble x1, gdouble x)
@@ -52,7 +144,7 @@ lerp (gdouble x0, gdouble x1, gdouble x)
   return x0 + (x1 - x0) * x;
 }
 
-gdouble
+static gdouble
 cube_lut_lookup (CubeLUT * lut, gint r, gint g, gint b, gint comp)
 {
   glong index = b * lut->size * lut->size + g * lut->size + r;
@@ -60,7 +152,7 @@ cube_lut_lookup (CubeLUT * lut, gint r, gint g, gint b, gint comp)
 }
 
 /* Nearest Neighbour interpolation */
-void
+static void
 cube_lut_interp_nearest (CubeLUT * lut, const gdouble in[], gdouble out[])
 {
   gint i;
@@ -73,7 +165,7 @@ cube_lut_interp_nearest (CubeLUT * lut, const gdouble in[], gdouble out[])
 /* Trilinear interpolation
    https://en.m.wikipedia.org/wiki/Trilinear_interpolation
  */
-void
+static void
 cube_lut_interp_trilinear (CubeLUT * lut, const gdouble in[], gdouble out[])
 {
   gint i;
@@ -134,7 +226,7 @@ cube_lut_interp_trilinear (CubeLUT * lut, const gdouble in[], gdouble out[])
    vol. 55, no. 2, pp. 599-605
 
    https://www.nvidia.com/content/GTC/posters/2010/V01-Real-Time-Color-Space-Conversion-for-High-Resolution-Video.pdf */
-void
+static void
 cube_lut_interp_tetrahedral (CubeLUT * lut, const gdouble in[], gdouble out[])
 {
   gint i;
@@ -198,23 +290,24 @@ cube_lut_interp_tetrahedral (CubeLUT * lut, const gdouble in[], gdouble out[])
 }
 
 
+
 /* 3D Cube file parsing */
 
 static const gboolean
-cube_lut_parse_title (GScanner * scanner, gchar ** title)
+cube_lut_parse_title (CubeLUT * lut, GScanner * scanner)
 {
   if (g_scanner_get_next_token (scanner) != G_TOKEN_STRING) {
     g_scanner_unexp_token (scanner, G_TOKEN_STRING, NULL, NULL, NULL,
         "invalid TITLE", TRUE);
     return FALSE;
   } else {
-    *title = g_strdup (scanner->value.v_string);
+    lut->title = g_strdup (scanner->value.v_string);
     return TRUE;
   }
 }
 
 static gboolean
-cube_lut_parse_domain (GScanner * scanner, gdouble * domain)
+cube_lut_parse_domain (CubeLUT * lut, GScanner * scanner)
 {
   gint symbol = GPOINTER_TO_INT (scanner->value.v_symbol);
 
@@ -232,7 +325,7 @@ cube_lut_parse_domain (GScanner * scanner, gdouble * domain)
                 scanner->value.v_float);
             return FALSE;
           }
-          domain[i] = scanner->value.v_float;
+          lut->domain_min[i] = scanner->value.v_float;
           break;
         case CUBE_DOMAIN_MAX:
           if (scanner->value.v_float != 1) {
@@ -241,7 +334,7 @@ cube_lut_parse_domain (GScanner * scanner, gdouble * domain)
                 scanner->value.v_float);
             return FALSE;
           }
-          domain[i] = scanner->value.v_float;
+          lut->domain_max[i] = scanner->value.v_float;
           break;
         default:
           g_assert_not_reached ();
@@ -249,41 +342,43 @@ cube_lut_parse_domain (GScanner * scanner, gdouble * domain)
     }
   }
 
-  GST_INFO ("DOMAIN_%s: %.1f %.1f %.1f",
-      symbol == CUBE_DOMAIN_MIN ? "MIN" : "MAX",
-      domain[0], domain[1], domain[2]);
-
   return TRUE;
 }
 
-
-static CubeLUT *
-cube_lut_new (CubeLUTType lut_type, glong lut_size)
+static gboolean
+cube_lut_parse_lut_size (CubeLUT * lut, GScanner * scanner)
 {
-  CubeLUT *lut = NULL;
-  switch (lut_type) {
+  if (g_scanner_get_next_token (scanner) != G_TOKEN_FLOAT) {
+    g_scanner_unexp_token (scanner, G_TOKEN_FLOAT, NULL, NULL, NULL,
+        "invalid LUT SIZE", TRUE);
+    return FALSE;
+  } else {
+    lut->size = (glong) scanner->value.v_float;
+    return TRUE;
+  }
+}
+
+static void
+cube_lut_init_table (CubeLUT * lut)
+{
+  switch (lut->type) {
     case CUBE_LUT_1D:
-      if ((lut_size < 2) || (lut_size > 65536)) {
+      if ((lut->size < 2) || (lut->size > 65536)) {
         GST_ERROR ("LUT_1D_size outside valid range");
       } else {
-        lut = g_new0 (CubeLUT, 1);
         lut->title = NULL;
-        lut->size = lut_size;
-        lut->length = lut_size * 3;
-        lut->type = lut_type;
+        lut->length = lut->size * 3;
+        GST_INFO ("allocating table of len: %ld", lut->length);
         lut->table = g_new0 (gdouble, lut->length);
       }
       break;
     case CUBE_LUT_3D:
-      if ((lut_size < 2) || (lut_size > 256)) {
+      if ((lut->size < 2) || (lut->size > 256)) {
         GST_ERROR ("LUT_3D_SIZE outside valid range");
-        return NULL;
       } else {
-        lut = g_new0 (CubeLUT, 1);
         lut->title = NULL;
-        lut->size = lut_size;
-        lut->length = lut_size * lut_size * lut_size * 3;
-        lut->type = lut_type;
+        lut->length = lut->size * lut->size * lut->size * 3;
+        GST_INFO ("allocating table of len: %ld", lut->length);
         lut->table = g_new0 (gdouble, lut->length);
       }
       break;
@@ -292,32 +387,7 @@ cube_lut_new (CubeLUTType lut_type, glong lut_size)
   }
 
   GST_INFO ("LUT TYPE: %s", lut->type == CUBE_LUT_1D ? "1D" : "3D");
-  GST_INFO ("LUT SIZE: %d", (gint) lut_size);
-
-  return lut;
-}
-
-static gboolean
-cube_lut_parse_lut_size (GScanner * scanner, glong * lut_size)
-{
-  if (g_scanner_get_next_token (scanner) != G_TOKEN_FLOAT) {
-    g_scanner_unexp_token (scanner, G_TOKEN_FLOAT, NULL, NULL, NULL,
-        "invalid LUT SIZE", TRUE);
-    return FALSE;
-  } else {
-    *lut_size = (glong) scanner->value.v_float;
-    return TRUE;
-  }
-}
-
-void
-cube_lut_free (CubeLUT * lut)
-{
-  if (lut->table != NULL)
-    g_free (lut->table);
-  if (lut->title != NULL)
-    g_free (lut->title);
-  g_free (lut);
+  GST_INFO ("LUT SIZE: %d", (gint) lut->size);
 }
 
 static void
@@ -331,19 +401,116 @@ cube_lut_parser_error_handler (GScanner * scanner, gchar * message,
   }
 }
 
-CubeLUT *
-cube_lut_load (const char *filename)
+static void
+cube_lut_set_property (GObject * object, guint prop_id, const GValue * value,
+    GParamSpec * pspec)
 {
-  GScanner *scanner;
-  gint fd;
-  CubeLUT *lut = NULL;
-  gchar *title = NULL;
-  gdouble domain_min[3];
-  gdouble domain_max[3];
-  CubeLUTType lut_type;
-  glong lut_size = 0;
+  CubeLUT *lut = CUBE_LUT (object);
 
+  switch (prop_id) {
+    case PROP_FILENAME:
+      lut->filename = g_value_get_string (value);
+      break;
+    case PROP_INTERP:
+      lut->interp_type = g_value_get_enum (value);
+      GST_INFO ("interpolation: %s", g_enum_to_string (CUBE_LUT_TYPE_INTERP,
+              lut->interp_type));
+      switch (lut->interp_type) {
+        case CUBE_LUT_INTERP_NEAREST:
+          lut->interp_func = cube_lut_interp_nearest;
+          break;
+        case CUBE_LUT_INTERP_TRILINEAR:
+          lut->interp_func = cube_lut_interp_trilinear;
+          break;
+        case CUBE_LUT_INTERP_TETRAHEDRAL:
+          lut->interp_func = cube_lut_interp_tetrahedral;
+          break;
+        default:
+          g_assert_not_reached ();
+      }
+      break;
+    default:
+      G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
+      break;
+  }
+}
+
+static void
+cube_lut_get_property (GObject * object, guint prop_id, GValue * value,
+    GParamSpec * pspec)
+{
+  CubeLUT *lut = CUBE_LUT (object);
+
+
+  switch (prop_id) {
+    case PROP_FILENAME:
+      g_value_set_string (value, lut->filename);
+      break;
+      /* case PROP_INTERP: */
+      /*   g_value_set_enum (value, lut->interp_type); */
+      /*   break; */
+    default:
+      G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
+      break;
+  }
+}
+
+static void
+cube_lut_finalize (GObject * object)
+{
+  CubeLUT *lut = CUBE_LUT (object);
+
+  g_free (lut->table);
+  g_free (lut->title);
+  g_free (lut->precomp_table);
+}
+
+static void
+cube_lut_class_init (CubeLUTClass * klass)
+{
+  GObjectClass *object_class = G_OBJECT_CLASS (klass);
+
+  object_class->get_property = cube_lut_get_property;
+  object_class->set_property = cube_lut_set_property;
+  object_class->finalize = cube_lut_finalize;
+
+  obj_properties[PROP_FILENAME] =
+      g_param_spec_string ("filename",
+      "Filename",
+      "Cube LUT Filename",
+      NULL,
+      G_PARAM_CONSTRUCT_ONLY | G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS);
+  obj_properties[PROP_INTERP] =
+      g_param_spec_enum ("interpolation",
+      "Interpolation",
+      "3D Cube interpolation type",
+      CUBE_LUT_TYPE_INTERP,
+      CUBE_LUT_INTERP_TETRAHEDRAL, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS);
+
+  g_object_class_install_properties (object_class,
+      N_PROPERTIES, obj_properties);
+}
+
+static void
+cube_lut_init (CubeLUT * lut)
+{
+  lut->table = NULL;
+  lut->size = 0;
+  lut->length = 0;
+  lut->interp_type = CUBE_LUT_INTERP_TETRAHEDRAL;
+  lut->interp_func = cube_lut_interp_tetrahedral;
+}
+
+CubeLUT *
+cube_lut_new (const gchar * filename)
+{
+  CubeLUT *lut;
+  GScanner *scanner;
+
+  gint fd;
   glong idx = 0;
+
+  lut = g_object_new (CUBE_TYPE_LUT, "filename", filename, NULL);
 
   scanner = g_scanner_new (NULL);
   scanner->config->numbers_2_int = TRUE;
@@ -378,37 +545,47 @@ cube_lut_load (const char *filename)
       case G_TOKEN_SYMBOL:
         switch (GPOINTER_TO_INT (scanner->value.v_symbol)) {
           case CUBE_TITLE:
-            cube_lut_parse_title (scanner, &title);
-            GST_INFO ("TITLE: %s", title);
+            cube_lut_parse_title (lut, scanner);
+            GST_INFO ("TITLE: %s", lut->title);
             break;
           case CUBE_DOMAIN_MIN:
-            if (!cube_lut_parse_domain (scanner, domain_min)) {
+            if (!cube_lut_parse_domain (lut, scanner)) {
+              g_object_unref (lut);
               return NULL;
+            } else {
+              GST_INFO ("DOMAIN_MIN: %.1f, %.1f, %.1f",
+                  lut->domain_min[0], lut->domain_min[1], lut->domain_min[2]);
             }
             break;
           case CUBE_DOMAIN_MAX:
-            if (!cube_lut_parse_domain (scanner, domain_max)) {
+            if (!cube_lut_parse_domain (lut, scanner)) {
               return NULL;
+            } else {
+              GST_INFO ("DOMAIN_MAX: %.1f, %.1f, %.1f",
+                  lut->domain_max[0], lut->domain_max[1], lut->domain_max[2]);
             }
             break;
           case CUBE_LUT_1D_SIZE:
-            lut_type = CUBE_LUT_1D;
+            lut->type = CUBE_LUT_1D;
           case CUBE_LUT_3D_SIZE:
-            lut_type = CUBE_LUT_3D;
-            if (lut_size != 0) {
+            lut->type = CUBE_LUT_3D;
+            if (lut->size != 0) {
               GST_ERROR ("LUT_SIZE defined repeatedly, invalid cube file");
+              g_object_unref (lut);
               return NULL;
-            } else if (!cube_lut_parse_lut_size (scanner, &lut_size)) {
+            } else if (!cube_lut_parse_lut_size (lut, scanner)) {
+              g_object_unref (lut);
               return NULL;
             } else {
-              lut = cube_lut_new (lut_type, lut_size);
+              cube_lut_init_table (lut);
             }
             break;
         }
         break;
       case G_TOKEN_FLOAT:
-        if (lut == NULL) {
+        if (lut->table == NULL) {
           GST_ERROR ("LUT_SIZE undefined, invalid cube file");
+          g_object_unref (lut);
           return NULL;
         }
         lut->table[idx] = scanner->value.v_float;
@@ -416,20 +593,13 @@ cube_lut_load (const char *filename)
 
         if (idx > lut->length) {
           GST_ERROR ("LUT seems bigger than expected, invalid cube file");
-          cube_lut_free (lut);
+          g_object_unref (lut);
           return NULL;
         }
         break;
       default:
         break;
     }
-  }
-
-  lut->title = title;
-
-  for (gint i = 0; i < 3; i++) {
-    lut->domain_min[i] = domain_min[i];
-    lut->domain_max[i] = domain_max[i];
   }
 
   g_scanner_destroy (scanner);

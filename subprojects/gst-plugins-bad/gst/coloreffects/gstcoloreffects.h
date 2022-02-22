@@ -71,9 +71,9 @@ typedef enum
  */
 typedef enum
 {
-  GST_COLOR_EFFECTS_INTERP_NEAREST,
-  GST_COLOR_EFFECTS_INTERP_TRILINEAR,
-  GST_COLOR_EFFECTS_INTERP_TETRAHEDRAL
+  GST_COLOR_EFFECTS_INTERP_NEAREST = CUBE_LUT_INTERP_NEAREST,
+  GST_COLOR_EFFECTS_INTERP_TRILINEAR = CUBE_LUT_INTERP_TRILINEAR,
+  GST_COLOR_EFFECTS_INTERP_TETRAHEDRAL = CUBE_LUT_INTERP_TETRAHEDRAL
 } GstColorEffectsInterp;
 
 /**
@@ -93,7 +93,6 @@ struct _GstColorEffects
   const gchar *lut_filename;
   CubeLUT *lut;
   GstColorEffectsInterp lut_interp_type;
-  CubeLUTInterpFunc lut_interp_func;
 
   /* video format */
   GstVideoFormat format;
