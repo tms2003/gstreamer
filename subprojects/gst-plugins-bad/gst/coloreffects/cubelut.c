@@ -35,6 +35,7 @@ enum
 {
   PROP_FILENAME = 1,
   PROP_INTERP,
+  PROP_PRECOMP,
   N_PROPERTIES
 };
 
@@ -105,6 +106,9 @@ struct _CubeLUT
   CubeLUTInterpType interp_type;
   CubeLUTInterpFunc interp_func;
 
+  gboolean precomp;
+  guint8 *precomp_table;
+
   gpointer padding[16];
 };
 
@@ -121,20 +125,31 @@ G_DEFINE_TYPE (CubeLUT, cube_lut, G_TYPE_OBJECT)
 #define ROUND(x) ((int) ((x) + .5))
 #define PREV(x) ((int) floor(x))
 #define NEXT(x) (MIN((int) ceil(x), lut->size - 1))
+/**
+ * transform rgb pixel either interpolating from the LUT or looking up
+ * from the precomputed table
+ */
      void cube_lut_transform (CubeLUT * lut, guint8 in[], guint8 out[])
 {
   int i;
   gdouble scaled_in[3];
   gdouble scaled_out[3];
 
-  for (i = 0; i < 3; i++) {
-    scaled_in[i] = (in[i] / 255.) * (lut->size - 1);
-  }
+  if ((lut->precomp) && (lut->precomp_table != NULL)) {
+    for (i = 0; i < 3; i++) {
+      out[i] =
+          lut->precomp_table[(in[0] + in[1] * 256 + in[2] * 256 * 256) * 3 + i];
+    }
+  } else {
+    for (i = 0; i < 3; i++) {
+      scaled_in[i] = (in[i] / 255.) * (lut->size - 1);
+    }
 
-  lut->interp_func (lut, scaled_in, scaled_out);
+    lut->interp_func (lut, scaled_in, scaled_out);
 
-  for (i = 0; i < 3; i++) {
-    out[i] = (guint8) (255. * CLAMP (scaled_out[i], 0., 1.));
+    for (i = 0; i < 3; i++) {
+      out[i] = (guint8) (255. * CLAMP (scaled_out[i], 0., 1.));
+    }
   }
 }
 
@@ -402,6 +417,39 @@ cube_lut_parser_error_handler (GScanner * scanner, gchar * message,
 }
 
 static void
+cube_lut_precompute_table (CubeLUT * lut)
+{
+  GST_INFO ("precomputing the full 3D LUT for 24bit RGB colorspace");
+
+  if (lut->precomp_table == NULL) {
+    lut->precomp_table = g_new0 (guint8, 256 * 256 * 256 * 3);
+  }
+  for (guint i = 0; i < 256; i++) {
+    for (guint j = 0; j < 256; j++) {
+      for (guint k = 0; k < 256; k++) {
+        gdouble in[] = {
+          (i / 255.) * (lut->size - 1),
+          (j / 255.) * (lut->size - 1),
+          (k / 255.) * (lut->size - 1)
+        };
+
+        gdouble out[3];
+        lut->interp_func (lut, in, out);
+
+        /* GST_INFO("%d %d %d -> %.1f %.1f %.1f", */
+        /*          i, j, k, */
+        /*          out[0], out[1], out[2]); */
+
+        for (gint l = 0; l < 3; l++) {
+          lut->precomp_table[(i + j * 256 + k * 256 * 256) * 3 + l] =
+              (guint8) (255. * CLAMP (out[l], 0., 1.));
+        }
+      }
+    }
+  }
+}
+
+static void
 cube_lut_set_property (GObject * object, guint prop_id, const GValue * value,
     GParamSpec * pspec)
 {
@@ -429,6 +477,14 @@ cube_lut_set_property (GObject * object, guint prop_id, const GValue * value,
           g_assert_not_reached ();
       }
       break;
+    case PROP_PRECOMP:
+      lut->precomp = g_value_get_boolean (value);
+      if (lut->precomp) {
+        cube_lut_precompute_table (lut);
+      } else {
+        g_free (lut->precomp_table);
+      }
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -446,9 +502,12 @@ cube_lut_get_property (GObject * object, guint prop_id, GValue * value,
     case PROP_FILENAME:
       g_value_set_string (value, lut->filename);
       break;
-      /* case PROP_INTERP: */
-      /*   g_value_set_enum (value, lut->interp_type); */
-      /*   break; */
+    case PROP_INTERP:
+      g_value_set_enum (value, lut->interp_type);
+      break;
+    case PROP_PRECOMP:
+      g_value_set_boolean (value, lut->precomp);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -486,6 +545,10 @@ cube_lut_class_init (CubeLUTClass * klass)
       "3D Cube interpolation type",
       CUBE_LUT_TYPE_INTERP,
       CUBE_LUT_INTERP_TETRAHEDRAL, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS);
+  obj_properties[PROP_PRECOMP] =
+      g_param_spec_boolean ("precomp", "precompute LUT",
+      "Precompute LUT interpolating table over the whole RGB colorspace", FALSE,
+      G_PARAM_READWRITE);
 
   g_object_class_install_properties (object_class,
       N_PROPERTIES, obj_properties);
@@ -499,6 +562,8 @@ cube_lut_init (CubeLUT * lut)
   lut->length = 0;
   lut->interp_type = CUBE_LUT_INTERP_TETRAHEDRAL;
   lut->interp_func = cube_lut_interp_tetrahedral;
+  lut->precomp = FALSE;
+  lut->precomp_table = NULL;
 }
 
 CubeLUT *

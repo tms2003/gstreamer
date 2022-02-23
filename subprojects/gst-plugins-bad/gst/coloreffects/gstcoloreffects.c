@@ -50,6 +50,7 @@ enum
   PROP_0,
   PROP_CUBELUT,
   PROP_CUBEINTERP,
+  PROP_CUBEPRECOMP,
   PROP_PRESET
 };
 
@@ -597,6 +598,17 @@ gst_color_effects_set_property (GObject * object, guint prop_id,
       }
       GST_OBJECT_UNLOCK (filter);
       break;
+    case PROP_CUBEPRECOMP:
+      GST_OBJECT_LOCK (filter);
+      if (filter->lut == NULL) {
+        GST_WARNING
+            ("Ignoring LUT precompute property as no Cube LUT has been loaded");
+      } else {
+        g_object_set (filter->lut, "precomp", g_value_get_boolean (value),
+            NULL);
+      }
+      GST_OBJECT_UNLOCK (filter);
+      break;
     case PROP_PRESET:
       GST_OBJECT_LOCK (filter);
       filter->preset = g_value_get_enum (value);
@@ -654,6 +666,11 @@ gst_color_effects_get_property (GObject * object, guint prop_id, GValue * value,
       g_value_set_enum (value, filter->lut_interp_type);
       GST_OBJECT_UNLOCK (filter);
       break;
+    case PROP_CUBEPRECOMP:
+      GST_OBJECT_LOCK (filter);
+      g_value_set_boolean (value, filter->lut_precomp);
+      GST_OBJECT_UNLOCK (filter);
+      break;
     case PROP_PRESET:
       GST_OBJECT_LOCK (filter);
       g_value_set_enum (value, filter->preset);
@@ -684,9 +701,13 @@ gst_color_effects_class_init (GstColorEffectsClass * klass)
           "Load 3D Look-up Table from .cube file. If defined overrides preset property.",
           NULL, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
   g_object_class_install_property (gobject_class, PROP_CUBEINTERP,
-      g_param_spec_enum ("interpolation", "Interpolation",
+      g_param_spec_enum ("cubelut-interp", "Cube LUT Interpolation",
           "3D Cube interpolation type", GST_TYPE_COLOR_EFFECTS_INTERP,
           DEFAULT_PROP_CUBEINTERP, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+  g_object_class_install_property (gobject_class, PROP_CUBEPRECOMP,
+      g_param_spec_boolean ("cubelut-precomp", "Precompute Cube LUT",
+          "Interpolate Cube LUT over the full range of RGB pixel values. Bigger memory footprint but faster video processing.",
+          FALSE, G_PARAM_READWRITE));
   g_object_class_install_property (gobject_class, PROP_PRESET,
       g_param_spec_enum ("preset", "Preset", "Color effect preset to use",
           GST_TYPE_COLOR_EFFECTS_PRESET, DEFAULT_PROP_PRESET,
@@ -716,6 +737,7 @@ gst_color_effects_init (GstColorEffects * filter)
   filter->table = NULL;
   filter->map_luma = FALSE;
   filter->lut = NULL;
+  filter->lut_precomp = FALSE;
 }
 
 static void

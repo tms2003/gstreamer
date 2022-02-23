@@ -93,6 +93,7 @@ struct _GstColorEffects
   const gchar *lut_filename;
   CubeLUT *lut;
   GstColorEffectsInterp lut_interp_type;
+  gboolean lut_precomp;
 
   /* video format */
   GstVideoFormat format;
