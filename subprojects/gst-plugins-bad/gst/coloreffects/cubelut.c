@@ -29,7 +29,8 @@
 #include "cubelut.h"
 
 
-#define GST_CAT_DEFAULT (coloreffects_debug)
+GST_DEBUG_CATEGORY_STATIC (cubelut_debug);
+#define GST_CAT_DEFAULT (cubelut_debug)
 
 enum
 {
@@ -528,6 +529,8 @@ static void
 cube_lut_class_init (CubeLUTClass * klass)
 {
   GObjectClass *object_class = G_OBJECT_CLASS (klass);
+
+  GST_DEBUG_CATEGORY_INIT (cubelut_debug, "cubelut", 0, "cubelut");
 
   object_class->get_property = cube_lut_get_property;
   object_class->set_property = cube_lut_set_property;

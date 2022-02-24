@@ -26,7 +26,6 @@
 #include "cubelut.h"
 
 G_BEGIN_DECLS
-GST_DEBUG_CATEGORY_EXTERN(coloreffects_debug);
 
 #define GST_TYPE_COLOR_EFFECTS \
   (gst_color_effects_get_type())
