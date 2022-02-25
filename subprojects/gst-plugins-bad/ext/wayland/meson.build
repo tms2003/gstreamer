@@ -5,10 +5,12 @@ wl_sources = [
     'wldisplay.c',
     'wlwindow.c',
     'wlvideoformat.c',
-    'wllinuxdmabuf.c'
+    'wllinuxdmabuf.c',
+    'wlseat.c'
 ]
 
 libdrm_dep = dependency('libdrm', version: '>= 2.4.55', required:get_option('wayland'))
+xkbcommon_dep = dependency('xkbcommon', required:get_option('wayland'))
 
 if use_wayland
     protocols_datadir = wl_protocol_dep.get_variable('pkgdatadir')
@@ -42,7 +44,7 @@ if use_wayland
         c_args : gst_plugins_bad_args + ['-DGST_USE_UNSTABLE_API'],
         include_directories : [configinc],
         dependencies : [gst_dep, gstvideo_dep, gstwayland_dep, gstallocators_dep,
-                        wl_client_dep, wl_protocol_dep, libdrm_dep],
+                        wl_client_dep, wl_protocol_dep, libdrm_dep, xkbcommon_dep],
         install : true,
         install_dir : plugins_install_dir,
     )

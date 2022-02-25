@@ -192,7 +192,6 @@ static GstWlWindow *
 gst_wl_window_new_internal (GstWlDisplay * display, GMutex * render_lock)
 {
   GstWlWindow *window;
-  struct wl_region *region;
 
   window = g_object_new (GST_TYPE_WL_WINDOW, NULL);
   window->display = g_object_ref (display);
@@ -223,11 +222,6 @@ gst_wl_window_new_internal (GstWlDisplay * display, GMutex * render_lock)
     window->video_viewport = wp_viewporter_get_viewport (display->viewporter,
         window->video_surface);
   }
-
-  /* never accept input events on the video surface */
-  region = wl_compositor_create_region (display->compositor);
-  wl_surface_set_input_region (window->video_surface, region);
-  wl_region_destroy (region);
 
   return window;
 }
