@@ -102,10 +102,15 @@ gst_qt_get_gl_display (gboolean sink)
   if (QString::fromUtf8 ("wayland") == app->platformName()
         || QString::fromUtf8 ("wayland-egl") == app->platformName()){
     struct wl_display * wayland_display;
+#if defined(HAVE_QT_QPA_HEADER)
     QPlatformNativeInterface *native =
         QGuiApplication::platformNativeInterface();
     wayland_display = (struct wl_display *)
         native->nativeResourceForWindow("display", NULL);
+#else
+    // wayland_display = (struct wl_display *)
+    //     gst_gl_display_wayland_get_from_native(GST_GL_DISPLAY_TYPE_ANY, 0);
+#endif
     display = (GstGLDisplay *)
         gst_gl_display_wayland_new_with_display (wayland_display);
   }
