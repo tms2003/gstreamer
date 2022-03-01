@@ -548,9 +548,7 @@ gst_plugin_loader_spawn (GstPluginLoader * loader)
     return TRUE;
 
   /* Find the gst-plugin-scanner */
-  env = g_getenv ("GST_PLUGIN_SCANNER_1_0");
-  if (env == NULL)
-    env = g_getenv ("GST_PLUGIN_SCANNER");
+  env = priv_gst_get_gstenv ("GST_PLUGIN_SCANNER");
 
   if (env != NULL && *env != '\0') {
     /* use the env-var if it is set */
