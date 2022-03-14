@@ -65,6 +65,8 @@ struct _GstMultiUDPSink {
   GCancellable  *cancellable;
   gboolean       made_cancel_fd;
 
+  GstClock      *provided_clock;
+
   /* client management */
   GMutex         client_lock;
   GList         *clients;
@@ -81,6 +83,7 @@ struct _GstMultiUDPSink {
   guint             n_maps;
   GstOutputMessage *messages;
   guint             n_messages;
+  GPtrArray        *scms;
 
   /* properties */
   guint64        bytes_to_serve;
@@ -104,6 +107,7 @@ struct _GstMultiUDPSink {
   gint           bind_port;
 
   gint           so_priority;
+  gboolean       so_txtime;
 };
 
 struct _GstMultiUDPSinkClass {
