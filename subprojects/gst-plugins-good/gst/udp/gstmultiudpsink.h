@@ -102,6 +102,8 @@ struct _GstMultiUDPSink {
   gint           buffer_size;
   gchar         *bind_address;
   gint           bind_port;
+
+  gint           so_priority;
 };
 
 struct _GstMultiUDPSinkClass {
