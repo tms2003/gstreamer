@@ -92,6 +92,7 @@ enum
 #define DEFAULT_BUFFER_SIZE        0
 #define DEFAULT_BIND_ADDRESS       NULL
 #define DEFAULT_BIND_PORT          0
+#define DEFAULT_SO_PRIORITY        0
 
 enum
 {
@@ -114,7 +115,8 @@ enum
   PROP_SEND_DUPLICATES,
   PROP_BUFFER_SIZE,
   PROP_BIND_ADDRESS,
-  PROP_BIND_PORT
+  PROP_BIND_PORT,
+  PROP_SO_PRIORITY,
 };
 
 static void gst_multiudpsink_finalize (GObject * object);
@@ -351,6 +353,12 @@ gst_multiudpsink_class_init (GstMultiUDPSinkClass * klass)
           "Port to bind the socket to", 0, G_MAXUINT16,
           DEFAULT_BIND_PORT, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
+  g_object_class_install_property (gobject_class, PROP_SO_PRIORITY,
+      g_param_spec_int ("socket-priority", "Socket priority",
+          "Priority configured into socket (SO_PRIORITY)", 0, G_MAXINT,
+          DEFAULT_SO_PRIORITY, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
+          GST_PARAM_MUTABLE_READY));
+
   gst_element_class_add_static_pad_template (gstelement_class, &sink_template);
 
   gst_element_class_set_static_metadata (gstelement_class, "UDP packet sender",
@@ -419,6 +427,7 @@ gst_multiudpsink_init (GstMultiUDPSink * sink)
   sink->qos_dscp = DEFAULT_QOS_DSCP;
   sink->send_duplicates = DEFAULT_SEND_DUPLICATES;
   sink->multi_iface = g_strdup (DEFAULT_MULTICAST_IFACE);
+  sink->so_priority = DEFAULT_SO_PRIORITY;
 
   gst_multiudpsink_create_cancellable (sink);
 
@@ -1094,6 +1103,9 @@ gst_multiudpsink_set_property (GObject * object, guint prop_id,
     case PROP_BIND_PORT:
       udpsink->bind_port = g_value_get_int (value);
       break;
+    case PROP_SO_PRIORITY:
+      udpsink->so_priority = g_value_get_int (value);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -1166,6 +1178,9 @@ gst_multiudpsink_get_property (GObject * object, guint prop_id, GValue * value,
       break;
     case PROP_BIND_PORT:
       g_value_set_int (value, udpsink->bind_port);
+      break;
+    case PROP_SO_PRIORITY:
+      g_value_set_int (value, udpsink->so_priority);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -1405,6 +1420,34 @@ gst_multiudpsink_start (GstBaseSink * bsink)
         GST_DEBUG_OBJECT (sink, "have UDPv6 buffer of %d bytes", sndsize);
       } else {
         GST_DEBUG_OBJECT (sink, "could not get UDPv6 buffer size");
+      }
+    }
+  }
+#endif
+
+#ifdef SO_PRIORITY
+  {
+    GError *opt_err = NULL;
+
+    GST_DEBUG_OBJECT (sink, "setting socket priority to %d", sink->so_priority);
+
+    if (sink->used_socket) {
+      if (!g_socket_set_option (sink->used_socket, SOL_SOCKET, SO_PRIORITY,
+              sink->so_priority, &opt_err)) {
+        GST_ELEMENT_WARNING (sink, RESOURCE, SETTINGS, (NULL),
+            ("Could not set socket priority to %d (%s)", sink->so_priority,
+                opt_err->message));
+        g_clear_error (&opt_err);
+      }
+    }
+
+    if (sink->used_socket_v6) {
+      if (!g_socket_set_option (sink->used_socket_v6, SOL_SOCKET, SO_PRIORITY,
+              sink->so_priority, &opt_err)) {
+        GST_ELEMENT_WARNING (sink, RESOURCE, SETTINGS, (NULL),
+            ("Could not set socket priority to %d (%s)", sink->so_priority,
+                opt_err->message));
+        g_clear_error (&opt_err);
       }
     }
   }
