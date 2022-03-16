@@ -2111,6 +2111,7 @@ void
 gst_rtsp_media_set_enable_rtcp (GstRTSPMedia * media, gboolean enable)
 {
   GstRTSPMediaPrivate *priv;
+  guint i;
 
   g_return_if_fail (GST_IS_RTSP_MEDIA (media));
 
@@ -2118,6 +2119,10 @@ gst_rtsp_media_set_enable_rtcp (GstRTSPMedia * media, gboolean enable)
 
   g_mutex_lock (&priv->lock);
   priv->enable_rtcp = enable;
+  for (i = 0; i < priv->streams->len; i++) {
+    GstRTSPStream *stream = g_ptr_array_index (priv->streams, i);
+    gst_rtsp_stream_set_enable_rtcp (stream, enable);
+  }
   g_mutex_unlock (&priv->lock);
 }
 
