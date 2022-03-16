@@ -308,6 +308,12 @@ GST_RTSP_SERVER_API
 GstRTSPPublishClockMode gst_rtsp_stream_get_publish_clock_mode (GstRTSPStream * stream);
 
 GST_RTSP_SERVER_API
+void                    gst_rtsp_stream_set_clock (GstRTSPStream * stream, GstClock * clock);
+
+GST_RTSP_SERVER_API
+GstClock *              gst_rtsp_stream_get_clock (GstRTSPStream * stream);
+
+GST_RTSP_SERVER_API
 gboolean                gst_rtsp_stream_set_max_mcast_ttl  (GstRTSPStream *stream, guint ttl);
 
 GST_RTSP_SERVER_API

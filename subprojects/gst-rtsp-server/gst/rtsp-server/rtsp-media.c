@@ -1804,6 +1804,7 @@ gst_rtsp_media_set_clock (GstRTSPMedia * media, GstClock * clock)
     else
       gst_pipeline_auto_clock (GST_PIPELINE_CAST (priv->pipeline));
   }
+  g_ptr_array_foreach (priv->streams, (GFunc) gst_rtsp_stream_set_clock, clock);
 
   g_mutex_unlock (&priv->lock);
 }
@@ -2446,6 +2447,7 @@ gst_rtsp_media_create_stream (GstRTSPMedia * media, GstElement * payloader,
   gst_rtsp_stream_set_protocols (stream, priv->protocols);
   gst_rtsp_stream_set_retransmission_time (stream, priv->rtx_time);
   gst_rtsp_stream_set_buffer_size (stream, priv->buffer_size);
+  gst_rtsp_stream_set_clock (stream, priv->clock);
   gst_rtsp_stream_set_publish_clock_mode (stream, priv->publish_clock_mode);
   gst_rtsp_stream_set_rate_control (stream, priv->do_rate_control);
 
