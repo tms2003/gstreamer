@@ -43,6 +43,7 @@ G_GNUC_INTERNAL GType gst_gl_window_x11_get_type (void);
 typedef struct _GstGLWindowX11        GstGLWindowX11;
 typedef struct _GstGLWindowX11Private GstGLWindowX11Private;
 typedef struct _GstGLWindowX11Class   GstGLWindowX11Class;
+typedef struct _GstGLTouchDeviceX11   GstGLTouchDeviceX11;
 
 /**
  * GstGLWindowX11:
