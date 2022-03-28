@@ -33,6 +33,9 @@ option('gst-full-device-providers', type : 'string', value : '',
   description : '''List of device providers to expose in gstreamer-full's ABI with the syntax plugin1:dp1;plugin2:dp1:dp2. By default '' will export all device provider of the enabled plugin.''')
 option('gst-full-dynamic-types', type : 'string', value : '',
   description : '''List of dynamic types to expose in gstreamer-full's ABI with the syntax plugin:dt1,dt2. By default '' will export all device provider of the enabled plugin.''')
+option('log-level-max', type : 'combo',
+       choices : ['default', 'none', 'error', 'warning', 'fixme', 'info', 'debug', 'log', 'trace', 'memdump'],
+       value : 'default', description : 'Defines the maximum debugging level to be enabled at compilation time.')
 
 # License-related feature options
 option('gpl', type: 'feature', value: 'disabled',

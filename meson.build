@@ -76,6 +76,16 @@ if not meson.is_subproject() and cc.get_id() == 'msvc'
       language: ['c', 'cpp'])
 endif
 
+log_level_max = get_option('log-level-max')
+if log_level_max != 'default'
+  if meson.is_subproject()
+    warning('log-level-max is not supported when gst-build is used as a subproject')
+  else
+    gst_level_max = '-DGST_LEVEL_MAX=GST_LEVEL_'+ log_level_max.to_upper()
+    add_global_arguments(gst_level_max, language: 'c')
+  endif
+endif
+
 # Ordered list of subprojects (dict has no ordering guarantees)
 subprojects = [
   ['gstreamer', {'build-hotdoc': true}],
