@@ -182,7 +182,7 @@ typedef gboolean (*GstMpegtsPacketizeFunc) (GstMpegtsSection *section);
  * @section_type: The type of section.
  * @pid: The PID on which this section was found or belongs to.
  * @table_id: The table id of this section. See %GstMpegtsSectionTableID and
- *      derivates for more information.
+ *      derivatives for more information.
  * @subtable_extension: This meaning differs per section. See the documentation
  *      of the parsed section type for the meaning of this field
  * @version_number: Version of the section.
@@ -358,8 +358,96 @@ typedef struct _GstMpegtsPMT GstMpegtsPMT;
  * on the variant of mpeg-ts being used (Bluray, ATSC, DVB, ...), other
  * types might also be used, but will not conflict with these.
  *
- * Corresponds to table 2-34 of ITU H.222.0 | ISO/IEC 13818-1
+ * Corresponds to table 2-34 of ITU H.222.0 | ISO/IEC 13818-1:2018
  */
+/**
+ * GST_MPEGTS_STREAM_TYPE_VIDEO_HEVC_TEMPORAL_SUBSET:
+ *
+ * HEVC temporal video subset of an HEVC video stream conforming to one or more
+ * profiles defined in Annex A of Rec. ITU-T H.265 | ISO/IEC 23008-2
+ *
+ * Since: 1.22
+ */
+ /**
+  * GST_MPEGTS_STREAM_TYPE_VIDEO_MVCD:
+  *
+  * MVCD video sub-bitstream of an AVC video stream conforming to one or more profiles
+  * defined in Annex I of Rec. ITU-T H.264 | ISO/IEC 14496-10
+  *
+  * Since: 1.22
+  */
+ /**
+  * GST_MPEGTS_STREAM_TYPE_TIMELINE:
+  *
+  * Timeline and External Media Information Stream (see ITU H.222.0 | ISO/IEC
+  * 13818-1:2018 Annex T)
+  *
+  * Since: 1.22
+  */
+ /**
+  * GST_MPEGTS_STREAM_TYPE_VIDEO_HEVC_ENHANCEMENT:
+  *
+  * HEVC enhancement sub-partition which includes TemporalId 0 of an HEVC video
+  * stream where all NALs units contained in the stream conform to one or more
+  * profiles defined in Annex G of Rec. ITU-T H.265 | ISO/IEC 23008-2.
+  *
+  * Since: 1.22
+  */
+ /**
+  * GST_MPEGTS_STREAM_TYPE_VIDEO_HEVC_TEMPORAL_ENHANCEMENT:
+  *
+  * HEVC temporal enhancement sub-partition of an HEVC video stream where all
+  * NAL units contained in the stream conform to one or more profiles defined in
+  * Annex G of Rec. ITU-T H.265 | ISO/IEC 23008-2.
+  *
+  * Since: 1.22
+  */
+ /**
+  * GST_MPEGTS_STREAM_TYPE_VIDEO_HEVC_ENHANCEMENT_ANN_H:
+  *
+  * HEVC enhancement sub-partition which includes TemporalId 0 of an HEVC video
+  * stream where all NAL units contained in the stream conform to one or more
+  * profiles defined in Annex H of Rec. ITU-T H.265 | ISO/IEC 23008-2.
+  *
+  * Since: 1.22
+  */
+ /**
+  * GST_MPEGTS_STREAM_TYPE_VIDEO_HEVC_TEMPORAL_ENHANCEMENT_ANN_H:
+  *
+  * HEVC temporal enhancement sub-partition of an HEVC video stream where all
+  * NAL units contained in the stream conform to one or more profiles defined
+  * in Annex H of Rec. ITU-T H.265 | ISO/IEC 23008-2.
+  *
+  * Since: 1.22
+  */
+ /**
+  * GST_MPEGTS_STREAM_TYPE_GREEN_ACCESS_UNITS:
+  *
+  * Green access units carried in MPEG-2 sections.
+  *
+  * Since: 1.22
+  */
+ /**
+  * GST_MPEGTS_STREAM_TYPE_AUDIO_MHAS_MAIN:
+  *
+  * ISO/IEC 23008-3 Audio with MHAS transport syntax – main stream.
+  *
+  * Since: 1.22
+  */
+ /**
+  * GST_MPEGTS_STREAM_TYPE_AUDIO_MHAS_AUXILIARY:
+  *
+  * ISO/IEC 23008-3 Audio with MHAS transport syntax – auxiliary stream.
+  *
+  * Since: 1.22
+  */
+ /**
+  * GST_MPEGTS_STREAM_TYPE_QUALITY_ACCESS_UNITS:
+  *
+  * Quality access units carried in sections.
+  *
+  * Since: 1.22
+  */
 typedef enum {
   GST_MPEGTS_STREAM_TYPE_RESERVED_00                  = 0x00,
   GST_MPEGTS_STREAM_TYPE_VIDEO_MPEG1                  = 0x01,
@@ -398,7 +486,18 @@ typedef enum {
   GST_MPEGTS_STREAM_TYPE_VIDEO_MPEG2_STEREO_ADDITIONAL_VIEW = 0x22,
   GST_MPEGTS_STREAM_TYPE_VIDEO_H264_STEREO_ADDITIONAL_VIEW  = 0x23,
   GST_MPEGTS_STREAM_TYPE_VIDEO_HEVC                   = 0x24,
-  /* 0x24 - 0x7e : Rec. ITU-T H.222.0 | ISO/IEC 13818-1 Reserved */
+  GST_MPEGTS_STREAM_TYPE_VIDEO_HEVC_TEMPORAL_SUBSET   = 0x25,
+  GST_MPEGTS_STREAM_TYPE_VIDEO_MVCD                   = 0x26,
+  GST_MPEGTS_STREAM_TYPE_TIMELINE                     = 0x27,
+  GST_MPEGTS_STREAM_TYPE_VIDEO_HEVC_ENHANCEMENT       = 0x28,
+  GST_MPEGTS_STREAM_TYPE_VIDEO_HEVC_TEMPORAL_ENHANCEMENT = 0x29,
+  GST_MPEGTS_STREAM_TYPE_VIDEO_HEVC_ENHANCEMENT_ANN_H = 0x2A,
+  GST_MPEGTS_STREAM_TYPE_VIDEO_HEVC_TEMPORAL_ENHANCEMENT_ANN_H = 0x2B,
+  GST_MPEGTS_STREAM_TYPE_GREEN_ACCESS_UNITS           = 0x2C,
+  GST_MPEGTS_STREAM_TYPE_AUDIO_MHAS_MAIN              = 0x2D,
+  GST_MPEGTS_STREAM_TYPE_AUDIO_MHAS_AUXILIARY         = 0x2E,
+  GST_MPEGTS_STREAM_TYPE_QUALITY_ACCESS_UNITS         = 0x2F,
+  /* 0x30 - 0x7e : Rec. ITU-T H.222.0 | ISO/IEC 13818-1 Reserved */
   GST_MPEGTS_STREAM_TYPE_IPMP_STREAM                  = 0x7f,
   /* 0x80 - 0xff : User Private (or defined in other specs) */
 
