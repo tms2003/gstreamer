@@ -354,25 +354,43 @@ if building_full
     endif
   endif
 
-  # Build both shared and static library
-  gstfull = both_libraries('gstreamer-full-1.0',
-    init_static_plugins_c,
-    link_with : all_plugins,
-    link_args: gstfull_link_args,
-    link_whole : exposed_libs,
-    dependencies : incdir_deps + glib_deps,
-    link_depends : link_deps,
-    install : true,
-  )
-
-  gst_full_dep = declare_dependency(link_with: gstfull.get_shared_lib(),
-    dependencies : incdir_deps + glib_deps,
-    include_directories: include_directories('.')
-  )
-
   gst_full_libs_private = cc.get_supported_link_arguments(['-Wl,--undefined=gst_init_static_plugins'])
   if gst_full_libs_private == []
     warning('The compiler does not support `-Wl,--undefined` linker flag. The method `gst_init_static_plugins` might be dropped during the link stage of an application using libgstreamer-full-1.0.a, preventing plugins registration.')
+  endif
+
+  # Build both shared and static library
+  # On Windows only the static library works because we built everything
+  # without dllexport.
+  if host_machine.system() != 'windows'
+    gstfull = both_libraries('gstreamer-full-1.0',
+      init_static_plugins_c,
+      link_with : all_plugins,
+      link_args: gstfull_link_args,
+      link_whole : exposed_libs,
+      dependencies : incdir_deps + glib_deps,
+      link_depends : link_deps,
+      install : true,
+    )
+    gst_full_dep = declare_dependency(link_with: gstfull.get_shared_lib(),
+      dependencies : incdir_deps + glib_deps,
+      include_directories: include_directories('.')
+    )
+  else
+    gstfull = static_library('gstreamer-full-1.0',
+      init_static_plugins_c,
+      link_with : all_plugins,
+      link_args: gstfull_link_args,
+      link_whole : exposed_libs,
+      dependencies : incdir_deps + glib_deps,
+      link_depends : link_deps,
+      install : true,
+    )
+    gst_full_dep = declare_dependency(link_with: gstfull,
+      dependencies : incdir_deps + glib_deps,
+      include_directories: include_directories('.')
+    )
+    gst_full_libs_private += '-Wl,--export-all-symbols'
   endif
 
   if not get_option('introspection').disabled()
@@ -416,6 +434,7 @@ if building_full
         include_directories : [configinc],
         dependencies : [gst_full_dep] + deps,
         c_args: extra_args + gst_c_args + ['-DG_LOG_DOMAIN="@0@"'.format(exe_name)],
+        link_args: gst_full_libs_private,
       )
 
       if data.has_key('man_page')
