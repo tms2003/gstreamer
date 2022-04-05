@@ -731,6 +731,7 @@ rtp_session_init (RTPSession * sess)
 
   sess->twcc = rtp_twcc_manager_new (sess->mtu);
   sess->twcc_stats = rtp_twcc_stats_new ();
+  sess->media_ssrc_to_sender_ssrc = g_hash_table_new (NULL, NULL);
 }
 
 static void
@@ -754,6 +755,8 @@ rtp_session_finalize (GObject * object)
 
   g_object_unref (sess->twcc);
   rtp_twcc_stats_free (sess->twcc_stats);
+
+  g_hash_table_destroy (sess->media_ssrc_to_sender_ssrc);
 
   g_mutex_clear (&sess->lock);
 
@@ -2919,6 +2922,12 @@ rtp_session_process_feedback (RTPSession * sess, GstRTCPPacket * packet,
   sender_ssrc = gst_rtcp_packet_fb_get_sender_ssrc (packet);
   media_ssrc = gst_rtcp_packet_fb_get_media_ssrc (packet);
 
+  /* Update MAP of our sender SSRC and media SSRC for when we have multiple internal sender RTPSources
+     Limitation: ** Relies on data off wire ** - invert sender & media ssrc
+     1st pass - better to go up stack to get our internal relation */
+  g_hash_table_insert (sess->media_ssrc_to_sender_ssrc,
+      GUINT_TO_POINTER (sender_ssrc), GUINT_TO_POINTER (media_ssrc));
+
   src = find_source (sess, media_ssrc);
 
   /* skip non-bye packets for sources that are marked BYE */
@@ -3672,6 +3681,23 @@ reported:
       GUINT_TO_POINTER (data->source->ssrc));
 }
 
+static gboolean
+is_correct_sender_ssrc_for_bundle_media (RTPSession * sess, guint32 media_ssrc,
+    guint32 proposed_sender_ssrc)
+{
+  gpointer value;
+
+  if (sess->stats.internal_sources > 1
+      && g_hash_table_lookup_extended (sess->media_ssrc_to_sender_ssrc,
+          media_ssrc, NULL, &value)) {
+    if (GPOINTER_TO_UINT (value) != proposed_sender_ssrc
+        && find_source (sess, GPOINTER_TO_UINT (value)) != NULL) {
+      return FALSE;
+    }
+  }
+  return TRUE;
+}
+
 /* construct FIR */
 static void
 session_add_fir (const gchar * key, RTPSource * source, ReportData * data)
@@ -3681,6 +3707,10 @@ session_add_fir (const gchar * key, RTPSource * source, ReportData * data)
   guint8 *fci_data;
 
   if (!source->send_fir)
+    return;
+
+  if (!is_correct_sender_ssrc_for_bundle_media (data->sess, source->ssrc,
+          data->source->ssrc))
     return;
 
   len = gst_rtcp_packet_fb_get_fci_length (packet);
@@ -3752,6 +3782,10 @@ session_pli (const gchar * key, RTPSource * source, ReportData * data)
   if (!source->send_pli)
     return;
 
+  if (!is_correct_sender_ssrc_for_bundle_media (data->sess, source->ssrc,
+          data->source->ssrc))
+    return;
+
   if (rtp_source_has_retained (source, has_pli_compare_func, NULL))
     return;
 
@@ -3785,6 +3819,10 @@ session_nack (const gchar * key, RTPSource * source, ReportData * data)
   guint8 *fci_data;
 
   if (!source->send_nack)
+    return;
+
+  if (!is_correct_sender_ssrc_for_bundle_media (sess, source->ssrc,
+          data->source->ssrc))
     return;
 
   nacks = rtp_source_get_nacks (source, &n_nacks);
