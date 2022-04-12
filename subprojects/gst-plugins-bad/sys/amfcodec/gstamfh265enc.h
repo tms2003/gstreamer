@@ -21,12 +21,15 @@
 
 #include "gstamfencoder.h"
 #include <gst/d3d11/gstd3d11.h>
+#include <components/Component.h>
 
 G_BEGIN_DECLS
 
 void gst_amf_h265_enc_register_d3d11 (GstPlugin * plugin,
                                       GstD3D11Device * device,
                                       gpointer context,
+                                      amf::AMFComponent *comp,
+                                      guint instance_idx,
                                       guint rank);
 
 G_END_DECLS

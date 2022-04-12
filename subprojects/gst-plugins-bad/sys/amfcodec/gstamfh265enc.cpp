@@ -1,5 +1,7 @@
 /* GStreamer
  * Copyright (C) 2022 Seungha Yang <seungha@centricular.com>
+ * Copyright (C) 2022 Fluendo S.A. <contact@fluendo.com>
+ *   Authors: Andoni Morales Alastruey <amorales@fluendo.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -250,6 +252,7 @@ typedef struct
   GstCaps *src_caps;
 
   gint64 adapter_luid;
+  guint instance_idx;
 
   GstAmfH265EncDeviceCaps dev_caps;
 } GstAmfH265EncClassData;
@@ -272,6 +275,7 @@ enum
   PROP_QP_P,
   PROP_REF_FRAMES,
   PROP_AUD,
+  PROP_INSTANCE_IDX
 };
 
 #define DEFAULT_USAGE AMF_VIDEO_ENCODER_HEVC_USAGE_TRANSCODING
@@ -312,6 +316,7 @@ typedef struct _GstAmfH265EncClass
   GstAmfH265EncDeviceCaps dev_caps;
 
   gint64 adapter_luid;
+  guint instance_idx;
 } GstAmfH265EncClass;
 
 #define GST_AMF_H265_ENC(object) ((GstAmfH265Enc *) (object))
@@ -354,6 +359,11 @@ gst_amf_h265_enc_class_init (GstAmfH265EncClass * klass, gpointer data)
       g_param_spec_int64 ("adapter-luid", "Adapter LUID",
           "DXGI Adapter LUID (Locally Unique Identifier) of associated GPU",
           G_MININT64, G_MAXINT64, cdata->adapter_luid, param_flags));
+  g_object_class_install_property (object_class, PROP_INSTANCE_IDX,
+      g_param_spec_uint ("instance-index", "Instance Index",
+          "Set the instance index", 0,
+          (guint) dev_caps->num_of_hw_instances, cdata->instance_idx,
+          (GParamFlags) (G_PARAM_READABLE | G_PARAM_STATIC_STRINGS)));
   g_object_class_install_property (object_class, PROP_USAGE,
       g_param_spec_enum ("usage", "Usage",
           "Target usage", GST_TYPE_AMF_H265_ENC_USAGE,
@@ -436,6 +446,7 @@ gst_amf_h265_enc_class_init (GstAmfH265EncClass * klass, gpointer data)
 
   klass->dev_caps = cdata->dev_caps;
   klass->adapter_luid = cdata->adapter_luid;
+  klass->instance_idx = cdata->instance_idx;
 
   gst_caps_unref (cdata->sink_caps);
   gst_caps_unref (cdata->src_caps);
@@ -633,6 +644,9 @@ gst_amf_h265_enc_get_property (GObject * object, guint prop_id,
     case PROP_AUD:
       g_value_set_boolean (value, self->aud);
       break;
+    case PROP_INSTANCE_IDX:
+      g_value_set_int64 (value, klass->instance_idx);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -644,6 +658,7 @@ gst_amf_h265_enc_set_format (GstAmfEncoder * encoder,
     GstVideoCodecState * state, gpointer component)
 {
   GstAmfH265Enc *self = GST_AMF_H265_ENC (encoder);
+  GstAmfH265EncClass *klass = GST_AMF_H265_ENC_GET_CLASS (encoder);
   AMFComponent *comp = (AMFComponent *) component;
   GstVideoInfo *info = &state->info;
   AMF_RESULT result;
@@ -703,6 +718,14 @@ gst_amf_h265_enc_set_format (GstAmfEncoder * encoder,
   result = comp->SetProperty (AMF_VIDEO_ENCODER_HEVC_NOMINAL_RANGE, int64_val);
   if (result != AMF_OK) {
     GST_ERROR_OBJECT (self, "Failed to set full-range-color, result %"
+        GST_AMF_RESULT_FORMAT, GST_AMF_RESULT_ARGS (result));
+    goto error;
+  }
+
+  result = comp->SetProperty (AMF_VIDEO_ENCODER_HEVC_INSTANCE_INDEX,
+      (amf_int64) klass->instance_idx);
+  if (result != AMF_OK) {
+    GST_ERROR_OBJECT (self, "Failed to set instance index, result %"
         GST_AMF_RESULT_FORMAT, GST_AMF_RESULT_ARGS (result));
     goto error;
   }
@@ -922,7 +945,7 @@ gst_amf_h265_enc_check_reconfigure (GstAmfEncoder * encoder)
 
 static GstAmfH265EncClassData *
 gst_amf_h265_enc_create_class_data (GstD3D11Device * device,
-    AMFComponent * comp)
+    guint instance_idx, AMFComponent * comp)
 {
   AMF_RESULT result;
   GstAmfH265EncDeviceCaps dev_caps = { 0, };
@@ -1114,6 +1137,7 @@ gst_amf_h265_enc_create_class_data (GstD3D11Device * device,
   cdata->sink_caps = sink_caps;
   cdata->src_caps = gst_caps_from_string (src_caps_str.c_str ());
   cdata->dev_caps = dev_caps;
+  cdata->instance_idx = instance_idx;
   g_object_get (device, "adapter-luid", &cdata->adapter_luid, nullptr);
 
   GST_MINI_OBJECT_FLAG_SET (cdata->sink_caps,
@@ -1129,25 +1153,14 @@ gst_amf_h265_enc_create_class_data (GstD3D11Device * device,
 
 void
 gst_amf_h265_enc_register_d3d11 (GstPlugin * plugin, GstD3D11Device * device,
-    gpointer context, guint rank)
+    gpointer context, AMFComponent *comp, guint instance_idx, guint rank)
 {
   GstAmfH265EncClassData *cdata;
-  AMFContext *amf_context = (AMFContext *) context;
-  AMFFactory *factory = (AMFFactory *) gst_amf_get_factory ();
-  AMFComponentPtr comp;
-  AMF_RESULT result;
 
   GST_DEBUG_CATEGORY_INIT (gst_amf_h265_enc_debug, "amfh265enc", 0,
       "amfh265enc");
 
-  result = factory->CreateComponent (amf_context, AMFVideoEncoder_HEVC, &comp);
-  if (result != AMF_OK) {
-    GST_WARNING_OBJECT (device, "Failed to create component, result %"
-        GST_AMF_RESULT_FORMAT, GST_AMF_RESULT_ARGS (result));
-    return;
-  }
-
-  cdata = gst_amf_h265_enc_create_class_data (device, comp.GetPtr ());
+  cdata = gst_amf_h265_enc_create_class_data (device, instance_idx, comp);
   if (!cdata)
     return;
 
