@@ -7,4 +7,4 @@ flxdec = library('gstflxdec',
   install_dir : plugins_install_dir,
 )
 pkgconfig.generate(flxdec, install_dir : plugins_pkgconfig_install_dir)
-plugins += [flxdec]
+plugins += {'flxdec': flxdec}

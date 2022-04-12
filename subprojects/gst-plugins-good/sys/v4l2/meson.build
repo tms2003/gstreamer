@@ -69,5 +69,5 @@ if have_v4l2
     install_dir : plugins_install_dir,
   )
   pkgconfig.generate(gstv4l2, install_dir : plugins_pkgconfig_install_dir)
-  plugins += [gstv4l2]
+  plugins += {'video4linux2': gstv4l2}
 endif

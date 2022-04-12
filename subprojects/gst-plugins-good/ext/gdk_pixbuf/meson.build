@@ -19,5 +19,5 @@ if gdkpixbuf_dep.found()
     install_dir : plugins_install_dir,
   )
   pkgconfig.generate(gstgdkpixbuf, install_dir : plugins_pkgconfig_install_dir)
-  plugins += [gstgdkpixbuf]
+  plugins += {'gdkpixbuf': gstgdkpixbuf}
 endif

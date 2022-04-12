@@ -13,5 +13,5 @@ if microdns_dep.found()
     install_dir : plugins_install_dir,
   )
   pkgconfig.generate(gstmicrodns, install_dir : plugins_pkgconfig_install_dir)
-  plugins += [gstmicrodns]
+  plugins += {'microdns': gstmicrodns}
 endif

@@ -52,5 +52,5 @@ if xml2_dep.found()
     install_dir : plugins_install_dir,
   )
   pkgconfig.generate(gstdashdemux, install_dir : plugins_pkgconfig_install_dir)
-  plugins += [gstdashdemux]
+  plugins += {'dash': gstdashdemux}
 endif

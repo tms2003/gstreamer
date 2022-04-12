@@ -40,5 +40,5 @@ if soundtouch_dep.found()
     install : true,
     install_dir : plugins_install_dir)
   pkgconfig.generate(gstsoundtouch, install_dir : plugins_pkgconfig_install_dir)
-  plugins += [gstsoundtouch]
+  plugins += {'soundtouch': gstsoundtouch}
 endif

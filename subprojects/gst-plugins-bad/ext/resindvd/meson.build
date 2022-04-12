@@ -30,5 +30,5 @@ if dvdnav_dep.found() and dvdread_dep.found()
     install_dir : plugins_install_dir,
   )
   pkgconfig.generate(gstresindvd, install_dir : plugins_pkgconfig_install_dir)
-  plugins += [gstresindvd]
+  plugins += {'resindvd': gstresindvd}
 endif

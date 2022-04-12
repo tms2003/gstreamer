@@ -21,4 +21,4 @@ gstmpegtsmux = library('gstmpegtsmux',
   install_dir : plugins_install_dir,
 )
 pkgconfig.generate(gstmpegtsmux, install_dir : plugins_pkgconfig_install_dir)
-plugins += [gstmpegtsmux]
+plugins += {'mpegtsmux': gstmpegtsmux}

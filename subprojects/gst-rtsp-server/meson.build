@@ -189,18 +189,32 @@ if get_option('default_library') == 'shared'
   plugins_pkgconfig_install_dir = disabler()
 endif
 
-plugins = []
+plugins = {}
 pkgconfig_subdirs = ['gstreamer-1.0']
 static_build = get_option('default_library') == 'static'
 libraries = []
 
 subdir('gst')
+
+# Sorted list of plugin names
+plugin_names = plugins.keys()
+
+# Turn plugin dict into a list for backwards compat (and docs)
+plugins_list = []
+foreach plugin_name, plugin: plugins
+  plugins_list += [plugin]
+  assert(plugin.name() == plugin_name or plugin.name() == f'gst@plugin_name@', 'plugin name {} != {}'.format(plugin_name, plugin.name()))
+endforeach
+plugins = plugins_list
+
 if not get_option('tests').disabled()
   subdir('tests')
 endif
+
 if not get_option('examples').disabled()
   subdir('examples')
 endif
+
 subdir('docs')
 
 # Set release date
@@ -213,3 +227,7 @@ if gst_version_nano == 0
 endif
 
 configure_file(output: 'config.h', configuration: cdata)
+
+summary({
+    'Plugins': plugin_names,
+}, list_sep: ', ')

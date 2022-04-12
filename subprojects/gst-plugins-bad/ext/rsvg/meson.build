@@ -16,5 +16,5 @@ if rsvg_dep.found()
     install_dir : plugins_install_dir,
   )
   pkgconfig.generate(gstrsvg, install_dir : plugins_pkgconfig_install_dir)
-  plugins += [gstrsvg]
+  plugins += {'rsvg': gstrsvg}
 endif

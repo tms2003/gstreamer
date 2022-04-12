@@ -32,4 +32,4 @@ gstvideomixer = library('gstvideomixer',
   install_dir : plugins_install_dir,
 )
 pkgconfig.generate(gstvideomixer, install_dir : plugins_pkgconfig_install_dir)
-plugins += [gstvideomixer]
+plugins += {'videomixer': gstvideomixer}

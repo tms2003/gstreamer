@@ -31,7 +31,7 @@ endif
 api_version = '1.0'
 
 plugins_install_dir = join_paths(get_option('libdir'), 'gstreamer-1.0')
-plugins = []
+plugins = {}
 
 cc = meson.get_compiler('c')
 host_system = host_machine.system()
@@ -466,6 +466,18 @@ endif
 subdir('gst')
 subdir('sys')
 subdir('ext')
+
+# Sorted list of plugin names
+plugin_names = plugins.keys()
+
+# Turn plugin dict into a list for backwards compat (and docs)
+plugins_list = []
+foreach plugin_name, plugin: plugins
+  plugins_list += [plugin]
+  assert(plugin.name() == plugin_name or plugin.name() == f'gst@plugin_name@', 'plugin name {} != {}'.format(plugin_name, plugin.name()))
+endforeach
+plugins = plugins_list
+
 subdir('tests')
 subdir('docs')
 
@@ -514,15 +526,6 @@ if gio_dep.version().version_compare('< 2.67.4')
 endif
 
 configure_file(output : 'config.h', configuration : cdata)
-
-plugin_names = []
-foreach plugin: plugins
-  if plugin.name().startswith('gst')
-    plugin_names += [plugin.name().substring(3)]
-  else
-    plugin_names += [plugin.name()]
-  endif
-endforeach
 
 summary({
     'Plugins': plugin_names,

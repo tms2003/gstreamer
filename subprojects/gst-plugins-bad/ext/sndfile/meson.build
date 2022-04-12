@@ -10,5 +10,5 @@ if sndfile_dep.found()
     install_dir: plugins_install_dir,
   )
   pkgconfig.generate(gstsndfile, install_dir: plugins_pkgconfig_install_dir)
-  plugins += [gstsndfile]
+  plugins += {'sndfile': gstsndfile}
 endif

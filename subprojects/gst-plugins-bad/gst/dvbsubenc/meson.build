@@ -27,4 +27,4 @@ gstdvbsubenc = library('gstdvbsubenc',
   install_dir : plugins_install_dir,
 )
 pkgconfig.generate(gstdvbsubenc, install_dir : plugins_pkgconfig_install_dir)
-plugins += [gstdvbsubenc]
+plugins += {'dvbsubenc': gstdvbsubenc}

@@ -28,5 +28,5 @@ if curl_dep.found()
     install_dir : plugins_install_dir,
   )
   pkgconfig.generate(gstcurl, install_dir : plugins_pkgconfig_install_dir)
-  plugins += [gstcurl]
+  plugins += {'curl': gstcurl}
 endif

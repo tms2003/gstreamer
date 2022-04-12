@@ -21,7 +21,7 @@ gstmultifile = library('gstmultifile',
   install_dir : plugins_install_dir,
 )
 pkgconfig.generate(gstmultifile, install_dir : plugins_pkgconfig_install_dir)
-plugins += [gstmultifile]
+plugins += {'multifile': gstmultifile}
 
 test_splitmuxpartreader_sources = [
   'test-splitmuxpartreader.c',

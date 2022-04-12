@@ -20,5 +20,5 @@ if openh264_dep.found()
     install_dir : plugins_install_dir,
   )
   pkgconfig.generate(gstopenh264, install_dir : plugins_pkgconfig_install_dir)
-  plugins += [gstopenh264]
+  plugins += {'openh264': gstopenh264}
 endif

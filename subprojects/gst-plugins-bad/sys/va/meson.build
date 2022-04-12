@@ -55,4 +55,4 @@ gstva = library('gstva',
   install_dir : plugins_install_dir,
 )
 pkgconfig.generate(gstva, install_dir : plugins_pkgconfig_install_dir)
-plugins += [gstva]
+plugins += {'va': gstva}

@@ -9,5 +9,5 @@ if libcaca_dep.found()
     install : true,
     install_dir : plugins_install_dir
   )
-  plugins += [caca]
+  plugins += {'cacasink': caca}
 endif

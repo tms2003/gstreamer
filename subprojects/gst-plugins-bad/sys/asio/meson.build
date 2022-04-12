@@ -81,4 +81,4 @@ gstasio = library('gstasio',
     install : true,
     install_dir : plugins_install_dir)
 pkgconfig.generate(gstasio, install_dir : plugins_pkgconfig_install_dir)
-plugins += [gstasio]
+plugins += {'asio': gstasio}

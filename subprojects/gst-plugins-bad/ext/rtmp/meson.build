@@ -17,5 +17,5 @@ if rtmp_dep.found()
     install_dir : plugins_install_dir,
   )
   pkgconfig.generate(gstrtmp, install_dir : plugins_pkgconfig_install_dir)
-  plugins += [gstrtmp]
+  plugins += {'rtmp': gstrtmp}
 endif

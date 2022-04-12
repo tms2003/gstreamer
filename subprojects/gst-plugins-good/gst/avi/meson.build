@@ -15,4 +15,4 @@ gstavi = library('gstavi',
   install_dir : plugins_install_dir,
 )
 pkgconfig.generate(gstavi, install_dir : plugins_pkgconfig_install_dir)
-plugins += [gstavi]
+plugins += {'avi': gstavi}

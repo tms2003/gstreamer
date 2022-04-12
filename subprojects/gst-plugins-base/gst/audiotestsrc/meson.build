@@ -7,4 +7,4 @@ audiotest = library('gstaudiotestsrc',
   install_dir : plugins_install_dir,
 )
 pkgconfig.generate(audiotest, install_dir : plugins_pkgconfig_install_dir)
-plugins += [audiotest]
+plugins += {'audiotestsrc': audiotest}

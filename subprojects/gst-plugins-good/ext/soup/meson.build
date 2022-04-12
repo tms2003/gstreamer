@@ -79,7 +79,7 @@ endif
 # plugins to hotdoc to generate the plugins cache, which introspects the plugin
 # by loading it. We need the shared plugin for that.
 if default_library == 'static'
-  plugins += [gstsouphttpsrc_static]
+  plugins += {'soup': gstsouphttpsrc_static}
 else
-  plugins += [gstsouphttpsrc_shared]
+  plugins += {'soup': gstsouphttpsrc_shared}
 endif

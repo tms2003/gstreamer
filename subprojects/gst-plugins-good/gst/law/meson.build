@@ -7,7 +7,7 @@ gstalaw = library('gstalaw',
   install_dir : plugins_install_dir,
 )
 pkgconfig.generate(gstalaw, install_dir : plugins_pkgconfig_install_dir)
-plugins += [gstalaw]
+plugins += {'alaw': gstalaw}
 
 gstmulaw = library('gstmulaw',
   'mulaw-encode.c', 'mulaw-conversion.c', 'mulaw-decode.c', 'mulaw.c',
@@ -18,4 +18,4 @@ gstmulaw = library('gstmulaw',
   install_dir : plugins_install_dir,
 )
 pkgconfig.generate(gstmulaw, install_dir : plugins_pkgconfig_install_dir)
-plugins += [gstmulaw]
+plugins += {'mulaw': gstmulaw}

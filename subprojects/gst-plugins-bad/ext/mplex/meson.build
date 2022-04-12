@@ -21,5 +21,5 @@ if mjpegtools_dep.found() and mplex2_dep.found()
     install_dir : plugins_install_dir,
   )
   pkgconfig.generate(gstmplex2, install_dir : plugins_pkgconfig_install_dir)
-  plugins += [gstmplex2]
+  plugins += {'mplex': gstmplex2}
 endif

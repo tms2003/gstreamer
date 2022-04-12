@@ -36,4 +36,4 @@ gst_elements = library('gstcoreelements',
 )
 pkgconfig.generate(gst_elements, install_dir : plugins_pkgconfig_install_dir)
 
-plugins += [gst_elements]
+plugins += {'coreelements': gst_elements}

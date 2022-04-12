@@ -15,4 +15,4 @@ gstdgp = library('gstgdp',
   install_dir : plugins_install_dir,
 )
 pkgconfig.generate(gstdgp, install_dir : plugins_pkgconfig_install_dir)
-plugins += [gstdgp]
+plugins += {'gdp': gstdgp}

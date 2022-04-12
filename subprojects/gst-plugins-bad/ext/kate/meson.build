@@ -23,5 +23,5 @@ if kate_dep.found()
     install : true,
     install_dir : plugins_install_dir)
   pkgconfig.generate(gstkate, install_dir : plugins_pkgconfig_install_dir)
-  plugins += [gstkate]
+  plugins += {'kate': gstkate}
 endif

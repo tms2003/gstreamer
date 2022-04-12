@@ -10,7 +10,7 @@ if amrnb_dep.found()
     install_dir : plugins_install_dir,
   )
   pkgconfig.generate(amrnb, install_dir : plugins_pkgconfig_install_dir)
-  plugins += [amrnb]
+  plugins += {'amrnb': amrnb}
   install_data(sources: 'GstAmrnbEnc.prs', install_dir: presetdir)
 
   env = environment()

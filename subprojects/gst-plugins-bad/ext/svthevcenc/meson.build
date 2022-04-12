@@ -14,5 +14,5 @@ if svthevcenc_dep.found()
     install_dir : plugins_install_dir,
   )
   pkgconfig.generate(gstsvthevcenc, install_dir : plugins_pkgconfig_install_dir)
-  plugins += [gstsvthevcenc]
+  plugins += {'svthevcenc': gstsvthevcenc}
 endif

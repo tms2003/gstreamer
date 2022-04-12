@@ -20,5 +20,5 @@ if alsa_dep.found()
     install_dir : plugins_install_dir,
   )
   pkgconfig.generate(gstalsa, install_dir : plugins_pkgconfig_install_dir)
-  plugins += [gstalsa]
+  plugins += {'alsa': gstalsa}
 endif
