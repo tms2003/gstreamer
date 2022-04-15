@@ -247,15 +247,15 @@ plugin_init (GstPlugin * plugin)
           GST_WARNING ("Failed to d3d11 create device");
         } else {
           gst_nv_h264_encoder_register_d3d11 (plugin,
-              d3d11_device, GST_RANK_NONE);
+              d3d11_device, GST_RANK_PRIMARY + 1);
           gst_nv_h265_encoder_register_d3d11 (plugin,
-              d3d11_device, GST_RANK_NONE);
+              d3d11_device, GST_RANK_PRIMARY + 1);
           gst_object_unref (d3d11_device);
         }
       }
 #endif
-      gst_nv_h264_encoder_register_cuda (plugin, context, GST_RANK_NONE);
-      gst_nv_h265_encoder_register_cuda (plugin, context, GST_RANK_NONE);
+      gst_nv_h264_encoder_register_cuda (plugin, context, GST_RANK_PRIMARY);
+      gst_nv_h265_encoder_register_cuda (plugin, context, GST_RANK_PRIMARY);
       gst_nvenc_plugin_init (plugin, i, cuda_ctx);
     }
 
