@@ -57,7 +57,7 @@ static GQuark _colorspace_quark;
 #define gst_video_convert_parent_class parent_class
 G_DEFINE_TYPE (GstVideoConvert, gst_video_convert, GST_TYPE_VIDEO_FILTER);
 GST_ELEMENT_REGISTER_DEFINE (videoconvert, "videoconvert",
-    GST_RANK_NONE, GST_TYPE_VIDEO_CONVERT);
+    GST_RANK_SECONDARY, GST_TYPE_VIDEO_CONVERT);
 
 #define DEFAULT_PROP_DITHER      GST_VIDEO_DITHER_BAYER
 #define DEFAULT_PROP_DITHER_QUANTIZATION 1
@@ -656,7 +656,7 @@ gst_video_convert_class_init (GstVideoConvertClass * klass)
       &gst_video_convert_sink_template);
 
   gst_element_class_set_static_metadata (gstelement_class,
-      "Colorspace converter", "Filter/Converter/Video",
+      "Colorspace converter", "Filter/Converter/Video/Colorspace",
       "Converts video from one colorspace to another",
       "GStreamer maintainers <gstreamer-devel@lists.freedesktop.org>");
 

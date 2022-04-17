@@ -62,7 +62,7 @@ enum
 G_DEFINE_TYPE_WITH_CODE (GstGLColorscale, gst_gl_colorscale,
     GST_TYPE_GL_FILTER, DEBUG_INIT);
 GST_ELEMENT_REGISTER_DEFINE_WITH_CODE (glcolorscale, "glcolorscale",
-    GST_RANK_NONE, GST_TYPE_GL_COLORSCALE, gl_element_init (plugin));
+    GST_RANK_PRIMARY, GST_TYPE_GL_COLORSCALE, gl_element_init (plugin));
 
 static void gst_gl_colorscale_set_property (GObject * object, guint prop_id,
     const GValue * value, GParamSpec * pspec);
@@ -96,7 +96,8 @@ gst_gl_colorscale_class_init (GstGLColorscaleClass * klass)
   gobject_class->get_property = gst_gl_colorscale_get_property;
 
   gst_element_class_set_metadata (element_class, "OpenGL color scale",
-      "Filter/Effect/Video", "Colorspace converter and video scaler",
+      "Filter/Effect/Video/Converter/Colorspace/Scale",
+      "Colorspace converter and video scaler",
       "Julien Isorce <julien.isorce@gmail.com>\n"
       "Matthew Waters <matthew@centricular.com>");
 
