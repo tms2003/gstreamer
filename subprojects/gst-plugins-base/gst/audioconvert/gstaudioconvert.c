@@ -107,6 +107,8 @@
 #include "config.h"
 #endif
 
+#define G_LOG_DOMAIN "GStreamer-audioconvert"
+
 #include <string.h>
 
 #include "gstaudioconvert.h"

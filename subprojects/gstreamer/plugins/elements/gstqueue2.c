@@ -61,6 +61,8 @@
 #include "config.h"
 #endif
 
+#define G_LOG_DOMAIN "GStreamer-queue2"
+
 #include "gstqueue2.h"
 #include "gstcoreelementselements.h"
 

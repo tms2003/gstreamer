@@ -56,6 +56,8 @@
  * up. Both signals are emitted from the context of the streaming thread.
  */
 
+#define G_LOG_DOMAIN "GStreamer-queue"
+
 #include "gst/gst_private.h"
 
 #include <gst/gst.h>

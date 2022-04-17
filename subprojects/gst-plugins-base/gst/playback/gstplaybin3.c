@@ -216,6 +216,8 @@
 #include "config.h"
 #endif
 
+#define G_LOG_DOMAIN "GStreamer-playbin3"
+
 #include <string.h>
 #include <gst/gst.h>
 

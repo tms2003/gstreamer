@@ -49,6 +49,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define G_LOG_DOMAIN "GStreamer-fakesrc"
+
 #include "gstelements_private.h"
 #include "gstfakesrc.h"
 #include "gstcoreelementselements.h"

@@ -8,7 +8,7 @@ dvdread_dep = dependency('dvdread', version : '>= 0.5.0', required : dvdread_opt
 if dvdread_dep.found()
   dvdread = library('gstdvdread',
     ['dvdreadsrc.c'],
-    c_args : ugly_args,
+    c_args : ugly_args + ['-DG_LOG_DOMAIN="GStreamer-dvdreadsrc"'],
     include_directories : [configinc, libsinc],
     dependencies : [gstbase_dep, gmodule_dep, dvdread_dep],
     install : true,

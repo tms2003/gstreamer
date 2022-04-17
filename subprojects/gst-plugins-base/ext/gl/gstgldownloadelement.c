@@ -22,6 +22,8 @@
 #include "config.h"
 #endif
 
+#define G_LOG_DOMAIN "GStreamer-gldownload"
+
 #include <gst/gl/gl.h>
 #if GST_GL_HAVE_PLATFORM_EGL && GST_GL_HAVE_DMABUF
 #include <gst/gl/egl/gsteglimage.h>

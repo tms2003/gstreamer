@@ -17,7 +17,7 @@ xvideo_dep = dependency('xv', required : get_option('xvideo'))
 if xvideo_dep.found()
   gstxvimage = library('gstxvimagesink',
     xvimage_sources,
-    c_args : gst_plugins_base_args + no_warn_args,
+    c_args : gst_plugins_base_args + no_warn_args + ['-DG_LOG_DOMAIN="GStreamer-xvimagesink"'],
     include_directories: [configinc, libsinc],
     dependencies : [video_dep, gst_base_dep, gst_dep, x11_dep, xshm_dep, xvideo_dep, xi_dep, libm],
     install : true,

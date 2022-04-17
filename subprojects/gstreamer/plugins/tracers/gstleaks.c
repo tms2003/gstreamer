@@ -61,6 +61,8 @@
 #  include "config.h"
 #endif
 
+#define G_LOG_DOMAIN "GStreamer-leaks"
+
 #include "gstleaks.h"
 
 #ifdef G_OS_UNIX

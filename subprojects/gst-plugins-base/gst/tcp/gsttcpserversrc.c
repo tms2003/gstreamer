@@ -40,6 +40,8 @@
 #include "config.h"
 #endif
 
+#define G_LOG_DOMAIN "GStreamer-tcpserversrc"
+
 #include <gst/gst-i18n-plugin.h>
 #include "gsttcpelements.h"
 #include "gsttcpsrcstats.h"

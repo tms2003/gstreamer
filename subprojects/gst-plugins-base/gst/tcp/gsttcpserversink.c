@@ -37,6 +37,9 @@
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif
+
+#define G_LOG_DOMAIN "GStreamer-tcpserversink"
+
 #include <gst/gst-i18n-plugin.h>
 #include <string.h>             /* memset */
 

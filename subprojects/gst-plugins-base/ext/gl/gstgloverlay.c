@@ -36,6 +36,8 @@
 #include "config.h"
 #endif
 
+#define G_LOG_DOMAIN "GStreamer-gloverlay"
+
 #include <gst/base/gsttypefindhelper.h>
 #include <gst/gl/gstglconfig.h>
 

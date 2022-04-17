@@ -26,6 +26,8 @@
 #include "config.h"
 #endif
 
+#define G_LOG_DOMAIN "GStreamer-multihandlesink"
+
 #include <gst/gst-i18n-plugin.h>
 
 #include "gstmultihandlesink.h"

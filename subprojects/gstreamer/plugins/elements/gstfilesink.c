@@ -38,6 +38,8 @@
 #  include "config.h"
 #endif
 
+#define G_LOG_DOMAIN "GStreamer-filesink"
+
 #include "../../gst/gst-i18n-lib.h"
 
 #include <gst/gst.h>

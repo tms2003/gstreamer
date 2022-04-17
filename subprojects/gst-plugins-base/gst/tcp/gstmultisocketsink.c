@@ -103,6 +103,8 @@
 #include "config.h"
 #endif
 
+#define G_LOG_DOMAIN "GStreamer-multisocketsink"
+
 #include <gst/gst-i18n-plugin.h>
 #include <gst/net/gstnetcontrolmessagemeta.h>
 

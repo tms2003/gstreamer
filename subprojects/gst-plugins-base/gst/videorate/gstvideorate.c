@@ -79,6 +79,8 @@
 #include "config.h"
 #endif
 
+#define G_LOG_DOMAIN "GStreamer-videorate"
+
 #include "gstvideorate.h"
 #include <gst/video/video.h>
 

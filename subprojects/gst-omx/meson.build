@@ -165,7 +165,7 @@ gstcheck_dep = dependency('gstreamer-check-1.0', version : gst_req,
 libm = cc.find_library('m', required : false)
 gmodule_dep = dependency('gmodule-no-export-2.0', version: glib_req)
 
-gst_omx_args = ['-DHAVE_CONFIG_H']
+gst_omx_args = ['-DHAVE_CONFIG_H', '-DG_LOG_DOMAIN="GStreamer-OMX"']
 configinc = include_directories('.')
 omx_header_path = get_option('header_path')
 if omx_header_path != ''

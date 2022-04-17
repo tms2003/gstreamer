@@ -42,6 +42,8 @@
 #include "config.h"
 #endif
 
+#define G_LOG_DOMAIN "GStreamer-vorbisenc"
+
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
