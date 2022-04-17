@@ -8740,6 +8740,18 @@ gst_qtdemux_configure_stream (GstQTDemux * qtdemux, QtDemuxStream * stream)
             "multiview-flags", GST_TYPE_VIDEO_MULTIVIEW_FLAGSET,
             stream->multiview_flags, GST_FLAG_SET_MASK_EXACT, NULL);
       }
+
+      if (CUR_STREAM (stream)->have_cll) {
+        const GstVideoContentLightLevel *cll = &CUR_STREAM (stream)->cll;
+        gst_video_content_light_level_add_to_caps (cll,
+            CUR_STREAM (stream)->caps);
+      }
+
+      if (CUR_STREAM (stream)->have_mdcv) {
+        const GstVideoMasteringDisplayInfo *mdcv = &CUR_STREAM (stream)->mdcv;
+        gst_video_mastering_display_info_add_to_caps (mdcv,
+            CUR_STREAM (stream)->caps);
+      }
     }
   }
 
@@ -11109,6 +11121,8 @@ qtdemux_parse_trak (GstQTDemux * qtdemux, GNode * trak)
       GNode *colr;
       GNode *fiel;
       GNode *pasp;
+      GNode *clli;
+      GNode *mdcv;
       gboolean gray;
       gint depth, palette_size, palette_count;
       guint32 *palette_data = NULL;
@@ -11279,6 +11293,8 @@ qtdemux_parse_trak (GstQTDemux * qtdemux, GNode * trak)
       pasp = NULL;
       colr = NULL;
       fiel = NULL;
+      clli = NULL;
+      mdcv = NULL;
       /* pick 'the' stsd child */
       mp4v = qtdemux_tree_get_child_by_index (stsd, stsd_index);
       // We should skip parsing the stsd for non-protected streams if
@@ -11299,6 +11315,8 @@ qtdemux_parse_trak (GstQTDemux * qtdemux, GNode * trak)
         pasp = qtdemux_tree_get_child_by_type (mp4v, FOURCC_pasp);
         colr = qtdemux_tree_get_child_by_type (mp4v, FOURCC_colr);
         fiel = qtdemux_tree_get_child_by_type (mp4v, FOURCC_fiel);
+        clli = qtdemux_tree_get_child_by_type (mp4v, FOURCC_clli);
+        mdcv = qtdemux_tree_get_child_by_type (mp4v, FOURCC_mdcv);
       }
 
       if (pasp) {
@@ -11354,6 +11372,43 @@ qtdemux_parse_trak (GstQTDemux * qtdemux, GNode * trak)
           }
         } else {
           GST_WARNING_OBJECT (qtdemux, "Invalid colr atom size");
+        }
+      }
+
+      CUR_STREAM (stream)->have_cll = FALSE;
+      if (clli) {
+        const guint8 *clli_data = (const guint8 *) clli->data;
+        gint len = QT_UINT32 (clli_data);
+
+        if (len == 12) {
+          CUR_STREAM (stream)->cll.max_content_light_level =
+              QT_UINT16 (clli_data + 8);
+          CUR_STREAM (stream)->cll.max_frame_average_light_level =
+              QT_UINT16 (clli_data + 10);
+          CUR_STREAM (stream)->have_cll = TRUE;
+        }
+      }
+
+      CUR_STREAM (stream)->have_mdcv = FALSE;
+      if (mdcv) {
+        const guint8 *mdcv_data = (const guint8 *) mdcv->data;
+        gint len = QT_UINT32 (mdcv_data);
+
+        if (len == 32) {
+          GstVideoMasteringDisplayInfo *m = &CUR_STREAM (stream)->mdcv;
+
+          /* GBR order in container, but we use RGB order */
+          m->display_primaries[1].x = QT_UINT16 (mdcv_data + 8);
+          m->display_primaries[1].y = QT_UINT16 (mdcv_data + 10);
+          m->display_primaries[2].x = QT_UINT16 (mdcv_data + 12);
+          m->display_primaries[2].y = QT_UINT16 (mdcv_data + 14);
+          m->display_primaries[0].x = QT_UINT16 (mdcv_data + 16);
+          m->display_primaries[0].y = QT_UINT16 (mdcv_data + 18);
+          m->white_point.x = QT_UINT16 (mdcv_data + 20);
+          m->white_point.y = QT_UINT16 (mdcv_data + 22);
+          m->max_display_mastering_luminance = QT_UINT32 (mdcv_data + 24);
+          m->min_display_mastering_luminance = QT_UINT32 (mdcv_data + 28);
+          CUR_STREAM (stream)->have_mdcv = TRUE;
         }
       }
 
