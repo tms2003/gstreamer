@@ -4362,6 +4362,46 @@ build_tapt_extension (gint clef_width, gint clef_height, gint prof_width,
       atom_data_free);
 }
 
+AtomInfo *
+build_clli_extension (const GstVideoContentLightLevel * cll)
+{
+  AtomData *atom_data = atom_data_new (FOURCC_clli);
+  guint8 *data;
+
+  atom_data_alloc_mem (atom_data, 4);
+  data = atom_data->data;
+
+  GST_WRITE_UINT16_BE (data, cll->max_content_light_level);
+  GST_WRITE_UINT16_BE (data + 2, cll->max_frame_average_light_level);
+
+  return build_atom_info_wrapper ((Atom *) atom_data, atom_data_copy_data,
+      atom_data_free);
+}
+
+AtomInfo *
+build_mdcv_extension (const GstVideoMasteringDisplayInfo * mdcv)
+{
+  AtomData *atom_data = atom_data_new (FOURCC_mdcv);
+  guint8 *data;
+
+  atom_data_alloc_mem (atom_data, 24);
+  data = atom_data->data;
+
+  GST_WRITE_UINT16_BE (data, mdcv->display_primaries[1].x);
+  GST_WRITE_UINT16_BE (data + 2, mdcv->display_primaries[1].y);
+  GST_WRITE_UINT16_BE (data + 4, mdcv->display_primaries[2].x);
+  GST_WRITE_UINT16_BE (data + 6, mdcv->display_primaries[2].y);
+  GST_WRITE_UINT16_BE (data + 8, mdcv->display_primaries[0].x);
+  GST_WRITE_UINT16_BE (data + 10, mdcv->display_primaries[0].y);
+  GST_WRITE_UINT16_BE (data + 12, mdcv->white_point.x);
+  GST_WRITE_UINT16_BE (data + 14, mdcv->white_point.y);
+  GST_WRITE_UINT32_BE (data + 16, mdcv->max_display_mastering_luminance);
+  GST_WRITE_UINT32_BE (data + 20, mdcv->min_display_mastering_luminance);
+
+  return build_atom_info_wrapper ((Atom *) atom_data, atom_data_copy_data,
+      atom_data_free);
+}
+
 static AtomInfo *
 build_mov_video_sample_description_padding_extension (void)
 {

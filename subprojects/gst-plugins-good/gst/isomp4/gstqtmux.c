@@ -6665,6 +6665,25 @@ gst_qt_mux_video_sink_set_caps (GstQTMuxPad * qtpad, GstCaps * caps)
       ext_atom_list = g_list_append (ext_atom_list, ext_atom);
   }
 
+  if (qtmux_klass->format == GST_QT_MUX_FORMAT_MP4) {
+    GstVideoContentLightLevel cll;
+    GstVideoMasteringDisplayInfo mdcv;
+
+    if (gst_video_content_light_level_from_caps (&cll, caps)) {
+      ext_atom = build_clli_extension (&cll);
+
+      if (ext_atom)
+        ext_atom_list = g_list_append (ext_atom_list, ext_atom);
+    }
+
+    if (gst_video_mastering_display_info_from_caps (&mdcv, caps)) {
+      ext_atom = build_mdcv_extension (&mdcv);
+
+      if (ext_atom)
+        ext_atom_list = g_list_append (ext_atom_list, ext_atom);
+    }
+  }
+
   /* ok, set the pad info accordingly */
   qtpad->fourcc = entry.fourcc;
   qtpad->sync = sync;

@@ -1102,6 +1102,8 @@ AtomInfo *   build_colr_extension        (const GstVideoColorimetry *colorimetry
 AtomInfo *   build_clap_extension        (gint width_n, gint width_d, gint height_n, gint height_d, gint h_off_n, gint h_off_d, gint v_off_n, gint v_off_d);
 AtomInfo *   build_tapt_extension        (gint clef_width, gint clef_height, gint prof_width, gint prof_height, gint enof_width, gint enof_height);
 
+AtomInfo *   build_clli_extension        (const GstVideoContentLightLevel * cll);
+AtomInfo *   build_mdcv_extension        (const GstVideoMasteringDisplayInfo * mdcv);
 
 AtomInfo *   build_ac3_extension         (guint8 fscod, guint8 bsid,
                                           guint8 bsmod, guint8 acmod,
