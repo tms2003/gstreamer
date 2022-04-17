@@ -123,9 +123,12 @@ enum
 
 #define GST_VIDEO_FORMATS GST_VIDEO_FORMATS_ALL
 
+/* Keep the first caps without ENCODED to be used in transform_caps */
+
 static GstStaticCaps gst_video_scale_format_caps =
     GST_STATIC_CAPS (GST_VIDEO_CAPS_MAKE (GST_VIDEO_FORMATS) ";"
-    GST_VIDEO_CAPS_MAKE_WITH_FEATURES ("ANY", GST_VIDEO_FORMATS));
+    GST_VIDEO_CAPS_MAKE_WITH_FEATURES ("ANY", GST_VIDEO_FORMATS) ";"
+    GST_VIDEO_CAPS_MAKE_WITH_FEATURES ("ANY", "ENCODED"));
 
 static GQuark _size_quark;
 static GQuark _scale_quark;
@@ -451,13 +454,17 @@ gst_video_scale_transform_caps (GstBaseTransform * trans,
     GstPadDirection direction, GstCaps * caps, GstCaps * filter)
 {
   GstCaps *ret;
-  GstStructure *structure;
+  GstStructure *structure, *structure_no_encoded;
   GstCapsFeatures *features;
   gint i, n;
 
   GST_DEBUG_OBJECT (trans,
       "Transforming caps %" GST_PTR_FORMAT " in direction %s", caps,
       (direction == GST_PAD_SINK) ? "sink" : "src");
+
+  /* Used to prevent ENCODED in system memory */
+  structure_no_encoded =
+      gst_caps_get_structure (gst_video_scale_get_capslist (), 0);
 
   ret = gst_caps_new_empty ();
   n = gst_caps_get_size (caps);
@@ -470,9 +477,6 @@ gst_video_scale_transform_caps (GstBaseTransform * trans,
     if (i > 0 && gst_caps_is_subset_structure_full (ret, structure, features))
       continue;
 
-    /* make copy */
-    structure = gst_structure_copy (structure);
-
     /* If the features are non-sysmem we can only do passthrough */
     if (!gst_caps_features_is_any (features)
         && (gst_caps_features_is_equal (features,
@@ -480,6 +484,9 @@ gst_video_scale_transform_caps (GstBaseTransform * trans,
             || gst_caps_features_is_equal (features, features_format_interlaced)
             || gst_caps_features_is_equal (features,
                 features_format_interlaced_sysmem))) {
+      /* make copy while preventing ENCODED in sysmem */
+      structure = gst_structure_intersect (structure, structure_no_encoded);
+
       gst_structure_set (structure, "width", GST_TYPE_INT_RANGE, 1, G_MAXINT,
           "height", GST_TYPE_INT_RANGE, 1, G_MAXINT, NULL);
 
@@ -488,6 +495,9 @@ gst_video_scale_transform_caps (GstBaseTransform * trans,
         gst_structure_set (structure, "pixel-aspect-ratio",
             GST_TYPE_FRACTION_RANGE, 1, G_MAXINT, G_MAXINT, 1, NULL);
       }
+    } else {
+      /* simply make copy */
+      structure = gst_structure_copy (structure);
     }
     gst_caps_append_structure_full (ret, structure,
         gst_caps_features_copy (features));

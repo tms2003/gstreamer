@@ -58,7 +58,7 @@ check_pad_template (GstPadTemplate * tmpl)
   caps = gst_pad_template_get_caps (tmpl);
 
   /* If this fails, we need to update this unit test */
-  fail_unless_equals_int (gst_caps_get_size (caps), 2);
+  fail_unless_equals_int (gst_caps_get_size (caps), 3);
   /* Remove the ANY caps features structure */
   caps = gst_caps_truncate (caps);
   s = gst_caps_get_structure (caps, 0);
@@ -209,14 +209,27 @@ on_sink_handoff (GstElement * element, GstBuffer * buffer, GstPad * pad,
 }
 
 static gboolean
-videoconvert_supports_caps (const GstCaps * caps)
+videotestsrc_supports_caps (GstCaps * caps)
 {
-  GST_DEBUG ("have caps %" GST_PTR_FORMAT, caps);
-  return TRUE;
+  GstElement *src;
+  GstPad *pad;
+  GstCaps *resultCaps;
+  gboolean supported;
+
+  src = gst_element_factory_make ("videotestsrc", "src");
+  pad = gst_element_get_static_pad (src, "src");
+
+  resultCaps = gst_pad_query_caps (pad, caps);
+  supported = !gst_caps_is_empty (resultCaps);
+
+  gst_caps_unref (resultCaps);
+  gst_object_unref (pad);
+  gst_object_unref (src);
+  return supported;
 }
 
 static void
-run_test (const GstCaps * caps, gint src_width, gint src_height,
+run_test (GstCaps * caps, gint src_width, gint src_height,
     gint dest_width, gint dest_height, gint method,
     GCallback src_handoff, gpointer src_handoff_user_data,
     GCallback sink_handoff, gpointer sink_handoff_user_data)
@@ -229,8 +242,8 @@ run_test (const GstCaps * caps, gint src_width, gint src_height,
   GstCaps *copy;
   guint n_buffers = 0;
 
-  /* skip formats that videoconvert can't handle */
-  if (!videoconvert_supports_caps (caps))
+  /* skip formats that videotestsrc can't handle */
+  if (!videotestsrc_supports_caps (caps))
     return;
 
   pipeline = gst_element_factory_make ("pipeline", "pipeline");
@@ -350,8 +363,8 @@ test_passthrough (int method)
   while (*p) {
     GstCaps *caps = *p;
 
-    /* skip formats that videoconvert can't handle */
-    if (!videoconvert_supports_caps (caps))
+    /* skip formats that videotestsrc can't handle */
+    if (!videotestsrc_supports_caps (caps))
       goto next;
 
     GST_DEBUG ("Running test for caps '%" GST_PTR_FORMAT "'"
