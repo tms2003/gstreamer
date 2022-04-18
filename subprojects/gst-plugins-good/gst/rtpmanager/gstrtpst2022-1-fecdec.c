@@ -171,6 +171,9 @@ typedef struct
   gboolean marker;
   gboolean padding;
   gboolean extension;
+  guint16 extension_bits;
+  guint8 *extension_data;
+  guint extension_wordlen;
 } Rtp2DFecHeader;
 
 static GstStaticPadTemplate fec_sink_template =
@@ -292,6 +295,12 @@ parse_header (GstRTPBuffer * rtp, Rtp2DFecHeader * fec)
   GstBitReader bits;
   guint8 *data = gst_rtp_buffer_get_payload (rtp);
   guint len = gst_rtp_buffer_get_payload_len (rtp);
+  gpointer extension_data;
+  guint16 extension_bits;
+  guint extension_wordlen = 0;
+
+  gst_rtp_buffer_get_extension_data (rtp, &extension_bits, &extension_data,
+      &extension_wordlen);
 
   if (len < 16)
     goto done;
@@ -316,6 +325,9 @@ parse_header (GstRTPBuffer * rtp, Rtp2DFecHeader * fec)
   fec->seq_ext = gst_bit_reader_get_bits_uint8_unchecked (&bits, 8);
   fec->payload = data + 16;
   fec->payload_len = len - 16;
+  fec->extension_bits = extension_bits;
+  fec->extension_data = extension_data;
+  fec->extension_wordlen = extension_wordlen;
 
   ret = TRUE;
 
@@ -406,6 +418,10 @@ xor_items (GstRTPST_2022_1_FecDec * dec, Rtp2DFecHeader * fec, GList * packets,
   gboolean xored_marker;
   gboolean xored_padding;
   gboolean xored_extension;
+  gpointer extension_data;
+  guint16 xored_extension_bits;
+  guint8 *xored_extension_data;
+  gboolean skip_extension = FALSE;
 
   /* Figure out the recovered packet length first */
   xored_payload_len = fec->len;
@@ -436,10 +452,17 @@ xor_items (GstRTPST_2022_1_FecDec * dec, Rtp2DFecHeader * fec, GList * packets,
   xored_marker = fec->marker;
   xored_padding = fec->padding;
   xored_extension = fec->extension;
+  xored_extension_bits = fec->extension_bits;
+  xored_extension_data = g_malloc (fec->extension_wordlen * 4);
+  memcpy (xored_extension_data, fec->extension_data,
+      fec->extension_wordlen * 4);
 
   for (tmp = packets; tmp; tmp = tmp->next) {
     GstRTPBuffer media_rtp = GST_RTP_BUFFER_INIT;
     Item *item = (Item *) tmp->data;
+    gboolean has_extension;
+    guint16 extension_bits;
+    guint extension_wordlen = 0;
 
     gst_rtp_buffer_map (item->buffer, GST_MAP_READ, &media_rtp);
     _xor_mem (xored, gst_rtp_buffer_get_payload (&media_rtp),
@@ -449,6 +472,21 @@ xor_items (GstRTPST_2022_1_FecDec * dec, Rtp2DFecHeader * fec, GList * packets,
     xored_marker ^= gst_rtp_buffer_get_marker (&media_rtp);
     xored_padding ^= gst_rtp_buffer_get_padding (&media_rtp);
     xored_extension ^= gst_rtp_buffer_get_extension (&media_rtp);
+
+    has_extension =
+        gst_rtp_buffer_get_extension_data (&media_rtp, &extension_bits,
+        &extension_data, &extension_wordlen);
+
+    if (has_extension != fec->extension
+        || extension_wordlen != fec->extension_wordlen) {
+      skip_extension = TRUE;
+      GST_WARNING_OBJECT (dec,
+          "Inconsistent extension bit and length, not reconstructing extension for this packet");
+    } else {
+      xored_extension_bits ^= extension_bits;
+      _xor_mem (xored_extension_data, extension_data,
+          fec->extension_wordlen * 4);
+    }
 
     gst_rtp_buffer_unmap (&media_rtp);
   }
@@ -464,7 +502,23 @@ xor_items (GstRTPST_2022_1_FecDec * dec, Rtp2DFecHeader * fec, GList * packets,
   gst_rtp_buffer_set_payload_type (&rtp, xored_pt);
   gst_rtp_buffer_set_marker (&rtp, xored_marker);
   gst_rtp_buffer_set_padding (&rtp, xored_padding);
-  gst_rtp_buffer_set_extension (&rtp, xored_extension);
+
+  if (!skip_extension) {
+    gst_rtp_buffer_set_extension (&rtp, xored_extension);
+
+    if (fec->extension) {
+      gst_rtp_buffer_set_extension_data (&rtp, xored_extension_bits,
+          fec->extension_wordlen);
+
+      gst_rtp_buffer_get_extension_data (&rtp, NULL, &extension_data, NULL);
+
+      memcpy (extension_data, xored_extension_data, fec->extension_wordlen * 4);
+    }
+  }
+
+  if (xored_extension_data) {
+    g_free (xored_extension_data);
+  }
 
   gst_rtp_buffer_unmap (&rtp);
 
