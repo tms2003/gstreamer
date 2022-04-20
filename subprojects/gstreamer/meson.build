@@ -629,6 +629,18 @@ subdir('plugins')
 subdir('tools')
 subdir('tests')
 subdir('data')
+
+# Sorted list of plugin names
+plugin_names = plugins.keys()
+
+# Turn plugin dict into a list for backwards compat (and docs)
+plugins_list = []
+foreach plugin_name, plugin: plugins
+  plugins_list += [plugin]
+  assert(plugin.name() == plugin_name or plugin.name() == f'gst@plugin_name@', 'plugin name {} != {}'.format(plugin_name, plugin.name()))
+endforeach
+plugins = plugins_list
+
 subdir('docs')
 
 # xgettext is optional (on Windows for instance)
@@ -650,15 +662,6 @@ endif
 
 configure_file(output : 'config.h', configuration : cdata)
 install_data('gst-element-check-1.0.m4', install_dir : join_paths(get_option('datadir'), 'aclocal'))
-
-plugin_names = []
-foreach plugin: plugins
-  if plugin.name().startswith('gst')
-    plugin_names += [plugin.name().substring(3)]
-  else
-    plugin_names += [plugin.name()]
-  endif
-endforeach
 
 summary({
     'Plugins': plugin_names,

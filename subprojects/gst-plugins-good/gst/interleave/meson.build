@@ -7,4 +7,4 @@ gstinterleave = library('gstinterleave',
   install_dir : plugins_install_dir,
 )
 pkgconfig.generate(gstinterleave, install_dir : plugins_pkgconfig_install_dir)
-plugins += [gstinterleave]
+plugins += {'interleave': gstinterleave}

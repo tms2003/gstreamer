@@ -26,5 +26,5 @@ if theoradec_dep.found() or theoraenc_dep.found()
     install_dir : plugins_install_dir,
   )
   pkgconfig.generate(gsttheora, install_dir : plugins_pkgconfig_install_dir)
-  plugins += [gsttheora]
+  plugins += {'theora': gsttheora}
 endif

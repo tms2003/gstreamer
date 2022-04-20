@@ -18,5 +18,5 @@ if gs_dep.found()
     install_dir : plugins_install_dir,
   )
   pkgconfig.generate(gstgs, install_dir : plugins_pkgconfig_install_dir)
-  plugins += [gstgs]
+  plugins += {'gs': gstgs}
 endif

@@ -16,5 +16,5 @@ if webrtc_audio_coding_dep.found()
     install_dir : plugins_install_dir,
   )
   pkgconfig.generate(gstisac, install_dir : plugins_pkgconfig_install_dir)
-  plugins += [gstisac]
+  plugins += {'isac': gstisac}
 endif

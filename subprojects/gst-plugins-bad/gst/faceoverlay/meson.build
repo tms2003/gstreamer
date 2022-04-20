@@ -11,4 +11,4 @@ gstfaceoverlay = library('gstfaceoverlay',
   install_dir : plugins_install_dir,
 )
 pkgconfig.generate(gstfaceoverlay, install_dir : plugins_pkgconfig_install_dir)
-plugins += [gstfaceoverlay]
+plugins += {'faceoverlay': gstfaceoverlay}

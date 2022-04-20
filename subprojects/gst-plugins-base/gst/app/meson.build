@@ -14,4 +14,4 @@ gstapp_plugin = library('gstapp',
 )
 pkgconfig.generate(gstapp_plugin, install_dir : plugins_pkgconfig_install_dir)
 
-plugins += [gstapp_plugin]
+plugins += {'app': gstapp_plugin}

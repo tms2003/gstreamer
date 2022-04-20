@@ -9,5 +9,5 @@ if dc1394_dep.found()
     install_dir: plugins_install_dir,
   )
   pkgconfig.generate(gstdc1394, install_dir: plugins_pkgconfig_install_dir)
-  plugins += [gstdc1394]
+  plugins += {'dc1394': gstdc1394}
 endif

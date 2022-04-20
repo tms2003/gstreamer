@@ -11,4 +11,4 @@ gstvideoconvert = library('gstvideoconvert',
   install_dir : plugins_install_dir,
 )
 pkgconfig.generate(gstvideoconvert, install_dir : plugins_pkgconfig_install_dir)
-plugins += [gstvideoconvert]
+plugins += {'videoconvert': gstvideoconvert}

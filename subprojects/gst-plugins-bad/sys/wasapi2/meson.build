@@ -147,4 +147,4 @@ gstwasapi2 = library('gstwasapi2',
   install : true,
   install_dir : plugins_install_dir)
 pkgconfig.generate(gstwasapi2, install_dir : plugins_pkgconfig_install_dir)
-plugins += [gstwasapi2]
+plugins += {'wasapi2': gstwasapi2}

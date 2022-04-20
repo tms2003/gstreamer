@@ -161,5 +161,5 @@ if have_qt_windowing
     install: true,
     install_dir : plugins_install_dir)
   pkgconfig.generate(gstqmlgl, install_dir : plugins_pkgconfig_install_dir)
-  plugins += [gstqmlgl]
+  plugins += {'qmlgl': gstqmlgl}
 endif

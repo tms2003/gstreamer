@@ -79,4 +79,4 @@ gstamfcodec = library('gstamfcodec',
 )
 
 pkgconfig.generate(gstamfcodec, install_dir : plugins_pkgconfig_install_dir)
-plugins += [gstamfcodec]
+plugins += {'amfcodec': gstamfcodec}

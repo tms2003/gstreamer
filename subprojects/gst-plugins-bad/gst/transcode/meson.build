@@ -12,4 +12,4 @@ gsttranscoder_plugin = library('gsttranscode',
 )
 
 pkgconfig.generate(gsttranscoder_plugin, install_dir : plugins_pkgconfig_install_dir)
-plugins += [gsttranscoder_plugin]
+plugins += {'transcode': gsttranscoder_plugin}

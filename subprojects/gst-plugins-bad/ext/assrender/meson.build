@@ -10,5 +10,5 @@ if ass_dep.found()
     install_dir : plugins_install_dir,
   )
   pkgconfig.generate(gstassrender, install_dir : plugins_pkgconfig_install_dir)
-  plugins += [gstassrender]
+  plugins += {'assrender': gstassrender}
 endif

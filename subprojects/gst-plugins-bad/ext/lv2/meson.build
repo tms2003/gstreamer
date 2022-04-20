@@ -17,5 +17,5 @@ if lv2_dep.found()
     install_dir : plugins_install_dir,
   )
   pkgconfig.generate(gstlv2, install_dir : plugins_pkgconfig_install_dir)
-  plugins += [gstlv2]
+  plugins += {'lv2': gstlv2}
 endif

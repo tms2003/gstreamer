@@ -37,5 +37,5 @@ if dca_dep.found()
     install_dir : plugins_install_dir,
   )
   pkgconfig.generate(gstdtsdec, install_dir : plugins_pkgconfig_install_dir)
-  plugins += [gstdtsdec]
+  plugins += {'dtsdec': gstdtsdec}
 endif

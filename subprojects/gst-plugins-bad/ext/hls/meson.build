@@ -64,5 +64,5 @@ gsthls = library('gsthls',
   install_dir : plugins_install_dir,
 )
 pkgconfig.generate(gsthls, install_dir : plugins_pkgconfig_install_dir)
-plugins += [gsthls]
+plugins += {'hls': gsthls}
 hls_dep = declare_dependency(include_directories : include_directories('.'))

@@ -83,4 +83,4 @@ gstrpicamsrc = library('gstrpicamsrc',
   install: true)
 
 pkgconfig.generate(gstrpicamsrc, install_dir: plugins_pkgconfig_install_dir)
-plugins += [gstrpicamsrc]
+plugins += {'rpicamsrc': gstrpicamsrc}

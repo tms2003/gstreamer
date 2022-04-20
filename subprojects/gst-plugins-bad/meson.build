@@ -36,7 +36,7 @@ osxversion = curversion + 1
 
 plugins_install_dir = join_paths(get_option('libdir'), 'gstreamer-1.0')
 static_build = get_option('default_library') == 'static'
-plugins = []
+plugins = {}
 libraries = []
 
 cc = meson.get_compiler('c')
@@ -548,6 +548,18 @@ subdir('tests')
 subdir('data')
 subdir('tools')
 
+# Sorted list of plugin names
+plugin_names = plugins.keys()
+
+# Turn plugin dict into a list for backwards compat (and docs)
+plugins_list = []
+foreach plugin_name, plugin: plugins
+  plugins_list += [plugin]
+  assert(plugin.name() == plugin_name or plugin.name() == f'gst@plugin_name@', 'plugin name {} != {}'.format(plugin_name, plugin.name()))
+endforeach
+plugins = plugins_list
+
+# Disted ORC backup files
 if have_orcc
   update_orc_dist_files = find_program('scripts/update-orc-dist-files.py')
 
@@ -594,15 +606,6 @@ endif
 configure_file(output : 'config.h', configuration : cdata)
 
 subdir('docs')
-
-plugin_names = []
-foreach plugin: plugins
-  if plugin.name().startswith('gst')
-    plugin_names += [plugin.name().substring(3)]
-  else
-    plugin_names += [plugin.name()]
-  endif
-endforeach
 
 summary({
     'Plugins': plugin_names,

@@ -29,4 +29,4 @@ adder = library('gstadder',
   install_dir : plugins_install_dir,
 )
 pkgconfig.generate(adder, install_dir : plugins_pkgconfig_install_dir)
-plugins += [adder]
+plugins += {'adder': adder}

@@ -1,3 +1,3 @@
-plugins = []
+plugins = {}
 subdir('nle')
 subdir('ges')

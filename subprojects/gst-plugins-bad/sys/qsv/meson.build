@@ -95,4 +95,4 @@ gstqsv = library('gstqsv',
 )
 
 pkgconfig.generate(gstqsv, install_dir : plugins_pkgconfig_install_dir)
-plugins += [gstqsv]
+plugins += {'qsv': gstqsv}

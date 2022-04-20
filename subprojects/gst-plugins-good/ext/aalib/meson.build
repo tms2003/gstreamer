@@ -23,6 +23,6 @@ if have_aalib
       install_dir : plugins_install_dir
     )
     pkgconfig.generate(gstaasink, install_dir : plugins_pkgconfig_install_dir)
-    plugins += [gstaasink]
+    plugins += {'aasink': gstaasink}
   endif
 endif

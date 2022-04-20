@@ -27,4 +27,4 @@ gstmatroska = library('gstmatroska',
   install_dir : plugins_install_dir,
 )
 pkgconfig.generate(gstmatroska, install_dir : plugins_pkgconfig_install_dir)
-plugins += [gstmatroska]
+plugins += {'matroska': gstmatroska}

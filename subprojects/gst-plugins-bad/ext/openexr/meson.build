@@ -34,5 +34,5 @@ if openexr_dep.found()
     install_dir: plugins_install_dir,
   )
   pkgconfig.generate(gstopenexr, install_dir: plugins_pkgconfig_install_dir)
-  plugins += [gstopenexr]
+  plugins += {'openexr': gstopenexr}
 endif

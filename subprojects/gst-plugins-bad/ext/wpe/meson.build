@@ -39,4 +39,4 @@ if giounix_dep.found()
 endif
 
 pkgconfig.generate(gstwpe, install_dir : plugins_pkgconfig_install_dir)
-plugins += [gstwpe]
+plugins += {'wpe': gstwpe}

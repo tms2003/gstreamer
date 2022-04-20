@@ -271,6 +271,17 @@ libraries = []
 
 subdir('ges')
 subdir('plugins')
+
+# Sorted list of plugin names
+plugin_names = plugins.keys()
+
+# Turn plugin dict into a list for backwards compat (and docs)
+plugins_list = []
+foreach plugin_name, plugin: plugins
+  plugins_list += [plugin]
+endforeach
+plugins = plugins_list
+
 subdir('tools')
 
 subdir('tests')
@@ -336,15 +347,6 @@ if gio_dep.version().version_compare('< 2.67.4')
 endif
 
 configure_file(output: 'config.h', configuration: cdata)
-
-plugin_names = []
-foreach plugin: plugins
-  if plugin.name().startswith('gst')
-    plugin_names += [plugin.name().substring(3)]
-  else
-    plugin_names += [plugin.name()]
-  endif
-endforeach
 
 summary({
     'Plugins': plugin_names,

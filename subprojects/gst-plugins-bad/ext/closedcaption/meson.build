@@ -22,5 +22,5 @@ if closedcaption_dep.found()
     install_dir : plugins_install_dir,
   )
   pkgconfig.generate(gstclosedcaption, install_dir : plugins_pkgconfig_install_dir)
-  plugins += [gstclosedcaption]
+  plugins += {'closedcaption': gstclosedcaption}
 endif

@@ -11,4 +11,4 @@ gstnetsim = library('gstnetsim',
   install_dir : plugins_install_dir,
 )
 pkgconfig.generate(gstnetsim, install_dir : plugins_pkgconfig_install_dir)
-plugins += [gstnetsim]
+plugins += {'netsim': gstnetsim}

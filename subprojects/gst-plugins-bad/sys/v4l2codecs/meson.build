@@ -46,5 +46,5 @@ if have_v4l2 and libgudev_dep.found()
     install_dir : plugins_install_dir,
   )
   pkgconfig.generate(gstv4l2codecs, install_dir : plugins_pkgconfig_install_dir)
-  plugins += [gstv4l2codecs]
+  plugins += {'v4l2codecs': gstv4l2codecs}
 endif

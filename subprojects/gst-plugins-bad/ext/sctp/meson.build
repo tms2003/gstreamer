@@ -58,5 +58,5 @@ if sctp_dep.found() and sctp_header
     install_dir : plugins_install_dir,
   )
   pkgconfig.generate(gstsctp, install_dir : plugins_pkgconfig_install_dir)
-  plugins += [gstsctp]
+  plugins += {'sctp': gstsctp}
 endif
