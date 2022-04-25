@@ -378,6 +378,13 @@ void           gst_play_config_set_seek_accurate (GstStructure * config, gboolea
 GST_PLAY_API
 gboolean       gst_play_config_get_seek_accurate (const GstStructure * config);
 
+GST_PLAY_API
+void           gst_play_config_set_subtitle_bg_color (GstStructure * config,
+                                                      guint          bg_color);
+
+GST_PLAY_API
+guint          gst_play_config_get_subtitle_bg_color (const GstStructure * config);
+
 /**
  * GstPlaySnapshotFormat:
  * @GST_PLAY_THUMBNAIL_RAW_NATIVE: raw native format.
