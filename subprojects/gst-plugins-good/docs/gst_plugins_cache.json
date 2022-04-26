@@ -20183,6 +20183,16 @@
                         "return-type": "void",
                         "when": "last"
                     },
+                    "on-receiving-rtcp-xr": {
+                        "args": [
+                            {
+                                "name": "arg0",
+                                "type": "GstValueList"
+                            }
+                        ],
+                        "return-type": "void",
+                        "when": "last"
+                    },
                     "on-sender-ssrc-active": {
                         "args": [
                             {
