@@ -2314,6 +2314,70 @@ GST_START_TEST (test_data_channel_close)
 GST_END_TEST;
 
 static void
+on_channel_close (GObject * channel, struct test_webrtc *t)
+{
+  GstWebRTCDataChannelState state;
+
+  g_object_get (channel, "ready-state", &state, NULL);
+  fail_unless_equals_int (GST_WEBRTC_DATA_CHANNEL_STATE_CLOSED, state);
+
+  test_webrtc_signal_state (t, STATE_CUSTOM);
+}
+
+static void
+have_data_channel_close_channel (struct test_webrtc *t, GstElement * element,
+    GObject * our, gpointer user_data)
+{
+  GstWebRTCDataChannelState state;
+
+  g_object_get (our, "ready-state", &state, NULL);
+  fail_unless_equals_int (GST_WEBRTC_DATA_CHANNEL_STATE_OPEN, state);
+
+  g_signal_connect (our, "on-close", G_CALLBACK (on_channel_close), t);
+
+  g_signal_connect (our, "on-error",
+      G_CALLBACK (on_channel_error_not_reached), NULL);
+
+  g_signal_emit_by_name (our, "close");
+}
+
+GST_START_TEST (test_data_channel_on_close_by_close)
+{
+  struct test_webrtc *t = test_webrtc_new ();
+  GObject *channel = NULL;
+  VAL_SDP_INIT (media_count, _count_num_sdp_media, GUINT_TO_POINTER (1), NULL);
+  VAL_SDP_INIT (offer, on_sdp_has_datachannel, NULL, &media_count);
+
+  t->on_negotiation_needed = NULL;
+  t->on_ice_candidate = NULL;
+  t->on_data_channel = have_data_channel_close_channel;
+
+  fail_if (gst_element_set_state (t->webrtc1,
+          GST_STATE_READY) == GST_STATE_CHANGE_FAILURE);
+  fail_if (gst_element_set_state (t->webrtc2,
+          GST_STATE_READY) == GST_STATE_CHANGE_FAILURE);
+
+  g_signal_emit_by_name (t->webrtc1, "create-data-channel", "label", NULL,
+      &channel);
+  g_assert_nonnull (channel);
+  t->data_channel_data = channel;
+  g_signal_connect (channel, "on-error",
+      G_CALLBACK (on_channel_error_not_reached), NULL);
+
+  fail_if (gst_element_set_state (t->webrtc1,
+          GST_STATE_PLAYING) == GST_STATE_CHANGE_FAILURE);
+  fail_if (gst_element_set_state (t->webrtc2,
+          GST_STATE_PLAYING) == GST_STATE_CHANGE_FAILURE);
+
+  test_validate_sdp_full (t, &offer, &offer, 1 << STATE_CUSTOM, FALSE);
+
+  g_object_unref (channel);
+  test_webrtc_free (t);
+}
+
+GST_END_TEST;
+
+static void
 on_buffered_amount_low_emitted (GObject * channel, struct test_webrtc *t)
 {
   test_webrtc_signal_state (t, STATE_CUSTOM);
@@ -5245,6 +5309,7 @@ webrtcbin_suite (void)
       tcase_add_test (tc, test_data_channel_transfer_data);
       tcase_add_test (tc, test_data_channel_create_after_negotiate);
       tcase_add_test (tc, test_data_channel_close);
+      tcase_add_test (tc, test_data_channel_on_close_by_close);
       tcase_add_test (tc, test_data_channel_low_threshold);
       tcase_add_test (tc, test_data_channel_max_message_size);
       tcase_add_test (tc, test_data_channel_pre_negotiated);
