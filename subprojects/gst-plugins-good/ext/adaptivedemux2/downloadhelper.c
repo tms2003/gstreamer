@@ -309,11 +309,6 @@ on_read_ready (GObject * source, GAsyncResult * result, gpointer user_data)
       }
     }
 
-    if (request->download_start_time == GST_CLOCK_TIME_NONE) {
-      GST_LOG ("Got first data for URI %s", request->uri);
-      request->download_start_time = now;
-    }
-
     if (gst_buffer != NULL) {
       /* Unsent means cancellation is in progress, so don't override
        * the state. Otherwise make sure it is LOADING */
@@ -557,6 +552,11 @@ on_request_sent (GObject * source, GAsyncResult * result, gpointer user_data)
 
     if (SOUP_STATUS_IS_SUCCESSFUL (request->status_code)
         || SOUP_STATUS_IS_REDIRECTION (request->status_code)) {
+      GST_LOG ("Got headers %d for uri %s", request->status_code, request->uri);
+      if (request->download_start_time == GST_CLOCK_TIME_NONE) {
+        GstClockTime now = gst_adaptive_demux_clock_get_time (dh->clock);
+        request->download_start_time = now;
+      }
       request->state = DOWNLOAD_REQUEST_STATE_HEADERS_RECEIVED;
       transfer_task_report_progress (transfer_task);
     } else {
