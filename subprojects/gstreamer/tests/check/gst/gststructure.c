@@ -1018,6 +1018,29 @@ GST_START_TEST (test_flagset)
 
 GST_END_TEST;
 
+GST_START_TEST (test_serialize_skip_default_types)
+{
+  const char *struct_s =
+      "s, check=1/2, bool=true, something=[just, a=substruct;], float=(float)1.5, double=1.5, fraction=1/2, int-range=[ 2, 5 ], double-range=[ 2.5, 4.5 ];";
+  GstStructure *s = gst_structure_new_from_string (struct_s);
+  gchar *serialized =
+      gst_structure_serialize (s, GST_SERIALIZE_FLAG_SKIP_DEFAULT_TYPES);
+
+  fail_unless_equals_string (struct_s, serialized);
+  gst_structure_free (s);
+
+  s = gst_structure_new_from_string (serialized);
+  g_free (serialized);
+
+  serialized =
+      gst_structure_serialize (s, GST_SERIALIZE_FLAG_SKIP_DEFAULT_TYPES);
+  fail_unless_equals_string (struct_s, serialized);
+
+  gst_structure_free (s);
+}
+
+GST_END_TEST;
+
 static Suite *
 gst_structure_suite (void)
 {
@@ -1050,6 +1073,7 @@ gst_structure_suite (void)
   tcase_add_test (tc_chain, test_map_in_place);
   tcase_add_test (tc_chain, test_filter_and_map_in_place);
   tcase_add_test (tc_chain, test_flagset);
+  tcase_add_test (tc_chain, test_serialize_skip_default_types);
   return s;
 }
 

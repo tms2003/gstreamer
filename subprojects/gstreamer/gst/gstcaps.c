@@ -2286,8 +2286,6 @@ caps_serialize (const GstCaps * caps, GstSerializeFlags flags)
 {
   guint i, slen, clen;
   GString *s;
-  gboolean nested_structs_brackets =
-      !(flags & GST_SERIALIZE_FLAG_BACKWARD_COMPAT);
 
   /* NOTE:  This function is potentially called by the debug system,
    * so any calls to gst_log() (and GST_DEBUG(), GST_LOG(), etc.)
@@ -2340,8 +2338,7 @@ caps_serialize (const GstCaps * caps, GstSerializeFlags flags)
       priv_gst_caps_features_append_to_gstring (features, s);
       g_string_append_c (s, ')');
     }
-    priv_gst_structure_append_to_gstring (structure, s,
-        nested_structs_brackets);
+    priv_gst_structure_append_to_gstring (structure, s, flags);
   }
   if (s->len && s->str[s->len - 1] == ';') {
     /* remove latest ';' */

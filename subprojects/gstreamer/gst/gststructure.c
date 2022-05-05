@@ -2025,6 +2025,48 @@ gst_structure_value_get_generic_type (const GValue * val)
   return G_VALUE_TYPE (val);
 }
 
+static gboolean
+gst_structure_type_needs_serialization (GType type, GstSerializeFlags flags)
+{
+  /* List of GType that the deserialization will default to so it is not
+   * necessary to specify them during serialization */
+  if (type == GST_TYPE_FRACTION ||
+      type == GST_TYPE_FRACTION_RANGE ||
+      type == G_TYPE_INT ||
+      type == GST_TYPE_INT_RANGE ||
+      type == G_TYPE_STRING ||
+      type == G_TYPE_BOOLEAN ||
+      type == G_TYPE_DOUBLE ||
+      type == GST_TYPE_DOUBLE_RANGE ||
+      type == GST_TYPE_ARRAY ||
+      type == GST_TYPE_LIST ||
+      type == GST_TYPE_FLAG_SET ||
+      type == GST_TYPE_CAPS || type == GST_TYPE_STRUCTURE)
+    return FALSE;
+
+  return TRUE;
+}
+
+static void
+gst_structure_append_equal_to_gstring (GString * s, GType type,
+    GstSerializeFlags flags)
+{
+  gboolean use_type = TRUE;
+
+  if ((flags & GST_SERIALIZE_FLAG_SKIP_DEFAULT_TYPES) ==
+      GST_SERIALIZE_FLAG_SKIP_DEFAULT_TYPES)
+    use_type = gst_structure_type_needs_serialization (type, flags);
+
+  if (use_type) {
+    g_string_append_len (s, "=(", 2);
+    g_string_append (s, _priv_gst_value_gtype_to_abbr (type));
+    g_string_append_c (s, ')');
+  } else {
+    g_string_append_c (s, '=');
+  }
+}
+
+
 gboolean
 priv_gst_structure_append_to_gstring (const GstStructure * structure,
     GString * s, GstSerializeFlags flags)
@@ -2058,9 +2100,9 @@ priv_gst_structure_append_to_gstring (const GstStructure * structure,
     g_string_append_len (s, ", ", 2);
     /* FIXME: do we need to escape fieldnames? */
     g_string_append (s, g_quark_to_string (field->name));
-    g_string_append_len (s, "=(", 2);
-    g_string_append (s, _priv_gst_value_gtype_to_abbr (type));
-    g_string_append_c (s, ')');
+
+    gst_structure_append_equal_to_gstring (s, type, flags);
+
     if (nested_structs_brackets
         && G_VALUE_TYPE (&field->value) == GST_TYPE_STRUCTURE) {
       const GstStructure *substruct = gst_value_get_structure (&field->value);
@@ -2077,7 +2119,13 @@ priv_gst_structure_append_to_gstring (const GstStructure * structure,
       g_string_append_printf (s, "[%s]", capsstr);
       g_free (capsstr);
     } else if (t) {
-      g_string_append (s, t);
+      if (G_VALUE_HOLDS_STRING (&field->value) &&
+        (flags & GST_SERIALIZE_FLAG_SKIP_DEFAULT_TYPES) == GST_SERIALIZE_FLAG_SKIP_DEFAULT_TYPES) {
+        g_string_append_printf (s, "\"%s\"", t);
+      } else {
+        g_string_append (s, t);
+      }
+
       g_free (t);
     } else if (G_TYPE_CHECK_VALUE_TYPE (&field->value, G_TYPE_POINTER)) {
       gpointer ptr = g_value_get_pointer (&field->value);

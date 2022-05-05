@@ -1817,6 +1817,29 @@ GST_START_TEST (test_remains_any)
 
 GST_END_TEST;
 
+GST_START_TEST (test_serialize_skip_default_types)
+{
+  const char *caps_s =
+      "s1, check=1/2, bool=true, something=[just, a=substruct;], a=\"magnificent\\ string\";"
+      " s2, check={ 1, 2 }";
+  GstCaps *c = gst_caps_from_string (caps_s);
+  gchar *serialized =
+      gst_caps_serialize (c, GST_SERIALIZE_FLAG_SKIP_DEFAULT_TYPES);
+
+  fail_unless_equals_string (caps_s, serialized);
+  gst_caps_unref (c);
+
+  c = gst_caps_from_string (serialized);
+  g_free (serialized);
+  serialized = gst_caps_serialize (c, GST_SERIALIZE_FLAG_SKIP_DEFAULT_TYPES);
+
+  fail_unless_equals_string (caps_s, serialized);
+  gst_caps_unref (c);
+  g_free (serialized);
+}
+
+GST_END_TEST;
+
 static Suite *
 gst_caps_suite (void)
 {
@@ -1854,6 +1877,7 @@ gst_caps_suite (void)
   tcase_add_test (tc_chain, test_filter_and_map_in_place);
   tcase_add_test (tc_chain, test_equality);
   tcase_add_test (tc_chain, test_remains_any);
+  tcase_add_test (tc_chain, test_serialize_skip_default_types);
 
   return s;
 }
