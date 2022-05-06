@@ -1562,15 +1562,38 @@ typedef struct
 } HeaderData;
 
 static gboolean
+find_timestamp (GstBuffer ** buffer, guint idx, gpointer user_data)
+{
+  HeaderData *data = user_data;
+
+  data->dts = GST_BUFFER_DTS (*buffer);
+  data->pts = GST_BUFFER_PTS (*buffer);
+  data->offset = GST_BUFFER_OFFSET (*buffer);
+
+  /* stop when we find a timestamp. We take whatever offset is associated with
+   * the timestamp (if any) to do perfect timestamps when we need to. */
+  if (data->pts != GST_CLOCK_TIME_NONE)
+    return FALSE;
+  else
+    return TRUE;
+}
+
+static gboolean
 calculate_rtptime (GstBuffer ** buffer, guint idx, gpointer user_data)
 {
   HeaderData *data = user_data;
   GstRTPBasePayload *payload = data->payload;
   GstRTPBasePayloadPrivate *priv = payload->priv;
 
-  data->dts = GST_BUFFER_DTS (*buffer);
-  data->pts = GST_BUFFER_PTS (*buffer);
-  data->offset = GST_BUFFER_OFFSET (*buffer);
+  /* when dealing with a buffer list, take the dts/pts/offset of the buffer
+   * if the pts is valid, otherwise take the existing values in data
+   * (from a previous buffer in the list or from a next buffer,
+   * found via find_timestamp() earlier) */
+  if (idx > 0 && GST_CLOCK_TIME_IS_VALID (GST_BUFFER_PTS (*buffer))) {
+    data->dts = GST_BUFFER_DTS (*buffer);
+    data->pts = GST_BUFFER_PTS (*buffer);
+    data->offset = GST_BUFFER_OFFSET (*buffer);
+  }
 
   /* convert to RTP time */
   if (priv->perfect_rtptime && data->offset != GST_BUFFER_OFFSET_NONE &&
@@ -1919,6 +1942,18 @@ gst_rtp_base_payload_prepare_push (GstRTPBasePayload * payload,
   data.seqnum = payload->seqnum;
   data.ssrc = payload->current_ssrc;
   data.pt = payload->pt;
+
+  /* find the first buffer with a timestamp */
+  if (is_list) {
+    data.dts = GST_CLOCK_TIME_NONE;
+    data.pts = GST_CLOCK_TIME_NONE;
+    data.offset = GST_BUFFER_OFFSET_NONE;
+    gst_buffer_list_foreach (GST_BUFFER_LIST_CAST (obj), find_timestamp, &data);
+  } else {
+    data.dts = GST_BUFFER_DTS (GST_BUFFER_CAST (obj));
+    data.pts = GST_BUFFER_PTS (GST_BUFFER_CAST (obj));
+    data.offset = GST_BUFFER_OFFSET (GST_BUFFER_CAST (obj));
+  }
 
   /* set ssrc, payload type, seq number, caps and rtptime */
   /* remove unwanted meta */
