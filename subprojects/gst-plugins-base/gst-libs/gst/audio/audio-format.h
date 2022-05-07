@@ -70,6 +70,7 @@ G_BEGIN_DECLS
  * @GST_AUDIO_FORMAT_F32BE: 32-bit floating point samples, big endian
  * @GST_AUDIO_FORMAT_F64LE: 64-bit floating point samples, little endian
  * @GST_AUDIO_FORMAT_F64BE: 64-bit floating point samples, big endian
+ * @GST_AUDIO_FORMAT_IEC958_SUBFRAME_LE: 32-bits in 32bits, unsigned, little endian
  * @GST_AUDIO_FORMAT_S16: 16 bits in 16 bits, signed, native endianness
  * @GST_AUDIO_FORMAT_U16: 16 bits in 16 bits, unsigned, native endianness
  * @GST_AUDIO_FORMAT_S24_32: 24 bits in 32 bits, signed, native endianness
@@ -128,6 +129,7 @@ typedef enum {
   GST_AUDIO_FORMAT_F32BE,
   GST_AUDIO_FORMAT_F64LE,
   GST_AUDIO_FORMAT_F64BE,
+  GST_AUDIO_FORMAT_IEC958_SUBFRAME_LE,
 
   /* Update GST_AUDIO_FORMAT_LAST below when adding more formats here */
 
@@ -155,7 +157,7 @@ typedef enum {
  *
  * Since: 1.26
  */
-#define GST_AUDIO_FORMAT_LAST (GST_AUDIO_FORMAT_F64BE + 1)
+#define GST_AUDIO_FORMAT_LAST (GST_AUDIO_FORMAT_IEC958_SUBFRAME_LE + 1)
 
 typedef struct _GstAudioFormatInfo GstAudioFormatInfo;
 
