@@ -974,7 +974,7 @@ moov_recov_write_file (MoovRecovFile * moovrf, MdatRecovFile * mdatrf,
   guint8 *stbl_children = NULL;
   guint32 longest_duration = 0;
   guint16 version;
-  guint remaining;
+  guint64 remaining;
 
   /* check the version */
   if (fseek (moovrf->file, 0, SEEK_SET) != 0) {
@@ -1186,13 +1186,13 @@ moov_recov_write_file (MoovRecovFile * moovrf, MdatRecovFile * mdatrf,
 
   if (remaining) {
     g_set_error (warn, ATOMS_RECOV_QUARK, ATOMS_RECOV_ERR_FILE,
-        "Samples in recovery file were not present on headers."
-        " Bytes lost: %u", remaining);
-  } else if (!feof (mdatrf->file)) {
-    g_set_error (warn, ATOMS_RECOV_QUARK, ATOMS_RECOV_ERR_FILE,
         "Samples in headers were not found in data file.");
     GST_FIXME ("Rewrite mdat size if we reach this to make the file"
         " fully correct");
+  } else if (!feof (mdatrf->file)) {
+    g_set_error (warn, ATOMS_RECOV_QUARK, ATOMS_RECOV_ERR_FILE,
+        "Samples in recovery file were not present on headers."
+        " Bytes lost: %lu", remaining);
   }
 
   return TRUE;
