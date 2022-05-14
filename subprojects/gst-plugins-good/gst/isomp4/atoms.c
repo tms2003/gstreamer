@@ -2358,7 +2358,10 @@ atom_stsc_copy_data (AtomSTSC * stsc, guint8 ** buffer, guint64 * size,
 
     prop_copy_uint32 (entry->first_chunk, buffer, size, offset);
     prop_copy_uint32 (entry->samples_per_chunk, buffer, size, offset);
-    prop_copy_uint32 (entry->sample_description_index, buffer, size, offset);
+    if (entry->sample_description_index == 0)
+      prop_copy_uint32 (1, buffer, size, offset);
+    else
+      prop_copy_uint32 (entry->sample_description_index, buffer, size, offset);
   }
 
   atom_write_size (buffer, size, offset, original_offset);
