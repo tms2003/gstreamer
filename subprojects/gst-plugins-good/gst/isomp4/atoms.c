@@ -3157,11 +3157,14 @@ atom_stsz_add_entry (AtomSTSZ * stsz, guint32 nsamples, guint32 size)
 {
   guint32 i;
 
-  stsz->table_size += nsamples;
+  if (nsamples > 1) {
+    stsz->sample_size = nsamples * size;
+  }
   if (stsz->sample_size != 0) {
     /* it is constant size, we don't need entries */
     return;
   }
+  stsz->table_size += nsamples;
   for (i = 0; i < nsamples; i++) {
     atom_array_append (&stsz->entries, size, 1024);
   }

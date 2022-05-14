@@ -840,7 +840,8 @@ moov_recov_parse_buffers (MoovRecovFile * moovrf, MdatRecovFile * mdatrf,
           "Invalid trak id found in buffer entry");
       return FALSE;
     }
-    if (!mdat_recov_add_sample (mdatrf, entry.size))
+
+    if (!mdat_recov_add_sample (mdatrf, entry.size * entry.nsamples))
       break;
     trak_recov_data_add_sample (trak, &entry);
   }
