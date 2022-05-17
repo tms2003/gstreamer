@@ -13,23 +13,27 @@ sudo dnf install -y \
   "https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-$(rpm -E %fedora).noarch.rpm"
 
 dnf upgrade -y && dnf distro-sync -y
-dnf install -y $(<./ci/docker/fedora/deps.txt)
 
 # Install the dependencies of gstreamer
-dnf builddep -y gstreamer1 \
-    gstreamer1-plugins-base \
-    gstreamer1-plugins-good \
-    gstreamer1-plugins-good-extras \
-    gstreamer1-plugins-good-qt \
-    gstreamer1-plugins-ugly \
-    gstreamer1-plugins-ugly-free \
+dnf builddep -y --skip-broken --allowerasing --best \
+    gstreamer1 \
     gstreamer1-plugins-bad-free \
     gstreamer1-plugins-bad-free-extras \
     gstreamer1-plugins-bad-freeworld \
-    gstreamer1-libav \
-    gstreamer1-rtsp-server  \
+    gstreamer1-plugins-base \
+    gstreamer1-plugins-good \
+    gstreamer1-plugins-good-extras \
+    gstreamer1-plugins-ugly \
+    gstreamer1-plugins-ugly-free \
+    gstreamer1-rtsp-server \
     gstreamer1-vaapi \
     python3-gstreamer1
+
+dnf remove -y \
+    'ffmpeg-free*' \
+    'fdk-aac-free*'
+
+dnf install -y $(<./ci/docker/fedora/deps.txt)
 
 dnf remove -y meson -x ninja-build
 pip3 install meson hotdoc python-gitlab tomli junitparser
