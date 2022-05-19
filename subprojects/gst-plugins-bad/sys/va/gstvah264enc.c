@@ -637,7 +637,7 @@ _ensure_rate_control (GstVaH264Enc * self)
     case VA_RC_VBR:
       g_assert (self->rc.target_percentage >= 10);
       self->rc.max_bitrate = (guint) gst_util_uint64_scale_int (bitrate,
-          100, self->rc.target_percentage);
+          self->rc.target_percentage, 100);
       self->rc.target_bitrate = bitrate;
       self->rc.qp_i = self->rc.qp_p = self->rc.qp_b = 26;
       break;
@@ -715,7 +715,7 @@ _get_h264_cpb_nal_factor (VAProfile profile)
 static gboolean
 _calculate_level (GstVaH264Enc * self)
 {
-  const guint cpb_factor = _get_h264_cpb_nal_factor (self->profile);
+  const guint cpb_factor = _get_h264_cpb_nal_factor (self->profile) * 1000;
   guint i, PicSizeMbs, MaxDpbMbs, MaxMBPS;
 
   PicSizeMbs = self->mb_width * self->mb_height;
@@ -727,11 +727,11 @@ _calculate_level (GstVaH264Enc * self)
   for (i = 0; i < G_N_ELEMENTS (_va_h264_level_limits); i++) {
     const GstVaH264LevelLimits *const limits = &_va_h264_level_limits[i];
     if (PicSizeMbs <= limits->MaxFS && MaxDpbMbs <= limits->MaxDpbMbs
-        && MaxMBPS <= limits->MaxMBPS && (!self->rc.max_bitrate_bits
-            || self->rc.max_bitrate_bits <= (limits->MaxBR * 1000 * cpb_factor))
-        && (!self->rc.cpb_length_bits
-            || self->rc.cpb_length_bits <=
-            (limits->MaxCPB * 1000 * cpb_factor))) {
+        && MaxMBPS <= limits->MaxMBPS
+        && (self->rc.max_bitrate_bits == 0
+            || self->rc.max_bitrate_bits <= (limits->MaxBR * cpb_factor))
+        && (self->rc.cpb_length_bits == 0
+            || self->rc.cpb_length_bits <= (limits->MaxCPB * cpb_factor))) {
 
       self->level_idc = _va_h264_level_limits[i].level_idc;
       self->level_str = _va_h264_level_limits[i].name;
