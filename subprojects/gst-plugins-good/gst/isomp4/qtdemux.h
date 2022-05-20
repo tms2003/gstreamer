@@ -290,6 +290,12 @@ struct _QtDemuxStreamStsdEntry
   guint interlace_mode;
   guint field_order;
 
+  /* HDR metadata */
+  GstVideoContentLightLevel cll;
+  gboolean have_cll;
+  GstVideoMasteringDisplayInfo mdcv;
+  gboolean have_mdcv;
+
   /* audio info */
   gdouble rate;
   gint n_channels;
