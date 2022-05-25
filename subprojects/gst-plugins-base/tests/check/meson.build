@@ -41,6 +41,7 @@ base_tests = [
   [ 'elements/audioresample.c' ],
   [ 'elements/compositor.c' ],
   [ 'elements/decodebin.c' ],
+  [ 'elements/opus.c' ],
   [ 'elements/overlaycomposition.c' ],
   [ 'elements/playbin.c' ],
   [ 'elements/playsink.c' ],

@@ -488,6 +488,150 @@ GST_START_TEST (test_opus_decode_plc_timestamps_with_fec)
 
 GST_END_TEST;
 
+typedef struct
+{
+  GMutex mutex;
+  GCond cond;
+  GstClockTime next_timestamp;
+  guint count;
+} Context;
+
+
+static void
+context_init (Context * ctx)
+{
+  g_mutex_init (&ctx->mutex);
+  g_cond_init (&ctx->cond);
+  ctx->next_timestamp = 0;
+  ctx->count = 0;
+}
+
+static void
+context_clear (Context * ctx)
+{
+  g_mutex_clear (&ctx->mutex);
+  g_cond_clear (&ctx->cond);
+}
+
+static GstPadProbeReturn
+buffer_cb (GstPad * pad, GstPadProbeInfo * info, gpointer user_data)
+{
+  GstBuffer *buffer = GST_PAD_PROBE_INFO_BUFFER (info);
+  Context *ctx = user_data;
+  GstClockTime current_timestamp = GST_BUFFER_TIMESTAMP (buffer);
+
+  g_mutex_lock (&ctx->mutex);
+
+  /* Ignore header buffers that have invalid timestamps. */
+  if (GST_CLOCK_TIME_IS_VALID (current_timestamp)) {
+    fail_unless (current_timestamp == ctx->next_timestamp,
+        "Timestamp discontinuity on element %s, got %" GST_TIME_FORMAT
+        " expected %" GST_TIME_FORMAT, GST_ELEMENT_NAME (GST_PAD_PARENT (pad)),
+        GST_TIME_ARGS (current_timestamp), GST_TIME_ARGS (ctx->next_timestamp));
+    ctx->next_timestamp += GST_BUFFER_DURATION (buffer);
+    ctx->count++;
+    g_cond_signal (&ctx->cond);
+  }
+
+  g_mutex_unlock (&ctx->mutex);
+
+  return GST_PAD_PROBE_OK;
+}
+
+GST_START_TEST (test_opus_new_segment)
+{
+  GstElement *bin;
+  GstElement *src;
+  GstElement *sink;
+  GstPad *srcpad;
+  GstPad *sinkpad;
+  gchar *pipe_str;
+  Context src_ctx;
+  Context sink_ctx;
+  GError *error = NULL;
+  GstStateChangeReturn ret;
+
+  context_init (&src_ctx);
+  context_init (&sink_ctx);
+
+  /* This is regression test for GstAudioEncoder base class.
+   * When the source is restarted or replaced, it generates a new SEGMENT event
+   * that caused audio encoders to have a discontinuity in their output PTS/DTS
+   * even when the source itself does not have any discontinuity.
+   * See: https://gitlab.freedesktop.org/gstreamer/gstreamer/-/issues/1237.
+   */
+
+  pipe_str = g_strdup_printf ("audiotestsrc name=src samplesperbuffer=1024"
+      " ! audio/x-raw,rate=48000 ! opusenc ! fakesink name=sink");
+
+  bin = gst_parse_launch (pipe_str, &error);
+  fail_unless (bin != NULL, "Error parsing pipeline: %s",
+      error ? error->message : "(invalid error)");
+  g_free (pipe_str);
+
+  /* Track PTS on source and sink elements with pad probes */
+  src = gst_bin_get_by_name (GST_BIN (bin), "src");
+  fail_unless (src != NULL, "Could not get audiotestsrc out of bin");
+  gst_object_unref (src);
+
+  srcpad = gst_element_get_static_pad (src, "src");
+  fail_unless (srcpad != NULL, "Could not get pad out of audiotestsrc");
+  gst_pad_add_probe (srcpad, GST_PAD_PROBE_TYPE_BUFFER,
+      buffer_cb, &src_ctx, NULL);
+  gst_object_unref (srcpad);
+
+  sink = gst_bin_get_by_name (GST_BIN (bin), "sink");
+  fail_unless (sink != NULL, "Could not get fakesink out of bin");
+  gst_object_unref (sink);
+
+  sinkpad = gst_element_get_static_pad (sink, "sink");
+  fail_unless (sinkpad != NULL, "Could not get pad out of fakesink");
+  gst_pad_add_probe (sinkpad, GST_PAD_PROBE_TYPE_BUFFER,
+      buffer_cb, &sink_ctx, NULL);
+  gst_object_unref (sinkpad);
+
+  /* Start pipeline */
+  ret = gst_element_set_state (bin, GST_STATE_PLAYING);
+  fail_if (ret == GST_STATE_CHANGE_FAILURE, "Could not start test pipeline");
+  if (ret == GST_STATE_CHANGE_ASYNC) {
+    ret = gst_element_get_state (bin, NULL, NULL, GST_CLOCK_TIME_NONE);
+    fail_if (ret != GST_STATE_CHANGE_SUCCESS, "Could not start test pipeline");
+  }
+
+  /* Wait until at least one non-header buffer arrived at sink */
+  g_mutex_lock (&sink_ctx.mutex);
+  while (sink_ctx.next_timestamp == 0)
+    g_cond_wait (&sink_ctx.cond, &sink_ctx.mutex);
+  g_mutex_unlock (&sink_ctx.mutex);
+
+  /* Restart the source */
+  gst_element_set_locked_state (src, TRUE);
+  ret = gst_element_set_state (src, GST_STATE_NULL);
+  fail_unless (ret == GST_STATE_CHANGE_SUCCESS,
+      "Failed to set audiotestsrc to NULL state");
+  gst_element_set_locked_state (src, FALSE);
+  g_object_set (src, "timestamp-offset", src_ctx.next_timestamp, NULL);
+
+  /* Set back to playing. It takes a few buffers before reaching the
+   * discontinuity, 20 should be plenty enough. */
+  ret = gst_element_set_state (src, GST_STATE_PLAYING);
+  fail_unless (ret == GST_STATE_CHANGE_SUCCESS,
+      "Failed to set audiotestsrc back to PLAYING state");
+  g_mutex_lock (&sink_ctx.mutex);
+  while (sink_ctx.count < 20)
+    g_cond_wait (&sink_ctx.cond, &sink_ctx.mutex);
+  g_mutex_unlock (&sink_ctx.mutex);
+
+  ret = gst_element_set_state (src, GST_STATE_NULL);
+  fail_unless (ret == GST_STATE_CHANGE_SUCCESS,
+      "Failed to set pipeline to NULL state");
+  gst_object_unref (bin);
+  context_clear (&src_ctx);
+  context_clear (&sink_ctx);
+}
+
+GST_END_TEST;
+
 static Suite *
 opus_suite (void)
 {
@@ -502,6 +646,7 @@ opus_suite (void)
   tcase_add_test (tc_chain, test_opus_encode_properties);
   tcase_add_test (tc_chain, test_opusdec_getcaps);
   tcase_add_test (tc_chain, test_opus_decode_plc_timestamps_with_fec);
+  tcase_add_test (tc_chain, test_opus_new_segment);
 
   return s;
 }
