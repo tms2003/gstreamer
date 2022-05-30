@@ -420,6 +420,8 @@ G_BEGIN_DECLS
 
 #define FOURCC_metx     GST_MAKE_FOURCC('m','e','t','x')
 
+#define FOURCC_sumi     GST_MAKE_FOURCC('s','u','m','i')
+
 G_END_DECLS
 
 #endif /* __FOURCC_H__ */
