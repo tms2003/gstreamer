@@ -33,6 +33,7 @@
 #include <gst/wayland/gstwlcontext.h>
 #include <gst/wayland/gstwldisplay.h>
 #include <gst/wayland/gstwllinuxdmabuf.h>
+#include <gst/wayland/gstwloutput.h>
 #include <gst/wayland/gstwlshmallocator.h>
 #include <gst/wayland/gstwlvideobufferpool.h>
 #include <gst/wayland/gstwlvideoformat.h>

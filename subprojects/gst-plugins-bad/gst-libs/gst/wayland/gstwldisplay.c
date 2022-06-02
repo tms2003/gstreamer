@@ -60,6 +60,9 @@ typedef struct _GstWlDisplayPrivate
 
   GMutex buffers_mutex;
   GHashTable *buffers;
+
+  GHashTable *outputs;
+
   gboolean shutting_down;
 } GstWlDisplayPrivate;
 
@@ -88,6 +91,8 @@ gst_wl_display_init (GstWlDisplay * self)
   priv->wl_fd_poll = gst_poll_new (TRUE);
   priv->buffers = g_hash_table_new (g_direct_hash, g_direct_equal);
   g_mutex_init (&priv->buffers_mutex);
+  priv->outputs = g_hash_table_new_full (g_direct_hash, g_direct_equal,
+      (GDestroyNotify) wl_output_destroy, (GDestroyNotify) g_object_unref);
 
   gst_wl_linux_dmabuf_init_once ();
   gst_wl_shm_allocator_init_once ();
@@ -126,6 +131,7 @@ gst_wl_display_finalize (GObject * gobject)
   gst_poll_free (priv->wl_fd_poll);
   g_hash_table_unref (priv->buffers);
   g_mutex_clear (&priv->buffers_mutex);
+  g_hash_table_unref (priv->outputs);
 
   if (priv->viewporter)
     wp_viewporter_destroy (priv->viewporter);
@@ -250,6 +256,45 @@ static const struct xdg_wm_base_listener xdg_wm_base_listener = {
 };
 
 static void
+handle_geometry (void *data,
+    struct wl_output *wl_output,
+    int32_t x, int32_t y,
+    int32_t physical_width,
+    int32_t physical_height,
+    int32_t subpixel, const char *make, const char *model, int32_t transform)
+{
+  GstWlOutput *output = data;
+
+  gst_wl_output_set_transform (output, transform);
+}
+
+static void
+handle_mode (void *data,
+    struct wl_output *wl_output,
+    uint32_t flags, int32_t width, int32_t height, int32_t refresh)
+{
+}
+
+static const struct wl_output_listener output_listener = {
+  handle_geometry,
+  handle_mode
+};
+
+static void
+gst_wl_display_add_output (GstWlDisplay * self, uint32_t id)
+{
+  GstWlDisplayPrivate *priv = gst_wl_display_get_instance_private (self);
+  struct wl_output *wl_output;
+  GstWlOutput *output;
+
+  output = gst_wl_output_new (id);
+  wl_output = wl_registry_bind (priv->registry, id, &wl_output_interface, 1);
+  wl_output_add_listener (wl_output, &output_listener, output);
+
+  g_hash_table_insert (priv->outputs, wl_output, output);
+}
+
+static void
 registry_handle_global (void *data, struct wl_registry *registry,
     uint32_t id, const char *interface, uint32_t version)
 {
@@ -279,14 +324,26 @@ registry_handle_global (void *data, struct wl_registry *registry,
     priv->dmabuf =
         wl_registry_bind (registry, id, &zwp_linux_dmabuf_v1_interface, 1);
     zwp_linux_dmabuf_v1_add_listener (priv->dmabuf, &dmabuf_listener, self);
+  } else if (strcmp (interface, "wl_output") == 0) {
+    gst_wl_display_add_output (self, id);
   }
+}
+
+static gboolean
+output_has_id (struct wl_output *wl_output, GstWlOutput * output, gpointer id)
+{
+  return gst_wl_output_get_id (output) == GPOINTER_TO_UINT (id);
 }
 
 static void
 registry_handle_global_remove (void *data, struct wl_registry *registry,
-    uint32_t name)
+    uint32_t id)
 {
-  /* temporarily do nothing */
+  GstWlDisplay *self = data;
+  GstWlDisplayPrivate *priv = gst_wl_display_get_instance_private (self);
+
+  g_hash_table_foreach_remove (priv->outputs, (GHRFunc) output_has_id,
+      GUINT_TO_POINTER (id));
 }
 
 static const struct wl_registry_listener registry_listener = {
@@ -564,4 +621,12 @@ gst_wl_display_has_own_display (GstWlDisplay * self)
   GstWlDisplayPrivate *priv = gst_wl_display_get_instance_private (self);
 
   return priv->own_display;
+}
+
+GstWlOutput *
+gst_wl_display_lookup_output (GstWlDisplay * self, struct wl_output * wl_output)
+{
+  GstWlDisplayPrivate *priv = gst_wl_display_get_instance_private (self);
+
+  return g_hash_table_lookup (priv->outputs, wl_output);
 }

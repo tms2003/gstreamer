@@ -13,20 +13,31 @@
  * Library General Public License for more details.
  *
  * You should have received a copy of the GNU Library General Public
- * License along with this library; if not, write to the
- * Free Software Foundation, Inc., 51 Franklin St, Fifth Floor,
- * Boston, MA 02110-1301, USA.
+ * License along with this library; if not, write to the Free
+ * Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
+ * Boston, MA 02110-1301 USA.
  */
 
 #pragma once
 
+#include <gst/wayland/wayland.h>
+
 G_BEGIN_DECLS
 
-typedef struct _GstWlBuffer GstWlBuffer;
-typedef struct _GstWlDisplay GstWlDisplay;
-typedef struct _GstWlOutput GstWlOutput;
-typedef struct _GstWlShmAllocator GstWlShmAllocator;
-typedef struct _GstWlVideoBufferPool GstWlVideoBufferPool;
-typedef struct _GstWlWindow GstWlWindow;
+#define GST_TYPE_WL_OUTPUT (gst_wl_output_get_type ())
+G_DECLARE_FINAL_TYPE (GstWlOutput, gst_wl_output, GST, WL_OUTPUT, GObject);
+
+struct _GstWlOutput {
+  GObject parent_instance;
+};
+
+GstWlOutput * gst_wl_output_new (uint32_t id);
+
+uint32_t gst_wl_output_get_id (GstWlOutput * self);
+
+enum wl_output_transform gst_wl_output_get_transform (GstWlOutput * self);
+
+void gst_wl_output_set_transform (GstWlOutput * self,
+    enum wl_output_transform transform);
 
 G_END_DECLS
