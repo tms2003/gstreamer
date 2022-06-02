@@ -47,6 +47,7 @@
 #include "wlbuffer.h"
 #include "wlshmallocator.h"
 #include "wllinuxdmabuf.h"
+#include "wlseat.h"
 
 #include <gst/wayland/wayland.h>
 #include <gst/video/videooverlay.h>
@@ -116,12 +117,19 @@ static void gst_wayland_sink_waylandvideo_init (GstWaylandVideoInterface *
 static void gst_wayland_sink_begin_geometry_change (GstWaylandVideo * video);
 static void gst_wayland_sink_end_geometry_change (GstWaylandVideo * video);
 
+/* Navigation interface */
+static void gst_wayland_sink_navigation_init (GstNavigationInterface * iface);
+static void gst_wayland_sink_navigation_send_event (GstNavigation * navigation,
+    GstEvent * event);
+
 #define gst_wayland_sink_parent_class parent_class
 G_DEFINE_TYPE_WITH_CODE (GstWaylandSink, gst_wayland_sink, GST_TYPE_VIDEO_SINK,
     G_IMPLEMENT_INTERFACE (GST_TYPE_VIDEO_OVERLAY,
         gst_wayland_sink_videooverlay_init)
     G_IMPLEMENT_INTERFACE (GST_TYPE_WAYLAND_VIDEO,
-        gst_wayland_sink_waylandvideo_init));
+        gst_wayland_sink_waylandvideo_init)
+    G_IMPLEMENT_INTERFACE (GST_TYPE_NAVIGATION,
+        gst_wayland_sink_navigation_init));
 GST_ELEMENT_REGISTER_DEFINE (waylandsink, "waylandsink", GST_RANK_MARGINAL,
     GST_TYPE_WAYLAND_SINK);
 
@@ -386,6 +394,10 @@ gst_wayland_sink_change_state (GstElement * element, GstStateChange transition)
     case GST_STATE_CHANGE_NULL_TO_READY:
       if (!gst_wayland_sink_find_display (sink))
         return GST_STATE_CHANGE_FAILURE;
+
+      g_mutex_lock (&sink->display_lock);
+      gst_wl_seat_set_interface (&sink->display->seat, GST_NAVIGATION (sink));
+      g_mutex_unlock (&sink->display_lock);
       break;
     default:
       break;
@@ -407,6 +419,10 @@ gst_wayland_sink_change_state (GstElement * element, GstStateChange transition)
         }
       }
 
+      g_mutex_lock (&sink->display_lock);
+      gst_wl_seat_set_interface (&sink->display->seat, GST_NAVIGATION (sink));
+      g_mutex_unlock (&sink->display_lock);
+
       g_mutex_lock (&sink->render_lock);
       if (sink->callback) {
         wl_callback_destroy (sink->callback);
@@ -417,6 +433,7 @@ gst_wayland_sink_change_state (GstElement * element, GstStateChange transition)
       break;
     case GST_STATE_CHANGE_READY_TO_NULL:
       g_mutex_lock (&sink->display_lock);
+      gst_wl_seat_set_interface (&sink->display->seat, NULL);
       /* If we had a toplevel window, we most likely have our own connection
        * to the display too, and it is a good idea to disconnect and allow
        * potentially the application to embed us with GstVideoOverlay
@@ -1018,6 +1035,29 @@ gst_wayland_sink_waylandvideo_init (GstWaylandVideoInterface * iface)
 {
   iface->begin_geometry_change = gst_wayland_sink_begin_geometry_change;
   iface->end_geometry_change = gst_wayland_sink_end_geometry_change;
+}
+
+static void
+gst_wayland_sink_navigation_send_event (GstNavigation * navigation,
+    GstEvent * event)
+{
+  GstWaylandSink *sink = GST_WAYLAND_SINK (navigation);
+  gboolean handled = FALSE;
+
+  gst_event_ref (event);
+  handled = gst_pad_push_event (GST_VIDEO_SINK_PAD (sink), event);
+
+  if (!handled)
+    gst_element_post_message ((GstElement *) sink,
+        gst_navigation_message_new_event ((GstObject *) sink, event));
+
+  gst_event_unref (event);
+}
+
+static void
+gst_wayland_sink_navigation_init (GstNavigationInterface * iface)
+{
+  iface->send_event_simple = gst_wayland_sink_navigation_send_event;
 }
 
 static void

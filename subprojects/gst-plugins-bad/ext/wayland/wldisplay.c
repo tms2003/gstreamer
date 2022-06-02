@@ -25,6 +25,7 @@
 #include "wldisplay.h"
 #include "wlbuffer.h"
 #include "wlvideoformat.h"
+#include "wlseat.h"
 
 #include <errno.h>
 
@@ -98,6 +99,9 @@ gst_wl_display_finalize (GObject * gobject)
 
   if (self->xdg_wm_base)
     xdg_wm_base_destroy (self->xdg_wm_base);
+
+  if (self->seat.seat)
+    gst_wl_seat_destroy (&self->seat);
 
   if (self->fullscreen_shell)
     zwp_fullscreen_shell_v1_release (self->fullscreen_shell);
@@ -237,6 +241,9 @@ registry_handle_global (void *data, struct wl_registry *registry,
     self->dmabuf =
         wl_registry_bind (registry, id, &zwp_linux_dmabuf_v1_interface, 1);
     zwp_linux_dmabuf_v1_add_listener (self->dmabuf, &dmabuf_listener, self);
+  } else if (g_strcmp0 (interface, "wl_seat") == 0) {
+    gst_wl_seat_init (&self->seat,
+        wl_registry_bind (registry, id, &wl_seat_interface, MIN (version, 7)));
   }
 }
 
@@ -370,6 +377,11 @@ gst_wl_display_new_existing (struct wl_display * display,
      */
     g_warning ("Could not bind to either wl_shell, xdg_wm_base or "
         "zwp_fullscreen_shell, video display may not work properly.");
+  }
+
+  if (!self->seat.seat) {
+    g_warning ("Could not bind to wl_seat, input events may not "
+        "work properly");
   }
 
   self->thread = g_thread_try_new ("GstWlDisplay", gst_wl_display_thread_run,

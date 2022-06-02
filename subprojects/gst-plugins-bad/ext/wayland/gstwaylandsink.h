@@ -68,6 +68,11 @@ struct _GstWaylandSink
   GMutex render_lock;
   GstBuffer *last_buffer;
 
+  struct wl_seat *seat;
+  struct wl_keyboard *keyboard;
+  struct wl_pointer *pointer;
+  struct wl_touch *touch;
+
   struct wl_callback *callback;
 };
 
