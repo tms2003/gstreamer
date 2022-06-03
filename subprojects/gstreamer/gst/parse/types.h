@@ -2,8 +2,8 @@
 #define __GST_PARSE_TYPES_H__
 
 #include <glib-object.h>
-#include "../gstelement.h"
-#include "../gstparse.h"
+#include <gst/gstelement.h>
+#include <gst/gstparse.h>
 
 typedef struct {
   GstElement *element;
