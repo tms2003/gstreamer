@@ -53,6 +53,11 @@
 #define CONVERT_COM_STRING(s)
 #define FREE_COM_STRING(s)
 #define WINAPI
+
+inline bool operator==(const REFIID& lhs, const REFIID& rhs)
+{
+  return memcmp(&lhs, &rhs, sizeof(REFIID)) == 0;
+}
 #endif /* G_OS_WIN32 */
 
 void decklink_element_init (GstPlugin * plugin);

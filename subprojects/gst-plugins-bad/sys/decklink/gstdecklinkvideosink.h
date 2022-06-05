@@ -59,6 +59,10 @@ struct _GstDecklinkVideoSink
 
   GstVideoInfo info;
 
+  gboolean has_hdr_metadata;
+  GstVideoMasteringDisplayInfo mdi;
+  GstVideoContentLightLevel cll;
+
   GstClockTime internal_base_time;
   GstClockTime external_base_time;
 
