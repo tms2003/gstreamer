@@ -2595,12 +2595,20 @@ error_gop_duration:
       STREAM, FAILED, ("Timestamping error on input streams"),
       ("Queued GOP time is negative %" GST_STIME_FORMAT,
           GST_STIME_ARGS (queued_gop_time)));
+
+  /* Exit check_completed_gop */
+  splitmux->input_state = SPLITMUX_INPUT_STATE_FINISHING_UP;
+
   return;
 error_queued_time:
   GST_ELEMENT_ERROR (splitmux,
       STREAM, FAILED, ("Timestamping error on input streams"),
       ("Queued time is negative. Input went backwards. queued_time - %"
           GST_STIME_FORMAT, GST_STIME_ARGS (queued_time)));
+
+  /* Exit check_completed_gop */
+  splitmux->input_state = SPLITMUX_INPUT_STATE_FINISHING_UP;
+
   return;
 }
 
