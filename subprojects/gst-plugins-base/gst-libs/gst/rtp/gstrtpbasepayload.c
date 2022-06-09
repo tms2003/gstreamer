@@ -78,6 +78,9 @@ struct _GstRTPBasePayloadPrivate
 
   /* array of GstRTPHeaderExtension's * */
   GPtrArray *header_exts;
+
+  gboolean rtptime_direct;
+  GstClockTime latency;
 };
 
 /* RTPBasePayload signals and args */
@@ -112,6 +115,7 @@ static guint gst_rtp_base_payload_signals[LAST_SIGNAL] = { 0 };
 #define DEFAULT_ONVIF_NO_RATE_CONTROL   FALSE
 #define DEFAULT_SCALE_RTPTIME           TRUE
 #define DEFAULT_AUTO_HEADER_EXTENSION   TRUE
+#define DEFAULT_RTPTIME_DIRECT          FALSE
 
 #define RTP_HEADER_EXT_ONE_BYTE_MAX_SIZE 16
 #define RTP_HEADER_EXT_TWO_BYTE_MAX_SIZE 256
@@ -137,6 +141,7 @@ enum
   PROP_ONVIF_NO_RATE_CONTROL,
   PROP_SCALE_RTPTIME,
   PROP_AUTO_HEADER_EXTENSION,
+  PROP_RTPTIME_DIRECT,
   PROP_LAST
 };
 
@@ -412,12 +417,12 @@ gst_rtp_base_payload_class_init (GstRTPBasePayloadClass * klass)
    * Make the RTP packets' timestamps be scaled with the segment's rate
    * (corresponding to RTSP speed parameter). Disabling this property means
    * the timestamps will not be affected by the set delivery speed (RTSP speed).
-   * 
-   * Example: A server wants to allow streaming a recorded video in double 
-   * speed but still have the timestamps correspond to the position in the 
-   * video. This is achieved by the client setting RTSP Speed to 2 while the 
+   *
+   * Example: A server wants to allow streaming a recorded video in double
+   * speed but still have the timestamps correspond to the position in the
+   * video. This is achieved by the client setting RTSP Speed to 2 while the
    * server has this property disabled.
-   * 
+   *
    * Since: 1.18
    */
   g_object_class_install_property (G_OBJECT_CLASS (klass), PROP_SCALE_RTPTIME,
@@ -441,6 +446,23 @@ gst_rtp_base_payload_class_init (GstRTPBasePayloadClass * klass)
           "Whether RTP header extensions should be automatically enabled, if an implementation is available",
           DEFAULT_AUTO_HEADER_EXTENSION,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  /**
+   * GstRTPBasePayload:rtptime-direct:
+   *
+   * Directly reference the pipeline's clock when producing RTP timetamps.
+   * This is to generate a stream compatible with RFC 7273 section 5.2.
+   * In practice, this adds the pipeline's latency and base_time to the
+   * timestamps, bringing them to the domain of the pipeline's clock.
+   * To make this fully compatible with RFC 7273 section 5.2, the pipeline
+   * should be configured to use the system TAI clock.
+   *
+   * Since: 1.22
+   */
+  g_object_class_install_property (G_OBJECT_CLASS (klass),
+      PROP_RTPTIME_DIRECT, g_param_spec_boolean ("rtptime-direct",
+          "Direct rtptime", "Directly reference the pipeline's clock",
+          DEFAULT_RTPTIME_DIRECT, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   /**
    * GstRTPBasePayload::add-extension:
@@ -565,6 +587,9 @@ gst_rtp_base_payload_init (GstRTPBasePayload * rtpbasepayload, gpointer g_class)
   rtpbasepayload->priv->prop_max_ptime = DEFAULT_MAX_PTIME;
   rtpbasepayload->priv->header_exts =
       g_ptr_array_new_with_free_func ((GDestroyNotify) gst_object_unref);
+
+  rtpbasepayload->priv->rtptime_direct = DEFAULT_RTPTIME_DIRECT;
+  rtpbasepayload->priv->latency = 0;
 }
 
 static void
@@ -748,6 +773,12 @@ gst_rtp_base_payload_src_event_default (GstRTPBasePayload * rtpbasepayload,
       }
       break;
     }
+    case GST_EVENT_LATENCY:
+      gst_event_parse_latency (event, &rtpbasepayload->priv->latency);
+      /* reset base_offset to redo calculations in prepare_push()
+       * in case perfect_rtptime is enabled */
+      rtpbasepayload->priv->base_offset = GST_BUFFER_OFFSET_NONE;
+      break;
     default:
       break;
   }
@@ -1896,6 +1927,11 @@ gst_rtp_base_payload_prepare_push (GstRTPBasePayload * payload,
       GST_LOG_OBJECT (payload, "Clipped pts, using base RTP timestamp");
       rtime_hz = 0;
     } else {
+      if (priv->rtptime_direct) {
+        rtime_ns += priv->latency;
+        rtime_ns += GST_ELEMENT (payload)->base_time;
+      }
+
       GST_LOG_OBJECT (payload,
           "Using running_time %" GST_TIME_FORMAT " for RTP timestamp",
           GST_TIME_ARGS (rtime_ns));
@@ -2172,6 +2208,9 @@ gst_rtp_base_payload_set_property (GObject * object, guint prop_id,
     case PROP_AUTO_HEADER_EXTENSION:
       priv->auto_hdr_ext = g_value_get_boolean (value);
       break;
+    case PROP_RTPTIME_DIRECT:
+      priv->rtptime_direct = g_value_get_boolean (value);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -2247,6 +2286,9 @@ gst_rtp_base_payload_get_property (GObject * object, guint prop_id,
       break;
     case PROP_AUTO_HEADER_EXTENSION:
       g_value_set_boolean (value, priv->auto_hdr_ext);
+      break;
+    case PROP_RTPTIME_DIRECT:
+      g_value_set_boolean (value, priv->rtptime_direct);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
