@@ -177,6 +177,8 @@ struct _GstBaseTextOverlay {
     gdouble                  xpos;
     gdouble                  ypos;
     gchar                   *default_text;
+    gchar                   *last_text;
+    gboolean                 save_last_text;
     gboolean                 want_shading;
     gboolean                 silent;
     gboolean                 wait_text;
