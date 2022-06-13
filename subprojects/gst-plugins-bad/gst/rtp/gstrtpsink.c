@@ -434,22 +434,22 @@ gst_rtp_sink_rtpbin_pad_removed_cb (GstElement * element, GstPad * pad,
 }
 
 static gboolean
-gst_rtp_sink_reuse_socket (GstRtpSink * self)
+gst_rtp_sink_setup_rtcp_socket (GstRtpSink * self)
 {
   GSocket *socket = NULL;
 
-  gst_element_set_locked_state (self->rtcp_src, FALSE);
-  gst_element_sync_state_with_parent (self->rtcp_src);
+  gst_element_set_locked_state (self->rtcp_sink, FALSE);
+  gst_element_sync_state_with_parent (self->rtcp_sink);
 
   /* share the socket created by the sink */
-  g_object_get (self->rtcp_src, "used-socket", &socket, NULL);
-  g_object_set (self->rtcp_sink, "socket", socket, "auto-multicast", FALSE,
+  g_object_get (self->rtcp_sink, "used-socket", &socket, NULL);
+  g_object_set (self->rtcp_src, "socket", socket, "auto-multicast", FALSE,
       "close-socket", FALSE, NULL);
   g_object_unref (socket);
 
   g_object_set (self->rtcp_sink, "sync", FALSE, "async", FALSE, NULL);
-  gst_element_set_locked_state (self->rtcp_sink, FALSE);
-  gst_element_sync_state_with_parent (self->rtcp_sink);
+  gst_element_set_locked_state (self->rtcp_src, FALSE);
+  gst_element_sync_state_with_parent (self->rtcp_src);
 
   return TRUE;
 
@@ -518,6 +518,20 @@ dns_resolve_failed:
   return FALSE;
 }
 
+static void
+gst_rtp_sink_stop (GstRtpSink * self)
+{
+  /* set the socket on rtcp_src to NULL before the udpsrc is changed to
+   * NULL. When an udpsrc goes to NULL, it will close the socket. Since
+   * this socket is shared with udpsink, this will close all RTCP
+   * traffic in an application that changes states
+   * NULL->PLAYING->NULL->PLAYING->NULL (e.g. gst-play-1.0). By setting
+   * the shared socket to NULL, this is avoided (and the socket is picked
+   * up again from udpsink/rtcp in gst_rtp_sink_setup_rtcp_socket). */
+  g_object_set (self->rtcp_src, "socket", NULL, NULL);
+}
+
+
 static GstStateChangeReturn
 gst_rtp_sink_change_state (GstElement * element, GstStateChange transition)
 {
@@ -537,6 +551,9 @@ gst_rtp_sink_change_state (GstElement * element, GstStateChange transition)
       break;
     case GST_STATE_CHANGE_READY_TO_PAUSED:
       break;
+    case GST_STATE_CHANGE_READY_TO_NULL:
+      gst_rtp_sink_stop (self);
+      break;
     default:
       break;
   }
@@ -548,7 +565,7 @@ gst_rtp_sink_change_state (GstElement * element, GstStateChange transition)
   switch (transition) {
     case GST_STATE_CHANGE_NULL_TO_READY:
       /* re-use the sockets after they have been initialised */
-      if (gst_rtp_sink_reuse_socket (self) == FALSE)
+      if (gst_rtp_sink_setup_rtcp_socket (self) == FALSE)
         return GST_STATE_CHANGE_FAILURE;
       break;
     case GST_STATE_CHANGE_READY_TO_PAUSED:
@@ -626,6 +643,8 @@ gst_rtp_sink_init (GstRtpSink * self)
     missing_plugin = "udp";
     goto missing_plugin;
   }
+
+  g_object_set (self->rtp_sink, "async", FALSE, NULL);
 
   self->rtcp_src = gst_element_factory_make ("udpsrc", "rtp_rtcp_udpsrc0");
   if (self->rtcp_src == NULL) {
