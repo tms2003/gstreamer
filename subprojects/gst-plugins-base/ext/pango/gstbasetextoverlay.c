@@ -605,7 +605,7 @@ gst_base_text_overlay_class_init (GstBaseTextOverlayClass * klass)
       g_param_spec_boolean ("save-last-text", "Save Last Text",
           "Save the last received text from object",
           DEFAULT_PROP_SAVE_LAST_TEXT,
-	  G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property (G_OBJECT_CLASS (klass),
       PROP_AUTO_ADJUST_SIZE, g_param_spec_boolean ("auto-resize", "auto resize",
@@ -3050,7 +3050,7 @@ wait_for_text_buf:
         if (overlay->save_last_text && overlay->last_text != NULL) {
           gint text_len = strlen (overlay->last_text);
           gst_base_text_overlay_render_text (overlay, overlay->last_text,
-			                     text_len);
+              text_len);
           ret = gst_base_text_overlay_push_frame (overlay, buffer);
         } else {
           ret = gst_pad_push (overlay->srcpad, buffer);
