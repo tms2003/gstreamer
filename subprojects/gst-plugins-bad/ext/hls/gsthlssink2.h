@@ -66,6 +66,7 @@ struct _GstHlsSink2Class
 
   GOutputStream * (*get_playlist_stream) (GstHlsSink2 * sink, const gchar * location);
   GOutputStream * (*get_fragment_stream) (GstHlsSink2 * sink, const gchar * location);
+  gchar * (*get_fragment_location) (GstHlsSink2 * sink, guint fragment_id, GstSample * sample);
 };
 
 GType gst_hls_sink2_get_type (void);
