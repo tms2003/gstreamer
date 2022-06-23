@@ -1589,55 +1589,101 @@ invalid_caps:
   return FALSE;
 }
 
-static void
-gst_video_flip_set_method (GstVideoFlip * videoflip,
-    GstVideoOrientationMethod method, gboolean from_tag)
+static gboolean
+gst_video_flip_update_method_internal (GstVideoFlip * self)
 {
-  GST_OBJECT_LOCK (videoflip);
+  GstVideoOrientationMethod visual_method;
+  GstVideoOrientationMethod effective_method;
 
-  if (method == GST_VIDEO_ORIENTATION_CUSTOM) {
-    GST_WARNING_OBJECT (videoflip, "unsupported custom orientation");
-    GST_OBJECT_UNLOCK (videoflip);
-    return;
-  }
-
-  /* Store updated method */
-  if (from_tag)
-    videoflip->tag_method = method;
+  if (self->property_method == GST_VIDEO_ORIENTATION_AUTO)
+    visual_method = self->tag_method;
   else
-    videoflip->method = method;
+    visual_method = self->property_method;
 
-  /* Get the new method */
-  if (videoflip->method == GST_VIDEO_ORIENTATION_AUTO)
-    method = videoflip->tag_method;
-  else
-    method = videoflip->method;
+  effective_method =
+      gst_video_orientation_apply (self->meta_method, visual_method);
 
-  if (method != videoflip->proposed_method) {
+  if (effective_method != self->proposed_method) {
     GEnumValue *active_method_enum, *method_enum;
-    GstBaseTransform *btrans = GST_BASE_TRANSFORM (videoflip);
     GEnumClass *enum_class =
         g_type_class_ref (GST_TYPE_VIDEO_ORIENTATION_METHOD);
 
-    active_method_enum =
-        g_enum_get_value (enum_class, videoflip->active_method);
-    method_enum = g_enum_get_value (enum_class, method);
-    GST_LOG_OBJECT (videoflip, "Changing method from %s to %s",
+    active_method_enum = g_enum_get_value (enum_class, self->active_method);
+    method_enum = g_enum_get_value (enum_class, effective_method);
+    GST_LOG_OBJECT (self, "Changing method from %s to %s",
         active_method_enum ? active_method_enum->value_nick : "(nil)",
         method_enum ? method_enum->value_nick : "(nil)");
     g_type_class_unref (enum_class);
 
-    videoflip->proposed_method = method;
-    videoflip->change_configuring_method = TRUE;
-
-    GST_OBJECT_UNLOCK (videoflip);
-
-    gst_base_transform_set_passthrough (btrans,
-        method == GST_VIDEO_ORIENTATION_IDENTITY);
-    gst_base_transform_reconfigure_src (btrans);
-  } else {
-    GST_OBJECT_UNLOCK (videoflip);
+    self->proposed_method = effective_method;
+    return TRUE;
   }
+  return FALSE;
+}
+
+static void
+gst_video_flip_set_method_from_property (GstVideoFlip * self,
+    GstVideoOrientationMethod method)
+{
+  GstBaseTransform *btrans = GST_BASE_TRANSFORM (self);
+  gboolean needs_reconfigure;
+
+  if (method == GST_VIDEO_ORIENTATION_CUSTOM) {
+    GST_WARNING_OBJECT (self, "unsupported custom orientation");
+    return;
+  }
+
+  GST_OBJECT_LOCK (self);
+  self->property_method = method;
+  needs_reconfigure = gst_video_flip_update_method_internal (self);
+  GST_OBJECT_UNLOCK (self);
+
+  if (needs_reconfigure)
+    gst_base_transform_reconfigure_src (btrans);
+}
+
+static void
+gst_video_flip_set_method_from_tag (GstVideoFlip * self,
+    GstVideoOrientationMethod method)
+{
+  GstBaseTransform *btrans = GST_BASE_TRANSFORM (self);
+  gboolean needs_reconfigure;
+
+  if (method == GST_VIDEO_ORIENTATION_CUSTOM ||
+      method == GST_VIDEO_ORIENTATION_AUTO) {
+    GST_WARNING_OBJECT (self, "unsupported custom or auto orientation");
+    return;
+  }
+
+  GST_OBJECT_LOCK (self);
+  self->tag_method = method;
+  needs_reconfigure = gst_video_flip_update_method_internal (self);
+  GST_OBJECT_UNLOCK (self);
+
+  if (needs_reconfigure)
+    gst_base_transform_reconfigure_src (btrans);
+}
+
+static void
+gst_video_flip_set_method_from_meta (GstVideoFlip * self,
+    GstVideoOrientationMethod method)
+{
+  GstBaseTransform *btrans = GST_BASE_TRANSFORM (self);
+  gboolean needs_reconfigure;
+
+  if (method == GST_VIDEO_ORIENTATION_CUSTOM ||
+      method == GST_VIDEO_ORIENTATION_AUTO) {
+    GST_WARNING_OBJECT (self, "unsupported custom or auto orientation");
+    return;
+  }
+
+  GST_OBJECT_LOCK (self);
+  self->meta_method = method;
+  needs_reconfigure = gst_video_flip_update_method_internal (self);
+  GST_OBJECT_UNLOCK (self);
+
+  if (needs_reconfigure)
+    gst_base_transform_reconfigure_src (btrans);
 }
 
 static void
@@ -1655,6 +1701,24 @@ gst_video_flip_before_transform (GstBaseTransform * trans, GstBuffer * in)
 
   if (GST_CLOCK_TIME_IS_VALID (stream_time))
     gst_object_sync_values (GST_OBJECT (videoflip), stream_time);
+}
+
+static gboolean
+gst_video_flip_decide_allocation (GstBaseTransform * trans, GstQuery * query)
+{
+  GstVideoFlip *self = GST_VIDEO_FLIP (trans);
+  GstVideoOrientationMeta *ometa;
+
+  ometa = gst_query_get_allocation_video_orientation_meta (query);
+  if (ometa) {
+    gst_video_flip_set_method_from_meta (self, ometa->orientation);
+    self->add_video_orientation_meta = TRUE;
+  } else {
+    self->add_video_orientation_meta = FALSE;
+  }
+
+  return GST_BASE_TRANSFORM_CLASS (parent_class)->decide_allocation (trans,
+      query);
 }
 
 static GstFlowReturn
@@ -1691,11 +1755,12 @@ gst_video_flip_transform_frame (GstVideoFilter * vfilter,
   videoflip->change_configuring_method = TRUE;
   GST_OBJECT_UNLOCK (videoflip);
 
-  if (proposed != active) {
-    gst_base_transform_set_passthrough (GST_BASE_TRANSFORM (videoflip),
-        proposed == GST_VIDEO_ORIENTATION_IDENTITY);
+  if (proposed != active)
     gst_base_transform_reconfigure_src (GST_BASE_TRANSFORM (videoflip));
-  }
+
+  if (videoflip->add_video_orientation_meta)
+    gst_buffer_add_video_orientation_meta (out_frame->buffer,
+        gst_video_orientation_invert (videoflip->meta_method));
 
   return GST_FLOW_OK;
 
@@ -1787,7 +1852,7 @@ gst_video_flip_sink_event (GstBaseTransform * trans, GstEvent * event)
       gst_event_parse_tag (event, &taglist);
 
       if (gst_video_orientation_from_tag (taglist, &method)) {
-        gst_video_flip_set_method (vf, method, TRUE);
+        gst_video_flip_set_method_from_tag (vf, method);
       }
       break;
     default:
@@ -1808,7 +1873,8 @@ gst_video_flip_set_property (GObject * object, guint prop_id,
   switch (prop_id) {
     case PROP_METHOD:
     case PROP_VIDEO_DIRECTION:
-      gst_video_flip_set_method (videoflip, g_value_get_enum (value), FALSE);
+      gst_video_flip_set_method_from_property (videoflip,
+          g_value_get_enum (value));
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -1825,7 +1891,7 @@ gst_video_flip_get_property (GObject * object, guint prop_id, GValue * value,
   switch (prop_id) {
     case PROP_METHOD:
     case PROP_VIDEO_DIRECTION:
-      g_value_set_enum (value, videoflip->method);
+      g_value_set_enum (value, videoflip->property_method);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -1869,12 +1935,14 @@ gst_video_flip_class_init (GstVideoFlipClass * klass)
   gst_element_class_add_static_pad_template (gstelement_class,
       &gst_video_flip_src_template);
 
-  trans_class->transform_caps =
-      GST_DEBUG_FUNCPTR (gst_video_flip_transform_caps);
   trans_class->before_transform =
       GST_DEBUG_FUNCPTR (gst_video_flip_before_transform);
-  trans_class->src_event = GST_DEBUG_FUNCPTR (gst_video_flip_src_event);
+  trans_class->decide_allocation =
+      GST_DEBUG_FUNCPTR (gst_video_flip_decide_allocation);
   trans_class->sink_event = GST_DEBUG_FUNCPTR (gst_video_flip_sink_event);
+  trans_class->src_event = GST_DEBUG_FUNCPTR (gst_video_flip_src_event);
+  trans_class->transform_caps =
+      GST_DEBUG_FUNCPTR (gst_video_flip_transform_caps);
 
   vfilter_class->set_info = GST_DEBUG_FUNCPTR (gst_video_flip_set_info);
   vfilter_class->transform_frame =
