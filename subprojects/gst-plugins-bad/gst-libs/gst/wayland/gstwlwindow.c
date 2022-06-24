@@ -92,9 +92,6 @@ static void gst_wl_window_finalize (GObject * gobject);
 
 static void gst_wl_window_update_borders (GstWlWindow * self);
 
-static GstVideoOrientationMethod
-gst_wl_window_compute_new_output_orientation (GstWlWindow * self);
-
 static void
 handle_xdg_toplevel_close (void *data, struct xdg_toplevel *xdg_toplevel)
 {
@@ -215,13 +212,31 @@ gst_wl_window_finalize (GObject * gobject)
   G_OBJECT_CLASS (gst_wl_window_parent_class)->finalize (gobject);
 }
 
+static GstVideoOrientationMethod
+gst_wl_window_get_output_orientation (GstWlWindow * self)
+{
+  GstWlWindowPrivate *priv = gst_wl_window_get_instance_private (self);
+  enum wl_output_transform transform =
+      gst_wl_output_transform_from_orientation (priv->output_orientation);
+  GHashTableIter iter;
+  gpointer key, value;
+
+  g_hash_table_iter_init (&iter, priv->outputs);
+  while (g_hash_table_iter_next (&iter, &key, &value)) {
+    transform = gst_wl_output_get_transform (GST_WL_OUTPUT (value));
+    break;
+  }
+
+  return gst_wl_output_orientation_from_transform (transform);
+}
+
 static void
 update_output_orientation (GstWlWindow * self)
 {
   GstWlWindowPrivate *priv = gst_wl_window_get_instance_private (self);
   GstVideoOrientationMethod new_output_orientation;
 
-  new_output_orientation = gst_wl_window_compute_new_output_orientation (self);
+  new_output_orientation = gst_wl_window_get_output_orientation (self);
 
   if (new_output_orientation != priv->output_orientation) {
     priv->output_orientation = new_output_orientation;
@@ -679,7 +694,7 @@ gst_wl_window_update_borders (GstWlWindow * self)
 }
 
 static void
-gst_wl_window_update_geometry (GstWlWindow * self)
+gst_wl_window_update_geometry (GstWlWindow * self, gboolean commit)
 {
   GstWlWindowPrivate *priv = gst_wl_window_get_instance_private (self);
 
@@ -697,10 +712,11 @@ gst_wl_window_update_geometry (GstWlWindow * self)
 
   if (priv->video_width != 0) {
     wl_subsurface_set_sync (priv->video_subsurface);
-    gst_wl_window_resize_video_surface (self, TRUE);
+    gst_wl_window_resize_video_surface (self, commit);
   }
 
-  wl_surface_commit (priv->area_surface_wrapper);
+  if (commit)
+    wl_surface_commit (priv->area_surface_wrapper);
 
   if (priv->video_width != 0)
     wl_subsurface_set_desync (priv->video_subsurface);
@@ -721,7 +737,7 @@ gst_wl_window_set_render_rectangle (GstWlWindow * self, gint x, gint y,
   priv->render_rectangle.w = w;
   priv->render_rectangle.h = h;
 
-  gst_wl_window_update_geometry (self);
+  gst_wl_window_update_geometry (self, TRUE);
 }
 
 const GstVideoRectangle *
@@ -732,81 +748,17 @@ gst_wl_window_get_render_rectangle (GstWlWindow * self)
   return &priv->render_rectangle;
 }
 
-static enum wl_output_transform
-output_transform_from_orientation_method (GstVideoOrientationMethod method)
-{
-  switch (method) {
-    case GST_VIDEO_ORIENTATION_IDENTITY:
-      return WL_OUTPUT_TRANSFORM_NORMAL;
-    case GST_VIDEO_ORIENTATION_90R:
-      return WL_OUTPUT_TRANSFORM_90;
-    case GST_VIDEO_ORIENTATION_180:
-      return WL_OUTPUT_TRANSFORM_180;
-    case GST_VIDEO_ORIENTATION_90L:
-      return WL_OUTPUT_TRANSFORM_270;
-    case GST_VIDEO_ORIENTATION_HORIZ:
-      return WL_OUTPUT_TRANSFORM_FLIPPED;
-    case GST_VIDEO_ORIENTATION_VERT:
-      return WL_OUTPUT_TRANSFORM_FLIPPED_180;
-    case GST_VIDEO_ORIENTATION_UL_LR:
-      return WL_OUTPUT_TRANSFORM_FLIPPED_90;
-    case GST_VIDEO_ORIENTATION_UR_LL:
-      return WL_OUTPUT_TRANSFORM_FLIPPED_270;
-    default:
-      g_assert_not_reached ();
-  }
-}
-
-static GstVideoOrientationMethod
-orientation_method_from_output_transform (enum wl_output_transform transform)
-{
-  switch (transform) {
-    case WL_OUTPUT_TRANSFORM_NORMAL:
-      return GST_VIDEO_ORIENTATION_IDENTITY;
-    case WL_OUTPUT_TRANSFORM_90:
-      return GST_VIDEO_ORIENTATION_90R;
-    case WL_OUTPUT_TRANSFORM_180:
-      return GST_VIDEO_ORIENTATION_180;
-    case WL_OUTPUT_TRANSFORM_270:
-      return GST_VIDEO_ORIENTATION_90L;
-    case WL_OUTPUT_TRANSFORM_FLIPPED:
-      return GST_VIDEO_ORIENTATION_HORIZ;
-    case WL_OUTPUT_TRANSFORM_FLIPPED_180:
-      return GST_VIDEO_ORIENTATION_VERT;
-    case WL_OUTPUT_TRANSFORM_FLIPPED_90:
-      return GST_VIDEO_ORIENTATION_UL_LR;
-    case WL_OUTPUT_TRANSFORM_FLIPPED_270:
-      return GST_VIDEO_ORIENTATION_UR_LL;
-    default:
-      g_assert_not_reached ();
-  }
-}
-
 void
 gst_wl_window_set_rotate_method (GstWlWindow * self,
-    GstVideoOrientationMethod method)
+    GstVideoOrientationMethod method, gboolean commit)
 {
   GstWlWindowPrivate *priv = gst_wl_window_get_instance_private (self);
 
-  priv->buffer_transform = output_transform_from_orientation_method (method);
+  priv->buffer_transform = gst_wl_output_transform_from_orientation (method);
 
-  gst_wl_window_update_geometry (self);
-}
-
-static GstVideoOrientationMethod
-gst_wl_window_compute_new_output_orientation (GstWlWindow * self)
-{
-  GstWlWindowPrivate *priv = gst_wl_window_get_instance_private (self);
-  enum wl_output_transform transform =
-      output_transform_from_orientation_method (priv->output_orientation);
-  GHashTableIter iter;
-  gpointer key, value;
-
-  g_hash_table_iter_init (&iter, priv->outputs);
-  while (g_hash_table_iter_next (&iter, &key, &value)) {
-    transform = gst_wl_output_get_transform (GST_WL_OUTPUT (value));
-    break;
-  }
-
-  return orientation_method_from_output_transform (transform);
+  if (commit)
+    g_mutex_lock (priv->render_lock);
+  gst_wl_window_update_geometry (self, commit);
+  if (commit)
+    g_mutex_unlock (priv->render_lock);
 }

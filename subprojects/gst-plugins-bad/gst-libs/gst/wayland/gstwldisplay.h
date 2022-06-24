@@ -97,6 +97,10 @@ struct zwp_linux_dmabuf_v1 *gst_wl_display_get_dmabuf_v1 (GstWlDisplay * self);
 GST_WL_API
 gboolean gst_wl_display_has_own_display (GstWlDisplay * self);
 
-GstWlOutput * gst_wl_display_lookup_output (GstWlDisplay * self, struct wl_output * wl_output);
+GST_WL_API
+GstVideoOrientationMethod gst_wl_display_get_default_output_orientation (GstWlDisplay * self);
+
+GstWlOutput * gst_wl_display_lookup_output (GstWlDisplay * self,
+    struct wl_output * wl_output);
 
 G_END_DECLS

@@ -116,3 +116,53 @@ gst_wl_output_set_transform (GstWlOutput * self,
   priv->transform = transform;
   g_signal_emit (self, gst_wl_output_signals[SIGNAL_GEOMETRY_CHANGED], 0);
 }
+
+enum wl_output_transform
+gst_wl_output_transform_from_orientation (GstVideoOrientationMethod method)
+{
+  switch (method) {
+    case GST_VIDEO_ORIENTATION_IDENTITY:
+      return WL_OUTPUT_TRANSFORM_NORMAL;
+    case GST_VIDEO_ORIENTATION_90R:
+      return WL_OUTPUT_TRANSFORM_90;
+    case GST_VIDEO_ORIENTATION_180:
+      return WL_OUTPUT_TRANSFORM_180;
+    case GST_VIDEO_ORIENTATION_90L:
+      return WL_OUTPUT_TRANSFORM_270;
+    case GST_VIDEO_ORIENTATION_HORIZ:
+      return WL_OUTPUT_TRANSFORM_FLIPPED;
+    case GST_VIDEO_ORIENTATION_VERT:
+      return WL_OUTPUT_TRANSFORM_FLIPPED_180;
+    case GST_VIDEO_ORIENTATION_UL_LR:
+      return WL_OUTPUT_TRANSFORM_FLIPPED_90;
+    case GST_VIDEO_ORIENTATION_UR_LL:
+      return WL_OUTPUT_TRANSFORM_FLIPPED_270;
+    default:
+      g_assert_not_reached ();
+  }
+}
+
+GstVideoOrientationMethod
+gst_wl_output_orientation_from_transform (enum wl_output_transform transform)
+{
+  switch (transform) {
+    case WL_OUTPUT_TRANSFORM_NORMAL:
+      return GST_VIDEO_ORIENTATION_IDENTITY;
+    case WL_OUTPUT_TRANSFORM_90:
+      return GST_VIDEO_ORIENTATION_90R;
+    case WL_OUTPUT_TRANSFORM_180:
+      return GST_VIDEO_ORIENTATION_180;
+    case WL_OUTPUT_TRANSFORM_270:
+      return GST_VIDEO_ORIENTATION_90L;
+    case WL_OUTPUT_TRANSFORM_FLIPPED:
+      return GST_VIDEO_ORIENTATION_HORIZ;
+    case WL_OUTPUT_TRANSFORM_FLIPPED_180:
+      return GST_VIDEO_ORIENTATION_VERT;
+    case WL_OUTPUT_TRANSFORM_FLIPPED_90:
+      return GST_VIDEO_ORIENTATION_UL_LR;
+    case WL_OUTPUT_TRANSFORM_FLIPPED_270:
+      return GST_VIDEO_ORIENTATION_UR_LL;
+    default:
+      g_assert_not_reached ();
+  }
+}

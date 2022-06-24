@@ -455,7 +455,7 @@ setup_wl_window (GstGtkWaylandSink * self)
     priv->wl_window = gst_wl_window_new_in_surface (priv->display,
         wl_surface, &priv->render_lock);
     gst_wl_window_set_rotate_method (priv->wl_window,
-        priv->current_rotate_method);
+        priv->current_rotate_method, FALSE);
   }
 
   /* In order to position the subsurface correctly within a scrollable widget,
@@ -1237,7 +1237,7 @@ gst_gtk_wayland_sink_set_rotate_method (GstGtkWaylandSink * self,
 
     if (priv->wl_window) {
       g_mutex_lock (&priv->render_lock);
-      gst_wl_window_set_rotate_method (priv->wl_window, new_method);
+      gst_wl_window_set_rotate_method (priv->wl_window, new_method, TRUE);
       g_mutex_unlock (&priv->render_lock);
     }
 

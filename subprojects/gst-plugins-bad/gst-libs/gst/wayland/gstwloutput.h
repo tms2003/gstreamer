@@ -40,4 +40,8 @@ enum wl_output_transform gst_wl_output_get_transform (GstWlOutput * self);
 void gst_wl_output_set_transform (GstWlOutput * self,
     enum wl_output_transform transform);
 
+enum wl_output_transform gst_wl_output_transform_from_orientation (GstVideoOrientationMethod method);
+
+GstVideoOrientationMethod gst_wl_output_orientation_from_transform (enum wl_output_transform transform);
+
 G_END_DECLS

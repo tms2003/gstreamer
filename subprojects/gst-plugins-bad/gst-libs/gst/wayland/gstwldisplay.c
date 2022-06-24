@@ -630,3 +630,20 @@ gst_wl_display_lookup_output (GstWlDisplay * self, struct wl_output * wl_output)
 
   return g_hash_table_lookup (priv->outputs, wl_output);
 }
+
+GstVideoOrientationMethod
+gst_wl_display_get_default_output_orientation (GstWlDisplay * self)
+{
+  GstWlDisplayPrivate *priv = gst_wl_display_get_instance_private (self);
+  enum wl_output_transform transform = WL_OUTPUT_TRANSFORM_NORMAL;
+  GHashTableIter iter;
+  gpointer key, value;
+
+  g_hash_table_iter_init (&iter, priv->outputs);
+  while (g_hash_table_iter_next (&iter, &key, &value)) {
+    transform = gst_wl_output_get_transform (GST_WL_OUTPUT (value));
+    break;
+  }
+
+  return gst_wl_output_orientation_from_transform (transform);
+}
