@@ -1604,11 +1604,7 @@ gst_audio_encoder_sink_event_default (GstAudioEncoder * enc, GstEvent * event)
       }
 
       GST_AUDIO_ENCODER_STREAM_LOCK (enc);
-      /* finish current segment */
-      gst_audio_encoder_drain (enc);
-      /* reset partially for new segment */
-      gst_audio_encoder_reset (enc, FALSE);
-      /* and follow along with segment */
+
       enc->input_segment = seg;
 
       enc->priv->early_pending_events =
