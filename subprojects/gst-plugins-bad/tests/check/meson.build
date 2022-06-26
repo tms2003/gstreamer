@@ -40,7 +40,7 @@ base_tests = [
   [['elements/h263parse.c'], false, [libparser_dep, gstcodecparsers_dep]],
   [['elements/h264parse.c'], false, [libparser_dep, gstcodecparsers_dep]],
   [['elements/h265parse.c'], false, [libparser_dep, gstcodecparsers_dep]],
-  [['elements/hlsdemux_m3u8.c'], not hls_dep.found(), [hls_dep]],
+  [['elements/hlsdemux_m3u8.c'], not hls_dep.found(), [hls_dep, gstmpegts_dep]],
   [['elements/id3mux.c']],
   [['elements/interlace.c']],
   [['elements/jpeg2000parse.c'], false, [libparser_dep, gstcodecparsers_dep]],

@@ -24,6 +24,7 @@
 #include <math.h>
 #include <errno.h>
 #include <glib.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "m3u8.h"
@@ -32,9 +33,17 @@
 #define GST_CAT_DEFAULT hls_debug
 
 static GstM3U8MediaFile *gst_m3u8_media_file_new (gchar * uri,
-    gchar * title, GstClockTime duration, guint sequence);
+    gchar * title, GstClockTime duration, guint sequence,
+    GstDateTime * program_dt);
 static void gst_m3u8_init_file_unref (GstM3U8InitFile * self);
 static gchar *uri_join (const gchar * uri, const gchar * path);
+static void gst_m3u8_time_event_unref (GstHLSTimeEvent * self);
+
+static void
+_time_event_unref (void *d)
+{
+  gst_m3u8_time_event_unref ((GstHLSTimeEvent *) d);
+}
 
 GstM3U8 *
 gst_m3u8_new (void)
@@ -49,6 +58,8 @@ gst_m3u8_new (void)
   m3u8->sequence_position = 0;
   m3u8->highest_sequence_number = -1;
   m3u8->duration = GST_CLOCK_TIME_NONE;
+  m3u8->time_events = g_hash_table_new_full (g_str_hash,
+      g_str_equal, NULL, _time_event_unref);
 
   g_mutex_init (&m3u8->lock);
   m3u8->ref_count = 1;
@@ -108,6 +119,9 @@ gst_m3u8_unref (GstM3U8 * self)
     g_list_foreach (self->files, (GFunc) gst_m3u8_media_file_unref, NULL);
     g_list_free (self->files);
 
+    if (self->time_events)
+      g_hash_table_destroy (self->time_events);
+
     g_free (self->last_data);
     g_mutex_clear (&self->lock);
     g_free (self);
@@ -116,7 +130,7 @@ gst_m3u8_unref (GstM3U8 * self)
 
 static GstM3U8MediaFile *
 gst_m3u8_media_file_new (gchar * uri, gchar * title, GstClockTime duration,
-    guint sequence)
+    guint sequence, GstDateTime * program_dt)
 {
   GstM3U8MediaFile *file;
 
@@ -126,6 +140,7 @@ gst_m3u8_media_file_new (gchar * uri, gchar * title, GstClockTime duration,
   file->duration = duration;
   file->sequence = sequence;
   file->ref_count = 1;
+  file->program_dt = program_dt;
 
   return file;
 }
@@ -147,9 +162,13 @@ gst_m3u8_media_file_unref (GstM3U8MediaFile * self)
   if (g_atomic_int_dec_and_test (&self->ref_count)) {
     if (self->init_file)
       gst_m3u8_init_file_unref (self->init_file);
+    if (self->time_events)
+      g_list_free (self->time_events);
     g_free (self->title);
     g_free (self->uri);
     g_free (self->key);
+    if (self->program_dt)
+      gst_date_time_ref (self->program_dt);
     g_free (self);
   }
 }
@@ -184,6 +203,71 @@ gst_m3u8_init_file_unref (GstM3U8InitFile * self)
     g_free (self->uri);
     g_free (self);
   }
+}
+
+static gboolean
+gst_m3u8_time_event_update (GstHLSTimeEvent * te, gboolean finalized,
+    GstDateTime * strt_time, GstDateTime * stop_time, gdouble dur)
+{
+  if (te == NULL || te->finalized)
+    return FALSE;
+
+  te->finalized = finalized;
+
+  if (strt_time != NULL) {
+    if (te->time != NULL)
+      gst_date_time_unref (te->time);
+    te->time = strt_time;
+    gst_date_time_ref (te->time);
+  }
+
+  if (!(dur < 0.0)) {
+    te->duration = (GstClockTime) round (dur * (gdouble) GST_SECOND);
+  } else if ((te->time != NULL) && (stop_time != NULL)) {
+    GDateTime *strt = gst_date_time_to_g_date_time (te->time);
+    GDateTime *stop = gst_date_time_to_g_date_time (stop_time);
+    GTimeSpan dif = g_date_time_difference (stop, strt);
+    if (dif > 0)
+      te->duration = (GstClockTime) (dif * GST_USECOND);
+    g_date_time_unref (stop);
+    g_date_time_unref (strt);
+  }
+
+  return TRUE;
+}
+
+static GstHLSTimeEvent *
+gst_m3u8_time_event_new (gchar * id, gboolean finalized,
+    GstDateTime * strt_time, GstDateTime * stop_time, gdouble dur)
+{
+  GstHLSTimeEvent *te = NULL;
+
+  if (id == NULL)
+    return NULL;
+
+  if (!(te = g_new0 (GstHLSTimeEvent, 1)))
+    return NULL;
+
+  te->id = g_strdup (id);
+  te->time = NULL;
+  te->duration = 0;
+  te->listed = FALSE;
+
+  te->attributes = gst_structure_new_empty ("attributes");
+
+  gst_m3u8_time_event_update (te, finalized, strt_time, stop_time, dur);
+
+  return te;
+}
+
+void
+gst_m3u8_time_event_unref (GstHLSTimeEvent * self)
+{
+  g_free (self->id);
+  if (self->time)
+    gst_date_time_unref (self->time);
+  gst_structure_free (self->attributes);
+  g_free (self);
 }
 
 static gboolean
@@ -476,6 +560,15 @@ generate_media_seqnums (GstM3U8 * self, GList * previous_files)
   }
 }
 
+static gboolean
+time_events_remove_func (gpointer key, gpointer value, gpointer user_data)
+{
+  GstHLSTimeEvent *te = GST_M3U8_TIME_EVENT (value);
+  if (te == NULL || (te->finalized && !te->listed))
+    return TRUE;
+  return FALSE;
+}
+
 /*
  * @data: a m3u8 playlist text data, taking ownership
  */
@@ -483,6 +576,7 @@ gboolean
 gst_m3u8_update (GstM3U8 * self, gchar * data)
 {
   gint val;
+  GstDateTime *program_dt = NULL;
   GstClockTime duration;
   gchar *title, *end;
   gboolean discontinuity = FALSE;
@@ -494,6 +588,7 @@ gst_m3u8_update (GstM3U8 * self, gchar * data)
   GList *previous_files = NULL;
   gboolean have_mediasequence = FALSE;
   GstM3U8InitFile *last_init_file = NULL;
+  GList *time_events = NULL;
 
   g_return_val_if_fail (self != NULL, FALSE);
   g_return_val_if_fail (data != NULL, FALSE);
@@ -532,6 +627,13 @@ gst_m3u8_update (GstM3U8 * self, gchar * data)
   self->duration = GST_CLOCK_TIME_NONE;
   mediasequence = 0;
 
+  for (GList * i = g_hash_table_get_values (self->time_events); i != NULL;
+      i = i->next) {
+    GstHLSTimeEvent *te = GST_M3U8_TIME_EVENT (i->data);
+    if (te != NULL)
+      te->listed = FALSE;
+  }
+
   /* By default, allow caching */
   self->allowcache = TRUE;
 
@@ -558,7 +660,10 @@ gst_m3u8_update (GstM3U8 * self, gchar * data)
       data = uri_join (self->base_uri ? self->base_uri : self->uri, data);
       if (data != NULL) {
         GstM3U8MediaFile *file;
-        file = gst_m3u8_media_file_new (data, title, duration, mediasequence++);
+        file =
+            gst_m3u8_media_file_new (data, title, duration,
+            mediasequence++, program_dt);
+        program_dt = NULL;
 
         /* set encryption params */
         file->key = current_key ? g_strdup (current_key) : NULL;
@@ -590,6 +695,10 @@ gst_m3u8_update (GstM3U8 * self, gchar * data)
           file->offset = 0;
         }
 
+        if (time_events != NULL) {
+          file->time_events = g_list_reverse (time_events);
+        }
+
         file->discont = discontinuity;
         if (last_init_file)
           file->init_file = gst_m3u8_init_file_ref (last_init_file);
@@ -597,6 +706,7 @@ gst_m3u8_update (GstM3U8 * self, gchar * data)
         duration = 0;
         title = NULL;
         discontinuity = FALSE;
+        time_events = NULL;
         size = offset = -1;
         self->files = g_list_prepend (self->files, file);
       }
@@ -647,8 +757,12 @@ gst_m3u8_update (GstM3U8 * self, gchar * data)
         self->discont_sequence++;
         discontinuity = TRUE;
       } else if (g_str_has_prefix (data_ext_x, "PROGRAM-DATE-TIME:")) {
-        /* <YYYY-MM-DDThh:mm:ssZ> */
-        GST_DEBUG ("FIXME parse date");
+        if (program_dt)
+          gst_date_time_unref (program_dt);
+        program_dt = gst_date_time_new_from_iso8601_string (data + 25);
+        if (!program_dt) {
+          GST_WARNING ("Could not parse program date/time");
+        }
       } else if (g_str_has_prefix (data_ext_x, "ALLOW-CACHE:")) {
         self->allowcache = g_ascii_strcasecmp (data + 19, "YES") == 0;
       } else if (g_str_has_prefix (data_ext_x, "KEY:")) {
@@ -710,6 +824,107 @@ gst_m3u8_update (GstM3U8 * self, gchar * data)
         } else {
           goto next_line;
         }
+      } else if (g_str_has_prefix (data_ext_x, "DATERANGE:")) {
+        gchar *v, *a;
+
+        gchar *dr_id = NULL;
+        gchar *dr_type = NULL;
+        gboolean dr_planned = TRUE;
+        GstDateTime *dr_strt_time = NULL;
+        GstDateTime *dr_stop_time = NULL;
+        gdouble dr_dur = -1.00;
+
+        GstHLSTimeEvent *te = NULL;
+        GBytes *scte_bin = NULL;
+
+        data = data_ext_x + 10;
+
+        while (data && parse_attributes (&data, &a, &v)) {
+          if (g_str_equal (a, "ID")) {
+            dr_id = v;
+          } else if (g_str_equal (a, "START-DATE")) {
+            if (dr_strt_time != NULL ||
+                !(dr_strt_time = gst_date_time_new_from_iso8601_string (v)))
+              goto dr_fail;
+          } else if (g_str_equal (a, "END-DATE")) {
+            if (dr_stop_time != NULL ||
+                !(dr_stop_time = gst_date_time_new_from_iso8601_string (v)))
+              goto dr_fail;
+          } else if (g_str_equal (a, "DURATION")) {
+            if (!double_from_string (v, &v, &dr_dur))
+              goto dr_fail;
+            dr_planned = FALSE;
+          } else if (g_str_equal (a, "PLANNED-DURATION")) {
+            if (!double_from_string (v, &v, &dr_dur))
+              goto dr_fail;
+            dr_planned = TRUE;
+          } else if (g_str_has_prefix (a, "SCTE35-")) {
+            guint8 *bin;
+            gsize i;
+
+            dr_type = a;
+
+            if (v && v[0] != 0) {
+              if (v[0] == '0' && v[1] == 'x')
+                v += 2;
+
+              bin = g_new0 (guint8, (g_utf8_strlen (v, -1) + 1) / 2);
+              for (i = 0; v[i * 2] && v[(i * 2) + 1]; i++) {
+                if (sscanf (&v[i * 2], "%2hhx", &bin[i]) == EOF) {
+                  GST_DEBUG ("ERROR READING SECTION at %ld", i);
+                  g_free (bin);
+                  goto dr_fail;
+                }
+              }
+              scte_bin = g_bytes_new_take (bin, i);
+            }
+          } else {
+            GST_DEBUG ("Unknown DATARANGE attribute: %s", a);
+          }
+        }
+
+        if (dr_id == NULL)
+          goto dr_fail;
+
+        /* update or add time event to the time event record table */
+        if ((te = g_hash_table_lookup (self->time_events, dr_id)) != NULL) {
+          gst_m3u8_time_event_update (te, !dr_planned, dr_strt_time,
+              dr_stop_time, dr_dur);
+          if (g_strcmp0 (dr_type, "SCTE35-IN") == 0) {
+            GBytes *scte_out = NULL;
+            /* check if SCTE35 data is same for IN as it is OUT, if so, treat it as just an update */
+            gst_structure_get (te->attributes, "SCTE35-OUT", G_TYPE_BYTES,
+                &scte_out, NULL);
+            if (g_bytes_equal (scte_bin, scte_out)) {   /* ignore SCTE35-IN */
+              g_bytes_unref (scte_bin);
+              scte_bin = NULL;
+              scte_bin = NULL;
+            }
+            te->finalized = TRUE;
+          }
+        } else {                /* create and add new */
+          if ((te =
+                  gst_m3u8_time_event_new (dr_id, !dr_planned, dr_strt_time,
+                      dr_stop_time, dr_dur)) != NULL) {
+            g_hash_table_replace (self->time_events, te->id, te);
+          }
+        }
+
+        if (te != NULL) {
+          if (scte_bin != NULL)
+            gst_structure_set (te->attributes, dr_type, G_TYPE_BYTES, scte_bin,
+                NULL);
+          te->listed = TRUE;
+          time_events = g_list_prepend (time_events, te);
+        }
+
+      dr_fail:
+        if (scte_bin != NULL)
+          g_bytes_unref (scte_bin);
+        if (dr_strt_time != NULL)
+          gst_date_time_unref (dr_strt_time);
+        if (dr_stop_time != NULL)
+          gst_date_time_unref (dr_stop_time);
       } else if (g_str_has_prefix (data_ext_x, "MAP:")) {
         gchar *v, *a, *header_uri = NULL;
 
@@ -764,8 +979,19 @@ gst_m3u8_update (GstM3U8 * self, gchar * data)
     data = g_utf8_next_char (end);      /* skip \n */
   }
 
+  if (time_events != NULL)
+    g_list_free (time_events);
+
+  g_hash_table_foreach_remove (self->time_events, time_events_remove_func,
+      NULL);
+
   g_free (current_key);
   current_key = NULL;
+
+  if (program_dt) {
+    gst_date_time_unref (program_dt);
+    program_dt = NULL;
+  }
 
   self->files = g_list_reverse (self->files);
 
@@ -803,6 +1029,8 @@ gst_m3u8_update (GstM3U8 * self, gchar * data)
     GList *walk;
     GstM3U8MediaFile *file;
     GstClockTime duration = 0;
+    GDateTime *pdt = NULL;
+    GList *pdt_backfill = NULL;
 
     mediasequence = -1;
 
@@ -817,6 +1045,26 @@ gst_m3u8_update (GstM3U8 * self, gchar * data)
         return FALSE;
       } else {
         mediasequence = file->sequence;
+      }
+
+      if (pdt && !file->program_dt) {
+        gdouble diff_sec = GST_TIME_AS_SECONDS ((gdouble) file->duration);
+        GDateTime *pdt_temp = g_date_time_add_seconds (pdt, diff_sec);
+        if (pdt_temp) {
+          g_date_time_unref (pdt);
+          pdt = pdt_temp;
+          if ((file->program_dt = gst_date_time_new_from_g_date_time (pdt)))
+            g_date_time_ref (pdt);
+        }
+      }
+
+      if (file->program_dt) {
+        GDateTime *pdt_temp = gst_date_time_to_g_date_time (file->program_dt);
+        if (pdt)
+          g_date_time_unref (pdt);
+        pdt = pdt_temp;
+        if (!pdt_backfill && pdt)
+          pdt_backfill = walk;
       }
 
       duration += file->duration;
@@ -842,6 +1090,31 @@ gst_m3u8_update (GstM3U8 * self, gchar * data)
           GST_TIME_ARGS (self->last_file_end));
     }
     self->duration = duration;
+
+    /* fill program_dt for segments before first 
+       EXT_X_PROGRAM_DATE_TIME in manifest */
+    if (pdt_backfill) {
+      file = pdt_backfill->data;
+      if (pdt)
+        g_date_time_unref (pdt);
+      pdt = gst_date_time_to_g_date_time (file->program_dt);
+
+      for (walk = pdt_backfill->prev; walk; walk = walk->prev) {
+        GDateTime *pdt_temp = pdt;
+        gdouble diff_sec = 0.0;
+
+        file = walk->data;
+        diff_sec = -GST_TIME_AS_SECONDS ((gdouble) file->duration);
+        if ((pdt = g_date_time_add_seconds (pdt, diff_sec))) {
+          g_date_time_unref (pdt_temp);
+        }
+        if ((file->program_dt = gst_date_time_new_from_g_date_time (pdt)))
+          g_date_time_ref (pdt);
+      }
+    }
+
+    if (pdt)
+      g_date_time_unref (pdt);
   }
 
   /* first-time setup */
@@ -919,7 +1192,8 @@ m3u8_find_next_fragment (GstM3U8 * m3u8, gboolean forward)
 
 GstM3U8MediaFile *
 gst_m3u8_get_next_fragment (GstM3U8 * m3u8, gboolean forward,
-    GstClockTime * sequence_position, gboolean * discont)
+    GstClockTime * sequence_position, GstDateTime ** program_dt,
+    gboolean * discont)
 {
   GstM3U8MediaFile *file = NULL;
 
@@ -945,6 +1219,11 @@ gst_m3u8_get_next_fragment (GstM3U8 * m3u8, gboolean forward,
 
   if (sequence_position)
     *sequence_position = m3u8->sequence_position;
+
+  if (program_dt)
+    *program_dt =
+        file->program_dt ? gst_date_time_ref (file->program_dt) : NULL;
+
   if (discont)
     *discont = file->discont || (m3u8->sequence != file->sequence);
 
