@@ -87,6 +87,8 @@ struct _GstMpegvParse {
   gboolean picext_updated;
   gboolean quantmatrext_updated;
 
+  GstClockTime gop_pts;
+
   GstVideoParseUserData user_data;
 
   /* properties */

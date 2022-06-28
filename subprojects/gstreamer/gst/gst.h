@@ -52,8 +52,10 @@
 #include <gst/gsterror.h>
 #include <gst/gstevent.h>
 #include <gst/gstghostpad.h>
+#include <gst/gstindex.h>
 #include <gst/gstinfo.h>
 #include <gst/gstiterator.h>
+#include <gst/gstmemindex.h>
 #include <gst/gstmessage.h>
 #include <gst/gstmemory.h>
 #include <gst/gstmeta.h>

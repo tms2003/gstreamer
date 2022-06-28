@@ -37,3 +37,4 @@ gstrtp_dep = dependency('gstreamer-rtp-1.0', version : gst_req,
 subdir('playback')
 subdir('network')
 subdir('webrtc')
+subdir('indexing')
