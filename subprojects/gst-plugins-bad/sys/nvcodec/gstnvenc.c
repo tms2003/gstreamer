@@ -993,9 +993,9 @@ gst_nvenc_plugin_init (GstPlugin * plugin, guint device_index,
     CUcontext cuda_ctx)
 {
   gst_nv_enc_register (plugin, NV_ENC_CODEC_H264_GUID,
-      "h264", GST_RANK_PRIMARY * 2, device_index, cuda_ctx);
+      "h264", GST_RANK_SECONDARY, device_index, cuda_ctx);
   gst_nv_enc_register (plugin, NV_ENC_CODEC_HEVC_GUID,
-      "h265", GST_RANK_PRIMARY * 2, device_index, cuda_ctx);
+      "h265", GST_RANK_SECONDARY, device_index, cuda_ctx);
 }
 
 guint32
