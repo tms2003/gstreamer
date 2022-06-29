@@ -1206,3 +1206,193 @@ gst_buffer_add_video_time_code_meta_full (GstBuffer * buffer, guint fps_n,
 
   return meta;
 }
+
+/* Orientation Meta implementation *******************************************/
+
+GType
+gst_video_orientation_meta_api_get_type (void)
+{
+  static GType type;
+
+  if (g_once_init_enter (&type)) {
+    static const gchar *tags[] = { GST_META_TAG_VIDEO_STR,
+      GST_META_TAG_VIDEO_ORIENTATION_STR, NULL
+    };
+    GType _type =
+        gst_meta_api_type_register ("GstVideoOrientationMetaAPI", tags);
+    GST_INFO ("registering");
+    g_once_init_leave (&type, _type);
+  }
+  return type;
+}
+
+
+static gboolean
+gst_video_orientation_meta_transform (GstBuffer * dest, GstMeta * meta,
+    GstBuffer * buffer, GQuark type, gpointer data)
+{
+  GstVideoOrientationMeta *dmeta, *smeta;
+
+  if (GST_META_TRANSFORM_IS_COPY (type)) {
+    smeta = (GstVideoOrientationMeta *) meta;
+
+    GST_DEBUG ("copy orientation metadata");
+    dmeta = gst_buffer_add_video_orientation_meta (dest, smeta->orientation);
+    if (!dmeta)
+      return FALSE;
+  } else {
+    /* return FALSE, if transform type is not supported */
+    return FALSE;
+  }
+  return TRUE;
+}
+
+static gboolean
+gst_video_orientation_meta_init (GstMeta * meta, gpointer params,
+    GstBuffer * buffer)
+{
+  return TRUE;
+}
+
+static void
+gst_video_orientation_meta_free (GstMeta * meta, GstBuffer * buffer)
+{
+}
+
+/*
+static GstVideoOrientationMeta *
+gst_video_orientation_meta_real_copy (const GstVideoOrientationMeta * self)
+{
+  return g_slice_dup (GstVideoOrientationMeta, self);
+}
+
+static void
+gst_video_orientation_meta_real_free (GstVideoOrientationMeta * self)
+{
+  g_warning ("%s", __func__);
+  g_slice_free (GstVideoOrientationMeta, self);
+}
+
+G_DEFINE_BOXED_TYPE (GstVideoOrientationMeta, gst_video_orientation_meta,
+    (GBoxedCopyFunc) gst_video_orientation_meta_real_copy, (GBoxedFreeFunc) gst_video_orientation_meta_real_free);
+*/
+
+const GstMetaInfo *
+gst_video_orientation_meta_get_info (void)
+{
+  static const GstMetaInfo *meta_info = NULL;
+
+  if (g_once_init_enter ((GstMetaInfo **) & meta_info)) {
+    const GstMetaInfo *mi =
+        gst_meta_register (GST_VIDEO_ORIENTATION_META_API_TYPE,
+        "GstVideoOrientationMeta",
+        sizeof (GstVideoOrientationMeta),
+        gst_video_orientation_meta_init,
+        gst_video_orientation_meta_free,
+        gst_video_orientation_meta_transform);
+    g_once_init_leave ((GstMetaInfo **) & meta_info, (GstMetaInfo *) mi);
+  }
+  return meta_info;
+}
+
+/**
+ * gst_buffer_add_video_orientation_meta:
+ * @buffer: a #GstBuffer
+ * @orientation: the #GstVideoOrientation to add to the buffer
+ *
+ * Returns: (transfer none): the added #GstVideoOrientationMeta on @buffer
+ *
+ * Since: 1.22
+ */
+GstVideoOrientationMeta *
+gst_buffer_add_video_orientation_meta (GstBuffer * buffer,
+    GstVideoOrientationMethod orientation)
+{
+  GstVideoOrientationMeta *meta;
+
+  g_return_val_if_fail (GST_IS_BUFFER (buffer), NULL);
+  g_return_val_if_fail (orientation != GST_VIDEO_ORIENTATION_AUTO, NULL);
+  g_return_val_if_fail (orientation != GST_VIDEO_ORIENTATION_CUSTOM, NULL);
+
+  meta = (GstVideoOrientationMeta *) gst_buffer_add_meta (buffer,
+      GST_VIDEO_ORIENTATION_META_INFO, NULL);
+  g_return_val_if_fail (meta != NULL, NULL);
+
+  meta->orientation = orientation;
+
+  return meta;
+}
+
+/**
+ * gst_query_get_allocation_video_orientation_meta:
+ * @query: a #GstQuery
+ *
+ * Returns: (transfer none): the added #GstVideoOrientationMeta on @query
+ *
+ * Since: 1.22
+ */
+GstVideoOrientationMeta *
+gst_query_get_allocation_video_orientation_meta (GstQuery * query)
+{
+  GstVideoOrientationMeta *ometa = NULL;
+
+  g_return_val_if_fail (GST_IS_QUERY (query), NULL);
+
+  for (int i = 0; i < gst_query_get_n_allocation_metas (query); i++) {
+    const GstStructure *params;
+
+    if (gst_query_parse_nth_allocation_meta (query, i, &params) ==
+        GST_VIDEO_ORIENTATION_META_API_TYPE) {
+      const GValue *orientation;
+
+      orientation = gst_structure_get_value (params, "orientation");
+      if (orientation) {
+        ometa = g_value_get_pointer (orientation);
+      }
+    }
+  }
+
+  return ometa;
+}
+
+/**
+ * gst_query_add_allocation_video_orientation_meta:
+ * @query: a #GstQuery
+ * @orientation: the #GstVideoOrientation to add to the allocation query
+ *
+ * Returns: (transfer none): the added #GstVideoOrientationMeta on @query
+ *
+ * Since: 1.22
+ */
+GstVideoOrientationMeta *
+gst_query_add_allocation_video_orientation_meta (GstQuery * query,
+    GstVideoOrientationMethod orientation)
+{
+  GstMeta *meta = NULL;
+  GstVideoOrientationMeta *ometa;
+  GstStructure *structure;
+  GValue value;
+
+  g_return_val_if_fail (GST_IS_QUERY (query), NULL);
+  g_return_val_if_fail (orientation != GST_VIDEO_ORIENTATION_AUTO, NULL);
+  g_return_val_if_fail (orientation != GST_VIDEO_ORIENTATION_CUSTOM, NULL);
+
+  ometa = g_slice_new (GstVideoOrientationMeta);
+
+  meta = (GstMeta *) ometa;
+  meta->info = GST_VIDEO_ORIENTATION_META_INFO;
+  meta->flags = GST_META_FLAG_NONE;
+
+  ometa->orientation = orientation;
+
+  structure = gst_structure_new_empty ("GstVideoOrientationMeta");
+  g_value_init (&value, G_TYPE_POINTER);
+  //g_value_take_boxed (&value, ometa);
+  g_value_set_pointer (&value, ometa);
+  gst_structure_take_value (structure, "orientation", &value);
+
+  gst_query_add_allocation_meta (query, GST_VIDEO_ORIENTATION_META_API_TYPE,
+      structure);
+
+  return ometa;
+}
