@@ -217,8 +217,10 @@ gst_h264_parse_nalu_header (GstH264NalUnit * nalu)
   switch (nalu->type) {
     case GST_H264_NAL_PREFIX_UNIT:
     case GST_H264_NAL_SLICE_EXT:
-      if (nalu->size < 4)
+      /* 1 byte for the nal header + 1 bit */
+      if (nalu->size < 2)
         return FALSE;
+
       gst_bit_reader_init (&br, nalu->data + nalu->offset + nalu->header_bytes,
           nalu->size - nalu->header_bytes);
 
@@ -229,6 +231,10 @@ gst_h264_parse_nalu_header (GstH264NalUnit * nalu)
 
       } else {                  /* MVC */
         GstH264NalUnitExtensionMVC *const mvc = &nalu->extension.mvc;
+
+        /* Needs to parse 22 extra bits */
+        if (nalu->size < 4)
+          return FALSE;
 
         nalu->extension_type = GST_H264_NAL_EXTENSION_MVC;
         mvc->non_idr_flag = gst_bit_reader_get_bits_uint8_unchecked (&br, 1);
@@ -241,7 +247,8 @@ gst_h264_parse_nalu_header (GstH264NalUnit * nalu)
         /* Update IdrPicFlag (H.7.4.1.1) */
         nalu->idr_pic_flag = !mvc->non_idr_flag;
       }
-      nalu->header_bytes += 3;
+
+      nalu->header_bytes += (gst_bit_reader_get_pos (&br) + 7) / 8;
       break;
     default:
       break;
