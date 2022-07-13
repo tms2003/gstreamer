@@ -360,6 +360,8 @@ gst_multiudpsink_class_init (GstMultiUDPSinkClass * klass)
    * GstMultiUDPSink::ecn:
    *
    * Set the value of the ECN codepoint on packets sent
+   *
+   * Since: 1.22
    */
   g_object_class_install_property (gobject_class, PROP_ECN,
       g_param_spec_enum ("ecn",

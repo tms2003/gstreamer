@@ -28,8 +28,17 @@ G_BEGIN_DECLS
 
 typedef struct _GstNetEcnMeta GstNetEcnMeta;
 
-/*typedef enum _GstNetEcnCp GstNetEcnCp;*/
-
+/**
+ * GstNetEcnCp:
+ * @GST_NET_ECN_META_NO_ECN: Non ECN-capable transport
+ * @GST_NET_ECN_META_ECT_1: ECN Capable Transport, ECT(1)
+ * @GST_NET_ECN_META_ECT_0: ECN Capable Transport, ECT(0)
+ * @GST_NET_ECN_META_ECT_CE: Congestion Encountered, CE
+ *
+ * ECN codepoints.
+ *
+ * Since: 1.22
+ */
 typedef enum _GstNetEcnCp {
   GST_NET_ECN_META_NO_ECN = 0x0,
   GST_NET_ECN_META_ECT_1  = 0x1,
@@ -42,13 +51,14 @@ GType gst_net_ecn_cp_get_type (void);
 #define GST_NET_ECN_CP_TYPE (gst_net_ecn_cp_get_type())
 
 /**
- * GstNetECNMeta:
+ * GstNetEcnMeta:
  * @meta: the parent type
  * @cp: The ECN CP for the received buffer
  *
  * Buffer metadata for Explicit Congestion Notification on received buffers
+ *
+ * Since: 1.22
  */
-
 struct _GstNetEcnMeta {
   GstMeta meta;
 
