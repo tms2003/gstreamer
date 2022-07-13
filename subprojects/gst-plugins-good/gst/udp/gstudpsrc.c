@@ -1018,7 +1018,7 @@ gst_udpsrc_class_init (GstUDPSrcClass * klass)
    * Since: 1.22
    */
   g_object_class_install_property (gobject_class, PROP_ECN,
-      g_param_spec_boolean ("ecn",
+      g_param_spec_boolean ("retrieve-ecn",
           "Enable reception of ECN ancillary data on this socket",
           "Used for receiving ECN codepoints using IP_TOS/IPV6_TCLASS, "
           "and add it to buffers as meta.",

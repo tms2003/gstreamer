@@ -364,7 +364,7 @@ gst_multiudpsink_class_init (GstMultiUDPSinkClass * klass)
    * Since: 1.22
    */
   g_object_class_install_property (gobject_class, PROP_ECN,
-      g_param_spec_enum ("ecn",
+      g_param_spec_enum ("set-ecn",
           "Set the ECN codepoint",
           "Set the ECN codepoint on packets sent to indicate support for ECN"
           " (or lack thereof)",
