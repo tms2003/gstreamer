@@ -35,7 +35,7 @@
 GType
 gst_net_ecn_cp_get_type (void)
 {
-  static GType type = 0;
+  static gsize g_type = 0;
   static const GEnumValue net_ecn_cp_types[] = {
     {GST_NET_ECN_META_NO_ECN, "Non ECN-Capable Transport", "Non-ECT"},
     {GST_NET_ECN_META_ECT_0, "ECN Capable Transport (0)", "ECT-0"},
@@ -44,11 +44,12 @@ gst_net_ecn_cp_get_type (void)
     {0, NULL, NULL}
   };
 
-  if (!type) {
-    type = g_enum_register_static ("GstNetEcnCp", net_ecn_cp_types);
+  if (g_once_init_enter (&g_type)) {
+    const GType type = g_enum_register_static ("GstNetEcnCp", net_ecn_cp_types);
+    g_once_init_leave (&g_type, type);
   }
 
-  return type;
+  return g_type;
 }
 
 static gboolean
