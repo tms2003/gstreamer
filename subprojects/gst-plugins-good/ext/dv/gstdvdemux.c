@@ -107,6 +107,7 @@
 GST_DEBUG_CATEGORY_STATIC (dvdemux_debug);
 #define GST_CAT_DEFAULT dvdemux_debug
 
+/* completely arbitrary timestamp format for easy timeoverlay compatibility */
 static GstStaticCaps ntp_reference_timestamp_caps =
 GST_STATIC_CAPS ("timestamp/x-ntp");
 
