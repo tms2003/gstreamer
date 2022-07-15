@@ -73,6 +73,7 @@ struct _GstOsxAudioSrc
   GstAudioBaseSrc src;
 
   AudioDeviceID device_id;
+  char *channel_map;
 };
 
 struct _GstOsxAudioSrcClass

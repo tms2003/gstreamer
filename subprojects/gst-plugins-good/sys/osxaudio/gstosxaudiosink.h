@@ -87,6 +87,7 @@ struct _GstOsxAudioSink
   double volume;
 
   guint channels;
+  char *channel_map;
 };
 
 struct _GstOsxAudioSinkClass

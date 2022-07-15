@@ -71,6 +71,7 @@
 
 #include "gstosxaudiosink.h"
 #include "gstosxaudioelement.h"
+#include "gstosxcoreaudiocommon.h"
 
 GST_DEBUG_CATEGORY_STATIC (osx_audiosink_debug);
 #define GST_CAT_DEFAULT osx_audiosink_debug
@@ -88,7 +89,8 @@ enum
 {
   ARG_0,
   ARG_DEVICE,
-  ARG_VOLUME
+  ARG_VOLUME,
+  ARG_OUTPUT_CHANNELS,
 };
 
 #define DEFAULT_VOLUME 1.0
@@ -182,6 +184,12 @@ gst_osx_audio_sink_class_init (GstOsxAudioSinkClass * klass)
       g_param_spec_double ("volume", "Volume", "Volume of this stream",
           0, 1.0, 1.0, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
+  g_object_class_install_property (gobject_class, ARG_OUTPUT_CHANNELS,
+      g_param_spec_string ("output-channels", "Output Channels",
+          "Comma-separated list of audio channels to output", NULL,
+          GST_PARAM_MUTABLE_READY | G_PARAM_READWRITE |
+          G_PARAM_STATIC_STRINGS));
+
   gstbasesink_class->get_caps = GST_DEBUG_FUNCPTR (gst_osx_audio_sink_getcaps);
 
   gstaudiobasesink_class->create_ringbuffer =
@@ -204,6 +212,7 @@ gst_osx_audio_sink_init (GstOsxAudioSink * sink)
 
   sink->device_id = kAudioDeviceUnknown;
   sink->volume = DEFAULT_VOLUME;
+  sink->channel_map = NULL;
 }
 
 static void
@@ -221,6 +230,9 @@ gst_osx_audio_sink_set_property (GObject * object, guint prop_id,
     case ARG_VOLUME:
       sink->volume = g_value_get_double (value);
       gst_osx_audio_sink_set_volume (sink);
+      break;
+    case ARG_OUTPUT_CHANNELS:
+      sink->channel_map = g_value_dup_string (value);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -280,6 +292,9 @@ gst_osx_audio_sink_get_property (GObject * object, guint prop_id,
 #endif
     case ARG_VOLUME:
       g_value_set_double (value, sink->volume);
+      break;
+    case ARG_OUTPUT_CHANNELS:
+      g_value_set_string (value, sink->channel_map);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -501,6 +516,10 @@ gst_osx_audio_sink_create_ringbuffer (GstAudioBaseSink * sink)
    */
   if (ringbuffer->core_audio->device_id != osxsink->device_id)
     ringbuffer->core_audio->device_id = osxsink->device_id;
+
+  if (osxsink->channel_map)
+    gst_core_audio_parse_channel_map (ringbuffer->core_audio,
+        osxsink->channel_map);
 
   return GST_AUDIO_RING_BUFFER (ringbuffer);
 }
