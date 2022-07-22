@@ -941,7 +941,7 @@ GST_START_TEST (test_parse_sliced_nal_nal)
   fail_unless_equals_int (gst_harness_push (h, buf), GST_FLOW_OK);
 
   /* parser must have inserted AUD before the headers, with the same PTS */
-  pull_and_check (h, h264_aud, 10, 0);
+  pull_and_check (h, h264_aud, 10, GST_BUFFER_FLAG_DELTA_UNIT);
 
   /* drop the header buffers */
   while ((buf = gst_harness_try_pull (h)))
@@ -1010,8 +1010,10 @@ GST_START_TEST (test_parse_sliced_au_nal)
       h264_idr_slice_2, sizeof (h264_idr_slice_2));
   fail_unless_equals_int (gst_harness_push (h, buf), GST_FLOW_OK);
 
-  /* parser must have inserted AUD before the headers, with the same PTS */
-  pull_and_check (h, h264_aud, 100, 0);
+  /* parser must have inserted AUD before the headers, with the same PTS
+   * and the DELTA_UNIT flag on it.
+   * */
+  pull_and_check (h, h264_aud, 100, GST_BUFFER_FLAG_DELTA_UNIT);
 
   /* drop the headers */
   fail_unless (gst_harness_buffers_in_queue (h) > 2);

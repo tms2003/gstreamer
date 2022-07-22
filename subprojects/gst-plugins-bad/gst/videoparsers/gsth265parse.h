@@ -130,6 +130,13 @@ struct _GstH265Parse
 
   /* For forward predicted trickmode */
   gboolean discard_bidirectional;
+
+  /* For insertion of AU Delimiter */
+  gboolean aud_needed;
+  gboolean aud_insert;
+
+  guint temporal_id_plus1;
+  guint layer_id;
 };
 
 struct _GstH265ParseClass
