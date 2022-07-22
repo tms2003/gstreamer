@@ -94,8 +94,10 @@ static GstFlowReturn gst_sub_parse_chain (GstPad * sinkpad, GstObject * parent,
 G_DEFINE_TYPE (GstSubParse, gst_sub_parse, GST_TYPE_ELEMENT);
 
 GST_ELEMENT_REGISTER_DEFINE_WITH_CODE (subparse, "subparse",
-    GST_RANK_PRIMARY, GST_TYPE_SUBPARSE, sub_parse_element_init (plugin))
-     static void gst_sub_parse_dispose (GObject * object)
+    GST_RANK_PRIMARY, GST_TYPE_SUBPARSE, sub_parse_element_init (plugin));
+
+static void
+gst_sub_parse_dispose (GObject * object)
 {
   GstSubParse *subparse = GST_SUBPARSE (object);
 
