@@ -2375,7 +2375,7 @@ mpegts_packetizer_pts_to_ts_internal (MpegTSPacketizer2 * packetizer,
     }
     if (refpcr != G_MAXINT64)
       res =
-          pts - PCRTIME_TO_GSTTIME (refpcr) + PCRTIME_TO_GSTTIME (refpcroffset);
+          PCRTIME_TO_GSTTIME (GSTTIME_TO_PCRTIME (pts) - refpcr + refpcroffset);
     else
       GST_WARNING ("No groups, can't calculate timestamp");
   } else
