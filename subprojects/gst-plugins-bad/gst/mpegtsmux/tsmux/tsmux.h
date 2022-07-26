@@ -161,6 +161,8 @@ struct TsMux {
 
   /* interval between PCR in MPEG PTS clock time */
   guint    pcr_interval;
+  /* offset added to PCRs */
+  gint64   pcr_offset;
 
   /* trigger writing Service Information Tables */
   gboolean si_changed;
@@ -235,6 +237,7 @@ gboolean        tsmux_remove_stream             (TsMux *mux, guint16 pid, TsMuxP
 void 		tsmux_program_add_stream 	(TsMuxProgram *program, TsMuxStream *stream);
 void 		tsmux_program_set_pcr_stream 	(TsMuxProgram *program, TsMuxStream *stream);
 void    tsmux_set_pcr_interval (TsMux * mux, guint freq);
+void    tsmux_set_pcr_offset (TsMux * mux, gint64 offset);
 
 /* writing stuff */
 gboolean 	tsmux_write_stream_packet 	(TsMux *mux, TsMuxStream *stream);
