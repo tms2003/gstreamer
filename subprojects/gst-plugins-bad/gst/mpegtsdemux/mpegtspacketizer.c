@@ -842,6 +842,7 @@ mpegts_packetizer_sync (MpegTSPacketizer2 * packetizer)
   }
 
   packetizer->map_offset += i - sync_offset;
+  packetizer->offset += i - sync_offset;
 
   if (!found)
     mpegts_packetizer_flush_bytes (packetizer, packetizer->map_offset);
