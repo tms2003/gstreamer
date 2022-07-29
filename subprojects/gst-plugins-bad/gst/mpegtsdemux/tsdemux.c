@@ -937,6 +937,14 @@ gst_ts_demux_do_seek (MpegTSBase * base, GstEvent * event)
   gst_event_parse_seek (event, &rate, &format, &flags, &start_type, &start,
       &stop_type, &stop);
 
+  if (GST_CLOCK_TIME_IS_VALID (start)) {
+    start += demux->program->initial_pts_offset;
+  }
+
+  if (GST_CLOCK_TIME_IS_VALID (stop)) {
+    stop += demux->program->initial_pts_offset;
+  }
+
   if (rate <= 0.0) {
     GST_WARNING_OBJECT (demux, "Negative rate not supported");
     goto done;
@@ -2856,6 +2864,12 @@ calculate_and_push_newsegment (GstTSDemux * demux, TSDemuxStream * stream,
       seg->time = firstts;
       seg->rate = demux->rate;
       seg->base = base;
+
+      /* Record the offset we applied to our initial segment. From now
+       * on we can start accepting seeks and offseting the requested
+       * target position consistently.
+       */
+      target_program->initial_pts_offset = firstts;
     }
   } else if (base->out_segment.start < firstts) {
     /* Take into account the offset to the first buffer timestamp */
