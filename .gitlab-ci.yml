@@ -362,11 +362,17 @@ build clang fedora x86_64:
     # Set the code page to UTF-8
     - chcp 65001
 
+    # Copy over the subprojects cache
     - ci/scripts/handle-subprojects-cache.py subprojects/
+    # Update subprojects to respect `.wrap` content
+    - cmd.exe /C "C:\BuildTools\Common7\Tools\VsDevCmd.bat -host_arch=amd64 -arch=$env:ARCH &&
+        meson subprojects update --reset
+
     # For some reason, options are separated by newline instead of space, so we
     # have to replace them first.
     - $env:MESON_ARGS = $env:MESON_ARGS.replace("`n"," ")
     - $env:MESON_CROSS_ARGS = $env:MESON_CROSS_ARGS.replace("`n"," ")
+
     - cmd.exe /C "C:\BuildTools\Common7\Tools\VsDevCmd.bat -host_arch=amd64 -arch=$env:ARCH &&
         meson build $env:MESON_ARGS $env:MESON_CROSS_ARGS &&
         meson compile -C build"
@@ -428,11 +434,16 @@ build msys2 :
     - $env:MSYSTEM = "UCRT64"
     - $env:CHERE_INVOKING = "1"
     - $env:MSYS2_PATH_TYPE = "inherit"
+
+    # Update subprojects to respect `.wrap` content
+    - C:\msys64\usr\bin\bash -lc "meson subprojects update --reset"
+
     # For some reason, options are separated by newline instead of space, so we
     # have to replace them first.
     - $env:MESON_ARGS = $env:MESON_ARGS.replace("`n"," ")
     # Replace forward slashes with backwards so bash doesn't complain
     - $env:_PROJECT_DIR = $env:CI_PROJECT_DIR.replace('\','/')
+
     - C:\msys64\usr\bin\bash -lc "meson build $env:MESON_ARGS && ninja -C build"
 
 # ---- Tests ----- #
