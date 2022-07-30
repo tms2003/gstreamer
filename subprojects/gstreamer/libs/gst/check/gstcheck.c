@@ -349,6 +349,7 @@ static const gchar *log_domains[] = {
   "GStreamer-Controller",
   "GStreamer-D3D11",
   "GStreamer",
+  "GStreamer-EME",
   "GStreamer-FFT",
   "GStreamer-GL",
   "GStreamer-InsertBin",
