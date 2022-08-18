@@ -19,6 +19,22 @@ enable_gst_play_tests = get_option('gst_play_tests')
 libsoup_dep = dependency('libsoup-2.4', version : '>=2.48', required : enable_gst_play_tests,
   fallback : ['libsoup', 'libsoup_dep'])
 
+if gstemeopencdm_dep.found()
+  libemeopencdm_testcdm_lib = shared_library('emeopencdm_testcdm',
+    'libs/emeopencdm-testcdm.c',
+    install : false,
+    dependencies : [gst_dep, sparkle_cdm_dep],
+  )
+  libemeopencdm_testcdm_dep = declare_dependency(
+    compile_args : [
+      '-DTEST_CDM_PATH="@0@"'.format(libemeopencdm_testcdm_lib.full_path())
+    ],
+    link_with: libemeopencdm_testcdm_lib,
+  )
+else
+  libemeopencdm_testcdm_dep = disabler()
+endif
+
 # name, condition when to skip the test and extra dependencies
 base_tests = [
   [['elements/aesenc.c'], not aes_dep.found(), [aes_dep]],
@@ -59,6 +75,7 @@ base_tests = [
   [['elements/nvenc.c'], false, [gstgl_dep, gmodule_dep]],
   [['elements/nvdec.c'], not gstgl_dep.found(), [gstgl_dep, gmodule_dep]],
   [['elements/svthevcenc.c'], not svthevcenc_dep.found(), [svthevcenc_dep]],
+  [['elements/emeopencdmdecryptor.c'], not libemeopencdm_testcdm_dep.found(), [libemeopencdm_testcdm_dep, gsteme_dep, gstemeopencdm_dep]],
    [['elements/openjpeg.c'], not openjpeg_dep.found(), [openjpeg_dep]],
   [['elements/pcapparse.c'], false, [libparser_dep]],
   [['elements/pnm.c'], get_option('pnm').disabled()],
@@ -78,6 +95,7 @@ base_tests = [
   [['elements/av1parse.c'], false, [gstcodecparsers_dep]],
   [['elements/wasapi.c'], host_machine.system() != 'windows', ],
   [['elements/wasapi2.c'], host_machine.system() != 'windows', ],
+  [['libs/emeopencdm.c'], not libemeopencdm_testcdm_dep.found(), [gsteme_dep, gstemeopencdm_dep, libemeopencdm_testcdm_dep]],
   [['libs/h264parser.c'], false, [gstcodecparsers_dep]],
   [['libs/h265parser.c'], false, [gstcodecparsers_dep]],
   [['libs/insertbin.c'], false, [gstinsertbin_dep]],
