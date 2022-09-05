@@ -649,7 +649,7 @@ DECLARE_ARG 7, 8, 9, 10, 11, 12, 13, 14
 ; We can automatically detect "follows a branch", but not a branch target.
 ; (SSSE3 is a sufficient condition to know that your cpu doesn't have this problem.)
 %macro REP_RET 0
-    %if has_epilogue || cpuflag(ssse3)
+    %if has_epilogue || cpuflag(ssse3) || cpuflag(pni)
         RET
     %else
         rep ret
@@ -659,7 +659,7 @@ DECLARE_ARG 7, 8, 9, 10, 11, 12, 13, 14
 
 %define last_branch_adr $$
 %macro AUTO_REP_RET 0
-    %if notcpuflag(ssse3)
+    %if notcpuflag(ssse3) && notcpuflag(pni)
         times ((last_branch_adr-$)>>31)+1 rep ; times 1 iff $ == last_branch_adr.
     %endif
     ret
@@ -670,7 +670,7 @@ DECLARE_ARG 7, 8, 9, 10, 11, 12, 13, 14
     %rep %0
         %macro %1 1-2 %1
             %2 %1
-            %if notcpuflag(ssse3)
+            %if notcpuflag(ssse3) && notcpuflag(pni)
                 %%branch_instr equ $
                 %xdefine last_branch_adr %%branch_instr
             %endif
