@@ -127,6 +127,7 @@ gst_rtp_av1_pay_init (GstRtpAv1Pay * rtpav1pay)
   rtpav1pay->fragment_cont = FALSE;
   gst_pad_set_query_function (GST_RTP_BASE_PAYLOAD_SRCPAD (rtpav1pay),
       gst_rtp_av1_pay_src_query);
+  GST_RTP_BASE_PAYLOAD (rtpav1pay)->clock_rate = 90000;
 }
 
 static GType
@@ -278,7 +279,6 @@ gst_rtp_av1_pay_payload_push (GstRTPBasePayload * basepayload,
   //gst_rtp_copy_video_meta (rtpav1pay, outbuf, buffer);
   outbuf = gst_buffer_append (outbuf, buffer);
 
-  basepayload->clock_rate = 90000;
   if (first)
     rtpav1pay->first_packet = FALSE;
 
