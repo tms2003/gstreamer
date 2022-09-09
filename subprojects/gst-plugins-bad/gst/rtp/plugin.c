@@ -4,6 +4,8 @@
 
 #include "gstrtpsink.h"
 #include "gstrtpsrc.h"
+#include "gstrtpav1pay.h"
+#include "gstrtpav1depay.h"
 
 
 static gboolean
@@ -13,6 +15,8 @@ plugin_init (GstPlugin * plugin)
 
   ret |= GST_ELEMENT_REGISTER (rtpsrc, plugin);
   ret |= GST_ELEMENT_REGISTER (rtpsink, plugin);
+  ret | GST_ELEMENT_REGISTER (rtpav1pay, plugin);
+  ret | GST_ELEMENT_REGISTER (rtpav1depay, plugin);
 
   return ret;
 }
