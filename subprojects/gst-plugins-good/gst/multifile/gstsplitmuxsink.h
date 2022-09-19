@@ -222,6 +222,7 @@ struct _GstSplitMuxSink
   GstStructure *sink_properties;
 
   GstStructure *muxerpad_map;
+  gchar *sink_location_property;
 };
 
 struct _GstSplitMuxSinkClass
