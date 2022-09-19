@@ -556,6 +556,7 @@ gst_nv_h265_enc_set_encoder_config (GstNvBaseEnc * nvenc,
   GST_LOG_OBJECT (h265enc, "setting parameters");
   config->profileGUID = selected_profile;
   hevc_config->level = level_idc;
+  hevc_config->repeatSPSPPS = 1;
   hevc_config->idrPeriod = config->gopLength;
 
   config->encodeCodecConfig.hevcConfig.chromaFormatIDC = 1;
