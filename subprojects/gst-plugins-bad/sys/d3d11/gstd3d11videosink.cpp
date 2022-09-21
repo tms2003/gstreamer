@@ -46,10 +46,9 @@
 #include "gstd3d11window_corewindow.h"
 #include "gstd3d11window_swapchainpanel.h"
 #endif
-#if (!GST_D3D11_WINAPI_ONLY_APP)
+#if !GST_D3D11_WINAPI_ONLY_APP
 #include "gstd3d11window_win32.h"
 #endif
-#include "gstd3d11window_dummy.h"
 
 enum
 {
@@ -59,7 +58,6 @@ enum
   PROP_ENABLE_NAVIGATION_EVENTS,
   PROP_FULLSCREEN_TOGGLE_MODE,
   PROP_FULLSCREEN,
-  PROP_DRAW_ON_SHARED_TEXTURE,
   PROP_ROTATE_METHOD,
   PROP_GAMMA_MODE,
   PROP_PRIMARIES_MODE,
@@ -104,11 +102,7 @@ gst_d3d11_video_sink_display_format_type (void)
 enum
 {
   /* signals */
-  SIGNAL_BEGIN_DRAW,
   SIGNAL_PRESENT,
-
-  /* actions */
-  SIGNAL_DRAW,
 
   LAST_SIGNAL
 };
@@ -151,7 +145,6 @@ struct _GstD3D11VideoSink
   gboolean enable_navigation_events;
   GstD3D11WindowFullscreenToggleMode fullscreen_toggle_mode;
   gboolean fullscreen;
-  gboolean draw_on_shared_texture;
   GstVideoGammaMode gamma_mode;
   GstVideoPrimariesMode primaries_mode;
   DXGI_FORMAT display_format;
@@ -180,11 +173,6 @@ static void gst_d3d11_videosink_set_property (GObject * object, guint prop_id,
 static void gst_d3d11_videosink_get_property (GObject * object, guint prop_id,
     GValue * value, GParamSpec * pspec);
 static void gst_d3d11_video_sink_finalize (GObject * object);
-static gboolean
-gst_d3d11_video_sink_draw_action (GstD3D11VideoSink * self,
-    gpointer shared_handle, guint texture_misc_flags, guint64 acquire_key,
-    guint64 release_key);
-
 static void
 gst_d3d11_video_sink_video_overlay_init (GstVideoOverlayInterface * iface);
 static void
@@ -272,35 +260,6 @@ gst_d3d11_video_sink_class_init (GstD3D11VideoSinkClass * klass)
           (GParamFlags) (G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS)));
 
   /**
-   * GstD3D11VideoSink:draw-on-shared-texture:
-   *
-   * Instruct the sink to draw on a shared texture provided by user.
-   * User must watch #d3d11videosink::begin-draw signal and should call
-   * #d3d11videosink::draw method on the #d3d11videosink::begin-draw
-   * signal handler.
-   *
-   * Currently supported formats for user texture are:
-   * - DXGI_FORMAT_R8G8B8A8_UNORM
-   * - DXGI_FORMAT_B8G8R8A8_UNORM
-   * - DXGI_FORMAT_R10G10B10A2_UNORM
-   *
-   * Since: 1.20
-   */
-  g_object_class_install_property (gobject_class, PROP_DRAW_ON_SHARED_TEXTURE,
-      g_param_spec_boolean ("draw-on-shared-texture",
-          "Draw on shared texture",
-          "Draw on user provided shared texture instead of window. "
-          "When enabled, user can pass application's own texture to sink "
-          "by using \"draw\" action signal on \"begin-draw\" signal handler, "
-          "so that sink can draw video data on application's texture. "
-          "Supported texture formats for user texture are "
-          "DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_B8G8R8A8_UNORM, and "
-          "DXGI_FORMAT_R10G10B10A2_UNORM.",
-          DEFAULT_DRAW_ON_SHARED_TEXTURE,
-          (GParamFlags) (G_PARAM_READWRITE | GST_PARAM_MUTABLE_READY |
-              G_PARAM_STATIC_STRINGS)));
-
-  /**
    * GstD3D11VideoSink:rotate-method:
    *
    * Video rotation/flip method to use
@@ -351,47 +310,6 @@ gst_d3d11_video_sink_class_init (GstD3D11VideoSinkClass * klass)
           "Swapchain display format", GST_TYPE_D3D11_VIDEO_SINK_DISPLAY_FORMAT,
           DEFAULT_DISPLAY_FORMAT, (GParamFlags) (G_PARAM_READWRITE |
               GST_PARAM_MUTABLE_READY | G_PARAM_STATIC_STRINGS)));
-
-  /**
-   * GstD3D11VideoSink::begin-draw:
-   * @videosink: the #d3d11videosink
-   *
-   * Emitted when sink has a texture to draw. Application needs to invoke
-   * #d3d11videosink::draw action signal before returning from
-   * #d3d11videosink::begin-draw signal handler.
-   *
-   * Since: 1.20
-   */
-  gst_d3d11_video_sink_signals[SIGNAL_BEGIN_DRAW] =
-      g_signal_new ("begin-draw", G_TYPE_FROM_CLASS (klass), G_SIGNAL_RUN_LAST,
-      G_STRUCT_OFFSET (GstD3D11VideoSinkClass, begin_draw),
-      NULL, NULL, NULL, G_TYPE_NONE, 0, G_TYPE_NONE);
-
-  /**
-   * GstD3D11VideoSink::draw:
-   * @videosink: the #d3d11videosink
-   * @shard_handle: a pointer to HANDLE
-   * @texture_misc_flags: a D3D11_RESOURCE_MISC_FLAG value
-   * @acquire_key: a key value used for IDXGIKeyedMutex::AcquireSync
-   * @release_key: a key value used for IDXGIKeyedMutex::ReleaseSync
-   *
-   * Draws on a shared texture. @shard_handle must be a valid pointer to
-   * a HANDLE which was obtained via IDXGIResource::GetSharedHandle or
-   * IDXGIResource1::CreateSharedHandle.
-   *
-   * If the texture was created with D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX flag,
-   * caller must specify valid @acquire_key and @release_key.
-   * Otherwise (i.e., created with D3D11_RESOURCE_MISC_SHARED flag),
-   * @acquire_key and @release_key will be ignored.
-   *
-   * Since: 1.20
-   */
-  gst_d3d11_video_sink_signals[SIGNAL_DRAW] =
-      g_signal_new ("draw", G_TYPE_FROM_CLASS (klass),
-      (GSignalFlags) (G_SIGNAL_RUN_LAST | G_SIGNAL_ACTION),
-      G_STRUCT_OFFSET (GstD3D11VideoSinkClass, draw), NULL, NULL, NULL,
-      G_TYPE_BOOLEAN, 4, G_TYPE_POINTER, G_TYPE_UINT, G_TYPE_UINT64,
-      G_TYPE_UINT64);
 
   /**
    * GstD3D11VideoSink::present
@@ -446,8 +364,6 @@ gst_d3d11_video_sink_class_init (GstD3D11VideoSinkClass * klass)
   videosink_class->show_frame =
       GST_DEBUG_FUNCPTR (gst_d3d11_video_sink_show_frame);
 
-  klass->draw = gst_d3d11_video_sink_draw_action;
-
   gst_type_mark_as_plugin_api (GST_D3D11_WINDOW_TOGGLE_MODE_GET_TYPE,
       (GstPluginAPIFlags) 0);
   gst_type_mark_as_plugin_api (GST_TYPE_D3D11_VIDEO_SINK_DISPLAY_FORMAT,
@@ -462,7 +378,6 @@ gst_d3d11_video_sink_init (GstD3D11VideoSink * self)
   self->enable_navigation_events = DEFAULT_ENABLE_NAVIGATION_EVENTS;
   self->fullscreen_toggle_mode = DEFAULT_FULLSCREEN_TOGGLE_MODE;
   self->fullscreen = DEFAULT_FULLSCREEN;
-  self->draw_on_shared_texture = DEFAULT_DRAW_ON_SHARED_TEXTURE;
   self->gamma_mode = DEFAULT_GAMMA_MODE;
   self->primaries_mode = DEFAULT_PRIMARIES_MODE;
   self->display_format = DEFAULT_DISPLAY_FORMAT;
@@ -507,9 +422,6 @@ gst_d3d11_videosink_set_property (GObject * object, guint prop_id,
       if (self->window) {
         g_object_set (self->window, "fullscreen", self->fullscreen, NULL);
       }
-      break;
-    case PROP_DRAW_ON_SHARED_TEXTURE:
-      self->draw_on_shared_texture = g_value_get_boolean (value);
       break;
     case PROP_ROTATE_METHOD:
       gst_d3d11_video_sink_set_orientation (self,
@@ -556,9 +468,6 @@ gst_d3d11_videosink_get_property (GObject * object, guint prop_id,
       } else {
         g_value_set_boolean (value, self->fullscreen);
       }
-      break;
-    case PROP_DRAW_ON_SHARED_TEXTURE:
-      g_value_set_boolean (value, self->draw_on_shared_texture);
       break;
     case PROP_ROTATE_METHOD:
       g_value_set_enum (value, self->method);
@@ -873,13 +782,6 @@ gst_d3d11_video_sink_prepare_window (GstD3D11VideoSink * self)
 
   if (self->window)
     return TRUE;
-
-  if (self->draw_on_shared_texture) {
-    GST_INFO_OBJECT (self,
-        "Create dummy window for rendering on shared texture");
-    self->window = gst_d3d11_window_dummy_new (self->device);
-    goto done;
-  }
 
   if (!self->window_id)
     gst_video_overlay_prepare_window_handle (GST_VIDEO_OVERLAY (self));
@@ -1251,7 +1153,7 @@ static GstFlowReturn
 gst_d3d11_video_sink_show_frame (GstVideoSink * sink, GstBuffer * buf)
 {
   GstD3D11VideoSink *self = GST_D3D11_VIDEO_SINK (sink);
-  GstFlowReturn ret = GST_FLOW_OK;
+  GstFlowReturn ret;
 
   gst_d3d11_video_sink_check_device_update (self, buf);
 
@@ -1271,26 +1173,7 @@ gst_d3d11_video_sink_show_frame (GstVideoSink * sink, GstBuffer * buf)
   }
 
   gst_d3d11_window_show (self->window);
-
-  if (self->draw_on_shared_texture) {
-    GstD3D11CSLockGuard lk (&self->lock);
-
-    self->current_buffer = buf;
-    self->drawing = TRUE;
-
-    GST_LOG_OBJECT (self, "Begin drawing");
-
-    /* Application should call draw method on this callback */
-    g_signal_emit (self, gst_d3d11_video_sink_signals[SIGNAL_BEGIN_DRAW], 0,
-        NULL);
-
-    GST_LOG_OBJECT (self, "End drawing");
-    self->drawing = FALSE;
-    self->current_buffer = nullptr;
-  } else {
-    ret = gst_d3d11_window_render (self->window, buf);
-  }
-
+  ret = gst_d3d11_window_render (self->window, buf);
   if (ret == GST_D3D11_WINDOW_FLOW_CLOSED) {
     GST_ELEMENT_ERROR (self, RESOURCE, NOT_FOUND,
         ("Output window was closed"), (NULL));
@@ -1388,40 +1271,4 @@ static void
 gst_d3d11_video_sink_navigation_init (GstNavigationInterface * iface)
 {
   iface->send_event_simple = gst_d3d11_video_sink_navigation_send_event;
-}
-
-static gboolean
-gst_d3d11_video_sink_draw_action (GstD3D11VideoSink * self,
-    gpointer shared_handle, guint texture_misc_flags,
-    guint64 acquire_key, guint64 release_key)
-{
-  GstFlowReturn ret;
-  g_return_val_if_fail (shared_handle != NULL, FALSE);
-
-  if (!self->draw_on_shared_texture) {
-    GST_ERROR_OBJECT (self, "Invalid draw call, we are drawing on window");
-    return FALSE;
-  }
-
-  if (!shared_handle) {
-    GST_ERROR_OBJECT (self, "Invalid handle");
-    return FALSE;
-  }
-
-  GstD3D11CSLockGuard lk (&self->lock);
-  if (!self->drawing || !self->current_buffer) {
-    GST_WARNING_OBJECT (self, "Nothing to draw");
-    return FALSE;
-  }
-
-  GST_LOG_OBJECT (self, "Drawing on shared handle %p, MiscFlags: 0x%x"
-      ", acquire key: %" G_GUINT64_FORMAT ", release key: %"
-      G_GUINT64_FORMAT, shared_handle, texture_misc_flags, acquire_key,
-      release_key);
-
-  ret = gst_d3d11_window_render_on_shared_handle (self->window,
-      self->current_buffer, shared_handle, texture_misc_flags, acquire_key,
-      release_key);
-
-  return ret == GST_FLOW_OK;
 }
