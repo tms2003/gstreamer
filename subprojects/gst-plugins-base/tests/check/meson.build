@@ -41,6 +41,7 @@ base_tests = [
   [ 'elements/audioresample.c', get_option('audioresample').disabled()],
   [ 'elements/compositor.c', get_option('compositor').disabled()],
   [ 'elements/decodebin.c', get_option('playback').disabled()],
+  [ 'elements/decodebin3.c', get_option('playback').disabled()],
   [ 'elements/overlaycomposition.c', get_option('overlaycomposition').disabled()],
   [ 'elements/playbin.c', get_option('playback').disabled()],
   [ 'elements/playsink.c', get_option('playback').disabled()],
