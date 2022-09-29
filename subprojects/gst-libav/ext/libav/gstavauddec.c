@@ -220,6 +220,19 @@ gst_ffmpegauddec_start (GstAudioDecoder * decoder)
     GST_OBJECT_UNLOCK (ffmpegdec);
     return FALSE;
   }
+
+  /* From FFmpeg 5.x onwards, the wma decoder will skip the lead-in samples at
+   * the beginning and output some final samples during draining on EOS. Here
+   * we ask FFmpeg to tell us when there are input samples to skip at the
+   * beginning, so we don't finish the input frame quite yet. That way we'll
+   * actually have the last input frame still around when we drain and get
+   * the last few samples. */
+  if ((oclass->in_plugin->capabilities & AV_CODEC_CAP_DELAY) != 0
+      && (oclass->in_plugin->id == AV_CODEC_ID_WMAV1
+          || oclass->in_plugin->id == AV_CODEC_ID_WMAV2)) {
+    GST_INFO_OBJECT (ffmpegdec, "Forcing manual lead-in skip handling for wma");
+    ffmpegdec->context->flags2 |= AV_CODEC_FLAG2_SKIP_MANUAL;
+  }
   ffmpegdec->context->opaque = ffmpegdec;
   GST_OBJECT_UNLOCK (ffmpegdec);
 
@@ -465,16 +478,18 @@ gst_avpacket_init (AVPacket * packet, guint8 * data, guint size)
 static gboolean
 gst_ffmpegauddec_audio_frame (GstFFMpegAudDec * ffmpegdec,
     AVCodec * in_plugin, GstBuffer ** outbuf, GstFlowReturn * ret,
-    gboolean * need_more_data)
+    gboolean * need_more_data, gboolean * delay)
 {
   gboolean got_frame = FALSE;
+  guint32 n_skip_start = 0;
+  guint32 n_skip_end = 0;
   gint res;
 
   res = avcodec_receive_frame (ffmpegdec->context, ffmpegdec->frame);
 
   if (res >= 0) {
-    gint nsamples, channels, byte_per_sample;
-    gsize output_size;
+    gint nsamples, channels, byte_per_sample, output_samples;
+    gsize output_size, output_offset;
     gboolean planar;
 
     if (!gst_ffmpegauddec_negotiate (ffmpegdec, ffmpegdec->context,
@@ -495,10 +510,42 @@ gst_ffmpegauddec_audio_frame (GstFFMpegAudDec * ffmpegdec,
             GST_AUDIO_LAYOUT_NON_INTERLEAVED : GST_AUDIO_LAYOUT_INTERLEAVED),
         GST_FLOW_NOT_NEGOTIATED);
 
+    /* We set AV_CODEC_FLAG2_SKIP_MANUAL for codecs with AV_CODEC_CAP_DELAY */
+    {
+      AVFrameSideData *side_data =
+          av_frame_get_side_data (ffmpegdec->frame, AV_FRAME_DATA_SKIP_SAMPLES);
+
+      if (side_data != NULL && side_data->size >= 10) {
+        n_skip_start = GST_READ_UINT32_LE (side_data->data);
+        n_skip_end = GST_READ_UINT32_LE (side_data->data + 4);
+
+        if (n_skip_start > 0 || n_skip_end > 0) {
+          GST_DEBUG_OBJECT (ffmpegdec,
+              "Got SKIP_SAMPLES side data with n_skip_start=%u, n_skip_end=%u",
+              n_skip_start, n_skip_end);
+        }
+
+        if (n_skip_start >= nsamples || n_skip_end >= nsamples
+            || (n_skip_start + n_skip_end) >= nsamples) {
+          GST_WARNING_OBJECT (ffmpegdec,
+              "Got SKIP_SAMPLES side data with n_skip_start=%u, n_skip_end=%u, "
+              "but nsamples=%u, ignoring", n_skip_start, n_skip_end, nsamples);
+          n_skip_start = 0;
+          n_skip_end = 0;
+        }
+
+        if (n_skip_start > 0) {
+          *delay = TRUE;
+        }
+      }
+    }
+
     GST_DEBUG_OBJECT (ffmpegdec, "Creating output buffer");
 
     /* ffmpegdec->frame->linesize[0] might contain padding, allocate only what's needed */
-    output_size = nsamples * byte_per_sample * channels;
+    output_samples = nsamples - (n_skip_start + n_skip_end);
+    output_size = output_samples * byte_per_sample * channels;
+    output_offset = n_skip_start * byte_per_sample * channels;
 
     *outbuf =
         gst_audio_decoder_allocate_output_buffer (GST_AUDIO_DECODER
@@ -508,15 +555,17 @@ gst_ffmpegauddec_audio_frame (GstFFMpegAudDec * ffmpegdec,
       gint i;
       GstAudioMeta *meta;
 
-      meta = gst_buffer_add_audio_meta (*outbuf, &ffmpegdec->info, nsamples,
-          NULL);
+      meta = gst_buffer_add_audio_meta (*outbuf, &ffmpegdec->info,
+          output_samples, NULL);
 
       for (i = 0; i < channels; i++) {
         gst_buffer_fill (*outbuf, meta->offsets[i],
-            ffmpegdec->frame->extended_data[i], nsamples * byte_per_sample);
+            ffmpegdec->frame->extended_data[i] + output_offset,
+            nsamples * byte_per_sample);
       }
     } else {
-      gst_buffer_fill (*outbuf, 0, ffmpegdec->frame->data[0], output_size);
+      gst_buffer_fill (*outbuf, 0, ffmpegdec->frame->data[0] + output_offset,
+          output_size);
     }
 
     GST_DEBUG_OBJECT (ffmpegdec, "Buffer created. Size: %" G_GSIZE_FORMAT,
@@ -556,7 +605,7 @@ beach:
  */
 static gboolean
 gst_ffmpegauddec_frame (GstFFMpegAudDec * ffmpegdec, GstFlowReturn * ret,
-    gboolean * need_more_data)
+    gboolean * need_more_data, gboolean * delay)
 {
   GstFFMpegAudDecClass *oclass;
   GstBuffer *outbuf = NULL;
@@ -572,10 +621,12 @@ gst_ffmpegauddec_frame (GstFFMpegAudDec * ffmpegdec, GstFlowReturn * ret,
 
   got_frame =
       gst_ffmpegauddec_audio_frame (ffmpegdec, oclass->in_plugin, &outbuf, ret,
-      need_more_data);
+      need_more_data, delay);
 
   if (outbuf) {
-    GST_LOG_OBJECT (ffmpegdec, "Decoded data, buffer %" GST_PTR_FORMAT, outbuf);
+    GST_LOG_OBJECT (ffmpegdec, "Decoded data, buffer %" GST_PTR_FORMAT ", "
+        "delay=%d", outbuf, *delay);
+
     *ret =
         gst_audio_decoder_finish_subframe (GST_AUDIO_DECODER_CAST (ffmpegdec),
         outbuf);
@@ -600,13 +651,18 @@ gst_ffmpegauddec_drain (GstFFMpegAudDec * ffmpegdec, gboolean force)
   GstFlowReturn ret = GST_FLOW_OK;
   gboolean got_any_frames = FALSE;
   gboolean need_more_data = FALSE;
+  gboolean delay = FALSE;
   gboolean got_frame;
+
+  GST_INFO_OBJECT (ffmpegdec, "Draining (force=%d)", force);
 
   if (avcodec_send_packet (ffmpegdec->context, NULL))
     goto send_packet_failed;
 
   do {
-    got_frame = gst_ffmpegauddec_frame (ffmpegdec, &ret, &need_more_data);
+    got_frame =
+        gst_ffmpegauddec_frame (ffmpegdec, &ret, &need_more_data, &delay);
+
     if (got_frame)
       got_any_frames = TRUE;
   } while (got_frame && !need_more_data);
@@ -620,6 +676,7 @@ gst_ffmpegauddec_drain (GstFFMpegAudDec * ffmpegdec, gboolean force)
   if (ret == GST_FLOW_EOS)
     ret = GST_FLOW_OK;
 
+  // Ignore delay=TRUE here, want to drain out all pending frames after all
   if (got_any_frames || force) {
     GstFlowReturn new_ret =
         gst_audio_decoder_finish_frame (GST_AUDIO_DECODER (ffmpegdec), NULL, 1);
@@ -663,6 +720,7 @@ gst_ffmpegauddec_handle_frame (GstAudioDecoder * decoder, GstBuffer * inbuf)
   guint32 num_clipped_samples = 0;
   gboolean fully_clipped = FALSE;
   gboolean need_more_data = FALSE;
+  gboolean delay = FALSE;
 
   ffmpegdec = (GstFFMpegAudDec *) decoder;
 
@@ -763,7 +821,8 @@ gst_ffmpegauddec_handle_frame (GstAudioDecoder * decoder, GstBuffer * inbuf)
 
   do {
     /* decode a frame of audio now */
-    got_frame = gst_ffmpegauddec_frame (ffmpegdec, &ret, &need_more_data);
+    got_frame =
+        gst_ffmpegauddec_frame (ffmpegdec, &ret, &need_more_data, &delay);
 
     if (got_frame)
       got_any_frames = TRUE;
@@ -785,7 +844,7 @@ gst_ffmpegauddec_handle_frame (GstAudioDecoder * decoder, GstBuffer * inbuf)
           && num_clipped_samples >= ffmpegdec->context->frame_size)
       || (need_more_data && !got_any_frames));
 
-  if (is_header || got_any_frames || fully_clipped) {
+  if (is_header || (got_any_frames && !delay) || fully_clipped) {
     /* Even if previous return wasn't GST_FLOW_OK, we need to call
      * _finish_frame() since baseclass is expecting that _finish_frame()
      * is followed by _finish_subframe()
