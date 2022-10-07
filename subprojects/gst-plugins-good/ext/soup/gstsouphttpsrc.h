@@ -10,7 +10,7 @@
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Library General Public License for more 
+ * Library General Public License for more
  */
 
 #ifndef __GST_SOUP_HTTP_SRC_H__
@@ -45,9 +45,6 @@ typedef enum {
   GST_SOUP_HTTP_SRC_SESSION_IO_STATUS_CANCELLED,
 } GstSoupHTTPSrcSessionIOStatus;
 
-/* opaque from here, implementation detail */
-typedef struct _GstSoupSession GstSoupSession;
-
 struct _GstSoupHTTPSrc {
   GstPushSrc element;
 
@@ -62,15 +59,14 @@ struct _GstSoupHTTPSrc {
   gchar *proxy_id;             /* Authentication user id for proxy URI. */
   gchar *proxy_pw;             /* Authentication user password for proxy URI. */
   gchar **cookies;             /* HTTP request cookies. */
-  GstSoupSession *session;     /* Libsoup session wrapper. */
+  SoupSession *session;        /* Async context. */
   gboolean session_is_shared;
-  GstSoupSession *external_session; /* Shared via GstContext */
+  SoupSession *external_session; /* Shared via GstContext */
   SoupMessage *msg;            /* Request message. */
   gint retry_count;            /* Number of retries since we received data */
   gint max_retries;            /* Maximum number of retries */
   gchar *method;               /* HTTP method */
 
-  GstFlowReturn headers_ret;
   gboolean got_headers;        /* Already received headers from the server */
   gboolean have_size;          /* Received and parsed Content-Length
                                   header. */
@@ -114,12 +110,8 @@ struct _GstSoupHTTPSrc {
 
   guint timeout;
 
-  /* This mutex-cond pair is used to talk to the soup session thread; it is
-   * per src to allow concurrent access to shared sessions (if it was inside
-   * the shared session structure, it would be effectively global)
-   */
-  GMutex session_mutex;
-  GCond session_cond;
+  GMutex mutex;
+  GCond have_headers_cond;
 
   GstEvent *http_headers_event;
 
