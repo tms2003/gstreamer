@@ -130,7 +130,7 @@ static gboolean gst_fd_sink_start (GstBaseSink * basesink);
 static gboolean gst_fd_sink_stop (GstBaseSink * basesink);
 static gboolean gst_fd_sink_unlock (GstBaseSink * basesink);
 static gboolean gst_fd_sink_unlock_stop (GstBaseSink * basesink);
-static gboolean gst_fd_sink_event (GstBaseSink * sink, GstEvent * event);
+static GstFlowReturn gst_fd_sink_event (GstBaseSink * sink, GstEvent * event);
 
 static gboolean gst_fd_sink_do_seek (GstFdSink * fdsink, guint64 new_offset);
 
@@ -161,7 +161,7 @@ gst_fd_sink_class_init (GstFdSinkClass * klass)
   gstbasesink_class->stop = GST_DEBUG_FUNCPTR (gst_fd_sink_stop);
   gstbasesink_class->unlock = GST_DEBUG_FUNCPTR (gst_fd_sink_unlock);
   gstbasesink_class->unlock_stop = GST_DEBUG_FUNCPTR (gst_fd_sink_unlock_stop);
-  gstbasesink_class->event = GST_DEBUG_FUNCPTR (gst_fd_sink_event);
+  gstbasesink_class->event_full = GST_DEBUG_FUNCPTR (gst_fd_sink_event);
   gstbasesink_class->query = GST_DEBUG_FUNCPTR (gst_fd_sink_query);
 
   g_object_class_install_property (gobject_class, ARG_FD,
@@ -536,7 +536,7 @@ seek_failed:
   }
 }
 
-static gboolean
+static GstFlowReturn
 gst_fd_sink_event (GstBaseSink * sink, GstEvent * event)
 {
   GstEventType type;
@@ -575,7 +575,7 @@ gst_fd_sink_event (GstBaseSink * sink, GstEvent * event)
       break;
   }
 
-  return GST_BASE_SINK_CLASS (parent_class)->event (sink, event);
+  return GST_BASE_SINK_CLASS (parent_class)->event_full (sink, event);
 
 seek_failed:
   {
@@ -583,7 +583,7 @@ seek_failed:
         ("Error while seeking on file descriptor %d: %s",
             fdsink->fd, g_strerror (errno)));
     gst_event_unref (event);
-    return FALSE;
+    return GST_FLOW_ERROR;
   }
 
 }
