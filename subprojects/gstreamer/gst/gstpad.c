@@ -5912,17 +5912,21 @@ gst_pad_send_event_unchecked (GstPad * pad, GstEvent * event,
 
   if (eventfullfunc) {
     ret = eventfullfunc (pad, parent, event);
-  } else if (eventfunc (pad, parent, event)) {
-    ret = GST_FLOW_OK;
+    if (ret == GST_FLOW_ERROR && event_type == GST_EVENT_CAPS)
+      ret = GST_FLOW_NOT_NEGOTIATED;
   } else {
-    /* something went wrong */
-    switch (event_type) {
-      case GST_EVENT_CAPS:
-        ret = GST_FLOW_NOT_NEGOTIATED;
-        break;
-      default:
-        ret = GST_FLOW_ERROR;
-        break;
+    if (eventfunc (pad, parent, event)) {
+      ret = GST_FLOW_OK;
+    } else {
+      /* something went wrong */
+      switch (event_type) {
+        case GST_EVENT_CAPS:
+          ret = GST_FLOW_NOT_NEGOTIATED;
+          break;
+        default:
+          ret = GST_FLOW_ERROR;
+          break;
+      }
     }
   }
   RELEASE_PARENT (parent);
