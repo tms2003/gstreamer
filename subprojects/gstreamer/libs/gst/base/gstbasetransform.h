@@ -309,8 +309,23 @@ struct _GstBaseTransformClass {
    */
   GstFlowReturn (*generate_output) (GstBaseTransform *trans, GstBuffer **outbuf);
 
-  /*< private >*/
-  gpointer       _gst_reserved[GST_PADDING_LARGE - 2];
+  /**
+   * GstBaseTransformClass::sink_event_full:
+   * @event: (transfer full):
+   *
+   * Since: 1.22
+   */
+  GstFlowReturn (*sink_event_full)   (GstBaseTransform *trans, GstEvent *event);
+
+  /**
+   * GstBaseTransformClass::src_event_full:
+   * @event: (transfer full):
+   *
+   * Since: 1.22
+   */
+  GstFlowReturn (*src_event_full)   (GstBaseTransform *trans, GstEvent *event);
+/*< private >*/
+  gpointer       _gst_reserved[GST_PADDING_LARGE - 4];
 };
 
 GST_BASE_API
