@@ -198,6 +198,7 @@
 
 GST_DEBUG_CATEGORY_STATIC (gst_base_parse_debug);
 #define GST_CAT_DEFAULT gst_base_parse_debug
+GST_DEBUG_CATEGORY_STATIC (GST_CAT_EVENT);
 
 /* Supported formats */
 static const GstFormat fmtlist[] = {
@@ -425,7 +426,7 @@ static gboolean gst_base_parse_sink_activate (GstPad * sinkpad,
     GstObject * parent);
 static gboolean gst_base_parse_sink_activate_mode (GstPad * pad,
     GstObject * parent, GstPadMode mode, gboolean active);
-static gboolean gst_base_parse_handle_seek (GstBaseParse * parse,
+static GstFlowReturn gst_base_parse_handle_seek (GstBaseParse * parse,
     GstEvent * event);
 static void gst_base_parse_set_upstream_tags (GstBaseParse * parse,
     GstTagList * taglist);
@@ -435,13 +436,13 @@ static void gst_base_parse_set_property (GObject * object, guint prop_id,
 static void gst_base_parse_get_property (GObject * object, guint prop_id,
     GValue * value, GParamSpec * pspec);
 
-static gboolean gst_base_parse_src_event (GstPad * pad, GstObject * parent,
+static GstFlowReturn gst_base_parse_src_event (GstPad * pad, GstObject * parent,
     GstEvent * event);
 static gboolean gst_base_parse_src_query (GstPad * pad, GstObject * parent,
     GstQuery * query);
 
-static gboolean gst_base_parse_sink_event (GstPad * pad, GstObject * parent,
-    GstEvent * event);
+static GstFlowReturn gst_base_parse_sink_event (GstPad * pad,
+    GstObject * parent, GstEvent * event);
 static gboolean gst_base_parse_sink_query (GstPad * pad, GstObject * parent,
     GstQuery * query);
 
@@ -452,10 +453,12 @@ static void gst_base_parse_loop (GstPad * pad);
 static GstFlowReturn gst_base_parse_parse_frame (GstBaseParse * parse,
     GstBaseParseFrame * frame);
 
-static gboolean gst_base_parse_sink_event_default (GstBaseParse * parse,
+static gboolean wrap_sink_eventfunc (GstBaseParse * parse, GstEvent * event);
+static GstFlowReturn gst_base_parse_sink_event_default (GstBaseParse * parse,
     GstEvent * event);
 
-static gboolean gst_base_parse_src_event_default (GstBaseParse * parse,
+static gboolean wrap_src_eventfunc (GstBaseParse * parse, GstEvent * event);
+static GstFlowReturn gst_base_parse_src_event_default (GstBaseParse * parse,
     GstEvent * event);
 
 static gboolean gst_base_parse_sink_query_default (GstBaseParse * parse,
@@ -575,14 +578,17 @@ gst_base_parse_class_init (GstBaseParseClass * klass)
 #endif
 
   /* Default handlers */
-  klass->sink_event = gst_base_parse_sink_event_default;
-  klass->src_event = gst_base_parse_src_event_default;
+  klass->sink_event = wrap_sink_eventfunc;
+  klass->sink_event_full = gst_base_parse_sink_event_default;
+  klass->src_event = wrap_src_eventfunc;
+  klass->src_event_full = gst_base_parse_src_event_default;
   klass->sink_query = gst_base_parse_sink_query_default;
   klass->src_query = gst_base_parse_src_query_default;
   klass->convert = gst_base_parse_convert_default;
 
   GST_DEBUG_CATEGORY_INIT (gst_base_parse_debug, "baseparse", 0,
       "baseparse element");
+  GST_DEBUG_CATEGORY_GET (GST_CAT_EVENT, "GST_EVENT");
 }
 
 static void
@@ -598,7 +604,7 @@ gst_base_parse_init (GstBaseParse * parse, GstBaseParseClass * bclass)
       gst_element_class_get_pad_template (GST_ELEMENT_CLASS (bclass), "sink");
   g_return_if_fail (pad_template != NULL);
   parse->sinkpad = gst_pad_new_from_template (pad_template, "sink");
-  gst_pad_set_event_function (parse->sinkpad,
+  gst_pad_set_event_full_function (parse->sinkpad,
       GST_DEBUG_FUNCPTR (gst_base_parse_sink_event));
   gst_pad_set_query_function (parse->sinkpad,
       GST_DEBUG_FUNCPTR (gst_base_parse_sink_query));
@@ -617,7 +623,7 @@ gst_base_parse_init (GstBaseParse * parse, GstBaseParseClass * bclass)
       gst_element_class_get_pad_template (GST_ELEMENT_CLASS (bclass), "src");
   g_return_if_fail (pad_template != NULL);
   parse->srcpad = gst_pad_new_from_template (pad_template, "src");
-  gst_pad_set_event_function (parse->srcpad,
+  gst_pad_set_event_full_function (parse->srcpad,
       GST_DEBUG_FUNCPTR (gst_base_parse_src_event));
   gst_pad_set_query_function (parse->srcpad,
       GST_DEBUG_FUNCPTR (gst_base_parse_src_query));
@@ -1196,16 +1202,32 @@ caps_error:
  *
  * Returns: %TRUE if the event was handled.
  */
-static gboolean
+static GstFlowReturn
 gst_base_parse_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
 {
   GstBaseParse *parse = GST_BASE_PARSE (parent);
   GstBaseParseClass *bclass = GST_BASE_PARSE_GET_CLASS (parse);
-  gboolean ret;
 
-  ret = bclass->sink_event (parse, event);
+  GST_DEBUG_OBJECT (parse, "event %d, %s", GST_EVENT_TYPE (event),
+      GST_EVENT_TYPE_NAME (event));
 
-  return ret;
+  if (bclass->sink_event == wrap_sink_eventfunc) {
+    g_assert (bclass->sink_event_full);
+    return bclass->sink_event_full (parse, event);
+
+  }
+  GST_CAT_FIXME_OBJECT (GST_CAT_EVENT, pad,
+      "Implement flow-aware sink_event handler");
+  if (bclass->sink_event (parse, event))
+    return GST_FLOW_OK;
+
+  return GST_FLOW_ERROR;
+}
+
+static gboolean
+wrap_sink_eventfunc (GstBaseParse * parse, GstEvent * event)
+{
+  return gst_base_parse_sink_event_default (parse, event) == GST_FLOW_OK;
 }
 
 /* gst_base_parse_sink_event_default:
@@ -1219,11 +1241,11 @@ gst_base_parse_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
  *
  * Returns: %TRUE if the event was handled and not need forwarding.
  */
-static gboolean
+static GstFlowReturn
 gst_base_parse_sink_event_default (GstBaseParse * parse, GstEvent * event)
 {
   GstBaseParseClass *klass = GST_BASE_PARSE_GET_CLASS (parse);
-  gboolean ret = FALSE;
+  GstFlowReturn ret = GST_FLOW_OK;
   gboolean forward_immediate = FALSE;
 
   GST_DEBUG_OBJECT (parse, "handling event %d, %s", GST_EVENT_TYPE (event),
@@ -1237,10 +1259,8 @@ gst_base_parse_sink_event_default (GstBaseParse * parse, GstEvent * event)
       gst_event_parse_caps (event, &caps);
       GST_DEBUG_OBJECT (parse, "caps: %" GST_PTR_FORMAT, caps);
 
-      if (klass->set_sink_caps)
-        ret = klass->set_sink_caps (parse, caps);
-      else
-        ret = TRUE;
+      if (klass->set_sink_caps && !klass->set_sink_caps (parse, caps))
+        ret = GST_FLOW_NOT_NEGOTIATED;
 
       /* will send our own caps downstream */
       gst_event_unref (event);
@@ -1342,13 +1362,6 @@ gst_base_parse_sink_event_default (GstBaseParse * parse, GstEvent * event)
       GST_DEBUG_OBJECT (parse, "OUT segment %" GST_SEGMENT_FORMAT,
           &out_segment);
       memcpy (&parse->segment, &out_segment, sizeof (GstSegment));
-
-      /*
-         gst_segment_set_newsegment (&parse->segment, update, rate,
-         applied_rate, format, start, stop, start);
-       */
-
-      ret = TRUE;
 
       /* save the segment for later, right before we push a new buffer so that
        * the caps are fixed and the next linked element can receive
@@ -1494,7 +1507,7 @@ gst_base_parse_sink_event_default (GstBaseParse * parse, GstEvent * event)
         } else {
           gst_event_unref (event);
           event = NULL;
-          ret = FALSE;
+          ret = GST_FLOW_NOT_NEGOTIATED;
           GST_ELEMENT_ERROR (parse, STREAM, FORMAT, (NULL),
               ("Parser output not negotiated before GAP event."));
           break;
@@ -1526,7 +1539,6 @@ gst_base_parse_sink_event_default (GstBaseParse * parse, GstEvent * event)
       parse->priv->tags_changed = FALSE;
       gst_event_unref (event);
       event = NULL;
-      ret = TRUE;
       break;
     }
     case GST_EVENT_STREAM_START:
@@ -1555,15 +1567,14 @@ gst_base_parse_sink_event_default (GstBaseParse * parse, GstEvent * event)
    */
   if (event) {
     if (!GST_EVENT_IS_SERIALIZED (event) || forward_immediate) {
-      ret = gst_pad_push_event (parse->srcpad, event);
+      ret = gst_pad_push_event_full (parse->srcpad, event);
     } else {
       parse->priv->pending_events =
           g_list_prepend (parse->priv->pending_events, event);
-      ret = TRUE;
     }
   }
 
-  GST_DEBUG_OBJECT (parse, "event handled");
+  GST_DEBUG_OBJECT (parse, "event handled : %s", gst_flow_get_name (ret));
 
   return ret;
 }
@@ -1687,27 +1698,28 @@ gst_base_parse_src_query (GstPad * pad, GstObject * parent, GstQuery * query)
  *
  * Handler for source pad events.
  *
- * Returns: %TRUE if the event was handled.
+ * Returns: GST_FLOW_OK if the event was handled.
  */
-static gboolean
+static GstFlowReturn
 gst_base_parse_src_event (GstPad * pad, GstObject * parent, GstEvent * event)
 {
-  GstBaseParse *parse;
-  GstBaseParseClass *bclass;
-  gboolean ret = TRUE;
-
-  parse = GST_BASE_PARSE (parent);
-  bclass = GST_BASE_PARSE_GET_CLASS (parse);
+  GstBaseParse *parse = GST_BASE_PARSE (parent);
+  GstBaseParseClass *bclass = GST_BASE_PARSE_GET_CLASS (parse);
 
   GST_DEBUG_OBJECT (parse, "event %d, %s", GST_EVENT_TYPE (event),
       GST_EVENT_TYPE_NAME (event));
 
-  if (bclass->src_event)
-    ret = bclass->src_event (parse, event);
-  else
-    gst_event_unref (event);
+  if (bclass->src_event == wrap_src_eventfunc) {
+    g_assert (bclass->src_event_full);
+    return bclass->src_event_full (parse, event);
 
-  return ret;
+  }
+  GST_CAT_FIXME_OBJECT (GST_CAT_EVENT, pad,
+      "Implement flow-aware src_event handler");
+  if (bclass->src_event (parse, event))
+    return GST_FLOW_OK;
+
+  return GST_FLOW_ERROR;
 }
 
 static gboolean
@@ -1718,6 +1730,12 @@ gst_base_parse_is_seekable (GstBaseParse * parse)
   return parse->priv->syncable;
 }
 
+static gboolean
+wrap_src_eventfunc (GstBaseParse * parse, GstEvent * event)
+{
+  return gst_base_parse_src_event_default (parse, event) == GST_FLOW_OK;
+}
+
 /* gst_base_parse_src_event_default:
  * @parse: #GstBaseParse.
  * @event: #GstEvent that was received.
@@ -1726,10 +1744,10 @@ gst_base_parse_is_seekable (GstBaseParse * parse)
  *
  * Returns: %TRUE if the event was handled and can be dropped.
  */
-static gboolean
+static GstFlowReturn
 gst_base_parse_src_event_default (GstBaseParse * parse, GstEvent * event)
 {
-  gboolean res = FALSE;
+  GstFlowReturn res = GST_FLOW_ERROR;
 
   switch (GST_EVENT_TYPE (event)) {
     case GST_EVENT_SEEK:
@@ -1737,7 +1755,7 @@ gst_base_parse_src_event_default (GstBaseParse * parse, GstEvent * event)
         res = gst_base_parse_handle_seek (parse, event);
       break;
     default:
-      res = gst_pad_event_default (parse->srcpad, GST_OBJECT_CAST (parse),
+      res = gst_pad_event_full_default (parse->srcpad, GST_OBJECT_CAST (parse),
           event);
       break;
   }
@@ -2345,7 +2363,7 @@ gst_base_parse_push_pending_events (GstBaseParse * parse)
 
     parse->priv->pending_events = NULL;
     for (l = r; l != NULL; l = l->next) {
-      gst_pad_push_event (parse->srcpad, GST_EVENT_CAST (l->data));
+      gst_pad_push_event_full (parse->srcpad, GST_EVENT_CAST (l->data));
     }
     g_list_free (r);
   }
@@ -3603,7 +3621,7 @@ gst_base_parse_loop (GstPad * pad)
     gst_event_set_group_id (event, gst_util_group_id_next ());
 
     GST_DEBUG_OBJECT (parse, "Pushing STREAM_START");
-    gst_pad_push_event (parse->srcpad, event);
+    gst_pad_push_event_full (parse->srcpad, event);
     parse->priv->push_stream_start = FALSE;
     g_free (stream_id);
   }
@@ -3674,7 +3692,7 @@ pause:
             (GST_ELEMENT_CAST (parse),
             gst_message_new_segment_done (GST_OBJECT_CAST (parse),
                 GST_FORMAT_TIME, stop));
-        gst_pad_push_event (parse->srcpad,
+        gst_pad_push_event_full (parse->srcpad,
             gst_event_new_segment_done (GST_FORMAT_TIME, stop));
       } else {
         /* If we STILL have zero frames processed, fire an error */
@@ -3704,7 +3722,7 @@ pause:
           parse->priv->segment_seqnum);
       if (parse->priv->segment_seqnum != GST_SEQNUM_INVALID)
         gst_event_set_seqnum (topush, parse->priv->segment_seqnum);
-      gst_pad_push_event (parse->srcpad, topush);
+      gst_pad_push_event_full (parse->srcpad, topush);
     }
     gst_object_unref (parse);
   }
@@ -4567,24 +4585,28 @@ exit:
 }
 
 /* returns TRUE if seek succeeded */
-static gboolean
+static GstFlowReturn
 gst_base_parse_handle_seek (GstBaseParse * parse, GstEvent * event)
 {
   gdouble rate;
   GstFormat format;
   GstSeekFlags flags;
   GstSeekType start_type = GST_SEEK_TYPE_NONE, stop_type;
-  gboolean flush, update, res = TRUE, accurate;
+  gboolean flush, update, accurate;
   gint64 start, stop, seekpos, seekstop;
   GstSegment seeksegment = { 0, };
   GstClockTime start_ts;
   guint32 seqnum;
   GstEvent *segment_event;
+  GstFlowReturn res = GST_FLOW_OK;
 
   /* try upstream first, unless we're driving the streaming thread ourselves */
   if (parse->priv->pad_mode != GST_PAD_MODE_PULL) {
-    res = gst_pad_push_event (parse->sinkpad, gst_event_ref (event));
-    if (res)
+    res = gst_pad_push_event_full (parse->sinkpad, gst_event_ref (event));
+    if (res == GST_FLOW_OK)
+      goto done;
+    /* If upstream failed for a non-generic reason, bail out */
+    if (res != GST_FLOW_ERROR)
       goto done;
   }
 
@@ -4700,9 +4722,9 @@ gst_base_parse_handle_seek (GstBaseParse * parse, GstEvent * event)
 
         gst_event_set_seqnum (fevent, seqnum);
 
-        gst_pad_push_event (parse->srcpad, gst_event_ref (fevent));
+        gst_pad_push_event_full (parse->srcpad, gst_event_ref (fevent));
         /* unlock upstream pull_range */
-        gst_pad_push_event (parse->sinkpad, fevent);
+        gst_pad_push_event_full (parse->sinkpad, fevent);
       }
     } else {
       gst_pad_pause_task (parse->sinkpad);
@@ -4724,8 +4746,8 @@ gst_base_parse_handle_seek (GstBaseParse * parse, GstEvent * event)
       GstEvent *fevent = gst_event_new_flush_stop (TRUE);
       GST_DEBUG_OBJECT (parse, "sending flush stop");
       gst_event_set_seqnum (fevent, seqnum);
-      gst_pad_push_event (parse->srcpad, gst_event_ref (fevent));
-      gst_pad_push_event (parse->sinkpad, fevent);
+      gst_pad_push_event_full (parse->srcpad, gst_event_ref (fevent));
+      gst_pad_push_event_full (parse->sinkpad, fevent);
       gst_base_parse_clear_queues (parse);
     }
 
@@ -4786,7 +4808,7 @@ gst_base_parse_handle_seek (GstBaseParse * parse, GstEvent * event)
     GST_PAD_STREAM_UNLOCK (parse->sinkpad);
 
     /* handled seek */
-    res = TRUE;
+    res = GST_FLOW_OK;
   } else {
     GstEvent *new_event;
     GstBaseParseSeek *seek;
@@ -4817,9 +4839,9 @@ gst_base_parse_handle_seek (GstBaseParse * parse, GstEvent * event)
         g_slist_append (parse->priv->pending_seeks, seek);
     GST_OBJECT_UNLOCK (parse);
 
-    res = gst_pad_push_event (parse->sinkpad, new_event);
+    res = gst_pad_push_event_full (parse->sinkpad, new_event);
 
-    if (!res) {
+    if (res != GST_FLOW_OK) {
       GST_OBJECT_LOCK (parse);
       parse->priv->pending_seeks =
           g_slist_remove (parse->priv->pending_seeks, seek);
@@ -4836,26 +4858,26 @@ done:
 negative_rate:
   {
     GST_DEBUG_OBJECT (parse, "negative playback rates delegated upstream.");
-    res = FALSE;
+    res = GST_FLOW_ERROR;
     goto done;
   }
 wrong_type:
   {
     GST_DEBUG_OBJECT (parse, "unsupported seek type.");
-    res = FALSE;
+    res = GST_FLOW_ERROR;
     goto done;
   }
 no_convert_to_time:
   {
     GST_DEBUG_OBJECT (parse, "seek in %s format was requested, but subclass "
         "couldn't convert that into TIME format", gst_format_get_name (format));
-    res = FALSE;
+    res = GST_FLOW_ERROR;
     goto done;
   }
 convert_failed:
   {
     GST_DEBUG_OBJECT (parse, "conversion TIME to BYTES failed.");
-    res = FALSE;
+    res = GST_FLOW_ERROR;
     goto done;
   }
 }
