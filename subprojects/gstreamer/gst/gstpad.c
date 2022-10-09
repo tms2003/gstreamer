@@ -3135,9 +3135,6 @@ event_forward_func (GstPad * pad, EventData * data)
  *
  * Invokes the default event handler for the given pad.
  *
- * The EOS event will pause the task associated with @pad before it is forwarded
- * to all internally linked pads,
- *
  * The event is sent to all pads internally linked to @pad. This function
  * takes ownership of @event.
  *
