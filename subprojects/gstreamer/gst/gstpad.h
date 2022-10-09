@@ -1493,7 +1493,13 @@ GST_API
 gboolean		gst_pad_push_event			(GstPad *pad, GstEvent *event);
 
 GST_API
+GstFlowReturn		gst_pad_push_event_full			(GstPad *pad, GstEvent *event);
+
+GST_API
 gboolean		gst_pad_event_default			(GstPad *pad, GstObject *parent,
+                                                                 GstEvent *event);
+GST_API
+GstFlowReturn		gst_pad_event_full_default		(GstPad *pad, GstObject *parent,
                                                                  GstEvent *event);
 GST_API
 GstFlowReturn           gst_pad_get_last_flow_return            (GstPad *pad);
@@ -1511,6 +1517,9 @@ GstFlowReturn		gst_pad_get_range			(GstPad *pad, guint64 offset, guint size,
 								 GstBuffer **buffer);
 GST_API
 gboolean		gst_pad_send_event			(GstPad *pad, GstEvent *event);
+
+GST_API
+GstFlowReturn		gst_pad_send_event_full			(GstPad *pad, GstEvent *event);
 
 /* pad tasks */
 
