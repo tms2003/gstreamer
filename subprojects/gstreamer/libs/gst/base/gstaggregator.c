@@ -151,6 +151,7 @@ static void gst_aggregator_pad_buffer_consumed (GstAggregatorPad * pad,
 
 GST_DEBUG_CATEGORY_STATIC (aggregator_debug);
 #define GST_CAT_DEFAULT aggregator_debug
+GST_DEBUG_CATEGORY_STATIC (GST_CAT_EVENT);
 
 /* Locking order, locks in this element must always be taken in this order
  *
@@ -418,7 +419,7 @@ typedef struct
   gboolean only_to_active_pads;
 
   /* results */
-  gboolean result;
+  GstFlowReturn result;
   gboolean one_actually_seeked;
 } EventData;
 
@@ -621,8 +622,8 @@ gst_aggregator_push_mandatory_events (GstAggregator * self, gboolean up_to_caps)
     GST_INFO_OBJECT (self, "pushing stream start");
     /* stream-start (FIXME: create id based on input ids) */
     g_snprintf (s_id, sizeof (s_id), "agg-%08x", g_random_int ());
-    if (!gst_pad_push_event (GST_PAD (self->srcpad),
-            gst_event_new_stream_start (s_id))) {
+    if (gst_pad_push_event_full (GST_PAD (self->srcpad),
+            gst_event_new_stream_start (s_id)) != GST_FLOW_OK) {
       GST_WARNING_OBJECT (self->srcpad, "Sending stream start event failed");
     }
     self->priv->send_stream_start = FALSE;
@@ -631,8 +632,8 @@ gst_aggregator_push_mandatory_events (GstAggregator * self, gboolean up_to_caps)
   if (self->priv->srccaps) {
     GST_INFO_OBJECT (self, "pushing caps: %" GST_PTR_FORMAT,
         self->priv->srccaps);
-    if (!gst_pad_push_event (GST_PAD (self->srcpad),
-            gst_event_new_caps (self->priv->srccaps))) {
+    if (gst_pad_push_event_full (GST_PAD (self->srcpad),
+            gst_event_new_caps (self->priv->srccaps)) != GST_FLOW_OK) {
       GST_WARNING_OBJECT (self->srcpad, "Sending caps event failed");
     }
     gst_caps_unref (self->priv->srccaps);
@@ -665,9 +666,9 @@ gst_aggregator_push_mandatory_events (GstAggregator * self, gboolean up_to_caps)
   GST_OBJECT_UNLOCK (self);
 
   if (segment)
-    gst_pad_push_event (self->srcpad, segment);
+    gst_pad_push_event_full (self->srcpad, segment);
   if (tags)
-    gst_pad_push_event (self->srcpad, tags);
+    gst_pad_push_event_full (self->srcpad, tags);
 }
 
 /**
@@ -794,7 +795,7 @@ gst_aggregator_push_eos (GstAggregator * self)
   gst_event_set_seqnum (event, self->priv->seqnum);
   GST_OBJECT_UNLOCK (self);
 
-  gst_pad_push_event (self->srcpad, event);
+  gst_pad_push_event_full (self->srcpad, event);
 }
 
 static GstClockTime
@@ -933,6 +934,35 @@ gst_aggregator_wait_and_check (GstAggregator * self, gboolean * timeout)
   return res;
 }
 
+static GstFlowReturn gst_aggregator_default_sink_event (GstAggregator * self,
+    GstAggregatorPad * aggpad, GstEvent * event);
+
+static gboolean
+wrap_default_sink_event (GstAggregator * self, GstAggregatorPad * pad,
+    GstEvent * event)
+{
+  return gst_aggregator_default_sink_event (self, pad, event) == GST_FLOW_OK;
+}
+
+static inline GstFlowReturn
+handle_sink_event (GstAggregator * aggregator, GstAggregatorPad * pad,
+    GstEvent * event)
+{
+  GstAggregatorClass *klass = GST_AGGREGATOR_GET_CLASS (aggregator);
+
+  if (klass->sink_event == wrap_default_sink_event) {
+    g_assert (klass->sink_event_full);
+    return klass->sink_event_full (aggregator, pad, event);
+  }
+
+  GST_CAT_FIXME_OBJECT (GST_CAT_EVENT, pad,
+      "Implement flow-aware sink_event handler");
+  if (klass->sink_event (aggregator, pad, event))
+    return GST_FLOW_OK;
+
+  return GST_FLOW_ERROR;
+}
+
 typedef struct
 {
   gboolean processed_event;
@@ -964,7 +994,7 @@ gst_aggregator_do_events_and_queries (GstElement * self, GstPad * epad,
     }
     PAD_UNLOCK (pad);
     if (event || query) {
-      gboolean ret;
+      GstFlowReturn ret;
 
       data->processed_event = TRUE;
       if (klass == NULL)
@@ -973,11 +1003,14 @@ gst_aggregator_do_events_and_queries (GstElement * self, GstPad * epad,
       if (event) {
         GST_LOG_OBJECT (pad, "Processing %" GST_PTR_FORMAT, event);
         gst_event_ref (event);
-        ret = klass->sink_event (aggregator, pad, event);
+        ret = handle_sink_event (aggregator, pad, event);
 
         PAD_LOCK (pad);
         if (GST_EVENT_TYPE (event) == GST_EVENT_CAPS) {
-          pad->priv->negotiated = ret;
+          if (ret == GST_FLOW_NOT_NEGOTIATED || ret == GST_FLOW_ERROR)
+            pad->priv->negotiated = FALSE;
+          else
+            pad->priv->negotiated = TRUE;
         }
         if (g_queue_peek_tail (&pad->priv->data) == event)
           gst_event_unref (g_queue_pop_tail (&pad->priv->data));
@@ -1508,7 +1541,8 @@ gst_aggregator_stop_srcpad_task (GstAggregator * self, GstEvent * flush_start)
   SRC_UNLOCK (self);
 
   if (flush_start) {
-    res = gst_pad_push_event (self->srcpad, flush_start);
+    /* Return value not used */
+    gst_pad_push_event_full (self->srcpad, flush_start);
   }
 
   gst_pad_stop_task (self->srcpad);
@@ -1657,11 +1691,11 @@ update_time_level (GstAggregatorPad * aggpad, gboolean head)
 
 
 /* GstAggregator vmethods default implementations */
-static gboolean
+static GstFlowReturn
 gst_aggregator_default_sink_event (GstAggregator * self,
     GstAggregatorPad * aggpad, GstEvent * event)
 {
-  gboolean res = TRUE;
+  GstFlowReturn res = GST_FLOW_OK;
   GstPad *pad = GST_PAD (aggpad);
   GstAggregatorPrivate *priv = self->priv;
 
@@ -1693,7 +1727,7 @@ gst_aggregator_default_sink_event (GstAggregator * self,
         /* That means we received FLUSH_STOP/FLUSH_STOP on
          * all sinkpads -- Seeking is Done... sending FLUSH_STOP */
         gst_aggregator_flush (self);
-        gst_pad_push_event (self->srcpad, event);
+        gst_pad_push_event_full (self->srcpad, event);
         event = NULL;
         SRC_LOCK (self);
         priv->send_eos = TRUE;
@@ -1753,6 +1787,7 @@ gst_aggregator_default_sink_event (GstAggregator * self,
       GstClockTime duration;
       GstBuffer *gapbuf;
       GstGapFlags flags = 0;
+      gboolean clipret;
 
       gst_event_parse_gap (event, &pts, &duration);
 
@@ -1762,11 +1797,12 @@ gst_aggregator_default_sink_event (GstAggregator * self,
         endpts = GST_CLOCK_TIME_NONE;
 
       GST_OBJECT_LOCK (aggpad);
-      res = gst_segment_clip (&aggpad->segment, GST_FORMAT_TIME, pts, endpts,
+      clipret =
+          gst_segment_clip (&aggpad->segment, GST_FORMAT_TIME, pts, endpts,
           &pts, &endpts);
       GST_OBJECT_UNLOCK (aggpad);
 
-      if (!res) {
+      if (!clipret) {
         GST_WARNING_OBJECT (self, "GAP event outside segment, dropping");
         goto eat;
       }
@@ -1796,7 +1832,7 @@ gst_aggregator_default_sink_event (GstAggregator * self,
       if (gst_aggregator_pad_chain_internal (self, aggpad, gapbuf, FALSE) !=
           GST_FLOW_OK) {
         GST_WARNING_OBJECT (self, "Failed to chain gap buffer");
-        res = FALSE;
+        res = GST_FLOW_ERROR;
       }
 
       goto eat;
@@ -1810,7 +1846,7 @@ gst_aggregator_default_sink_event (GstAggregator * self,
   }
 
   GST_DEBUG_OBJECT (pad, "Forwarding event: %" GST_PTR_FORMAT, event);
-  return gst_pad_event_default (pad, GST_OBJECT (self), event);
+  return gst_pad_event_full_default (pad, GST_OBJECT (self), event);
 
 eat:
   GST_DEBUG_OBJECT (pad, "Eating event: %" GST_PTR_FORMAT, event);
@@ -1852,13 +1888,7 @@ gst_aggregator_default_sink_event_pre_queue (GstAggregator * self,
     PAD_UNLOCK (aggpad);
     SRC_UNLOCK (self);
   } else {
-    GstAggregatorClass *klass = GST_AGGREGATOR_GET_CLASS (self);
-
-    if (!klass->sink_event (self, aggpad, event)) {
-      /* Copied from GstPad to convert boolean to a GstFlowReturn in
-       * the event handling func */
-      ret = GST_FLOW_ERROR;
-    }
+    ret = handle_sink_event (self, aggpad, event);
   }
 
   return ret;
@@ -2299,21 +2329,21 @@ static gboolean
 gst_aggregator_event_forward_func (GstPad * pad, gpointer user_data)
 {
   EventData *evdata = user_data;
-  gboolean ret = TRUE;
+  GstFlowReturn ret = GST_FLOW_OK;
   GstPad *peer = gst_pad_get_peer (pad);
   GstAggregatorPad *aggpad = GST_AGGREGATOR_PAD (pad);
 
   if (peer) {
     if (evdata->only_to_active_pads && aggpad->priv->first_buffer) {
       GST_DEBUG_OBJECT (pad, "not sending event to inactive pad");
-      ret = TRUE;
     } else {
-      ret = gst_pad_send_event (peer, gst_event_ref (evdata->event));
-      GST_DEBUG_OBJECT (pad, "return of event push is %d", ret);
+      ret = gst_pad_send_event_full (peer, gst_event_ref (evdata->event));
+      GST_DEBUG_OBJECT (pad, "return of event push is %s",
+          gst_flow_get_name (ret));
     }
   }
 
-  if (ret == FALSE) {
+  if (ret == GST_FLOW_ERROR) {
     if (GST_EVENT_TYPE (evdata->event) == GST_EVENT_SEEK) {
       GstQuery *seeking = gst_query_new_seeking (GST_FORMAT_TIME);
 
@@ -2328,7 +2358,7 @@ gst_aggregator_event_forward_func (GstPad * pad, gpointer user_data)
           GST_INFO_OBJECT (pad,
               "Source not seekable, We failed but it does not matter!");
 
-          ret = TRUE;
+          ret = GST_FLOW_OK;
         }
       } else {
         GST_ERROR_OBJECT (pad, "Query seeking FAILED");
@@ -2340,7 +2370,8 @@ gst_aggregator_event_forward_func (GstPad * pad, gpointer user_data)
     evdata->one_actually_seeked = TRUE;
   }
 
-  evdata->result &= ret;
+  if (ret <= GST_FLOW_NOT_NEGOTIATED || ret == GST_FLOW_FLUSHING)
+    evdata->result = ret;
 
   if (peer)
     gst_object_unref (peer);
@@ -2353,7 +2384,7 @@ static void
 gst_aggregator_forward_event_to_all_sinkpads (GstAggregator * self,
     EventData * evdata)
 {
-  evdata->result = TRUE;
+  evdata->result = GST_FLOW_OK;
   evdata->one_actually_seeked = FALSE;
 
   gst_pad_forward (self->srcpad, gst_aggregator_event_forward_func, evdata);
@@ -2361,7 +2392,7 @@ gst_aggregator_forward_event_to_all_sinkpads (GstAggregator * self,
   gst_event_unref (evdata->event);
 }
 
-static gboolean
+static GstFlowReturn
 gst_aggregator_do_seek (GstAggregator * self, GstEvent * event)
 {
   gdouble rate;
@@ -2383,7 +2414,7 @@ gst_aggregator_do_seek (GstAggregator * self, GstEvent * event)
   GST_OBJECT_LOCK (self);
 
   if (gst_event_get_seqnum (event) == self->priv->next_seqnum) {
-    evdata.result = TRUE;
+    evdata.result = GST_FLOW_OK;
     GST_DEBUG_OBJECT (self, "Dropping duplicated seek event with seqnum %d",
         self->priv->next_seqnum);
     GST_OBJECT_UNLOCK (self);
@@ -2417,7 +2448,7 @@ gst_aggregator_do_seek (GstAggregator * self, GstEvent * event)
   gst_aggregator_forward_event_to_all_sinkpads (self, &evdata);
   event = NULL;
 
-  if (!evdata.result || !evdata.one_actually_seeked) {
+  if (evdata.result != GST_FLOW_OK || !evdata.one_actually_seeked) {
     GST_OBJECT_LOCK (self);
     priv->flushing = FALSE;
     GST_OBJECT_UNLOCK (self);
@@ -2427,17 +2458,18 @@ gst_aggregator_do_seek (GstAggregator * self, GstEvent * event)
       GstEvent *event = gst_event_new_flush_stop (TRUE);
 
       gst_event_set_seqnum (event, self->priv->next_seqnum);
-      gst_pad_push_event (self->srcpad, event);
+      gst_pad_push_event_full (self->srcpad, event);
     }
   }
 
 done:
-  GST_INFO_OBJECT (self, "seek done, result: %d", evdata.result);
+  GST_INFO_OBJECT (self, "seek done, result: %s",
+      gst_flow_get_name (evdata.result));
 
   return evdata.result;
 }
 
-static gboolean
+static GstFlowReturn
 gst_aggregator_default_src_event (GstAggregator * self, GstEvent * event)
 {
   EventData evdata = { 0, };
@@ -2449,12 +2481,12 @@ gst_aggregator_default_src_event (GstAggregator * self, GstEvent * event)
     case GST_EVENT_NAVIGATION:
       /* specific handling has to be implemented in subclasses */
       gst_event_unref (event);
-      return FALSE;
+      return GST_FLOW_ERROR;
     case GST_EVENT_RECONFIGURE:
       /* We will renegotiate with downstream, we don't
        * need to forward this further */
       gst_event_unref (event);
-      return TRUE;
+      return GST_FLOW_OK;
     default:
       break;
   }
@@ -2470,12 +2502,31 @@ gst_aggregator_default_src_event (GstAggregator * self, GstEvent * event)
 }
 
 static gboolean
+wrap_default_src_event (GstAggregator * self, GstEvent * event)
+{
+  return gst_aggregator_default_src_event (self, event) == GST_FLOW_OK;
+}
+
+static GstFlowReturn
 gst_aggregator_src_pad_event_func (GstPad * pad, GstObject * parent,
     GstEvent * event)
 {
   GstAggregatorClass *klass = GST_AGGREGATOR_GET_CLASS (parent);
 
-  return klass->src_event (GST_AGGREGATOR (parent), event);
+  GST_DEBUG_OBJECT (pad, "%" GST_PTR_FORMAT, event);
+
+  if (klass->src_event == wrap_default_src_event) {
+    g_assert (klass->src_event_full);
+    return klass->src_event_full (GST_AGGREGATOR (parent), event);
+  }
+
+  GST_CAT_FIXME_OBJECT (GST_CAT_EVENT, pad,
+      "Implement flow-aware src_event handler");
+
+  if (klass->src_event (GST_AGGREGATOR (parent), event))
+    return GST_FLOW_OK;
+
+  return GST_FLOW_ERROR;
 }
 
 static gboolean
@@ -2782,6 +2833,7 @@ gst_aggregator_class_init (GstAggregatorClass * klass)
 
   GST_DEBUG_CATEGORY_INIT (aggregator_debug, "aggregator",
       GST_DEBUG_FG_MAGENTA, "GstAggregator");
+  GST_DEBUG_CATEGORY_GET (GST_CAT_EVENT, "GST_EVENT");
 
   if (aggregator_private_offset != 0)
     g_type_class_adjust_private_offset (klass, &aggregator_private_offset);
@@ -2789,10 +2841,12 @@ gst_aggregator_class_init (GstAggregatorClass * klass)
   klass->finish_buffer = gst_aggregator_default_finish_buffer;
   klass->finish_buffer_list = gst_aggregator_default_finish_buffer_list;
 
-  klass->sink_event = gst_aggregator_default_sink_event;
+  klass->sink_event = wrap_default_sink_event;
+  klass->sink_event_full = gst_aggregator_default_sink_event;
   klass->sink_query = gst_aggregator_default_sink_query;
 
-  klass->src_event = gst_aggregator_default_src_event;
+  klass->src_event = wrap_default_src_event;
+  klass->src_event_full = gst_aggregator_default_src_event;
   klass->src_query = gst_aggregator_default_src_query;
 
   klass->create_new_pad = gst_aggregator_default_create_new_pad;
@@ -2939,7 +2993,7 @@ gst_aggregator_init (GstAggregator * self, GstAggregatorClass * klass)
 
   gst_aggregator_reset_flow_values (self);
 
-  gst_pad_set_event_function (self->srcpad,
+  gst_pad_set_event_full_function (self->srcpad,
       GST_DEBUG_FUNCPTR (gst_aggregator_src_pad_event_func));
   gst_pad_set_query_function (self->srcpad,
       GST_DEBUG_FUNCPTR (gst_aggregator_src_pad_query_func));

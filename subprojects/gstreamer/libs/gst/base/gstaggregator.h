@@ -353,8 +353,31 @@ struct _GstAggregatorClass {
   GstSample *       (*peek_next_sample)         (GstAggregator *aggregator,
                                                  GstAggregatorPad * aggregator_pad);
 
+  /**
+   * GstAggregatorClass::src_event_full:
+   *
+   * Optional. Called when an event is received on the src pad, the subclass
+   * should always chain up.
+   *
+   * Since: 1.22
+   */
+  GstFlowReturn     (*src_event_full)           (GstAggregator    *  aggregator,
+						 GstEvent         *  event);
+
+  /**
+   * GstAggregatorClass::sink_event_full:
+   *
+   * Optional. Called when an event is received on the sink pad, the subclass
+   * should always chain up.
+   *
+   * Since: 1.22
+   */
+  GstFlowReturn     (*sink_event_full)          (GstAggregator    *  aggregator,
+						 GstAggregatorPad *  aggregator_pad,
+						 GstEvent         *  event);
+
   /*< private >*/
-  gpointer          _gst_reserved[GST_PADDING_LARGE-5];
+  gpointer          _gst_reserved[GST_PADDING_LARGE-7];
 };
 
 /************************************
