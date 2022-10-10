@@ -298,8 +298,8 @@ static GstFlowReturn gst_queue2_handle_sink_event (GstPad * pad,
 static gboolean gst_queue2_handle_sink_query (GstPad * pad, GstObject * parent,
     GstQuery * query);
 
-static gboolean gst_queue2_handle_src_event (GstPad * pad, GstObject * parent,
-    GstEvent * event);
+static GstFlowReturn gst_queue2_handle_src_event (GstPad * pad,
+    GstObject * parent, GstEvent * event);
 static gboolean gst_queue2_handle_src_query (GstPad * pad, GstObject * parent,
     GstQuery * query);
 static gboolean gst_queue2_handle_query (GstElement * element,
@@ -515,7 +515,7 @@ gst_queue2_init (GstQueue2 * queue)
       GST_DEBUG_FUNCPTR (gst_queue2_src_activate_mode));
   gst_pad_set_getrange_function (queue->srcpad,
       GST_DEBUG_FUNCPTR (gst_queue2_get_range));
-  gst_pad_set_event_function (queue->srcpad,
+  gst_pad_set_event_full_function (queue->srcpad,
       GST_DEBUG_FUNCPTR (gst_queue2_handle_src_event));
   gst_pad_set_query_function (queue->srcpad,
       GST_DEBUG_FUNCPTR (gst_queue2_handle_src_query));
@@ -3254,10 +3254,10 @@ out_flushing:
   }
 }
 
-static gboolean
+static GstFlowReturn
 gst_queue2_handle_src_event (GstPad * pad, GstObject * parent, GstEvent * event)
 {
-  gboolean res = TRUE;
+  GstFlowReturn res = GST_FLOW_OK;
   GstQueue2 *queue = GST_QUEUE2 (parent);
 
 #ifndef GST_DISABLE_GST_DEBUG
@@ -3269,7 +3269,7 @@ gst_queue2_handle_src_event (GstPad * pad, GstObject * parent, GstEvent * event)
     case GST_EVENT_FLUSH_START:
       if (QUEUE_IS_USING_QUEUE (queue)) {
         /* just forward upstream */
-        res = gst_pad_push_event (queue->sinkpad, event);
+        res = gst_pad_push_event_full (queue->sinkpad, event);
       } else {
         /* now unblock the getrange function */
         GST_QUEUE2_MUTEX_LOCK (queue);
@@ -3279,14 +3279,14 @@ gst_queue2_handle_src_event (GstPad * pad, GstObject * parent, GstEvent * event)
         GST_QUEUE2_MUTEX_UNLOCK (queue);
 
         /* when using a temp file, we eat the event */
-        res = TRUE;
+        res = GST_FLOW_OK;
         gst_event_unref (event);
       }
       break;
     case GST_EVENT_FLUSH_STOP:
       if (QUEUE_IS_USING_QUEUE (queue)) {
         /* just forward upstream */
-        res = gst_pad_push_event (queue->sinkpad, event);
+        res = gst_pad_push_event_full (queue->sinkpad, event);
       } else {
         /* now unblock the getrange function */
         GST_QUEUE2_MUTEX_LOCK (queue);
@@ -3294,7 +3294,7 @@ gst_queue2_handle_src_event (GstPad * pad, GstObject * parent, GstEvent * event)
         GST_QUEUE2_MUTEX_UNLOCK (queue);
 
         /* when using a temp file, we eat the event */
-        res = TRUE;
+        res = GST_FLOW_OK;
         gst_event_unref (event);
       }
       break;
@@ -3316,10 +3316,10 @@ gst_queue2_handle_src_event (GstPad * pad, GstObject * parent, GstEvent * event)
       }
       GST_QUEUE2_MUTEX_UNLOCK (queue);
 
-      res = gst_pad_push_event (queue->sinkpad, event);
+      res = gst_pad_push_event_full (queue->sinkpad, event);
       break;
     default:
-      res = gst_pad_push_event (queue->sinkpad, event);
+      res = gst_pad_push_event_full (queue->sinkpad, event);
       break;
   }
 

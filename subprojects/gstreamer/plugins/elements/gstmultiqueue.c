@@ -2014,7 +2014,14 @@ gst_single_queue_push_one (GstMultiQueue * mq, GstSingleQueue * sq,
           "SingleQueue %d : Pushing event %p of type %s",
           sq->id, event, GST_EVENT_TYPE_NAME (event));
 
-      gst_pad_push_event (srcpad, event);
+      result = gst_pad_push_event_full (srcpad, event);
+
+      /* We only want to propagate specific flow returns from pushing
+       * events. Generic errors are ignored for now.  We also don't propagate
+       * not-linked from event push since pushing another event might trigger
+       * downstream to be linked */
+      if (result == GST_FLOW_ERROR || result == GST_FLOW_NOT_LINKED)
+        result = GST_FLOW_OK;
     }
   } else if (GST_IS_QUERY (object)) {
     GstQuery *query;
@@ -2584,7 +2591,6 @@ gst_multi_queue_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
   GstMultiQueue *mq;
   guint32 curid;
   GstMultiQueueItem *item;
-  gboolean res = TRUE;
   GstFlowReturn flowret = GST_FLOW_OK;
   GstEventType type;
   GstEvent *sref = NULL;
@@ -2626,7 +2632,7 @@ gst_multi_queue_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
       GST_DEBUG_OBJECT (mq, "SingleQueue %d : received flush start event",
           sq->id);
 
-      res = gst_pad_push_event (srcpad, event);
+      flowret = gst_pad_push_event_full (srcpad, event);
 
       gst_single_queue_flush (mq, sq, TRUE, FALSE);
       gst_single_queue_pause (mq, sq);
@@ -2636,7 +2642,7 @@ gst_multi_queue_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
       GST_DEBUG_OBJECT (mq, "SingleQueue %d : received flush stop event",
           sq->id);
 
-      res = gst_pad_push_event (srcpad, event);
+      flowret = gst_pad_push_event_full (srcpad, event);
 
       gst_single_queue_flush (mq, sq, FALSE, FALSE);
       gst_single_queue_start (mq, sq);
@@ -2670,7 +2676,7 @@ gst_multi_queue_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
 
     default:
       if (!(GST_EVENT_IS_SERIALIZED (event))) {
-        res = gst_pad_push_event (srcpad, event);
+        flowret = gst_pad_push_event_full (srcpad, event);
         goto done;
       }
       break;
@@ -2746,8 +2752,6 @@ gst_multi_queue_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
 done:
 
   gst_object_unref (srcpad);
-  if (res == FALSE)
-    flowret = GST_FLOW_ERROR;
   GST_DEBUG_OBJECT (mq, "SingleQueue %d : returning %s", sq->id,
       gst_flow_get_name (flowret));
   return flowret;
@@ -2882,12 +2886,12 @@ gst_multi_queue_src_activate_mode (GstPad * pad, GstObject * parent,
   return result;
 }
 
-static gboolean
+static GstFlowReturn
 gst_multi_queue_src_event (GstPad * pad, GstObject * parent, GstEvent * event)
 {
   GstSingleQueue *sq = GST_MULTIQUEUE_PAD (pad)->sq;
   GstMultiQueue *mq = g_weak_ref_get (&sq->mqueue);
-  gboolean ret;
+  GstFlowReturn ret;
   GstPad *sinkpad = g_weak_ref_get (&sq->sinkpad);
 
   if (!mq || !sinkpad) {
@@ -2907,10 +2911,10 @@ gst_multi_queue_src_event (GstPad * pad, GstObject * parent, GstEvent * event)
       }
       GST_MULTI_QUEUE_MUTEX_UNLOCK (mq);
 
-      ret = gst_pad_push_event (sinkpad, event);
+      ret = gst_pad_push_event_full (sinkpad, event);
       break;
     default:
-      ret = gst_pad_push_event (sinkpad, event);
+      ret = gst_pad_push_event_full (sinkpad, event);
       break;
   }
 
@@ -3507,7 +3511,7 @@ gst_single_queue_new (GstMultiQueue * mqueue, guint id)
 
   gst_pad_set_activatemode_function (srcpad,
       GST_DEBUG_FUNCPTR (gst_multi_queue_src_activate_mode));
-  gst_pad_set_event_function (srcpad,
+  gst_pad_set_event_full_function (srcpad,
       GST_DEBUG_FUNCPTR (gst_multi_queue_src_event));
   gst_pad_set_query_function (srcpad,
       GST_DEBUG_FUNCPTR (gst_multi_queue_src_query));

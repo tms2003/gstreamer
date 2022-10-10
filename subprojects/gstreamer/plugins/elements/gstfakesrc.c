@@ -217,7 +217,8 @@ static gboolean gst_fake_src_start (GstBaseSrc * basesrc);
 static gboolean gst_fake_src_stop (GstBaseSrc * basesrc);
 static gboolean gst_fake_src_is_seekable (GstBaseSrc * basesrc);
 
-static gboolean gst_fake_src_event_handler (GstBaseSrc * src, GstEvent * event);
+static GstFlowReturn gst_fake_src_event_handler (GstBaseSrc * src,
+    GstEvent * event);
 static void gst_fake_src_get_times (GstBaseSrc * basesrc, GstBuffer * buffer,
     GstClockTime * start, GstClockTime * end);
 static GstFlowReturn gst_fake_src_create (GstBaseSrc * src, guint64 offset,
@@ -348,7 +349,8 @@ gst_fake_src_class_init (GstFakeSrcClass * klass)
   gstbase_src_class->is_seekable = GST_DEBUG_FUNCPTR (gst_fake_src_is_seekable);
   gstbase_src_class->start = GST_DEBUG_FUNCPTR (gst_fake_src_start);
   gstbase_src_class->stop = GST_DEBUG_FUNCPTR (gst_fake_src_stop);
-  gstbase_src_class->event = GST_DEBUG_FUNCPTR (gst_fake_src_event_handler);
+  gstbase_src_class->event_full =
+      GST_DEBUG_FUNCPTR (gst_fake_src_event_handler);
   gstbase_src_class->get_times = GST_DEBUG_FUNCPTR (gst_fake_src_get_times);
   gstbase_src_class->create = GST_DEBUG_FUNCPTR (gst_fake_src_create);
 
@@ -394,7 +396,7 @@ gst_fake_src_finalize (GObject * object)
   G_OBJECT_CLASS (parent_class)->finalize (object);
 }
 
-static gboolean
+static GstFlowReturn
 gst_fake_src_event_handler (GstBaseSrc * basesrc, GstEvent * event)
 {
   GstFakeSrc *src;
@@ -426,7 +428,7 @@ gst_fake_src_event_handler (GstBaseSrc * basesrc, GstEvent * event)
     g_object_notify_by_pspec ((GObject *) src, pspec_last_message);
   }
 
-  return GST_BASE_SRC_CLASS (parent_class)->event (basesrc, event);
+  return GST_BASE_SRC_CLASS (parent_class)->event_full (basesrc, event);
 }
 
 static void

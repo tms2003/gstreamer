@@ -186,7 +186,7 @@ static void
 gst_clock_sync_init (GstClockSync * clocksync)
 {
   clocksync->sinkpad = gst_pad_new_from_static_template (&sinktemplate, "sink");
-  gst_pad_set_event_function (clocksync->sinkpad,
+  gst_pad_set_event_full_function (clocksync->sinkpad,
       GST_DEBUG_FUNCPTR (gst_clock_sync_sink_event));
   gst_pad_set_chain_function (clocksync->sinkpad,
       GST_DEBUG_FUNCPTR (gst_clock_sync_chain));
@@ -361,11 +361,10 @@ gst_clocksync_do_sync (GstClockSync * clocksync, GstClockTime running_time)
   return ret;
 }
 
-static gboolean
+static GstFlowReturn
 gst_clock_sync_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
 {
   GstClockSync *clocksync = GST_CLOCKSYNC (parent);
-  gboolean ret;
 
   GST_LOG_OBJECT (clocksync, "Received %s event: %" GST_PTR_FORMAT,
       GST_EVENT_TYPE_NAME (event), event);
@@ -413,8 +412,7 @@ gst_clock_sync_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
   }
 
   /* Always handle all events as normal: */
-  ret = gst_pad_event_default (pad, parent, event);
-  return ret;
+  return gst_pad_event_full_default (pad, parent, event);
 }
 
 static void

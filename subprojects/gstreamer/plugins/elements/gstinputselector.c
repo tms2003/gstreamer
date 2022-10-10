@@ -187,7 +187,7 @@ static void gst_selector_pad_set_property (GObject * object,
 
 static gint64 gst_selector_pad_get_running_time (GstSelectorPad * pad);
 static void gst_selector_pad_reset (GstSelectorPad * pad);
-static gboolean gst_selector_pad_event (GstPad * pad, GstObject * parent,
+static GstFlowReturn gst_selector_pad_event (GstPad * pad, GstObject * parent,
     GstEvent * event);
 static gboolean gst_selector_pad_query (GstPad * pad, GstObject * parent,
     GstQuery * query);
@@ -507,10 +507,10 @@ gst_input_selector_all_eos (GstInputSelector * sel)
   return TRUE;
 }
 
-static gboolean
+static GstFlowReturn
 gst_selector_pad_event (GstPad * pad, GstObject * parent, GstEvent * event)
 {
-  gboolean res = TRUE;
+  GstFlowReturn res = GST_FLOW_OK;
   gboolean forward;
   gboolean new_tags = FALSE;
   GstInputSelector *sel;
@@ -641,7 +641,7 @@ gst_selector_pad_event (GstPad * pad, GstObject * parent, GstEvent * event)
     g_object_notify (G_OBJECT (selpad), "tags");
   if (forward) {
     GST_DEBUG_OBJECT (pad, "forwarding event");
-    res = gst_pad_push_event (sel->srcpad, event);
+    res = gst_pad_push_event_full (sel->srcpad, event);
   } else {
     /* If we aren't forwarding the event because the pad is not the
      * active_sinkpad, then set the flag on the pad
@@ -1201,7 +1201,7 @@ static void gst_input_selector_release_pad (GstElement * element, GstPad * pad);
 static GstStateChangeReturn gst_input_selector_change_state (GstElement *
     element, GstStateChange transition);
 
-static gboolean gst_input_selector_event (GstPad * pad, GstObject * parent,
+static GstFlowReturn gst_input_selector_event (GstPad * pad, GstObject * parent,
     GstEvent * event);
 static gboolean gst_input_selector_query (GstPad * pad, GstObject * parent,
     GstQuery * query);
@@ -1316,7 +1316,7 @@ gst_input_selector_init (GstInputSelector * sel)
   sel->srcpad = gst_pad_new ("src", GST_PAD_SRC);
   gst_pad_set_iterate_internal_links_function (sel->srcpad,
       GST_DEBUG_FUNCPTR (gst_selector_pad_iterate_linked_pads));
-  gst_pad_set_event_function (sel->srcpad,
+  gst_pad_set_event_full_function (sel->srcpad,
       GST_DEBUG_FUNCPTR (gst_input_selector_event));
   gst_pad_set_query_function (sel->srcpad,
       GST_DEBUG_FUNCPTR (gst_input_selector_query));
@@ -1532,11 +1532,11 @@ gst_input_selector_get_linked_pad (GstInputSelector * sel, GstPad * pad,
   return otherpad;
 }
 
-static gboolean
+static GstFlowReturn
 gst_input_selector_event (GstPad * pad, GstObject * parent, GstEvent * event)
 {
   GstInputSelector *sel;
-  gboolean result = FALSE;
+  GstFlowReturn result = GST_FLOW_ERROR;
   GstIterator *iter;
   gboolean done = FALSE;
   GValue item = { 0, };
@@ -1553,15 +1553,17 @@ gst_input_selector_event (GstPad * pad, GstObject * parent, GstEvent * event)
     GST_INPUT_SELECTOR_UNLOCK (sel);
 
     gst_event_ref (event);
-    result |= gst_pad_push_event (eventpad, event);
+    if (gst_pad_push_event_full (eventpad, event) == GST_FLOW_OK)
+      result = GST_FLOW_OK;
     pushed_pads = g_list_append (pushed_pads, eventpad);
     gst_object_unref (eventpad);
   } else {
     GST_INPUT_SELECTOR_UNLOCK (sel);
   }
 
-  /* This is now essentially a copy of gst_pad_event_default_dispatch
-   * with a different iterator */
+  /* This is now essentially a copy of gst_pad_event_default_dispatch with a
+   * different iterator. We do forward to all pads but will consider the event
+   * handling a success if at least one succeeded */
   while (!done) {
     switch (gst_iterator_next (iter, &item)) {
       case GST_ITERATOR_OK:
@@ -1574,7 +1576,8 @@ gst_input_selector_event (GstPad * pad, GstObject * parent, GstEvent * event)
         }
 
         gst_event_ref (event);
-        result |= gst_pad_push_event (eventpad, event);
+        if (gst_pad_push_event_full (eventpad, event) == GST_FLOW_OK)
+          result = GST_FLOW_OK;
         pushed_pads = g_list_append (pushed_pads, eventpad);
 
         g_value_reset (&item);
@@ -1801,7 +1804,7 @@ gst_input_selector_request_new_pad (GstElement * element,
 
   sel->n_pads++;
 
-  gst_pad_set_event_function (sinkpad,
+  gst_pad_set_event_full_function (sinkpad,
       GST_DEBUG_FUNCPTR (gst_selector_pad_event));
   gst_pad_set_query_function (sinkpad,
       GST_DEBUG_FUNCPTR (gst_selector_pad_query));

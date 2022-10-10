@@ -139,14 +139,14 @@ static void gst_type_find_element_set_property (GObject * object,
 static void gst_type_find_element_get_property (GObject * object,
     guint prop_id, GValue * value, GParamSpec * pspec);
 
-static gboolean gst_type_find_element_src_event (GstPad * pad,
+static GstFlowReturn gst_type_find_element_src_event (GstPad * pad,
     GstObject * parent, GstEvent * event);
 static gboolean gst_type_find_handle_src_query (GstPad * pad,
     GstObject * parent, GstQuery * query);
 
-static gboolean gst_type_find_element_sink_event (GstPad * pad,
+static GstFlowReturn gst_type_find_element_sink_event (GstPad * pad,
     GstObject * parent, GstEvent * event);
-static gboolean gst_type_find_element_setcaps (GstTypeFindElement * typefind,
+static void gst_type_find_element_setcaps (GstTypeFindElement * typefind,
     GstCaps * caps);
 static GstFlowReturn gst_type_find_element_chain (GstPad * sinkpad,
     GstObject * parent, GstBuffer * buffer);
@@ -309,7 +309,7 @@ gst_type_find_element_init (GstTypeFindElement * typefind)
       GST_DEBUG_FUNCPTR (gst_type_find_element_activate_sink_mode));
   gst_pad_set_chain_function (typefind->sink,
       GST_DEBUG_FUNCPTR (gst_type_find_element_chain));
-  gst_pad_set_event_function (typefind->sink,
+  gst_pad_set_event_full_function (typefind->sink,
       GST_DEBUG_FUNCPTR (gst_type_find_element_sink_event));
   GST_PAD_SET_PROXY_ALLOCATION (typefind->sink);
   gst_element_add_pad (GST_ELEMENT (typefind), typefind->sink);
@@ -322,7 +322,7 @@ gst_type_find_element_init (GstTypeFindElement * typefind)
       GST_DEBUG_FUNCPTR (gst_type_find_element_activate_src_mode));
   gst_pad_set_getrange_function (typefind->src,
       GST_DEBUG_FUNCPTR (gst_type_find_element_getrange));
-  gst_pad_set_event_function (typefind->src,
+  gst_pad_set_event_full_function (typefind->src,
       GST_DEBUG_FUNCPTR (gst_type_find_element_src_event));
   gst_pad_set_query_function (typefind->src,
       GST_DEBUG_FUNCPTR (gst_type_find_handle_src_query));
@@ -543,34 +543,36 @@ gst_type_find_element_seek (GstTypeFindElement * typefind, GstEvent * event)
   return TRUE;
 }
 
-static gboolean
+static GstFlowReturn
 gst_type_find_element_src_event (GstPad * pad, GstObject * parent,
     GstEvent * event)
 {
   GstTypeFindElement *typefind = GST_TYPE_FIND_ELEMENT (parent);
-  gboolean result;
 
   /* Always forward RECONFIGURE events upstream */
   if (GST_EVENT_TYPE (event) == GST_EVENT_RECONFIGURE) {
-    return gst_pad_push_event (typefind->sink, event);
+    return gst_pad_push_event_full (typefind->sink, event);
   }
 
   if (typefind->mode != MODE_NORMAL) {
     /* need to do more? */
     GST_LOG_OBJECT (typefind, "Still typefinding. Not passing event upstream");
     gst_event_unref (event);
-    return FALSE;
+    return GST_FLOW_ERROR;
   }
 
   /* Only handle seeks here if driving the pipeline */
   if (typefind->segment.format != GST_FORMAT_UNDEFINED &&
       GST_EVENT_TYPE (event) == GST_EVENT_SEEK) {
-    result = gst_type_find_element_seek (typefind, event);
+    GstFlowReturn result;
+    result =
+        gst_type_find_element_seek (typefind,
+        event) ? GST_FLOW_OK : GST_FLOW_ERROR;
     gst_event_unref (event);
     return result;
-  } else {
-    return gst_pad_push_event (typefind->sink, event);
   }
+
+  return gst_pad_push_event_full (typefind->sink, event);
 }
 
 static void
@@ -656,11 +658,11 @@ no_data:
   }
 }
 
-static gboolean
+static GstFlowReturn
 gst_type_find_element_sink_event (GstPad * pad, GstObject * parent,
     GstEvent * event)
 {
-  gboolean res = FALSE;
+  GstFlowReturn res = GST_FLOW_OK;
   GstTypeFindElement *typefind = GST_TYPE_FIND_ELEMENT (parent);
 
   GST_DEBUG_OBJECT (typefind, "got %s event in mode %d",
@@ -675,7 +677,7 @@ gst_type_find_element_sink_event (GstPad * pad, GstObject * parent,
 
           /* Parse and push out our caps and data */
           gst_event_parse_caps (event, &caps);
-          res = gst_type_find_element_setcaps (typefind, caps);
+          gst_type_find_element_setcaps (typefind, caps);
 
           gst_event_unref (event);
           break;
@@ -691,7 +693,6 @@ gst_type_find_element_sink_event (GstPad * pad, GstObject * parent,
            * which will only cause an implicit GAP between buffers.
            */
           gst_event_unref (event);
-          res = TRUE;
           break;
         }
         case GST_EVENT_EOS:
@@ -699,7 +700,7 @@ gst_type_find_element_sink_event (GstPad * pad, GstObject * parent,
           GST_INFO_OBJECT (typefind, "Got EOS and no type found yet");
           gst_type_find_element_chain_do_typefinding (typefind, FALSE, TRUE);
 
-          res = gst_pad_push_event (typefind->src, event);
+          res = gst_pad_push_event_full (typefind->src, event);
           break;
         }
         case GST_EVENT_FLUSH_STOP:{
@@ -723,7 +724,7 @@ gst_type_find_element_sink_event (GstPad * pad, GstObject * parent,
           /* fall through */
         }
         case GST_EVENT_FLUSH_START:
-          res = gst_pad_push_event (typefind->src, event);
+          res = gst_pad_push_event_full (typefind->src, event);
           break;
         default:
           /* Forward events that would happen before the caps event
@@ -732,7 +733,7 @@ gst_type_find_element_sink_event (GstPad * pad, GstObject * parent,
            * for later sending that would need to come after the caps
            * event */
           if (GST_EVENT_TYPE (event) < GST_EVENT_CAPS) {
-            res = gst_pad_push_event (typefind->src, event);
+            res = gst_pad_push_event_full (typefind->src, event);
           } else {
             GST_DEBUG_OBJECT (typefind, "Saving %s event to send later",
                 GST_EVENT_TYPE_NAME (event));
@@ -740,13 +741,12 @@ gst_type_find_element_sink_event (GstPad * pad, GstObject * parent,
             typefind->cached_events =
                 g_list_append (typefind->cached_events, event);
             GST_OBJECT_UNLOCK (typefind);
-            res = TRUE;
           }
           break;
       }
       break;
     case MODE_NORMAL:
-      res = gst_pad_push_event (typefind->src, event);
+      res = gst_pad_push_event_full (typefind->src, event);
       break;
     case MODE_ERROR:
       break;
