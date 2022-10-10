@@ -776,12 +776,12 @@ gst_type_find_element_send_cached_events (GstTypeFindElement * typefind)
   g_list_free (cached_events);
 }
 
-static gboolean
+static void
 gst_type_find_element_setcaps (GstTypeFindElement * typefind, GstCaps * caps)
 {
   /* don't operate on ANY caps */
   if (gst_caps_is_any (caps))
-    return TRUE;
+    return;
 
   /* Set to MODE_NORMAL before emitting have-type, in case it triggers a seek */
   typefind->mode = MODE_NORMAL;
@@ -792,8 +792,6 @@ gst_type_find_element_setcaps (GstTypeFindElement * typefind, GstCaps * caps)
       "upstream: %" GST_PTR_FORMAT, caps);
 
   stop_typefinding (typefind);
-
-  return TRUE;
 }
 
 static gchar *
