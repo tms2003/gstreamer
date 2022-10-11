@@ -231,6 +231,25 @@ typedef gint (*GstCollectPadsCompareFunction) (GstCollectPads *pads,
 typedef gboolean (*GstCollectPadsEventFunction)        (GstCollectPads *pads, GstCollectData * pad,
                                                         GstEvent * event, gpointer user_data);
 
+/**
+ * GstCollectPadsEventFullFunction:
+ * @pads: the #GstCollectPads that triggered the callback
+ * @pad: the #GstPad that received an event
+ * @event: the #GstEvent received
+ * @user_data: user data passed to gst_collect_pads_set_event_full_function()
+ *
+ * A function that will be called while processing an event. It takes
+ * ownership of the event and is responsible for chaining up (to
+ * gst_collect_pads_event_full_default()) or dropping events (such typical cases
+ * being handled by the default handler).
+ *
+ * Since: 1.22
+ *
+ * Returns: %GST_FLOW_OK if the pad could handle the event, or an error code.
+ */
+typedef GstFlowReturn (*GstCollectPadsEventFullFunction)        (GstCollectPads *pads, GstCollectData * pad,
+								 GstEvent * event, gpointer user_data);
+
 
 /**
  * GstCollectPadsQueryFunction:
@@ -363,6 +382,10 @@ void            gst_collect_pads_set_event_function   (GstCollectPads *pads,
                                                        GstCollectPadsEventFunction func,
                                                        gpointer user_data);
 GST_BASE_API
+void            gst_collect_pads_set_event_full_function   (GstCollectPads *pads,
+							    GstCollectPadsEventFullFunction func,
+							    gpointer user_data);
+GST_BASE_API
 void            gst_collect_pads_set_query_function   (GstCollectPads *pads,
                                                        GstCollectPadsQueryFunction func,
                                                        gpointer user_data);
@@ -444,6 +467,12 @@ gboolean        gst_collect_pads_event_default (GstCollectPads * pads, GstCollec
 GST_BASE_API
 gboolean        gst_collect_pads_src_event_default (GstCollectPads * pads, GstPad * pad,
                                                     GstEvent * event);
+GST_BASE_API
+GstFlowReturn   gst_collect_pads_event_full_default (GstCollectPads * pads, GstCollectData * data,
+						     GstEvent * event, gboolean discard);
+GST_BASE_API
+GstFlowReturn   gst_collect_pads_src_event_full_default (GstCollectPads * pads, GstPad * pad,
+							 GstEvent * event);
 GST_BASE_API
 gboolean        gst_collect_pads_query_default (GstCollectPads * pads, GstCollectData * data,
                                                 GstQuery * query, gboolean discard);
