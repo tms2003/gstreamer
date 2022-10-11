@@ -44,6 +44,10 @@
 
 #ifdef SO_TXTIME
 #include <linux/net_tstamp.h>
+#include <linux/errqueue.h>
+#include <linux/if_ether.h>
+#include <linux/ipv6.h>
+#include <linux/udp.h>
 #endif
 
 #include <gio/gnetworking.h>
@@ -112,6 +116,51 @@ static GstScmTxtime *
 gst_scm_txtime_new (void)
 {
   return g_object_new (gst_scm_txtime_get_type (), NULL);
+}
+
+G_DECLARE_FINAL_TYPE (GstScmTxtimeError, gst_scm_txtime_error,
+    GST, SCM_TXTIME_ERROR, GSocketControlMessage);
+
+struct _GstScmTxtimeError
+{
+  GSocketControlMessage parent;
+  guint8 code;
+  guint64 time;
+};
+
+G_DEFINE_TYPE (GstScmTxtimeError, gst_scm_txtime_error,
+    G_TYPE_SOCKET_CONTROL_MESSAGE);
+
+static void
+gst_scm_txtime_error_init (GstScmTxtimeError * self)
+{
+}
+
+static GSocketControlMessage *
+gst_scm_txtime_error_deserialize (int level, int msg_type, gsize size,
+    gpointer data)
+{
+  GstScmTxtimeError *self = NULL;
+
+  if (((level == SOL_IP && msg_type == IP_RECVERR) ||
+          (level == SOL_IPV6 && msg_type == IPV6_RECVERR)) &&
+      size >= sizeof (struct sock_extended_err)) {
+    struct sock_extended_err *err = data;
+
+    if (err->ee_origin == SO_EE_ORIGIN_TXTIME) {
+      self = g_object_new (gst_scm_txtime_error_get_type (), NULL);
+      self->code = err->ee_code;
+      self->time = ((guint64) err->ee_data) << 32 | err->ee_info;
+    }
+  }
+  return (GSocketControlMessage *) self;
+}
+
+static void
+gst_scm_txtime_error_class_init (GstScmTxtimeErrorClass * klass)
+{
+  GSocketControlMessageClass *scmklass = (GSocketControlMessageClass *) klass;
+  scmklass->deserialize = gst_scm_txtime_error_deserialize;
 }
 #endif
 
@@ -458,6 +507,10 @@ gst_multiudpsink_class_init (GstMultiUDPSinkClass * klass)
   klass->get_stats = gst_multiudpsink_get_stats;
 
   GST_DEBUG_CATEGORY_INIT (multiudpsink_debug, "multiudpsink", 0, "UDP sink");
+
+#ifdef SO_TXTIME
+  g_type_ensure (gst_scm_txtime_error_get_type ());
+#endif
 }
 
 static void
@@ -724,6 +777,52 @@ gst_udp_address_get_string (GSocketAddress * addr, gchar * s, gsize size)
   return s;
 }
 
+static void
+gst_multiudpsink_process_error_queue (GstMultiUDPSink * sink, GSocket * socket)
+{
+#ifdef SO_TXTIME
+  guint8 buf[sizeof (struct ethhdr) + sizeof (struct ipv6hdr) +
+      sizeof (struct udphdr) + 1];
+  GInputVector ivec = {.buffer = &buf,.size = sizeof (buf) };
+  GSocketControlMessage **cmsgs = NULL;
+  gint n_cmsgs = 0;
+  gint flags, i;
+
+  while (g_socket_condition_check (socket, G_IO_ERR)) {
+    n_cmsgs = 0;
+    flags = MSG_ERRQUEUE;
+    g_socket_receive_message (socket, NULL, &ivec, 1, &cmsgs, &n_cmsgs,
+        &flags, NULL, NULL);
+
+    for (i = 0; i < n_cmsgs; i++) {
+      if (GST_IS_SCM_TXTIME_ERROR (cmsgs[i])) {
+        GstScmTxtimeError *txtime_err = GST_SCM_TXTIME_ERROR (cmsgs[i]);
+        const gchar *reason;
+
+        switch (txtime_err->code) {
+          case SO_EE_CODE_TXTIME_MISSED:
+            reason = "missed txtime";
+            break;
+          case SO_EE_CODE_TXTIME_INVALID_PARAM:
+            reason = "invalid txtime";
+            break;
+          default:
+            reason = "reason unknown";
+        }
+
+        GST_INFO_OBJECT (sink, "SO_TXTIME: packet at %" GST_TIME_FORMAT
+            " dropped: %s", GST_TIME_ARGS (txtime_err->time), reason);
+      }
+      g_object_unref (cmsgs[i]);
+    }
+    g_clear_pointer (&cmsgs, g_free);
+  }
+#else
+  (void) sink;
+  (void) socket;
+#endif
+}
+
 /* Wrapper around g_socket_send_messages() plus error handling (ignoring).
  * Returns FALSE if we got cancelled, otherwise TRUE. */
 static GstFlowReturn
@@ -800,6 +899,9 @@ gst_multiudpsink_send_messages (GstMultiUDPSink * sink, GSocket * socket,
     messages += ret;
     num_messages -= ret;
   }
+
+  if (sink->so_txtime)
+    gst_multiudpsink_process_error_queue (sink, socket);
 
   return GST_FLOW_OK;
 }
@@ -1640,7 +1742,10 @@ gst_multiudpsink_start (GstBaseSink * bsink)
 
   if (sink->so_txtime) {
 #ifdef SO_TXTIME
-    struct sock_txtime txtimeopt = {.clockid = CLOCK_TAI };
+    struct sock_txtime txtimeopt = {
+      .clockid = CLOCK_TAI,
+      .flags = SOF_TXTIME_REPORT_ERRORS
+    };
 
     if (sink->used_socket) {
       if (setsockopt (g_socket_get_fd (sink->used_socket), SOL_SOCKET,
@@ -1728,6 +1833,9 @@ gst_multiudpsink_stop (GstBaseSink * bsink)
   udpsink = GST_MULTIUDPSINK (bsink);
 
   if (udpsink->used_socket) {
+    if (udpsink->so_txtime)
+      gst_multiudpsink_process_error_queue (udpsink, udpsink->used_socket);
+
     if (udpsink->close_socket || !udpsink->external_socket) {
       GError *err = NULL;
 
@@ -1742,6 +1850,9 @@ gst_multiudpsink_stop (GstBaseSink * bsink)
   }
 
   if (udpsink->used_socket_v6) {
+    if (udpsink->so_txtime)
+      gst_multiudpsink_process_error_queue (udpsink, udpsink->used_socket_v6);
+
     if (udpsink->close_socket || !udpsink->external_socket) {
       GError *err = NULL;
 
