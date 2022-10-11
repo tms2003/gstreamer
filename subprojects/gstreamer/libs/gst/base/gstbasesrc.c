@@ -322,10 +322,12 @@ static void gst_base_src_set_property (GObject * object, guint prop_id,
     const GValue * value, GParamSpec * pspec);
 static void gst_base_src_get_property (GObject * object, guint prop_id,
     GValue * value, GParamSpec * pspec);
-static gboolean gst_base_src_event (GstPad * pad, GstObject * parent,
+static GstFlowReturn gst_base_src_event (GstPad * pad, GstObject * parent,
     GstEvent * event);
 static gboolean gst_base_src_send_event (GstElement * elem, GstEvent * event);
-static gboolean gst_base_src_default_event (GstBaseSrc * src, GstEvent * event);
+static gboolean wrap_src_event (GstBaseSrc * src, GstEvent * event);
+static GstFlowReturn gst_base_src_default_event (GstBaseSrc * src,
+    GstEvent * event);
 
 static gboolean gst_base_src_query (GstPad * pad, GstObject * parent,
     GstQuery * query);
@@ -345,8 +347,7 @@ static GstFlowReturn gst_base_src_default_alloc (GstBaseSrc * basesrc,
 static gboolean gst_base_src_decide_allocation_default (GstBaseSrc * basesrc,
     GstQuery * query);
 
-static gboolean gst_base_src_set_flushing (GstBaseSrc * basesrc,
-    gboolean flushing);
+static void gst_base_src_set_flushing (GstBaseSrc * basesrc, gboolean flushing);
 
 static gboolean gst_base_src_start (GstBaseSrc * basesrc);
 static gboolean gst_base_src_stop (GstBaseSrc * basesrc);
@@ -415,7 +416,8 @@ gst_base_src_class_init (GstBaseSrcClass * klass)
       GST_DEBUG_FUNCPTR (gst_base_src_default_prepare_seek_segment);
   klass->do_seek = GST_DEBUG_FUNCPTR (gst_base_src_default_do_seek);
   klass->query = GST_DEBUG_FUNCPTR (gst_base_src_default_query);
-  klass->event = GST_DEBUG_FUNCPTR (gst_base_src_default_event);
+  klass->event = GST_DEBUG_FUNCPTR (wrap_src_event);
+  klass->event_full = GST_DEBUG_FUNCPTR (gst_base_src_default_event);
   klass->create = GST_DEBUG_FUNCPTR (gst_base_src_default_create);
   klass->alloc = GST_DEBUG_FUNCPTR (gst_base_src_default_alloc);
   klass->decide_allocation =
@@ -455,7 +457,7 @@ gst_base_src_init (GstBaseSrc * basesrc, gpointer g_class)
 
   GST_DEBUG_OBJECT (basesrc, "setting functions on src pad");
   gst_pad_set_activatemode_function (pad, gst_base_src_activate_mode);
-  gst_pad_set_event_function (pad, gst_base_src_event);
+  gst_pad_set_event_full_function (pad, gst_base_src_event);
   gst_pad_set_query_function (pad, gst_base_src_query);
   gst_pad_set_getrange_function (pad, gst_base_src_getrange);
 
@@ -2093,11 +2095,16 @@ gst_base_src_update_qos (GstBaseSrc * src,
   GST_OBJECT_UNLOCK (src);
 }
 
-
 static gboolean
+wrap_src_event (GstBaseSrc * src, GstEvent * event)
+{
+  return gst_base_src_default_event (src, event) == GST_FLOW_OK;
+}
+
+static GstFlowReturn
 gst_base_src_default_event (GstBaseSrc * src, GstEvent * event)
 {
-  gboolean result;
+  GstFlowReturn result = GST_FLOW_OK;
 
   GST_DEBUG_OBJECT (src, "handle event %" GST_PTR_FORMAT, event);
 
@@ -2107,15 +2114,16 @@ gst_base_src_default_event (GstBaseSrc * src, GstEvent * event)
       if (!gst_base_src_seekable (src))
         goto not_seekable;
 
-      result = gst_base_src_perform_seek (src, event, TRUE);
+      if (!gst_base_src_perform_seek (src, event, TRUE))
+        result = GST_FLOW_ERROR;
       break;
     case GST_EVENT_FLUSH_START:
       /* cancel any blocking getrange, is normally called
        * when in pull mode. */
-      result = gst_base_src_set_flushing (src, TRUE);
+      gst_base_src_set_flushing (src, TRUE);
       break;
     case GST_EVENT_FLUSH_STOP:
-      result = gst_base_src_set_flushing (src, FALSE);
+      gst_base_src_set_flushing (src, FALSE);
       break;
     case GST_EVENT_QOS:
     {
@@ -2125,17 +2133,14 @@ gst_base_src_default_event (GstBaseSrc * src, GstEvent * event)
 
       gst_event_parse_qos (event, NULL, &proportion, &diff, &timestamp);
       gst_base_src_update_qos (src, proportion, diff, timestamp);
-      result = TRUE;
       break;
     }
     case GST_EVENT_RECONFIGURE:
-      result = TRUE;
       break;
     case GST_EVENT_LATENCY:
-      result = TRUE;
       break;
     default:
-      result = FALSE;
+      result = GST_FLOW_ERROR;
       break;
   }
   return result;
@@ -2144,36 +2149,32 @@ gst_base_src_default_event (GstBaseSrc * src, GstEvent * event)
 not_seekable:
   {
     GST_DEBUG_OBJECT (src, "is not seekable");
-    return FALSE;
+    return GST_FLOW_ERROR;
   }
 }
 
-static gboolean
+static GstFlowReturn
 gst_base_src_event (GstPad * pad, GstObject * parent, GstEvent * event)
 {
-  GstBaseSrc *src;
-  GstBaseSrcClass *bclass;
-  gboolean result = FALSE;
+  GstBaseSrc *src = GST_BASE_SRC (parent);
+  GstBaseSrcClass *bclass = GST_BASE_SRC_GET_CLASS (src);
+  GstFlowReturn result = GST_FLOW_OK;
 
-  src = GST_BASE_SRC (parent);
-  bclass = GST_BASE_SRC_GET_CLASS (src);
+  if (bclass->event == wrap_src_event) {
+    g_assert (bclass->event_full);
+    result = bclass->event_full (src, event);
+  } else {
+    GST_CAT_FIXME_OBJECT (GST_CAT_EVENT, src,
+        "Implement flow-aware event handler");
 
-  if (bclass->event) {
-    if (!(result = bclass->event (src, event)))
-      goto subclass_failed;
+    if (!bclass->event (src, event)) {
+      GST_DEBUG_OBJECT (src, "subclass refused event");
+      result = GST_FLOW_ERROR;
+    }
   }
-
-done:
   gst_event_unref (event);
 
   return result;
-
-  /* ERRORS */
-subclass_failed:
-  {
-    GST_DEBUG_OBJECT (src, "subclass refused event");
-    goto done;
-  }
 }
 
 static void
@@ -3774,7 +3775,7 @@ was_stopped:
 
 /* start or stop flushing dataprocessing
  */
-static gboolean
+static void
 gst_base_src_set_flushing (GstBaseSrc * basesrc, gboolean flushing)
 {
   GstBaseSrcClass *bclass;
@@ -3831,8 +3832,6 @@ gst_base_src_set_flushing (GstBaseSrc * basesrc, gboolean flushing)
       bclass->unlock_stop (basesrc);
     GST_PAD_STREAM_UNLOCK (basesrc->srcpad);
   }
-
-  return TRUE;
 }
 
 /* the purpose of this function is to make sure that a live source blocks in the
