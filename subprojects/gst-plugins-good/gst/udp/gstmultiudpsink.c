@@ -249,6 +249,8 @@ static void gst_multiudpsink_get_times (GstBaseSink * bsink,
     GstBuffer * buffer, GstClockTime * start, GstClockTime * end);
 
 static GstClock *gst_multiudpsink_provide_clock (GstElement * element);
+static gboolean gst_multiudpsink_set_clock (GstElement * element,
+    GstClock * clock);
 
 static void gst_multiudpsink_set_property (GObject * object, guint prop_id,
     const GValue * value, GParamSpec * pspec);
@@ -501,6 +503,7 @@ gst_multiudpsink_class_init (GstMultiUDPSinkClass * klass)
   gstbasesink_class->unlock_stop = gst_multiudpsink_unlock_stop;
   gstbasesink_class->get_times = gst_multiudpsink_get_times;
   gstelement_class->provide_clock = gst_multiudpsink_provide_clock;
+  gstelement_class->set_clock = gst_multiudpsink_set_clock;
   klass->add = gst_multiudpsink_add;
   klass->remove = gst_multiudpsink_remove;
   klass->clear = gst_multiudpsink_clear;
@@ -1049,10 +1052,12 @@ gst_multiudpsink_render_buffers (GstMultiUDPSink * sink, GstBuffer ** buffers,
       running_time = gst_multiudp_sink_adjust_time (GST_BASE_SINK_CAST (sink),
           running_time);
       running_time += gst_element_get_base_time (GST_ELEMENT (sink));
+      running_time = gst_clock_unadjust_unlocked (sink->provided_clock,
+          running_time);
 
       {
-        GstClock *clock = GST_ELEMENT_CLOCK (sink);
-        GstClockTime cur_sys_time = gst_clock_get_time (clock);
+        GstClockTime cur_sys_time =
+            gst_clock_get_internal_time (sink->provided_clock);
         gint64 delta = running_time - cur_sys_time;
 
         GST_LOG_OBJECT (sink, "running_time %" GST_TIME_FORMAT
@@ -1772,6 +1777,7 @@ gst_multiudpsink_start (GstBaseSink * bsink)
         "name", "GstUdpTaiSystemClock", "clock-type", GST_CLOCK_TYPE_TAI, NULL);
     gst_object_ref_sink (sink->provided_clock);
 
+    GST_OBJECT_FLAG_SET (sink->provided_clock, GST_CLOCK_FLAG_CAN_SET_MASTER);
     GST_OBJECT_FLAG_SET (sink, GST_ELEMENT_FLAG_PROVIDE_CLOCK);
 
     gst_element_post_message (GST_ELEMENT_CAST (sink),
@@ -1871,6 +1877,7 @@ gst_multiudpsink_stop (GstBaseSink * bsink)
         gst_message_new_clock_lost (GST_OBJECT_CAST (udpsink),
             udpsink->provided_clock));
     GST_OBJECT_FLAG_UNSET (udpsink, GST_ELEMENT_FLAG_PROVIDE_CLOCK);
+    gst_clock_set_master (udpsink->provided_clock, NULL);
     gst_clear_object (&udpsink->provided_clock);
   }
 
@@ -2204,4 +2211,30 @@ gst_multiudpsink_provide_clock (GstElement * element)
 {
   GstMultiUDPSink *sink = GST_MULTIUDPSINK (element);
   return sink->provided_clock ? gst_object_ref (sink->provided_clock) : NULL;
+}
+
+static gboolean
+gst_multiudpsink_set_clock (GstElement * element, GstClock * clock)
+{
+  GstMultiUDPSink *sink = GST_MULTIUDPSINK (element);
+
+  /* setup clock slaving */
+  if (sink->provided_clock) {
+    GstClockTime internal = gst_clock_get_internal_time (sink->provided_clock);
+
+    if (clock && clock != sink->provided_clock) {
+      /* set initial calibration assuming 1/1 rate to avoid waiting
+         for the linear regression to complete */
+      GstClockTime external = gst_clock_get_time (clock);
+      gst_clock_set_calibration (sink->provided_clock, internal, external, 1,
+          1);
+      gst_clock_set_master (sink->provided_clock, clock);
+    } else {
+      gst_clock_set_master (sink->provided_clock, NULL);
+      gst_clock_set_calibration (sink->provided_clock, internal, internal, 1,
+          1);
+    }
+  }
+
+  return GST_ELEMENT_CLASS (parent_class)->set_clock (element, clock);
 }
