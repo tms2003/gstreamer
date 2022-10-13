@@ -273,19 +273,19 @@ static gboolean gst_base_text_overlay_setcaps (GstBaseTextOverlay * overlay,
     GstCaps * caps);
 static gboolean gst_base_text_overlay_setcaps_txt (GstBaseTextOverlay * overlay,
     GstCaps * caps);
-static gboolean gst_base_text_overlay_src_event (GstPad * pad,
+static GstFlowReturn gst_base_text_overlay_src_event (GstPad * pad,
     GstObject * parent, GstEvent * event);
 static gboolean gst_base_text_overlay_src_query (GstPad * pad,
     GstObject * parent, GstQuery * query);
 
-static gboolean gst_base_text_overlay_video_event (GstPad * pad,
+static GstFlowReturn gst_base_text_overlay_video_event (GstPad * pad,
     GstObject * parent, GstEvent * event);
 static gboolean gst_base_text_overlay_video_query (GstPad * pad,
     GstObject * parent, GstQuery * query);
 static GstFlowReturn gst_base_text_overlay_video_chain (GstPad * pad,
     GstObject * parent, GstBuffer * buffer);
 
-static gboolean gst_base_text_overlay_text_event (GstPad * pad,
+static GstFlowReturn gst_base_text_overlay_text_event (GstPad * pad,
     GstObject * parent, GstEvent * event);
 static GstFlowReturn gst_base_text_overlay_text_chain (GstPad * pad,
     GstObject * parent, GstBuffer * buffer);
@@ -701,7 +701,7 @@ gst_base_text_overlay_init (GstBaseTextOverlay * overlay,
   template = gst_static_pad_template_get (&video_sink_template_factory);
   overlay->video_sinkpad = gst_pad_new_from_template (template, "video_sink");
   gst_object_unref (template);
-  gst_pad_set_event_function (overlay->video_sinkpad,
+  gst_pad_set_event_full_function (overlay->video_sinkpad,
       GST_DEBUG_FUNCPTR (gst_base_text_overlay_video_event));
   gst_pad_set_chain_function (overlay->video_sinkpad,
       GST_DEBUG_FUNCPTR (gst_base_text_overlay_video_chain));
@@ -717,7 +717,7 @@ gst_base_text_overlay_init (GstBaseTextOverlay * overlay,
     /* text sink */
     overlay->text_sinkpad = gst_pad_new_from_template (template, "text_sink");
 
-    gst_pad_set_event_function (overlay->text_sinkpad,
+    gst_pad_set_event_full_function (overlay->text_sinkpad,
         GST_DEBUG_FUNCPTR (gst_base_text_overlay_text_event));
     gst_pad_set_chain_function (overlay->text_sinkpad,
         GST_DEBUG_FUNCPTR (gst_base_text_overlay_text_chain));
@@ -732,7 +732,7 @@ gst_base_text_overlay_init (GstBaseTextOverlay * overlay,
   template = gst_static_pad_template_get (&src_template_factory);
   overlay->srcpad = gst_pad_new_from_template (template, "src");
   gst_object_unref (template);
-  gst_pad_set_event_function (overlay->srcpad,
+  gst_pad_set_event_full_function (overlay->srcpad,
       GST_DEBUG_FUNCPTR (gst_base_text_overlay_src_event));
   gst_pad_set_query_function (overlay->srcpad,
       GST_DEBUG_FUNCPTR (gst_base_text_overlay_src_query));
@@ -1344,21 +1344,21 @@ gst_base_text_overlay_update_render_size (GstBaseTextOverlay * overlay)
       overlay->window_height, overlay->render_scale);
 }
 
-static gboolean
+static GstFlowReturn
 gst_base_text_overlay_src_event (GstPad * pad, GstObject * parent,
     GstEvent * event)
 {
   GstBaseTextOverlay *overlay;
-  gboolean ret;
+  GstFlowReturn ret;
 
   overlay = GST_BASE_TEXT_OVERLAY (parent);
 
   if (overlay->text_linked) {
     gst_event_ref (event);
-    ret = gst_pad_push_event (overlay->video_sinkpad, event);
+    ret = gst_pad_push_event_full (overlay->video_sinkpad, event);
     gst_pad_push_event (overlay->text_sinkpad, event);
   } else {
-    ret = gst_pad_push_event (overlay->video_sinkpad, event);
+    ret = gst_pad_push_event_full (overlay->video_sinkpad, event);
   }
 
   return ret;
@@ -2389,11 +2389,11 @@ gst_base_text_overlay_text_pad_unlink (GstPad * pad, GstObject * parent)
   gst_segment_init (&overlay->text_segment, GST_FORMAT_UNDEFINED);
 }
 
-static gboolean
+static GstFlowReturn
 gst_base_text_overlay_text_event (GstPad * pad, GstObject * parent,
     GstEvent * event)
 {
-  gboolean ret = FALSE;
+  GstFlowReturn ret = GST_FLOW_ERROR;
   GstBaseTextOverlay *overlay = NULL;
 
   overlay = GST_BASE_TEXT_OVERLAY (parent);
@@ -2411,14 +2411,16 @@ gst_base_text_overlay_text_event (GstPad * pad, GstObject * parent,
       gst_segment_init (&overlay->text_segment, GST_FORMAT_TIME);
       GST_BASE_TEXT_OVERLAY_UNLOCK (overlay);
       gst_event_unref (event);
-      ret = TRUE;
+      ret = GST_FLOW_OK;
       break;
     case GST_EVENT_CAPS:
     {
       GstCaps *caps;
 
       gst_event_parse_caps (event, &caps);
-      ret = gst_base_text_overlay_setcaps_txt (overlay, caps);
+      ret =
+          gst_base_text_overlay_setcaps_txt (overlay,
+          caps) ? GST_FLOW_OK : GST_FLOW_NOT_NEGOTIATED;
       gst_event_unref (event);
       break;
     }
@@ -2442,7 +2444,7 @@ gst_base_text_overlay_text_event (GstPad * pad, GstObject * parent,
       }
 
       gst_event_unref (event);
-      ret = TRUE;
+      ret = GST_FLOW_OK;
 
       /* wake up the video chain, it might be waiting for a text buffer or
        * a text segment update */
@@ -2469,7 +2471,7 @@ gst_base_text_overlay_text_event (GstPad * pad, GstObject * parent,
       GST_BASE_TEXT_OVERLAY_UNLOCK (overlay);
 
       gst_event_unref (event);
-      ret = TRUE;
+      ret = GST_FLOW_OK;
       break;
     }
     case GST_EVENT_FLUSH_STOP:
@@ -2481,7 +2483,7 @@ gst_base_text_overlay_text_event (GstPad * pad, GstObject * parent,
       gst_segment_init (&overlay->text_segment, GST_FORMAT_TIME);
       GST_BASE_TEXT_OVERLAY_UNLOCK (overlay);
       gst_event_unref (event);
-      ret = TRUE;
+      ret = GST_FLOW_OK;
       break;
     case GST_EVENT_FLUSH_START:
       GST_BASE_TEXT_OVERLAY_LOCK (overlay);
@@ -2490,7 +2492,7 @@ gst_base_text_overlay_text_event (GstPad * pad, GstObject * parent,
       GST_BASE_TEXT_OVERLAY_BROADCAST (overlay);
       GST_BASE_TEXT_OVERLAY_UNLOCK (overlay);
       gst_event_unref (event);
-      ret = TRUE;
+      ret = GST_FLOW_OK;
       break;
     case GST_EVENT_EOS:
       GST_BASE_TEXT_OVERLAY_LOCK (overlay);
@@ -2501,21 +2503,21 @@ gst_base_text_overlay_text_event (GstPad * pad, GstObject * parent,
       GST_BASE_TEXT_OVERLAY_BROADCAST (overlay);
       GST_BASE_TEXT_OVERLAY_UNLOCK (overlay);
       gst_event_unref (event);
-      ret = TRUE;
+      ret = GST_FLOW_OK;
       break;
     default:
-      ret = gst_pad_event_default (pad, parent, event);
+      ret = gst_pad_event_full_default (pad, parent, event);
       break;
   }
 
   return ret;
 }
 
-static gboolean
+static GstFlowReturn
 gst_base_text_overlay_video_event (GstPad * pad, GstObject * parent,
     GstEvent * event)
 {
-  gboolean ret = FALSE;
+  GstFlowReturn ret = GST_FLOW_ERROR;
   GstBaseTextOverlay *overlay = NULL;
 
   overlay = GST_BASE_TEXT_OVERLAY (parent);
@@ -2531,14 +2533,16 @@ gst_base_text_overlay_video_event (GstPad * pad, GstObject * parent,
       overlay->video_eos = FALSE;
       gst_segment_init (&overlay->segment, GST_FORMAT_TIME);
       GST_BASE_TEXT_OVERLAY_UNLOCK (overlay);
-      ret = gst_pad_event_default (pad, parent, event);
+      ret = gst_pad_event_full_default (pad, parent, event);
       break;
     case GST_EVENT_CAPS:
     {
       GstCaps *caps;
 
       gst_event_parse_caps (event, &caps);
-      ret = gst_base_text_overlay_setcaps (overlay, caps);
+      ret =
+          gst_base_text_overlay_setcaps (overlay,
+          caps) ? GST_FLOW_OK : GST_FLOW_NOT_NEGOTIATED;
       gst_event_unref (event);
       break;
     }
@@ -2559,7 +2563,7 @@ gst_base_text_overlay_video_event (GstPad * pad, GstObject * parent,
             ("received non-TIME newsegment event on video input"));
       }
 
-      ret = gst_pad_event_default (pad, parent, event);
+      ret = gst_pad_event_full_default (pad, parent, event);
       break;
     }
     case GST_EVENT_EOS:
@@ -2567,7 +2571,7 @@ gst_base_text_overlay_video_event (GstPad * pad, GstObject * parent,
       GST_INFO_OBJECT (overlay, "video EOS");
       overlay->video_eos = TRUE;
       GST_BASE_TEXT_OVERLAY_UNLOCK (overlay);
-      ret = gst_pad_event_default (pad, parent, event);
+      ret = gst_pad_event_full_default (pad, parent, event);
       break;
     case GST_EVENT_FLUSH_START:
       GST_BASE_TEXT_OVERLAY_LOCK (overlay);
@@ -2575,7 +2579,7 @@ gst_base_text_overlay_video_event (GstPad * pad, GstObject * parent,
       overlay->video_flushing = TRUE;
       GST_BASE_TEXT_OVERLAY_BROADCAST (overlay);
       GST_BASE_TEXT_OVERLAY_UNLOCK (overlay);
-      ret = gst_pad_event_default (pad, parent, event);
+      ret = gst_pad_event_full_default (pad, parent, event);
       break;
     case GST_EVENT_FLUSH_STOP:
       GST_BASE_TEXT_OVERLAY_LOCK (overlay);
@@ -2584,10 +2588,10 @@ gst_base_text_overlay_video_event (GstPad * pad, GstObject * parent,
       overlay->video_eos = FALSE;
       gst_segment_init (&overlay->segment, GST_FORMAT_TIME);
       GST_BASE_TEXT_OVERLAY_UNLOCK (overlay);
-      ret = gst_pad_event_default (pad, parent, event);
+      ret = gst_pad_event_full_default (pad, parent, event);
       break;
     default:
-      ret = gst_pad_event_default (pad, parent, event);
+      ret = gst_pad_event_full_default (pad, parent, event);
       break;
   }
 

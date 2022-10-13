@@ -334,7 +334,8 @@ static void gst_glimage_sink_set_property (GObject * object, guint prop_id,
 static void gst_glimage_sink_get_property (GObject * object, guint prop_id,
     GValue * value, GParamSpec * param_spec);
 
-static gboolean gst_glimage_sink_event (GstBaseSink * sink, GstEvent * event);
+static GstFlowReturn gst_glimage_sink_event (GstBaseSink * sink,
+    GstEvent * event);
 static gboolean gst_glimage_sink_query (GstBaseSink * bsink, GstQuery * query);
 static void gst_glimage_sink_set_context (GstElement * element,
     GstContext * context);
@@ -789,7 +790,7 @@ gst_glimage_sink_class_init (GstGLImageSinkClass * klass)
 
   gstelement_class->change_state = gst_glimage_sink_change_state;
   gstelement_class->set_context = gst_glimage_sink_set_context;
-  gstbasesink_class->event = gst_glimage_sink_event;
+  gstbasesink_class->event_full = gst_glimage_sink_event;
   gstbasesink_class->query = GST_DEBUG_FUNCPTR (gst_glimage_sink_query);
   gstbasesink_class->set_caps = gst_glimage_sink_set_caps;
   gstbasesink_class->get_caps = gst_glimage_sink_get_caps;
@@ -1139,7 +1140,7 @@ context_error:
   }
 }
 
-static gboolean
+static GstFlowReturn
 gst_glimage_sink_event (GstBaseSink * sink, GstEvent * event)
 {
   GstGLImageSink *gl_sink = GST_GLIMAGE_SINK (sink);
@@ -1161,7 +1162,7 @@ gst_glimage_sink_event (GstBaseSink * sink, GstEvent * event)
       break;
   }
 
-  ret = GST_BASE_SINK_CLASS (parent_class)->event (sink, event);
+  ret = GST_BASE_SINK_CLASS (parent_class)->event_full (sink, event);
 
   return ret;
 }

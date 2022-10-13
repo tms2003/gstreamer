@@ -85,7 +85,7 @@ static GstFlowReturn vorbis_parse_chain (GstPad * pad, GstObject * parent,
     GstBuffer * buffer);
 static GstStateChangeReturn vorbis_parse_change_state (GstElement * element,
     GstStateChange transition);
-static gboolean vorbis_parse_sink_event (GstPad * pad, GstObject * parent,
+static GstFlowReturn vorbis_parse_sink_event (GstPad * pad, GstObject * parent,
     GstEvent * event);
 static gboolean vorbis_parse_src_query (GstPad * pad, GstObject * parent,
     GstQuery * query);
@@ -119,7 +119,7 @@ gst_vorbis_parse_init (GstVorbisParse * parse)
       gst_pad_new_from_static_template (&vorbis_parse_sink_factory, "sink");
   gst_pad_set_chain_function (parse->sinkpad,
       GST_DEBUG_FUNCPTR (vorbis_parse_chain));
-  gst_pad_set_event_function (parse->sinkpad,
+  gst_pad_set_event_full_function (parse->sinkpad,
       GST_DEBUG_FUNCPTR (vorbis_parse_sink_event));
   gst_element_add_pad (GST_ELEMENT (parse), parse->sinkpad);
 
@@ -484,20 +484,16 @@ vorbis_parse_chain (GstPad * pad, GstObject * parent, GstBuffer * buffer)
   return klass->parse_packet (parse, buffer);
 }
 
-static gboolean
+static void
 vorbis_parse_queue_event (GstVorbisParse * parse, GstEvent * event)
 {
-  GstFlowReturn ret = TRUE;
-
   g_queue_push_tail (parse->event_queue, event);
-
-  return ret;
 }
 
-static gboolean
+static GstFlowReturn
 vorbis_parse_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
 {
-  gboolean ret;
+  gboolean ret = GST_FLOW_OK;
   GstVorbisParse *parse;
 
   parse = GST_VORBIS_PARSE (parent);
@@ -507,18 +503,18 @@ vorbis_parse_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
       vorbis_parse_clear_queue (parse);
       parse->prev_granulepos = -1;
       parse->prev_blocksize = -1;
-      ret = gst_pad_event_default (pad, parent, event);
+      ret = gst_pad_event_full_default (pad, parent, event);
       break;
     case GST_EVENT_EOS:
       vorbis_parse_drain_queue_prematurely (parse);
-      ret = gst_pad_event_default (pad, parent, event);
+      ret = gst_pad_event_full_default (pad, parent, event);
       break;
     default:
       if (!parse->streamheader_sent && GST_EVENT_IS_SERIALIZED (event)
           && GST_EVENT_TYPE (event) > GST_EVENT_CAPS)
-        ret = vorbis_parse_queue_event (parse, event);
+        vorbis_parse_queue_event (parse, event);
       else
-        ret = gst_pad_event_default (pad, parent, event);
+        ret = gst_pad_event_full_default (pad, parent, event);
       break;
   }
 

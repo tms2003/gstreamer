@@ -70,7 +70,7 @@ struct _GstTimeOverlay {
 
   /* For GST_TIME_OVERLAY_TIME_LINE_ELAPSED_RUNNING_TIME mode */
   GstClockTime first_running_time;
-  GstPadEventFunction orig_video_event;
+  GstPadEventFullFunction orig_video_event;
 };
 
 struct _GstTimeOverlayClass {
