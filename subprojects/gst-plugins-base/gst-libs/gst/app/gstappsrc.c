@@ -290,7 +290,7 @@ static gboolean gst_app_src_do_seek (GstBaseSrc * src, GstSegment * segment);
 static gboolean gst_app_src_is_seekable (GstBaseSrc * src);
 static gboolean gst_app_src_do_get_size (GstBaseSrc * src, guint64 * size);
 static gboolean gst_app_src_query (GstBaseSrc * src, GstQuery * query);
-static gboolean gst_app_src_event (GstBaseSrc * src, GstEvent * event);
+static GstFlowReturn gst_app_src_event (GstBaseSrc * src, GstEvent * event);
 
 static GstFlowReturn gst_app_src_push_buffer_action (GstAppSrc * appsrc,
     GstBuffer * buffer);
@@ -722,7 +722,7 @@ gst_app_src_class_init (GstAppSrcClass * klass)
   basesrc_class->is_seekable = gst_app_src_is_seekable;
   basesrc_class->get_size = gst_app_src_do_get_size;
   basesrc_class->query = gst_app_src_query;
-  basesrc_class->event = gst_app_src_event;
+  basesrc_class->event_full = gst_app_src_event;
 
   klass->push_buffer = gst_app_src_push_buffer_action;
   klass->push_buffer_list = gst_app_src_push_buffer_list_action;
@@ -3028,7 +3028,7 @@ gst_app_src_uri_handler_init (gpointer g_iface, gpointer iface_data)
   iface->set_uri = gst_app_src_uri_set_uri;
 }
 
-static gboolean
+static GstFlowReturn
 gst_app_src_event (GstBaseSrc * src, GstEvent * event)
 {
   GstAppSrc *appsrc = GST_APP_SRC_CAST (src);
@@ -3044,5 +3044,5 @@ gst_app_src_event (GstBaseSrc * src, GstEvent * event)
       break;
   }
 
-  return GST_BASE_SRC_CLASS (parent_class)->event (src, event);
+  return GST_BASE_SRC_CLASS (parent_class)->event_full (src, event);
 }
