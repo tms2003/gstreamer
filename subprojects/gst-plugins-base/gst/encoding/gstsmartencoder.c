@@ -110,7 +110,7 @@ gst_smart_encoder_finish_buffer (GstSmartEncoder * self, GstBuffer * buf)
 /*****************************************
  *    Internal encoder/decoder pipeline  *
  ******************************************/
-static gboolean
+static GstFlowReturn
 internal_event_func (GstPad * pad, GstObject * parent, GstEvent * event)
 {
   GstSmartEncoder *self = GST_SMART_ENCODER (parent);
@@ -127,30 +127,33 @@ internal_event_func (GstPad * pad, GstObject * parent, GstEvent * event)
       gst_event_copy_segment (event, &self->internal_segment);
 
       if (self->output_segment.format == GST_FORMAT_UNDEFINED) {
+        GstFlowReturn flow_ret;
         gst_segment_init (&self->output_segment, GST_FORMAT_TIME);
 
         /* Ensure that we can represent negative DTS in our 'single' segment */
         self->output_segment.start = 60 * 60 * GST_SECOND * 1000;
-        if (!gst_pad_push_event (self->srcpad,
-                gst_event_new_segment (&self->output_segment))) {
+        flow_ret =
+            gst_pad_push_event_full (self->srcpad,
+            gst_event_new_segment (&self->output_segment));
+        if (flow_ret != GST_FLOW_OK) {
           GST_ERROR_OBJECT (self, "Could not push segment!");
 
-          GST_ELEMENT_FLOW_ERROR (self, GST_FLOW_ERROR);
+          GST_ELEMENT_FLOW_ERROR (self, flow_ret);
 
-          return FALSE;
+          return flow_ret;
         }
       }
 
       break;
     case GST_EVENT_CAPS:
     {
-      return gst_pad_push_event (self->srcpad, event);
+      return gst_pad_push_event_full (self->srcpad, event);
     }
     default:
       break;
   }
 
-  return gst_pad_event_default (pad, parent, event);
+  return gst_pad_event_full_default (pad, parent, event);
 }
 
 static GstFlowReturn
@@ -214,7 +217,7 @@ setup_recoder_pipeline (GstSmartEncoder * self)
 
   gst_pad_set_chain_function (self->internal_sinkpad,
       GST_DEBUG_FUNCPTR (internal_chain));
-  gst_pad_set_event_function (self->internal_sinkpad,
+  gst_pad_set_event_full_function (self->internal_sinkpad,
       GST_DEBUG_FUNCPTR (internal_event_func));
   gst_pad_set_active (self->internal_sinkpad, TRUE);
   gst_pad_set_active (self->internal_srcpad, TRUE);
@@ -437,17 +440,20 @@ gst_smart_encoder_push_pending_gop (GstSmartEncoder * self)
     }
 
     if (self->output_segment.format == GST_FORMAT_UNDEFINED) {
+      GstFlowReturn flow_ret;
       gst_segment_init (&self->output_segment, GST_FORMAT_TIME);
 
       /* Ensure that we can represent negative DTS in our 'single' segment */
       self->output_segment.start = 60 * 60 * GST_SECOND * 1000;
-      if (!gst_pad_push_event (self->srcpad,
-              gst_event_new_segment (&self->output_segment))) {
+      flow_ret =
+          gst_pad_push_event (self->srcpad,
+          gst_event_new_segment (&self->output_segment));
+      if (flow_ret != GST_FLOW_OK) {
         GST_ERROR_OBJECT (self, "Could not push segment!");
 
-        GST_ELEMENT_FLOW_ERROR (self, GST_FLOW_ERROR);
+        GST_ELEMENT_FLOW_ERROR (self, flow_ret);
 
-        return GST_FLOW_ERROR;
+        return flow_ret;
       }
     }
 
@@ -591,10 +597,10 @@ smart_encoder_get_caps (GstSmartEncoder * self, GstCaps * original_caps)
   return outcaps;
 }
 
-static gboolean
+static GstFlowReturn
 smart_encoder_sink_event (GstPad * pad, GstObject * ghostpad, GstEvent * event)
 {
-  gboolean res = TRUE;
+  GstFlowReturn res = GST_FLOW_OK;
   GstSmartEncoder *self = GST_SMART_ENCODER (ghostpad->parent);
 
   switch (GST_EVENT_TYPE (event)) {
@@ -648,7 +654,7 @@ smart_encoder_sink_event (GstPad * pad, GstObject * ghostpad, GstEvent * event)
   }
 
   if (event)
-    res = gst_pad_push_event (self->srcpad, event);
+    res = gst_pad_push_event_full (self->srcpad, event);
 
   return res;
 }
@@ -847,7 +853,7 @@ gst_smart_encoder_add_parser (GstSmartEncoder * self, GstCaps * format)
   internal_chainpad =
       GST_PAD (gst_proxy_pad_get_internal (GST_PROXY_PAD (chainpad)));
   gst_pad_set_chain_function (internal_chainpad, gst_smart_encoder_chain);
-  gst_pad_set_event_function (internal_chainpad, smart_encoder_sink_event);
+  gst_pad_set_event_full_function (internal_chainpad, smart_encoder_sink_event);
   gst_pad_set_query_function (internal_chainpad, smart_encoder_sink_query);
 
   gst_ghost_pad_set_target (GST_GHOST_PAD (self->sinkpad), sinkpad);

@@ -92,7 +92,7 @@ GST_ELEMENT_REGISTER_DEFINE_WITH_CODE (socketsrc, "socketsrc",
 static void gst_socket_src_finalize (GObject * gobject);
 
 static GstCaps *gst_socketsrc_getcaps (GstBaseSrc * src, GstCaps * filter);
-static gboolean gst_socketsrc_event (GstBaseSrc * src, GstEvent * event);
+static GstFlowReturn gst_socketsrc_event (GstBaseSrc * src, GstEvent * event);
 static GstFlowReturn gst_socket_src_fill (GstPushSrc * psrc,
     GstBuffer * outbuf);
 static gboolean gst_socket_src_unlock (GstBaseSrc * bsrc);
@@ -163,7 +163,7 @@ gst_socket_src_class_init (GstSocketSrcClass * klass)
       "Thomas Vander Stichele <thomas at apestaart dot org>, "
       "William Manley <will@williammanley.net>");
 
-  gstbasesrc_class->event = gst_socketsrc_event;
+  gstbasesrc_class->event_full = gst_socketsrc_event;
   gstbasesrc_class->get_caps = gst_socketsrc_getcaps;
   gstbasesrc_class->unlock = gst_socket_src_unlock;
   gstbasesrc_class->unlock_stop = gst_socket_src_unlock_stop;
@@ -194,11 +194,11 @@ gst_socket_src_finalize (GObject * gobject)
   G_OBJECT_CLASS (parent_class)->finalize (gobject);
 }
 
-static gboolean
+static GstFlowReturn
 gst_socketsrc_event (GstBaseSrc * bsrc, GstEvent * event)
 {
   GstSocketSrc *src;
-  gboolean res = FALSE;
+  GstFlowReturn res = GST_FLOW_ERROR;
 
   src = GST_SOCKET_SRC (bsrc);
 
@@ -231,9 +231,9 @@ gst_socketsrc_event (GstBaseSrc * bsrc, GstEvent * event)
             if (ret == -1) {
               GST_WARNING ("could not send message: %s", err->message);
               g_clear_error (&err);
-              res = FALSE;
+              res = GST_FLOW_ERROR;
             } else
-              res = TRUE;
+              res = GST_FLOW_OK;
             gst_buffer_unref (buf);
           }
           g_object_unref (socket);
@@ -241,7 +241,7 @@ gst_socketsrc_event (GstBaseSrc * bsrc, GstEvent * event)
       }
       break;
     default:
-      res = GST_BASE_SRC_CLASS (parent_class)->event (bsrc, event);
+      res = GST_BASE_SRC_CLASS (parent_class)->event_full (bsrc, event);
       break;
   }
   return res;

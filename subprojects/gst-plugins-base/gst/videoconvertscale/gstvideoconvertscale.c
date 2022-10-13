@@ -238,8 +238,8 @@ gst_video_convert_scale_sink_template_factory (void)
 
 
 static void gst_video_convert_scale_finalize (GstVideoConvertScale * self);
-static gboolean gst_video_convert_scale_src_event (GstBaseTransform * trans,
-    GstEvent * event);
+static GstFlowReturn gst_video_convert_scale_src_event (GstBaseTransform *
+    trans, GstEvent * event);
 
 /* base transform vmethods */
 static GstCaps *gst_video_convert_scale_transform_caps (GstBaseTransform *
@@ -396,7 +396,7 @@ gst_video_convert_scale_class_init (GstVideoConvertScaleClass * klass)
       GST_DEBUG_FUNCPTR (gst_video_convert_scale_fixate_caps);
   trans_class->filter_meta =
       GST_DEBUG_FUNCPTR (gst_video_convert_scale_filter_meta);
-  trans_class->src_event =
+  trans_class->src_event_full =
       GST_DEBUG_FUNCPTR (gst_video_convert_scale_src_event);
   trans_class->transform_meta =
       GST_DEBUG_FUNCPTR (gst_video_convert_scale_transform_meta);
@@ -1767,12 +1767,11 @@ gst_video_convert_scale_transform_frame (GstVideoFilter * filter,
   return ret;
 }
 
-static gboolean
+static GstFlowReturn
 gst_video_convert_scale_src_event (GstBaseTransform * trans, GstEvent * event)
 {
   GstVideoConvertScale *self = GST_VIDEO_CONVERT_SCALE_CAST (trans);
   GstVideoFilter *filter = GST_VIDEO_FILTER_CAST (trans);
-  gboolean ret;
   gdouble x, y;
 
   GST_DEBUG_OBJECT (self, "handling %s event", GST_EVENT_TYPE_NAME (event));
@@ -1794,7 +1793,5 @@ gst_video_convert_scale_src_event (GstBaseTransform * trans, GstEvent * event)
       break;
   }
 
-  ret = GST_BASE_TRANSFORM_CLASS (parent_class)->src_event (trans, event);
-
-  return ret;
+  return GST_BASE_TRANSFORM_CLASS (parent_class)->src_event_full (trans, event);
 }

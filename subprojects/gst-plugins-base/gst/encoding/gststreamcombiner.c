@@ -125,7 +125,7 @@ _all_sink_pads_eos (GstStreamCombiner * combiner)
   return TRUE;
 }
 
-static gboolean
+static GstFlowReturn
 gst_stream_combiner_sink_event (GstPad * pad, GstObject * parent,
     GstEvent * event)
 {
@@ -188,8 +188,8 @@ gst_stream_combiner_sink_event (GstPad * pad, GstObject * parent,
   /* FLUSH_STOP : lock, unmark as flushing, unlock, if was flushing forward */
   /* OTHER : if selected pad forward */
   if (event)
-    return gst_pad_push_event (stream_combiner->srcpad, event);
-  return FALSE;
+    return gst_pad_push_event_full (stream_combiner->srcpad, event);
+  return GST_FLOW_ERROR;
 }
 
 static gboolean
@@ -201,7 +201,7 @@ gst_stream_combiner_sink_query (GstPad * pad, GstObject * parent,
   return gst_pad_peer_query (stream_combiner->srcpad, query);
 }
 
-static gboolean
+static GstFlowReturn
 gst_stream_combiner_src_event (GstPad * pad, GstObject * parent,
     GstEvent * event)
 {
@@ -210,7 +210,7 @@ gst_stream_combiner_src_event (GstPad * pad, GstObject * parent,
 
   /* Forward force-key-unit event to all sinkpads */
   if (gst_video_event_is_force_key_unit (event))
-    return gst_pad_event_default (pad, parent, event);
+    return gst_pad_event_full_default (pad, parent, event);
 
   STREAMS_LOCK (stream_combiner);
   if (stream_combiner->current)
@@ -221,9 +221,9 @@ gst_stream_combiner_src_event (GstPad * pad, GstObject * parent,
 
   if (sinkpad)
     /* Forward upstream as is */
-    return gst_pad_push_event (sinkpad, event);
+    return gst_pad_push_event_full (sinkpad, event);
 
-  return FALSE;
+  return GST_FLOW_NOT_LINKED;
 }
 
 static gboolean
@@ -259,7 +259,7 @@ gst_stream_combiner_init (GstStreamCombiner * stream_combiner)
 {
   stream_combiner->srcpad =
       gst_pad_new_from_static_template (&src_template, "src");
-  gst_pad_set_event_function (stream_combiner->srcpad,
+  gst_pad_set_event_full_function (stream_combiner->srcpad,
       gst_stream_combiner_src_event);
   gst_pad_set_query_function (stream_combiner->srcpad,
       gst_stream_combiner_src_query);
@@ -286,7 +286,7 @@ gst_stream_combiner_request_new_pad (GstElement * element,
 
   sinkpad = GST_PAD_CAST (combiner_pad);
   gst_pad_set_chain_function (sinkpad, gst_stream_combiner_chain);
-  gst_pad_set_event_function (sinkpad, gst_stream_combiner_sink_event);
+  gst_pad_set_event_full_function (sinkpad, gst_stream_combiner_sink_event);
   gst_pad_set_query_function (sinkpad, gst_stream_combiner_sink_query);
 
   STREAMS_LOCK (stream_combiner);

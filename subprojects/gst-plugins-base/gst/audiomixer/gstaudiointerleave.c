@@ -472,12 +472,12 @@ cannot_change_caps:
   }
 }
 
-static gboolean
+static GstFlowReturn
 gst_audio_interleave_sink_event (GstAggregator * agg, GstAggregatorPad * aggpad,
     GstEvent * event)
 {
   GstAudioInterleave *self = GST_AUDIO_INTERLEAVE (agg);
-  gboolean res = TRUE;
+  GstFlowReturn res = GST_FLOW_OK;
 
   GST_DEBUG_OBJECT (aggpad, "Got %s event on sink pad",
       GST_EVENT_TYPE_NAME (event));
@@ -488,7 +488,8 @@ gst_audio_interleave_sink_event (GstAggregator * agg, GstAggregatorPad * aggpad,
       GstCaps *caps;
 
       gst_event_parse_caps (event, &caps);
-      res = gst_audio_interleave_setcaps (self, GST_PAD_CAST (aggpad), caps);
+      if (!gst_audio_interleave_setcaps (self, GST_PAD_CAST (aggpad), caps))
+        res = GST_FLOW_NOT_NEGOTIATED;
       gst_event_unref (event);
       event = NULL;
       break;
@@ -498,7 +499,8 @@ gst_audio_interleave_sink_event (GstAggregator * agg, GstAggregatorPad * aggpad,
   }
 
   if (event != NULL)
-    return GST_AGGREGATOR_CLASS (parent_class)->sink_event (agg, aggpad, event);
+    return GST_AGGREGATOR_CLASS (parent_class)->sink_event_full (agg, aggpad,
+        event);
 
   return res;
 }
@@ -574,7 +576,8 @@ gst_audio_interleave_class_init (GstAudioInterleaveClass * klass)
       GST_DEBUG_FUNCPTR (gst_audio_interleave_release_pad);
 
   agg_class->sink_query = GST_DEBUG_FUNCPTR (gst_audio_interleave_sink_query);
-  agg_class->sink_event = GST_DEBUG_FUNCPTR (gst_audio_interleave_sink_event);
+  agg_class->sink_event_full =
+      GST_DEBUG_FUNCPTR (gst_audio_interleave_sink_event);
   agg_class->stop = gst_audio_interleave_stop;
   agg_class->update_src_caps = gst_audio_interleave_update_src_caps;
   agg_class->negotiated_src_caps = gst_audio_interleave_negotiated_src_caps;

@@ -77,11 +77,11 @@ static GstStaticPadTemplate src_templ = GST_STATIC_PAD_TEMPLATE ("src",
     );
 
 
-static gboolean gst_sub_parse_src_event (GstPad * pad, GstObject * parent,
+static GstFlowReturn gst_sub_parse_src_event (GstPad * pad, GstObject * parent,
     GstEvent * event);
 static gboolean gst_sub_parse_src_query (GstPad * pad, GstObject * parent,
     GstQuery * query);
-static gboolean gst_sub_parse_sink_event (GstPad * pad, GstObject * parent,
+static GstFlowReturn gst_sub_parse_sink_event (GstPad * pad, GstObject * parent,
     GstEvent * event);
 
 static GstStateChangeReturn gst_sub_parse_change_state (GstElement * element,
@@ -169,12 +169,12 @@ gst_sub_parse_init (GstSubParse * subparse)
   subparse->sinkpad = gst_pad_new_from_static_template (&sink_templ, "sink");
   gst_pad_set_chain_function (subparse->sinkpad,
       GST_DEBUG_FUNCPTR (gst_sub_parse_chain));
-  gst_pad_set_event_function (subparse->sinkpad,
+  gst_pad_set_event_full_function (subparse->sinkpad,
       GST_DEBUG_FUNCPTR (gst_sub_parse_sink_event));
   gst_element_add_pad (GST_ELEMENT (subparse), subparse->sinkpad);
 
   subparse->srcpad = gst_pad_new_from_static_template (&src_templ, "src");
-  gst_pad_set_event_function (subparse->srcpad,
+  gst_pad_set_event_full_function (subparse->srcpad,
       GST_DEBUG_FUNCPTR (gst_sub_parse_src_event));
   gst_pad_set_query_function (subparse->srcpad,
       GST_DEBUG_FUNCPTR (gst_sub_parse_src_query));
@@ -247,11 +247,11 @@ gst_sub_parse_src_query (GstPad * pad, GstObject * parent, GstQuery * query)
   return ret;
 }
 
-static gboolean
+static GstFlowReturn
 gst_sub_parse_src_event (GstPad * pad, GstObject * parent, GstEvent * event)
 {
   GstSubParse *self = GST_SUBPARSE (parent);
-  gboolean ret = FALSE;
+  GstFlowReturn ret = GST_FLOW_ERROR;
 
   GST_DEBUG ("Handling %s event", GST_EVENT_TYPE_NAME (event));
 
@@ -276,11 +276,11 @@ gst_sub_parse_src_event (GstPad * pad, GstObject * parent, GstEvent * event)
 
       /* Convert that seek to a seeking in bytes at position 0,
          FIXME: could use an index */
-      ret = gst_pad_push_event (self->sinkpad,
+      ret = gst_pad_push_event_full (self->sinkpad,
           gst_event_new_seek (rate, GST_FORMAT_BYTES, flags,
               GST_SEEK_TYPE_SET, 0, GST_SEEK_TYPE_NONE, 0));
 
-      if (ret) {
+      if (ret == GST_FLOW_OK) {
         /* Apply the seek to our segment */
         gst_segment_do_seek (&self->segment, rate, format, flags,
             start_type, start, stop_type, stop, &update);
@@ -299,7 +299,7 @@ gst_sub_parse_src_event (GstPad * pad, GstObject * parent, GstEvent * event)
       break;
     }
     default:
-      ret = gst_pad_event_default (pad, parent, event);
+      ret = gst_pad_event_full_default (pad, parent, event);
       break;
   }
 
@@ -1762,11 +1762,11 @@ gst_sub_parse_chain (GstPad * sinkpad, GstObject * parent, GstBuffer * buf)
   return ret;
 }
 
-static gboolean
+static GstFlowReturn
 gst_sub_parse_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
 {
   GstSubParse *self = GST_SUBPARSE (parent);
-  gboolean ret = FALSE;
+  GstFlowReturn ret = GST_FLOW_ERROR;
 
   GST_LOG_OBJECT (self, "%s event", GST_EVENT_TYPE_NAME (event));
 
@@ -1792,7 +1792,7 @@ gst_sub_parse_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
         GST_BUFFER_OFFSET (buf) = self->offset;
         gst_sub_parse_chain (pad, parent, buf);
       }
-      ret = gst_pad_event_default (pad, parent, event);
+      ret = gst_pad_event_full_default (pad, parent, event);
       break;
     }
     case GST_EVENT_SEGMENT:
@@ -1812,7 +1812,7 @@ gst_sub_parse_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
        * come from an upstream demuxer, it won't be able to handle our BYTES
        * seek request and instead send us a newsegment from the seek request
        * it received via its video pads instead, so all is fine then too) */
-      ret = TRUE;
+      ret = GST_FLOW_OK;
       gst_event_unref (event);
       /* in either case, let's not simply discard this event;
        * trigger sending of the saved requested seek segment
@@ -1824,7 +1824,7 @@ gst_sub_parse_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
     {
       ret = check_initial_events (self);
       if (ret == GST_FLOW_OK) {
-        ret = gst_pad_event_default (pad, parent, event);
+        ret = gst_pad_event_full_default (pad, parent, event);
       } else {
         gst_event_unref (event);
       }
@@ -1834,18 +1834,18 @@ gst_sub_parse_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
     {
       self->flushing = TRUE;
 
-      ret = gst_pad_event_default (pad, parent, event);
+      ret = gst_pad_event_full_default (pad, parent, event);
       break;
     }
     case GST_EVENT_FLUSH_STOP:
     {
       self->flushing = FALSE;
 
-      ret = gst_pad_event_default (pad, parent, event);
+      ret = gst_pad_event_full_default (pad, parent, event);
       break;
     }
     default:
-      ret = gst_pad_event_default (pad, parent, event);
+      ret = gst_pad_event_full_default (pad, parent, event);
       break;
   }
 

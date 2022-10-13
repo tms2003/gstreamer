@@ -287,28 +287,25 @@ set_event_rt_offset (GstStreamSynchronizer * self, GstPad * pad,
 }
 
 /* srcpad functions */
-static gboolean
+static GstFlowReturn
 gst_stream_synchronizer_src_event (GstPad * pad, GstObject * parent,
     GstEvent * event)
 {
   GstStreamSynchronizer *self = GST_STREAM_SYNCHRONIZER (parent);
-  gboolean ret = FALSE;
 
   GST_LOG_OBJECT (pad, "Handling event %s: %" GST_PTR_FORMAT,
       GST_EVENT_TYPE_NAME (event), event);
 
   event = set_event_rt_offset (self, pad, event);
 
-  ret = gst_pad_event_default (pad, parent, event);
-
-  return ret;
+  return gst_pad_event_full_default (pad, parent, event);
 }
 
 /* must be called with the STREAM_SYNCHRONIZER_LOCK */
-static gboolean
+static GstFlowReturn
 gst_stream_synchronizer_wait (GstStreamSynchronizer * self, GstPad * pad)
 {
-  gboolean ret = FALSE;
+  GstFlowReturn result;
   GstSyncStream *stream;
 
   stream = gst_streamsync_pad_get_stream (pad);
@@ -341,11 +338,11 @@ gst_stream_synchronizer_wait (GstStreamSynchronizer * self, GstPad * pad)
 
       /* drop lock when sending GAP event, which may block in e.g. preroll */
       GST_STREAM_SYNCHRONIZER_UNLOCK (self);
-      ret = gst_pad_push_event (pad, event);
+      result = gst_pad_push_event_full (pad, event);
       GST_STREAM_SYNCHRONIZER_LOCK (self);
-      if (!ret) {
+      if (result != GST_FLOW_OK) {
         gst_syncstream_unref (stream);
-        return ret;
+        return result;
       }
       stream->send_gap_event = FALSE;
 
@@ -358,16 +355,16 @@ gst_stream_synchronizer_wait (GstStreamSynchronizer * self, GstPad * pad)
   }
 
   gst_syncstream_unref (stream);
-  return TRUE;
+  return GST_FLOW_OK;
 }
 
 /* sinkpad functions */
-static gboolean
+static GstFlowReturn
 gst_stream_synchronizer_sink_event (GstPad * pad, GstObject * parent,
     GstEvent * event)
 {
   GstStreamSynchronizer *self = GST_STREAM_SYNCHRONIZER (parent);
-  gboolean ret = FALSE;
+  GstFlowReturn result = GST_FLOW_ERROR;
 
   GST_LOG_OBJECT (pad, "Handling event %s: %" GST_PTR_FORMAT,
       GST_EVENT_TYPE_NAME (event), event);
@@ -693,7 +690,7 @@ gst_stream_synchronizer_sink_event (GstPad * pad, GstObject * parent,
         GSList *epad;
         GstSyncStream *ostream;
 
-        ret = TRUE;
+        result = GST_FLOW_OK;
         epad = pads;
         while (epad) {
           pad = epad->data;
@@ -709,7 +706,7 @@ gst_stream_synchronizer_sink_event (GstPad * pad, GstObject * parent,
           stream->send_gap_event = TRUE;
           stream->gap_duration = GST_CLOCK_TIME_NONE;
           stream->wait = TRUE;
-          ret = gst_stream_synchronizer_wait (self, srcpad);
+          result = gst_stream_synchronizer_wait (self, srcpad);
         }
       }
 
@@ -726,7 +723,7 @@ gst_stream_synchronizer_sink_event (GstPad * pad, GstObject * parent,
         topush = gst_event_new_eos ();
         gst_event_set_seqnum (topush, seqnum);
         GST_STREAM_SYNCHRONIZER_UNLOCK (self);
-        ret = gst_pad_push_event (srcpad, topush);
+        result = gst_pad_push_event_full (srcpad, topush);
         GST_STREAM_SYNCHRONIZER_LOCK (self);
         stream = gst_streamsync_pad_get_stream (pad);
         stream->eos_sent = TRUE;
@@ -745,11 +742,11 @@ gst_stream_synchronizer_sink_event (GstPad * pad, GstObject * parent,
 
   event = set_event_rt_offset (self, pad, event);
 
-  ret = gst_pad_event_default (pad, parent, event);
+  result = gst_pad_event_full_default (pad, parent, event);
 
 done:
 
-  return ret;
+  return result;
 }
 
 static GstFlowReturn
@@ -899,7 +896,7 @@ gst_stream_synchronizer_new_pad (GstStreamSynchronizer * sync)
 
   gst_pad_set_iterate_internal_links_function (stream->sinkpad,
       GST_DEBUG_FUNCPTR (gst_stream_synchronizer_iterate_internal_links));
-  gst_pad_set_event_function (stream->sinkpad,
+  gst_pad_set_event_full_function (stream->sinkpad,
       GST_DEBUG_FUNCPTR (gst_stream_synchronizer_sink_event));
   gst_pad_set_chain_function (stream->sinkpad,
       GST_DEBUG_FUNCPTR (gst_stream_synchronizer_sink_chain));
@@ -927,7 +924,7 @@ gst_stream_synchronizer_new_pad (GstStreamSynchronizer * sync)
 
   gst_pad_set_iterate_internal_links_function (stream->srcpad,
       GST_DEBUG_FUNCPTR (gst_stream_synchronizer_iterate_internal_links));
-  gst_pad_set_event_function (stream->srcpad,
+  gst_pad_set_event_full_function (stream->srcpad,
       GST_DEBUG_FUNCPTR (gst_stream_synchronizer_src_event));
   GST_PAD_SET_PROXY_CAPS (stream->srcpad);
   GST_PAD_SET_PROXY_ALLOCATION (stream->srcpad);

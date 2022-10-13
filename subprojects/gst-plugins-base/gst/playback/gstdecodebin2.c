@@ -5116,7 +5116,7 @@ gst_decode_pad_unblock (GstDecodePad * dpad)
   gst_decode_pad_set_blocked (dpad, FALSE);
 }
 
-static gboolean
+static GstFlowReturn
 gst_decode_pad_event (GstPad * pad, GstObject * parent, GstEvent * event)
 {
   GstDecodeBin *dbin = GST_DECODE_BIN (parent);
@@ -5142,11 +5142,11 @@ gst_decode_pad_event (GstPad * pad, GstObject * parent, GstEvent * event)
           GST_OBJECT_NAME (demuxer));
       ret = gst_element_send_event (demuxer, event);
       gst_object_unref (demuxer);
-      return ret;
+      return ret ? GST_FLOW_OK : GST_FLOW_ERROR;
     }
   }
 
-  return gst_pad_event_default (pad, parent, event);
+  return gst_pad_event_full_default (pad, parent, event);
 }
 
 static gboolean
@@ -5214,7 +5214,7 @@ gst_decode_pad_new (GstDecodeBin * dbin, GstDecodeChain * chain)
 
   ppad = gst_proxy_pad_get_internal (GST_PROXY_PAD (dpad));
   gst_pad_set_query_function (GST_PAD_CAST (ppad), gst_decode_pad_query);
-  gst_pad_set_event_function (GST_PAD_CAST (dpad), gst_decode_pad_event);
+  gst_pad_set_event_full_function (GST_PAD_CAST (dpad), gst_decode_pad_event);
   gst_object_unref (ppad);
 
   return dpad;

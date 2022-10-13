@@ -1030,7 +1030,7 @@ sink_query_function (GstPad * sinkpad, GstDecodebin3 * dbin, GstQuery * query)
   return gst_pad_query_default (sinkpad, GST_OBJECT (dbin), query);
 }
 
-static gboolean
+static GstFlowReturn
 sink_event_function (GstPad * sinkpad, GstDecodebin3 * dbin, GstEvent * event)
 {
   DecodebinInput *input =
@@ -1092,7 +1092,7 @@ sink_event_function (GstPad * sinkpad, GstDecodebin3 * dbin, GstEvent * event)
   }
 
   /* Chain to parent function */
-  return gst_pad_event_default (sinkpad, GST_OBJECT (dbin), event);
+  return gst_pad_event_full_default (sinkpad, GST_OBJECT (dbin), event);
 }
 
 /* Call with INPUT_LOCK taken */
@@ -1114,7 +1114,7 @@ create_new_input (GstDecodebin3 * dbin, gboolean main)
   }
   input->upstream_selected = FALSE;
   g_object_set_data (G_OBJECT (input->ghost_sink), "decodebin.input", input);
-  gst_pad_set_event_function (input->ghost_sink,
+  gst_pad_set_event_full_function (input->ghost_sink,
       (GstPadEventFunction) sink_event_function);
   gst_pad_set_query_function (input->ghost_sink,
       (GstPadQueryFunction) sink_query_function);
