@@ -315,14 +315,16 @@ static gboolean gst_audio_encoder_sink_activate_mode (GstPad * pad,
 static GstCaps *gst_audio_encoder_getcaps_default (GstAudioEncoder * enc,
     GstCaps * filter);
 
-static gboolean gst_audio_encoder_sink_event_default (GstAudioEncoder * enc,
+static gboolean wrap_sink_eventfunc (GstAudioEncoder * enc, GstEvent * event);
+static GstFlowReturn gst_audio_encoder_sink_event_default (GstAudioEncoder *
+    enc, GstEvent * event);
+static gboolean wrap_src_eventfunc (GstAudioEncoder * enc, GstEvent * event);
+static GstFlowReturn gst_audio_encoder_src_event_default (GstAudioEncoder * enc,
     GstEvent * event);
-static gboolean gst_audio_encoder_src_event_default (GstAudioEncoder * enc,
-    GstEvent * event);
-static gboolean gst_audio_encoder_sink_event (GstPad * pad, GstObject * parent,
-    GstEvent * event);
-static gboolean gst_audio_encoder_src_event (GstPad * pad, GstObject * parent,
-    GstEvent * event);
+static GstFlowReturn gst_audio_encoder_sink_event (GstPad * pad,
+    GstObject * parent, GstEvent * event);
+static GstFlowReturn gst_audio_encoder_src_event (GstPad * pad,
+    GstObject * parent, GstEvent * event);
 static gboolean gst_audio_encoder_sink_setcaps (GstAudioEncoder * enc,
     GstCaps * caps);
 static GstFlowReturn gst_audio_encoder_chain (GstPad * pad, GstObject * parent,
@@ -393,8 +395,10 @@ gst_audio_encoder_class_init (GstAudioEncoderClass * klass)
       GST_DEBUG_FUNCPTR (gst_audio_encoder_change_state);
 
   klass->getcaps = gst_audio_encoder_getcaps_default;
-  klass->sink_event = gst_audio_encoder_sink_event_default;
-  klass->src_event = gst_audio_encoder_src_event_default;
+  klass->sink_event = wrap_sink_eventfunc;
+  klass->sink_event_full = gst_audio_encoder_sink_event_default;
+  klass->src_event = wrap_src_eventfunc;
+  klass->src_event_full = gst_audio_encoder_src_event_default;
   klass->sink_query = gst_audio_encoder_sink_query_default;
   klass->src_query = gst_audio_encoder_src_query_default;
   klass->propose_allocation = gst_audio_encoder_propose_allocation_default;
@@ -419,7 +423,7 @@ gst_audio_encoder_init (GstAudioEncoder * enc, GstAudioEncoderClass * bclass)
       gst_element_class_get_pad_template (GST_ELEMENT_CLASS (bclass), "sink");
   g_return_if_fail (pad_template != NULL);
   enc->sinkpad = gst_pad_new_from_template (pad_template, "sink");
-  gst_pad_set_event_function (enc->sinkpad,
+  gst_pad_set_event_full_function (enc->sinkpad,
       GST_DEBUG_FUNCPTR (gst_audio_encoder_sink_event));
   gst_pad_set_query_function (enc->sinkpad,
       GST_DEBUG_FUNCPTR (gst_audio_encoder_sink_query));
@@ -436,7 +440,7 @@ gst_audio_encoder_init (GstAudioEncoder * enc, GstAudioEncoderClass * bclass)
       gst_element_class_get_pad_template (GST_ELEMENT_CLASS (bclass), "src");
   g_return_if_fail (pad_template != NULL);
   enc->srcpad = gst_pad_new_from_template (pad_template, "src");
-  gst_pad_set_event_function (enc->srcpad,
+  gst_pad_set_event_full_function (enc->srcpad,
       GST_DEBUG_FUNCPTR (gst_audio_encoder_src_event));
   gst_pad_set_query_function (enc->srcpad,
       GST_DEBUG_FUNCPTR (gst_audio_encoder_src_query));
@@ -583,7 +587,7 @@ close_failed:
   }
 }
 
-static gboolean
+static GstFlowReturn
 gst_audio_encoder_push_event (GstAudioEncoder * enc, GstEvent * event)
 {
   switch (GST_EVENT_TYPE (event)) {
@@ -603,7 +607,7 @@ gst_audio_encoder_push_event (GstAudioEncoder * enc, GstEvent * event)
       break;
   }
 
-  return gst_pad_push_event (enc->srcpad, event);
+  return gst_pad_push_event_full (enc->srcpad, event);
 }
 
 static inline void
@@ -1579,10 +1583,16 @@ _flush_events (GstPad * pad, GList * events)
 }
 
 static gboolean
+wrap_sink_eventfunc (GstAudioEncoder * enc, GstEvent * event)
+{
+  return gst_audio_encoder_sink_event_default (enc, event) == GST_FLOW_OK;
+}
+
+static GstFlowReturn
 gst_audio_encoder_sink_event_default (GstAudioEncoder * enc, GstEvent * event)
 {
   GstAudioEncoderClass *klass;
-  gboolean res;
+  GstFlowReturn res = GST_FLOW_OK;
 
   klass = GST_AUDIO_ENCODER_GET_CLASS (enc);
 
@@ -1599,7 +1609,6 @@ gst_audio_encoder_sink_event_default (GstAudioEncoder * enc, GstEvent * event)
       } else {
         GST_DEBUG_OBJECT (enc, "received SEGMENT %" GST_SEGMENT_FORMAT, &seg);
         GST_DEBUG_OBJECT (enc, "unsupported format; ignoring");
-        res = TRUE;
         gst_event_unref (event);
         break;
       }
@@ -1616,7 +1625,6 @@ gst_audio_encoder_sink_event_default (GstAudioEncoder * enc, GstEvent * event)
           g_list_append (enc->priv->early_pending_events, event);
       GST_AUDIO_ENCODER_STREAM_UNLOCK (enc);
 
-      res = TRUE;
       break;
     }
 
@@ -1662,7 +1670,6 @@ gst_audio_encoder_sink_event_default (GstAudioEncoder * enc, GstEvent * event)
 
       gst_event_parse_caps (event, &caps);
       enc->priv->do_caps = TRUE;
-      res = TRUE;
       gst_event_unref (event);
       break;
     }
@@ -1717,7 +1724,6 @@ gst_audio_encoder_sink_event_default (GstAudioEncoder * enc, GstEvent * event)
 
         /* No tags, go out of here instead of fall through */
         if (!event) {
-          res = TRUE;
           break;
         }
       }
@@ -1727,7 +1733,8 @@ gst_audio_encoder_sink_event_default (GstAudioEncoder * enc, GstEvent * event)
       /* Forward non-serialized events immediately. */
       if (!GST_EVENT_IS_SERIALIZED (event)) {
         res =
-            gst_pad_event_default (enc->sinkpad, GST_OBJECT_CAST (enc), event);
+            gst_pad_event_full_default (enc->sinkpad, GST_OBJECT_CAST (enc),
+            event);
       } else {
         GST_AUDIO_ENCODER_STREAM_LOCK (enc);
         if (gst_adapter_available (enc->priv->adapter) == 0) {
@@ -1738,37 +1745,32 @@ gst_audio_encoder_sink_event_default (GstAudioEncoder * enc, GstEvent * event)
               g_list_append (enc->priv->pending_events, event);
         }
         GST_AUDIO_ENCODER_STREAM_UNLOCK (enc);
-        res = TRUE;
       }
       break;
   }
   return res;
 }
 
-static gboolean
+static GstFlowReturn
 gst_audio_encoder_sink_event (GstPad * pad, GstObject * parent,
     GstEvent * event)
 {
-  GstAudioEncoder *enc;
-  GstAudioEncoderClass *klass;
-  gboolean ret;
-
-  enc = GST_AUDIO_ENCODER (parent);
-  klass = GST_AUDIO_ENCODER_GET_CLASS (enc);
+  GstAudioEncoder *enc = GST_AUDIO_ENCODER (parent);
+  GstAudioEncoderClass *klass = GST_AUDIO_ENCODER_GET_CLASS (enc);
 
   GST_DEBUG_OBJECT (enc, "received event %d, %s", GST_EVENT_TYPE (event),
       GST_EVENT_TYPE_NAME (event));
 
-  if (klass->sink_event)
-    ret = klass->sink_event (enc, event);
-  else {
-    gst_event_unref (event);
-    ret = FALSE;
+  if (klass->sink_event == wrap_sink_eventfunc) {
+    g_assert (klass->sink_event_full);
+    return klass->sink_event_full (enc, event);
   }
 
-  GST_DEBUG_OBJECT (enc, "event result %d", ret);
+  GST_FIXME_OBJECT (enc, "Implement flow-aware sink_event handler");
 
-  return ret;
+  if (klass->sink_event (enc, event))
+    return GST_FLOW_OK;
+  return GST_FLOW_ERROR;
 }
 
 static gboolean
@@ -1855,13 +1857,21 @@ gst_audio_encoder_sink_query (GstPad * pad, GstObject * parent,
 }
 
 static gboolean
+wrap_src_eventfunc (GstAudioEncoder * enc, GstEvent * event)
+{
+  return gst_audio_encoder_src_event_default (enc, event);
+}
+
+static GstFlowReturn
 gst_audio_encoder_src_event_default (GstAudioEncoder * enc, GstEvent * event)
 {
-  gboolean res;
+  GstFlowReturn res;
 
   switch (GST_EVENT_TYPE (event)) {
     default:
-      res = gst_pad_event_default (enc->srcpad, GST_OBJECT_CAST (enc), event);
+      res =
+          gst_pad_event_full_default (enc->srcpad, GST_OBJECT_CAST (enc),
+          event);
       break;
   }
   return res;
@@ -1870,24 +1880,22 @@ gst_audio_encoder_src_event_default (GstAudioEncoder * enc, GstEvent * event)
 static gboolean
 gst_audio_encoder_src_event (GstPad * pad, GstObject * parent, GstEvent * event)
 {
-  GstAudioEncoder *enc;
-  GstAudioEncoderClass *klass;
-  gboolean ret;
-
-  enc = GST_AUDIO_ENCODER (parent);
-  klass = GST_AUDIO_ENCODER_GET_CLASS (enc);
+  GstAudioEncoder *enc = GST_AUDIO_ENCODER (parent);
+  GstAudioEncoderClass *klass = GST_AUDIO_ENCODER_GET_CLASS (enc);
 
   GST_DEBUG_OBJECT (enc, "received event %d, %s", GST_EVENT_TYPE (event),
       GST_EVENT_TYPE_NAME (event));
 
-  if (klass->src_event)
-    ret = klass->src_event (enc, event);
-  else {
-    gst_event_unref (event);
-    ret = FALSE;
+  if (klass->src_event == wrap_src_eventfunc) {
+    g_assert (klass->src_event_full);
+    return klass->src_event_full (enc, event);
   }
 
-  return ret;
+  GST_FIXME_OBJECT (enc, "Implement flow-aware src_event handler");
+
+  if (klass->src_event (enc, event))
+    return GST_FLOW_OK;
+  return GST_FLOW_ERROR;
 }
 
 static gboolean
