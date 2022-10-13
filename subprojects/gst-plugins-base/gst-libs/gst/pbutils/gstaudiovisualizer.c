@@ -80,9 +80,9 @@ static gboolean gst_audio_visualizer_sink_setcaps (GstAudioVisualizer *
 static GstFlowReturn gst_audio_visualizer_chain (GstPad * pad,
     GstObject * parent, GstBuffer * buffer);
 
-static gboolean gst_audio_visualizer_src_event (GstPad * pad,
+static GstFlowReturn gst_audio_visualizer_src_event (GstPad * pad,
     GstObject * parent, GstEvent * event);
-static gboolean gst_audio_visualizer_sink_event (GstPad * pad,
+static GstFlowReturn gst_audio_visualizer_sink_event (GstPad * pad,
     GstObject * parent, GstEvent * event);
 
 static gboolean gst_audio_visualizer_src_query (GstPad * pad,
@@ -588,7 +588,7 @@ gst_audio_visualizer_init (GstAudioVisualizer * scope,
   scope->priv->sinkpad = gst_pad_new_from_template (pad_template, "sink");
   gst_pad_set_chain_function (scope->priv->sinkpad,
       GST_DEBUG_FUNCPTR (gst_audio_visualizer_chain));
-  gst_pad_set_event_function (scope->priv->sinkpad,
+  gst_pad_set_event_full_function (scope->priv->sinkpad,
       GST_DEBUG_FUNCPTR (gst_audio_visualizer_sink_event));
   gst_element_add_pad (GST_ELEMENT (scope), scope->priv->sinkpad);
 
@@ -596,7 +596,7 @@ gst_audio_visualizer_init (GstAudioVisualizer * scope,
       gst_element_class_get_pad_template (GST_ELEMENT_CLASS (g_class), "src");
   g_return_if_fail (pad_template != NULL);
   scope->priv->srcpad = gst_pad_new_from_template (pad_template, "src");
-  gst_pad_set_event_function (scope->priv->srcpad,
+  gst_pad_set_event_full_function (scope->priv->srcpad,
       GST_DEBUG_FUNCPTR (gst_audio_visualizer_src_event));
   gst_pad_set_query_function (scope->priv->srcpad,
       GST_DEBUG_FUNCPTR (gst_audio_visualizer_src_query));
@@ -1241,11 +1241,11 @@ not_negotiated:
   }
 }
 
-static gboolean
+static GstFlowReturn
 gst_audio_visualizer_src_event (GstPad * pad, GstObject * parent,
     GstEvent * event)
 {
-  gboolean res;
+  GstFlowReturn res;
   GstAudioVisualizer *scope;
 
   scope = GST_AUDIO_VISUALIZER (parent);
@@ -1271,27 +1271,27 @@ gst_audio_visualizer_src_event (GstPad * pad, GstObject * parent,
         scope->priv->earliest_time = timestamp + diff;
       GST_OBJECT_UNLOCK (scope);
 
-      res = gst_pad_push_event (scope->priv->sinkpad, event);
+      res = gst_pad_push_event_full (scope->priv->sinkpad, event);
       break;
     }
     case GST_EVENT_RECONFIGURE:
       /* don't forward */
       gst_event_unref (event);
-      res = TRUE;
+      res = GST_FLOW_OK;
       break;
     default:
-      res = gst_pad_event_default (pad, parent, event);
+      res = gst_pad_event_full_default (pad, parent, event);
       break;
   }
 
   return res;
 }
 
-static gboolean
+static GstFlowReturn
 gst_audio_visualizer_sink_event (GstPad * pad, GstObject * parent,
     GstEvent * event)
 {
-  gboolean res;
+  GstFlowReturn res = GST_FLOW_OK;
   GstAudioVisualizer *scope;
 
   scope = GST_AUDIO_VISUALIZER (parent);
@@ -1302,13 +1302,14 @@ gst_audio_visualizer_sink_event (GstPad * pad, GstObject * parent,
       GstCaps *caps;
 
       gst_event_parse_caps (event, &caps);
-      res = gst_audio_visualizer_sink_setcaps (scope, caps);
+      if (!gst_audio_visualizer_sink_setcaps (scope, caps))
+        res = GST_FLOW_NOT_NEGOTIATED;
       gst_event_unref (event);
       break;
     }
     case GST_EVENT_FLUSH_STOP:
       gst_audio_visualizer_reset (scope);
-      res = gst_pad_push_event (scope->priv->srcpad, event);
+      res = gst_pad_push_event_full (scope->priv->srcpad, event);
       break;
     case GST_EVENT_SEGMENT:
     {
@@ -1317,11 +1318,11 @@ gst_audio_visualizer_sink_event (GstPad * pad, GstObject * parent,
        * we can do QoS */
       gst_event_copy_segment (event, &scope->priv->segment);
 
-      res = gst_pad_push_event (scope->priv->srcpad, event);
+      res = gst_pad_push_event_full (scope->priv->srcpad, event);
       break;
     }
     default:
-      res = gst_pad_event_default (pad, parent, event);
+      res = gst_pad_event_full_default (pad, parent, event);
       break;
   }
 
