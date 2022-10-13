@@ -134,7 +134,7 @@ static void gst_tag_demux_dispose (GObject * object);
 
 static GstFlowReturn gst_tag_demux_chain (GstPad * pad, GstObject * parent,
     GstBuffer * buf);
-static gboolean gst_tag_demux_sink_event (GstPad * pad, GstObject * parent,
+static GstFlowReturn gst_tag_demux_sink_event (GstPad * pad, GstObject * parent,
     GstEvent * event);
 
 static gboolean gst_tag_demux_sink_activate_mode (GstPad * pad,
@@ -150,8 +150,8 @@ static GstFlowReturn gst_tag_demux_src_getrange (GstPad * srcpad,
 static void gst_tag_demux_set_src_caps (GstTagDemux * tagdemux,
     GstCaps * new_caps);
 
-static gboolean gst_tag_demux_srcpad_event (GstPad * pad, GstObject * parent,
-    GstEvent * event);
+static GstFlowReturn gst_tag_demux_srcpad_event (GstPad * pad,
+    GstObject * parent, GstEvent * event);
 static gboolean gst_tag_demux_sink_activate (GstPad * sinkpad,
     GstObject * parent);
 static GstStateChangeReturn gst_tag_demux_change_state (GstElement * element,
@@ -291,7 +291,7 @@ gst_tag_demux_init (GstTagDemux * demux, GstTagDemuxClass * gclass)
         GST_DEBUG_FUNCPTR (gst_tag_demux_sink_activate_mode));
     gst_pad_set_activate_function (demux->priv->sinkpad,
         GST_DEBUG_FUNCPTR (gst_tag_demux_sink_activate));
-    gst_pad_set_event_function (demux->priv->sinkpad,
+    gst_pad_set_event_full_function (demux->priv->sinkpad,
         GST_DEBUG_FUNCPTR (gst_tag_demux_sink_event));
     gst_pad_set_chain_function (demux->priv->sinkpad,
         GST_DEBUG_FUNCPTR (gst_tag_demux_chain));
@@ -306,7 +306,7 @@ gst_tag_demux_init (GstTagDemux * demux, GstTagDemuxClass * gclass)
   demux->priv->srcpad = gst_pad_new_from_template (tmpl, "src");
   gst_pad_set_query_function (demux->priv->srcpad,
       GST_DEBUG_FUNCPTR (gst_tag_demux_pad_query));
-  gst_pad_set_event_function (demux->priv->srcpad,
+  gst_pad_set_event_full_function (demux->priv->srcpad,
       GST_DEBUG_FUNCPTR (gst_tag_demux_srcpad_event));
   gst_pad_set_activatemode_function (demux->priv->srcpad,
       GST_DEBUG_FUNCPTR (gst_tag_demux_src_activate_mode));
@@ -746,11 +746,11 @@ gst_tag_demux_chain (GstPad * pad, GstObject * parent, GstBuffer * buf)
   return gst_tag_demux_chain_buffer (GST_TAG_DEMUX (parent), buf, FALSE);
 }
 
-static gboolean
+static GstFlowReturn
 gst_tag_demux_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
 {
   GstTagDemux *demux;
-  gboolean ret;
+  GstFlowReturn ret;
 
   demux = GST_TAG_DEMUX (parent);
 
@@ -766,7 +766,7 @@ gst_tag_demux_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
           GST_ELEMENT_ERROR (demux, STREAM, TYPE_NOT_FOUND, (NULL), (NULL));
         }
       }
-      ret = gst_pad_event_default (pad, parent, event);
+      ret = gst_pad_event_full_default (pad, parent, event);
       break;
     case GST_EVENT_SEGMENT:
     {
@@ -775,16 +775,16 @@ gst_tag_demux_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
 
       demux->priv->need_newseg = TRUE;
       gst_event_unref (event);
-      ret = TRUE;
+      ret = GST_FLOW_OK;
       break;
     }
     case GST_EVENT_FLUSH_STOP:
     case GST_EVENT_FLUSH_START:
-      ret = gst_pad_event_default (pad, parent, event);
+      ret = gst_pad_event_full_default (pad, parent, event);
       break;
     case GST_EVENT_CAPS:
       /* we drop the caps event. We do typefind and push a new caps event. */
-      ret = gst_pad_event_default (pad, parent, event);
+      ret = gst_pad_event_full_default (pad, parent, event);
       break;
     default:
       if (demux->priv->need_newseg && GST_EVENT_IS_SERIALIZED (event)) {
@@ -795,9 +795,9 @@ gst_tag_demux_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
         demux->priv->pending_events =
             g_list_append (demux->priv->pending_events, event);
         GST_OBJECT_UNLOCK (demux);
-        ret = TRUE;
+        ret = GST_FLOW_OK;
       } else {
-        ret = gst_pad_event_default (pad, parent, event);
+        ret = gst_pad_event_full_default (pad, parent, event);
       }
       break;
   }
@@ -823,7 +823,7 @@ gst_tag_demux_get_upstream_size (GstTagDemux * tagdemux)
   return TRUE;
 }
 
-static gboolean
+static GstFlowReturn
 gst_tag_demux_seek_pull (GstTagDemux * tagdemux, GstEvent * event)
 {
   GstSeekFlags flags;
@@ -840,12 +840,12 @@ gst_tag_demux_seek_pull (GstTagDemux * tagdemux, GstEvent * event)
   /* we can only seek on bytes */
   if (format != GST_FORMAT_BYTES) {
     GST_DEBUG_OBJECT (tagdemux, "Can only seek on BYTES");
-    return FALSE;
+    return GST_FLOW_ERROR;
   }
 
   if (tagdemux->priv->state != GST_TAG_DEMUX_STREAMING) {
     GST_DEBUG_OBJECT (tagdemux, "Can only seek if streaming already");
-    return FALSE;
+    return GST_FLOW_ERROR;
   }
 
   switch (start_type) {
@@ -943,13 +943,13 @@ gst_tag_demux_seek_pull (GstTagDemux * tagdemux, GstEvent * event)
   /* streaming can continue now */
   GST_PAD_STREAM_UNLOCK (tagdemux->priv->sinkpad);
 
-  return TRUE;
+  return GST_FLOW_OK;
 }
 
-static gboolean
+static GstFlowReturn
 gst_tag_demux_seek_push (GstTagDemux * tagdemux, GstEvent * event)
 {
-  gboolean res = FALSE;
+  GstFlowReturn res = GST_FLOW_ERROR;
   gdouble rate;
   GstFormat format;
   GstSeekType start_type, stop_type;
@@ -1001,21 +1001,23 @@ gst_tag_demux_seek_push (GstTagDemux * tagdemux, GstEvent * event)
     }
     upstream = gst_event_new_seek (rate, format, flags,
         start_type, start, stop_type, stop);
-    res = gst_pad_push_event (tagdemux->priv->sinkpad, upstream);
+    res = gst_pad_push_event_full (tagdemux->priv->sinkpad, upstream);
   } else if (format == GST_FORMAT_TIME &&
       tagdemux->priv->state == GST_TAG_DEMUX_STREAMING &&
       gst_pad_is_linked (tagdemux->priv->sinkpad)) {
-    res = gst_pad_push_event (tagdemux->priv->sinkpad, gst_event_ref (event));
+    res =
+        gst_pad_push_event_full (tagdemux->priv->sinkpad,
+        gst_event_ref (event));
   }
 
   return res;
 }
 
-static gboolean
+static GstFlowReturn
 gst_tag_demux_srcpad_event (GstPad * pad, GstObject * parent, GstEvent * event)
 {
   GstTagDemux *tagdemux;
-  gboolean res = FALSE;
+  GstFlowReturn res = GST_FLOW_ERROR;
 
   tagdemux = GST_TAG_DEMUX (parent);
 
@@ -1031,7 +1033,7 @@ gst_tag_demux_srcpad_event (GstPad * pad, GstObject * parent, GstEvent * event)
       break;
     }
     default:
-      res = gst_pad_push_event (tagdemux->priv->sinkpad, event);
+      res = gst_pad_push_event_full (tagdemux->priv->sinkpad, event);
       event = NULL;
       break;
   }
