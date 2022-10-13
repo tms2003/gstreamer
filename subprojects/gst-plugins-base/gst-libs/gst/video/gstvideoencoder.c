@@ -250,10 +250,10 @@ static gboolean gst_video_encoder_setcaps (GstVideoEncoder * enc,
     GstCaps * caps);
 static GstCaps *gst_video_encoder_sink_getcaps (GstVideoEncoder * encoder,
     GstCaps * filter);
-static gboolean gst_video_encoder_src_event (GstPad * pad, GstObject * parent,
-    GstEvent * event);
-static gboolean gst_video_encoder_sink_event (GstPad * pad, GstObject * parent,
-    GstEvent * event);
+static GstFlowReturn gst_video_encoder_src_event (GstPad * pad,
+    GstObject * parent, GstEvent * event);
+static GstFlowReturn gst_video_encoder_sink_event (GstPad * pad,
+    GstObject * parent, GstEvent * event);
 static GstFlowReturn gst_video_encoder_chain (GstPad * pad, GstObject * parent,
     GstBuffer * buf);
 static GstStateChangeReturn gst_video_encoder_change_state (GstElement *
@@ -266,10 +266,14 @@ static GstVideoCodecFrame *gst_video_encoder_new_frame (GstVideoEncoder *
     encoder, GstBuffer * buf, GstClockTime pts, GstClockTime dts,
     GstClockTime duration);
 
-static gboolean gst_video_encoder_sink_event_default (GstVideoEncoder * encoder,
+static gboolean wrap_sink_eventfunc (GstVideoEncoder * encoder,
     GstEvent * event);
-static gboolean gst_video_encoder_src_event_default (GstVideoEncoder * encoder,
+static GstFlowReturn gst_video_encoder_sink_event_default (GstVideoEncoder *
+    encoder, GstEvent * event);
+static gboolean wrap_src_eventfunc (GstVideoEncoder * encoder,
     GstEvent * event);
+static GstFlowReturn gst_video_encoder_src_event_default (GstVideoEncoder *
+    encoder, GstEvent * event);
 static gboolean gst_video_encoder_decide_allocation_default (GstVideoEncoder *
     encoder, GstQuery * query);
 static gboolean gst_video_encoder_propose_allocation_default (GstVideoEncoder *
@@ -393,8 +397,10 @@ gst_video_encoder_class_init (GstVideoEncoderClass * klass)
   gstelement_class->change_state =
       GST_DEBUG_FUNCPTR (gst_video_encoder_change_state);
 
-  klass->sink_event = gst_video_encoder_sink_event_default;
-  klass->src_event = gst_video_encoder_src_event_default;
+  klass->sink_event = wrap_sink_eventfunc;
+  klass->sink_event_full = gst_video_encoder_sink_event_default;
+  klass->src_event = wrap_src_eventfunc;
+  klass->src_event_full = gst_video_encoder_src_event_default;
   klass->propose_allocation = gst_video_encoder_propose_allocation_default;
   klass->decide_allocation = gst_video_encoder_decide_allocation_default;
   klass->negotiate = gst_video_encoder_negotiate_default;
@@ -563,7 +569,7 @@ gst_video_encoder_init (GstVideoEncoder * encoder, GstVideoEncoderClass * klass)
   encoder->sinkpad = pad = gst_pad_new_from_template (pad_template, "sink");
 
   gst_pad_set_chain_function (pad, GST_DEBUG_FUNCPTR (gst_video_encoder_chain));
-  gst_pad_set_event_function (pad,
+  gst_pad_set_event_full_function (pad,
       GST_DEBUG_FUNCPTR (gst_video_encoder_sink_event));
   gst_pad_set_query_function (pad,
       GST_DEBUG_FUNCPTR (gst_video_encoder_sink_query));
@@ -577,7 +583,7 @@ gst_video_encoder_init (GstVideoEncoder * encoder, GstVideoEncoderClass * klass)
 
   gst_pad_set_query_function (pad,
       GST_DEBUG_FUNCPTR (gst_video_encoder_src_query));
-  gst_pad_set_event_function (pad,
+  gst_pad_set_event_full_function (pad,
       GST_DEBUG_FUNCPTR (gst_video_encoder_src_event));
   gst_element_add_pad (GST_ELEMENT (encoder), encoder->srcpad);
 
@@ -1005,7 +1011,7 @@ gst_video_encoder_finalize (GObject * object)
   G_OBJECT_CLASS (parent_class)->finalize (object);
 }
 
-static gboolean
+static GstFlowReturn
 gst_video_encoder_push_event (GstVideoEncoder * encoder, GstEvent * event)
 {
   switch (GST_EVENT_TYPE (event)) {
@@ -1047,7 +1053,7 @@ gst_video_encoder_push_event (GstVideoEncoder * encoder, GstEvent * event)
       break;
   }
 
-  return gst_pad_push_event (encoder->srcpad, event);
+  return gst_pad_push_event_full (encoder->srcpad, event);
 }
 
 static GstEvent *
@@ -1092,11 +1098,17 @@ gst_video_encoder_check_and_push_tags (GstVideoEncoder * encoder)
 }
 
 static gboolean
+wrap_sink_eventfunc (GstVideoEncoder * encoder, GstEvent * event)
+{
+  return gst_video_encoder_sink_event_default (encoder, event) == GST_FLOW_OK;
+}
+
+static GstFlowReturn
 gst_video_encoder_sink_event_default (GstVideoEncoder * encoder,
     GstEvent * event)
 {
   GstVideoEncoderClass *encoder_class;
-  gboolean ret = FALSE;
+  GstFlowReturn ret = GST_FLOW_ERROR;
 
   encoder_class = GST_VIDEO_ENCODER_GET_CLASS (encoder);
 
@@ -1106,7 +1118,9 @@ gst_video_encoder_sink_event_default (GstVideoEncoder * encoder,
       GstCaps *caps;
 
       gst_event_parse_caps (event, &caps);
-      ret = gst_video_encoder_setcaps (encoder, caps);
+      ret =
+          gst_video_encoder_setcaps (encoder,
+          caps) ? GST_FLOW_OK : GST_FLOW_NOT_NEGOTIATED;
 
       gst_event_unref (event);
       event = NULL;
@@ -1114,14 +1128,12 @@ gst_video_encoder_sink_event_default (GstVideoEncoder * encoder,
     }
     case GST_EVENT_EOS:
     {
-      GstFlowReturn flow_ret;
-
       GST_VIDEO_ENCODER_STREAM_LOCK (encoder);
 
       if (encoder_class->finish) {
-        flow_ret = encoder_class->finish (encoder);
+        ret = encoder_class->finish (encoder);
       } else {
-        flow_ret = GST_FLOW_OK;
+        ret = GST_FLOW_OK;
       }
 
       if (encoder->priv->current_frame_events) {
@@ -1139,7 +1151,6 @@ gst_video_encoder_sink_event_default (GstVideoEncoder * encoder,
 
       gst_video_encoder_check_and_push_tags (encoder);
 
-      ret = (flow_ret == GST_FLOW_OK);
       GST_VIDEO_ENCODER_STREAM_UNLOCK (encoder);
       break;
     }
@@ -1160,7 +1171,7 @@ gst_video_encoder_sink_event_default (GstVideoEncoder * encoder,
       }
 
       encoder->input_segment = segment;
-      ret = TRUE;
+      ret = GST_FLOW_OK;
       GST_VIDEO_ENCODER_STREAM_UNLOCK (encoder);
       break;
     }
@@ -1188,7 +1199,7 @@ gst_video_encoder_sink_event_default (GstVideoEncoder * encoder,
         }
         gst_event_unref (event);
         event = NULL;
-        ret = TRUE;
+        ret = GST_FLOW_OK;
       }
       break;
     }
@@ -1238,7 +1249,7 @@ gst_video_encoder_sink_event_default (GstVideoEncoder * encoder,
         event = gst_video_encoder_create_merged_tags_event (encoder);
         GST_VIDEO_ENCODER_STREAM_UNLOCK (encoder);
         if (!event)
-          ret = TRUE;
+          ret = GST_FLOW_OK;
       }
       break;
     }
@@ -1275,20 +1286,19 @@ gst_video_encoder_sink_event_default (GstVideoEncoder * encoder,
       encoder->priv->current_frame_events =
           g_list_prepend (encoder->priv->current_frame_events, event);
       GST_VIDEO_ENCODER_STREAM_UNLOCK (encoder);
-      ret = TRUE;
+      ret = GST_FLOW_OK;
     }
   }
 
   return ret;
 }
 
-static gboolean
+static GstFlowReturn
 gst_video_encoder_sink_event (GstPad * pad, GstObject * parent,
     GstEvent * event)
 {
   GstVideoEncoder *enc;
   GstVideoEncoderClass *klass;
-  gboolean ret = TRUE;
 
   enc = GST_VIDEO_ENCODER (parent);
   klass = GST_VIDEO_ENCODER_GET_CLASS (enc);
@@ -1296,17 +1306,29 @@ gst_video_encoder_sink_event (GstPad * pad, GstObject * parent,
   GST_DEBUG_OBJECT (enc, "received event %d, %s", GST_EVENT_TYPE (event),
       GST_EVENT_TYPE_NAME (event));
 
-  if (klass->sink_event)
-    ret = klass->sink_event (enc, event);
+  if (klass->sink_event == wrap_sink_eventfunc) {
+    g_assert (klass->sink_event_full);
+    return klass->sink_event_full (enc, event);
+  }
 
-  return ret;
+  GST_FIXME_OBJECT (enc, "Implement flow-aware sink_event handler");
+
+  if (klass->sink_event (enc, event))
+    return GST_FLOW_OK;
+  return GST_FLOW_ERROR;
 }
 
 static gboolean
+wrap_src_eventfunc (GstVideoEncoder * encoder, GstEvent * event)
+{
+  return gst_video_encoder_src_event_default (encoder, event) == GST_FLOW_OK;
+}
+
+static GstFlowReturn
 gst_video_encoder_src_event_default (GstVideoEncoder * encoder,
     GstEvent * event)
 {
-  gboolean ret = FALSE;
+  GstFlowReturn ret = GST_FLOW_ERROR;
   GstVideoEncoderPrivate *priv = encoder->priv;
 
   switch (GST_EVENT_TYPE (event)) {
@@ -1334,7 +1356,7 @@ gst_video_encoder_src_event_default (GstVideoEncoder * encoder,
         }
         gst_event_unref (event);
         event = NULL;
-        ret = TRUE;
+        ret = GST_FLOW_OK;
       }
       break;
     }
@@ -1367,7 +1389,7 @@ gst_video_encoder_src_event_default (GstVideoEncoder * encoder,
           "got QoS %" GST_TIME_FORMAT ", %" GST_STIME_FORMAT ", %g",
           GST_TIME_ARGS (timestamp), GST_STIME_ARGS (diff), proportion);
 
-      ret = gst_pad_push_event (encoder->sinkpad, event);
+      ret = gst_pad_push_event_full (encoder->sinkpad, event);
       event = NULL;
       break;
     }
@@ -1377,7 +1399,7 @@ gst_video_encoder_src_event_default (GstVideoEncoder * encoder,
 
   if (event)
     ret =
-        gst_pad_event_default (encoder->srcpad, GST_OBJECT_CAST (encoder),
+        gst_pad_event_full_default (encoder->srcpad, GST_OBJECT_CAST (encoder),
         event);
 
   return ret;
@@ -1388,17 +1410,22 @@ gst_video_encoder_src_event (GstPad * pad, GstObject * parent, GstEvent * event)
 {
   GstVideoEncoder *encoder;
   GstVideoEncoderClass *klass;
-  gboolean ret = FALSE;
 
   encoder = GST_VIDEO_ENCODER (parent);
   klass = GST_VIDEO_ENCODER_GET_CLASS (encoder);
 
   GST_LOG_OBJECT (encoder, "handling event: %" GST_PTR_FORMAT, event);
 
-  if (klass->src_event)
-    ret = klass->src_event (encoder, event);
+  if (klass->src_event == wrap_src_eventfunc) {
+    g_assert (klass->src_event_full);
+    return klass->src_event_full (encoder, event);
+  }
 
-  return ret;
+  GST_FIXME_OBJECT (encoder, "Implement flow-aware src_event handler");
+
+  if (klass->src_event (encoder, event))
+    return GST_FLOW_OK;
+  return GST_FLOW_ERROR;
 }
 
 static gboolean

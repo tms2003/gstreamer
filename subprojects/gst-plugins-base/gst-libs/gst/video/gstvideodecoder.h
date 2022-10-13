@@ -358,8 +358,36 @@ struct _GstVideoDecoderClass
                                         GstClockTime timestamp,
                                         GstClockTime duration);
 
+  /**
+   * GstVideoDecoderClass::sink_event_full:
+   *
+   * Optional.
+   *
+   * Event handler on the sink pad. This function should return TRUE if the
+   * event was handled and should be discarded (i.e. not unref'ed).  Subclasses
+   * should chain up to the parent implementation to invoke the default handler.
+   *
+   * Since: 1.22
+   */
+  GstFlowReturn (*sink_event_full)     (GstVideoDecoder *decoder,
+					GstEvent *event);
+
+  /**
+   * GstVideoDecoderClass::src_event_full:
+   *
+   * Optional.
+   *
+   * Event handler on the sink pad. This function should return TRUE if the
+   * event was handled and should be discarded (i.e. not unref'ed).  Subclasses
+   * should chain up to the parent implementation to invoke the default handler.
+   *
+   * Since: 1.22
+   */
+  GstFlowReturn (*src_event_full)      (GstVideoDecoder *decoder,
+					GstEvent *event);
+
   /*< private >*/
-  gpointer padding[GST_PADDING_LARGE-7];
+  gpointer padding[GST_PADDING_LARGE-9];
 };
 
 /**

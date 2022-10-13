@@ -2521,7 +2521,7 @@ gst_video_aggregator_src_query (GstAggregator * agg, GstQuery * query)
   return res;
 }
 
-static gboolean
+static GstFlowReturn
 gst_video_aggregator_src_event (GstAggregator * agg, GstEvent * event)
 {
   GstVideoAggregator *vagg = GST_VIDEO_AGGREGATOR (agg);
@@ -2547,8 +2547,8 @@ gst_video_aggregator_src_event (GstAggregator * agg, GstEvent * event)
   }
 
   return
-      GST_AGGREGATOR_CLASS (gst_video_aggregator_parent_class)->src_event (agg,
-      event);
+      GST_AGGREGATOR_CLASS (gst_video_aggregator_parent_class)->src_event_full
+      (agg, event);
 }
 
 static GstFlowReturn
@@ -2587,13 +2587,13 @@ gst_video_aggregator_flush (GstAggregator * agg)
   return GST_FLOW_OK;
 }
 
-static gboolean
+static GstFlowReturn
 gst_video_aggregator_sink_event (GstAggregator * agg, GstAggregatorPad * bpad,
     GstEvent * event)
 {
   GstVideoAggregator *vagg = GST_VIDEO_AGGREGATOR (agg);
   GstVideoAggregatorPad *pad = GST_VIDEO_AGGREGATOR_PAD (bpad);
-  gboolean ret = TRUE;
+  GstFlowReturn ret = GST_FLOW_OK;
 
   GST_DEBUG_OBJECT (pad, "Got %s event on pad %s:%s",
       GST_EVENT_TYPE_NAME (event), GST_DEBUG_PAD_NAME (pad));
@@ -2604,9 +2604,9 @@ gst_video_aggregator_sink_event (GstAggregator * agg, GstAggregatorPad * bpad,
       GstCaps *caps;
 
       gst_event_parse_caps (event, &caps);
-      ret =
-          gst_video_aggregator_pad_sink_setcaps (GST_PAD (pad),
-          GST_OBJECT (vagg), caps);
+      if (!gst_video_aggregator_pad_sink_setcaps (GST_PAD (pad),
+              GST_OBJECT (vagg), caps))
+        ret = GST_FLOW_NOT_NEGOTIATED;
       gst_event_unref (event);
       event = NULL;
       break;
@@ -2624,8 +2624,9 @@ gst_video_aggregator_sink_event (GstAggregator * agg, GstAggregatorPad * bpad,
   }
 
   if (event != NULL)
-    return GST_AGGREGATOR_CLASS (gst_video_aggregator_parent_class)->sink_event
-        (agg, bpad, event);
+    return
+        GST_AGGREGATOR_CLASS
+        (gst_video_aggregator_parent_class)->sink_event_full (agg, bpad, event);
 
   return ret;
 }
@@ -3050,10 +3051,10 @@ gst_video_aggregator_class_init (GstVideoAggregatorClass * klass)
   agg_class->start = gst_video_aggregator_start;
   agg_class->stop = gst_video_aggregator_stop;
   agg_class->sink_query = gst_video_aggregator_sink_query;
-  agg_class->sink_event = gst_video_aggregator_sink_event;
+  agg_class->sink_event_full = gst_video_aggregator_sink_event;
   agg_class->flush = gst_video_aggregator_flush;
   agg_class->aggregate = gst_video_aggregator_aggregate;
-  agg_class->src_event = gst_video_aggregator_src_event;
+  agg_class->src_event_full = gst_video_aggregator_src_event;
   agg_class->src_query = gst_video_aggregator_src_query;
   agg_class->get_next_time = gst_aggregator_simple_get_next_time;
   agg_class->update_src_caps = gst_video_aggregator_default_update_src_caps;

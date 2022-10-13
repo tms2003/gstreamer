@@ -484,10 +484,10 @@ static void gst_video_decoder_set_property (GObject * object, guint property_id,
 
 static gboolean gst_video_decoder_setcaps (GstVideoDecoder * dec,
     GstCaps * caps);
-static gboolean gst_video_decoder_sink_event (GstPad * pad, GstObject * parent,
-    GstEvent * event);
-static gboolean gst_video_decoder_src_event (GstPad * pad, GstObject * parent,
-    GstEvent * event);
+static GstFlowReturn gst_video_decoder_sink_event (GstPad * pad,
+    GstObject * parent, GstEvent * event);
+static GstFlowReturn gst_video_decoder_src_event (GstPad * pad,
+    GstObject * parent, GstEvent * event);
 static GstFlowReturn gst_video_decoder_chain (GstPad * pad, GstObject * parent,
     GstBuffer * buf);
 static gboolean gst_video_decoder_sink_query (GstPad * pad, GstObject * parent,
@@ -515,10 +515,14 @@ static GstFlowReturn gst_video_decoder_flush_parse (GstVideoDecoder * dec,
 
 static void gst_video_decoder_clear_queues (GstVideoDecoder * dec);
 
-static gboolean gst_video_decoder_sink_event_default (GstVideoDecoder * decoder,
+static gboolean wrap_sink_eventfunc (GstVideoDecoder * decoder,
     GstEvent * event);
-static gboolean gst_video_decoder_src_event_default (GstVideoDecoder * decoder,
+static GstFlowReturn gst_video_decoder_sink_event_default (GstVideoDecoder *
+    decoder, GstEvent * event);
+static gboolean wrap_src_eventfunc (GstVideoDecoder * decoder,
     GstEvent * event);
+static GstFlowReturn gst_video_decoder_src_event_default (GstVideoDecoder *
+    decoder, GstEvent * event);
 static gboolean gst_video_decoder_decide_allocation_default (GstVideoDecoder *
     decoder, GstQuery * query);
 static gboolean gst_video_decoder_propose_allocation_default (GstVideoDecoder *
@@ -608,8 +612,10 @@ gst_video_decoder_class_init (GstVideoDecoderClass * klass)
   gstelement_class->change_state =
       GST_DEBUG_FUNCPTR (gst_video_decoder_change_state);
 
-  klass->sink_event = gst_video_decoder_sink_event_default;
-  klass->src_event = gst_video_decoder_src_event_default;
+  klass->sink_event = wrap_sink_eventfunc;
+  klass->sink_event_full = gst_video_decoder_sink_event_default;
+  klass->src_event = wrap_src_eventfunc;
+  klass->src_event_full = gst_video_decoder_src_event_default;
   klass->decide_allocation = gst_video_decoder_decide_allocation_default;
   klass->propose_allocation = gst_video_decoder_propose_allocation_default;
   klass->negotiate = gst_video_decoder_negotiate_default;
@@ -736,7 +742,7 @@ gst_video_decoder_init (GstVideoDecoder * decoder, GstVideoDecoderClass * klass)
   decoder->sinkpad = pad = gst_pad_new_from_template (pad_template, "sink");
 
   gst_pad_set_chain_function (pad, GST_DEBUG_FUNCPTR (gst_video_decoder_chain));
-  gst_pad_set_event_function (pad,
+  gst_pad_set_event_full_function (pad,
       GST_DEBUG_FUNCPTR (gst_video_decoder_sink_event));
   gst_pad_set_query_function (pad,
       GST_DEBUG_FUNCPTR (gst_video_decoder_sink_query));
@@ -748,7 +754,7 @@ gst_video_decoder_init (GstVideoDecoder * decoder, GstVideoDecoderClass * klass)
 
   decoder->srcpad = pad = gst_pad_new_from_template (pad_template, "src");
 
-  gst_pad_set_event_function (pad,
+  gst_pad_set_event_full_function (pad,
       GST_DEBUG_FUNCPTR (gst_video_decoder_src_event));
   gst_pad_set_query_function (pad,
       GST_DEBUG_FUNCPTR (gst_video_decoder_src_query));
@@ -1083,7 +1089,7 @@ gst_video_decoder_create_merged_tags_event (GstVideoDecoder * dec)
   return gst_event_new_tag (merged_tags);
 }
 
-static gboolean
+static GstFlowReturn
 gst_video_decoder_push_event (GstVideoDecoder * decoder, GstEvent * event)
 {
   switch (GST_EVENT_TYPE (event)) {
@@ -1116,7 +1122,7 @@ gst_video_decoder_push_event (GstVideoDecoder * decoder, GstEvent * event)
   GST_DEBUG_OBJECT (decoder, "pushing event %s",
       gst_event_type_get_name (GST_EVENT_TYPE (event)));
 
-  return gst_pad_push_event (decoder->srcpad, event);
+  return gst_pad_push_event_full (decoder->srcpad, event);
 }
 
 static GstFlowReturn
@@ -1334,12 +1340,18 @@ gst_video_decoder_handle_missing_data_default (GstVideoDecoder *
 }
 
 static gboolean
+wrap_sink_eventfunc (GstVideoDecoder * dec, GstEvent * event)
+{
+  return gst_video_decoder_sink_event_default (dec, event) == GST_FLOW_OK;
+}
+
+static GstFlowReturn
 gst_video_decoder_sink_event_default (GstVideoDecoder * decoder,
     GstEvent * event)
 {
   GstVideoDecoderClass *decoder_class;
   GstVideoDecoderPrivate *priv;
-  gboolean ret = FALSE;
+  GstFlowReturn ret = GST_FLOW_ERROR;
   gboolean forward_immediate = FALSE;
 
   decoder_class = GST_VIDEO_DECODER_GET_CLASS (decoder);
@@ -1349,11 +1361,8 @@ gst_video_decoder_sink_event_default (GstVideoDecoder * decoder,
   switch (GST_EVENT_TYPE (event)) {
     case GST_EVENT_STREAM_START:
     {
-      GstFlowReturn flow_ret = GST_FLOW_OK;
-
       GST_VIDEO_DECODER_STREAM_LOCK (decoder);
-      flow_ret = gst_video_decoder_drain_out (decoder, FALSE);
-      ret = (flow_ret == GST_FLOW_OK);
+      ret = gst_video_decoder_drain_out (decoder, FALSE);
 
       GST_DEBUG_OBJECT (decoder, "received STREAM_START. Clearing taglist");
       /* Flush upstream tags after a STREAM_START */
@@ -1376,19 +1385,18 @@ gst_video_decoder_sink_event_default (GstVideoDecoder * decoder,
       GstCaps *caps;
 
       gst_event_parse_caps (event, &caps);
-      ret = gst_video_decoder_setcaps (decoder, caps);
+      ret =
+          gst_video_decoder_setcaps (decoder,
+          caps) ? GST_FLOW_OK : GST_FLOW_NOT_NEGOTIATED;
       gst_event_unref (event);
       event = NULL;
       break;
     }
     case GST_EVENT_SEGMENT_DONE:
     {
-      GstFlowReturn flow_ret = GST_FLOW_OK;
-
       GST_VIDEO_DECODER_STREAM_LOCK (decoder);
-      flow_ret = gst_video_decoder_drain_out (decoder, FALSE);
+      ret = gst_video_decoder_drain_out (decoder, FALSE);
       GST_VIDEO_DECODER_STREAM_UNLOCK (decoder);
-      ret = (flow_ret == GST_FLOW_OK);
 
       /* Forward SEGMENT_DONE immediately. This is required
        * because no buffer or serialized event might come
@@ -1404,15 +1412,12 @@ gst_video_decoder_sink_event_default (GstVideoDecoder * decoder,
     }
     case GST_EVENT_EOS:
     {
-      GstFlowReturn flow_ret = GST_FLOW_OK;
-
       GST_VIDEO_DECODER_STREAM_LOCK (decoder);
-      flow_ret = gst_video_decoder_drain_out (decoder, TRUE);
+      ret = gst_video_decoder_drain_out (decoder, TRUE);
       GST_VIDEO_DECODER_STREAM_UNLOCK (decoder);
-      ret = (flow_ret == GST_FLOW_OK);
 
       /* Error out even if EOS was ok when we had input, but no output */
-      if (ret && priv->had_input_data && !priv->had_output_data) {
+      if (ret == GST_FLOW_OK && priv->had_input_data && !priv->had_output_data) {
         GST_ELEMENT_ERROR (decoder, STREAM, DECODE,
             ("No valid frames decoded before end of stream"),
             ("no valid frames found"));
@@ -1433,7 +1438,6 @@ gst_video_decoder_sink_event_default (GstVideoDecoder * decoder,
     {
       GstClockTime timestamp, duration;
       GstGapFlags gap_flags = 0;
-      GstFlowReturn flow_ret = GST_FLOW_OK;
       gboolean needs_reconfigure = FALSE;
       GList *events;
       GList *frame_events;
@@ -1450,8 +1454,7 @@ gst_video_decoder_sink_event_default (GstVideoDecoder * decoder,
           || decoder_class->handle_missing_data (decoder, timestamp,
               duration)) {
         if (decoder->input_segment.flags & GST_SEEK_FLAG_TRICKMODE_KEY_UNITS)
-          flow_ret = gst_video_decoder_drain_out (decoder, FALSE);
-        ret = (flow_ret == GST_FLOW_OK);
+          ret = gst_video_decoder_drain_out (decoder, FALSE);
 
         /* Ensure we have caps before forwarding the event */
         if (!decoder->priv->output_state) {
@@ -1500,15 +1503,13 @@ gst_video_decoder_sink_event_default (GstVideoDecoder * decoder,
     case GST_EVENT_CUSTOM_DOWNSTREAM:
     {
       gboolean in_still;
-      GstFlowReturn flow_ret = GST_FLOW_OK;
 
       if (gst_video_event_parse_still_frame (event, &in_still)) {
         if (in_still) {
           GST_DEBUG_OBJECT (decoder, "draining current data for still-frame");
           GST_VIDEO_DECODER_STREAM_LOCK (decoder);
-          flow_ret = gst_video_decoder_drain_out (decoder, FALSE);
+          ret = gst_video_decoder_drain_out (decoder, FALSE);
           GST_VIDEO_DECODER_STREAM_UNLOCK (decoder);
-          ret = (flow_ret == GST_FLOW_OK);
         }
         /* Forward STILL_FRAME immediately. Everything is drained after
          * the STILL_FRAME event and we can forward this event immediately
@@ -1637,7 +1638,7 @@ gst_video_decoder_sink_event_default (GstVideoDecoder * decoder,
         event = gst_video_decoder_create_merged_tags_event (decoder);
         GST_VIDEO_DECODER_STREAM_UNLOCK (decoder);
         if (!event)
-          ret = TRUE;
+          ret = GST_FLOW_OK;
       }
       break;
     }
@@ -1658,7 +1659,7 @@ gst_video_decoder_sink_event_default (GstVideoDecoder * decoder,
       decoder->priv->current_frame_events =
           g_list_prepend (decoder->priv->current_frame_events, event);
       GST_VIDEO_DECODER_STREAM_UNLOCK (decoder);
-      ret = TRUE;
+      ret = GST_FLOW_OK;
     }
   }
 
@@ -1669,17 +1670,16 @@ newseg_wrong_format:
     GST_DEBUG_OBJECT (decoder, "received non TIME newsegment");
     gst_event_unref (event);
     /* SWALLOW EVENT */
-    return TRUE;
+    return GST_FLOW_OK;
   }
 }
 
-static gboolean
+static GstFlowReturn
 gst_video_decoder_sink_event (GstPad * pad, GstObject * parent,
     GstEvent * event)
 {
   GstVideoDecoder *decoder;
   GstVideoDecoderClass *decoder_class;
-  gboolean ret = FALSE;
 
   decoder = GST_VIDEO_DECODER (parent);
   decoder_class = GST_VIDEO_DECODER_GET_CLASS (decoder);
@@ -1687,10 +1687,16 @@ gst_video_decoder_sink_event (GstPad * pad, GstObject * parent,
   GST_DEBUG_OBJECT (decoder, "received event %d, %s", GST_EVENT_TYPE (event),
       GST_EVENT_TYPE_NAME (event));
 
-  if (decoder_class->sink_event)
-    ret = decoder_class->sink_event (decoder, event);
+  if (decoder_class->sink_event == wrap_sink_eventfunc) {
+    g_assert (decoder_class->sink_event_full);
+    return decoder_class->sink_event_full (decoder, event);
+  }
 
-  return ret;
+  GST_FIXME_OBJECT (decoder, "Implement flow-aware sink_event handler");
+
+  if (decoder_class->sink_event (decoder, event))
+    return GST_FLOW_OK;
+  return GST_FLOW_ERROR;
 }
 
 /* perform upstream byte <-> time conversion (duration, seeking)
@@ -1708,7 +1714,7 @@ gst_video_decoder_do_byte (GstVideoDecoder * dec)
   return ret;
 }
 
-static gboolean
+static GstFlowReturn
 gst_video_decoder_do_seek (GstVideoDecoder * dec, GstEvent * event)
 {
   GstFormat format;
@@ -1725,23 +1731,23 @@ gst_video_decoder_do_seek (GstVideoDecoder * dec, GstEvent * event)
   /* we'll handle plain open-ended flushing seeks with the simple approach */
   if (rate != 1.0) {
     GST_DEBUG_OBJECT (dec, "unsupported seek: rate");
-    return FALSE;
+    return GST_FLOW_ERROR;
   }
 
   if (start_type != GST_SEEK_TYPE_SET) {
     GST_DEBUG_OBJECT (dec, "unsupported seek: start time");
-    return FALSE;
+    return GST_FLOW_ERROR;
   }
 
   if ((end_type != GST_SEEK_TYPE_SET && end_type != GST_SEEK_TYPE_NONE) ||
       (end_type == GST_SEEK_TYPE_SET && end_time != GST_CLOCK_TIME_NONE)) {
     GST_DEBUG_OBJECT (dec, "unsupported seek: end time");
-    return FALSE;
+    return GST_FLOW_ERROR;
   }
 
   if (!(flags & GST_SEEK_FLAG_FLUSH)) {
     GST_DEBUG_OBJECT (dec, "unsupported seek: not flushing");
-    return FALSE;
+    return GST_FLOW_ERROR;
   }
 
   memcpy (&seek_segment, &dec->output_segment, sizeof (seek_segment));
@@ -1752,7 +1758,7 @@ gst_video_decoder_do_seek (GstVideoDecoder * dec, GstEvent * event)
   if (!gst_pad_query_convert (dec->sinkpad, GST_FORMAT_TIME, start_time,
           GST_FORMAT_BYTES, &start)) {
     GST_DEBUG_OBJECT (dec, "conversion failed");
-    return FALSE;
+    return GST_FLOW_ERROR;
   }
 
   seqnum = gst_event_get_seqnum (event);
@@ -1763,15 +1769,21 @@ gst_video_decoder_do_seek (GstVideoDecoder * dec, GstEvent * event)
   GST_DEBUG_OBJECT (dec, "seeking to %" GST_TIME_FORMAT " at byte offset %"
       G_GINT64_FORMAT, GST_TIME_ARGS (start_time), start);
 
-  return gst_pad_push_event (dec->sinkpad, event);
+  return gst_pad_push_event_full (dec->sinkpad, event);
 }
 
 static gboolean
+wrap_src_eventfunc (GstVideoDecoder * decoder, GstEvent * event)
+{
+  return gst_video_decoder_src_event_default (decoder, event) == GST_FLOW_OK;
+}
+
+static GstFlowReturn
 gst_video_decoder_src_event_default (GstVideoDecoder * decoder,
     GstEvent * event)
 {
   GstVideoDecoderPrivate *priv;
-  gboolean res = FALSE;
+  GstFlowReturn res = GST_FLOW_ERROR;
 
   priv = decoder->priv;
 
@@ -1795,7 +1807,8 @@ gst_video_decoder_src_event_default (GstVideoDecoder * decoder,
       seqnum = gst_event_get_seqnum (event);
 
       /* upstream gets a chance first */
-      if ((res = gst_pad_push_event (decoder->sinkpad, event)))
+      res = gst_pad_push_event_full (decoder->sinkpad, event);
+      if (res == GST_FLOW_OK)
         break;
 
       /* if upstream fails for a time seek, maybe we can help if allowed */
@@ -1807,13 +1820,11 @@ gst_video_decoder_src_event_default (GstVideoDecoder * decoder,
 
       /* ... though a non-time seek can be aided as well */
       /* First bring the requested format to time */
-      if (!(res =
-              gst_pad_query_convert (decoder->srcpad, format, start,
-                  GST_FORMAT_TIME, &tstart)))
+      if (!gst_pad_query_convert (decoder->srcpad, format, start,
+              GST_FORMAT_TIME, &tstart))
         goto convert_error;
-      if (!(res =
-              gst_pad_query_convert (decoder->srcpad, format, stop,
-                  GST_FORMAT_TIME, &tstop)))
+      if (!gst_pad_query_convert (decoder->srcpad, format, stop,
+              GST_FORMAT_TIME, &tstop))
         goto convert_error;
 
       /* then seek with time on the peer */
@@ -1821,7 +1832,7 @@ gst_video_decoder_src_event_default (GstVideoDecoder * decoder,
           flags, start_type, tstart, stop_type, tstop);
       gst_event_set_seqnum (event, seqnum);
 
-      res = gst_pad_push_event (decoder->sinkpad, event);
+      res = gst_pad_push_event_full (decoder->sinkpad, event);
       break;
     }
     case GST_EVENT_QOS:
@@ -1850,27 +1861,25 @@ gst_video_decoder_src_event_default (GstVideoDecoder * decoder,
           "got QoS %" GST_TIME_FORMAT ", %" GST_STIME_FORMAT ", %g",
           GST_TIME_ARGS (timestamp), GST_STIME_ARGS (diff), proportion);
 
-      res = gst_pad_push_event (decoder->sinkpad, event);
+      res = gst_pad_push_event_full (decoder->sinkpad, event);
       break;
     }
     default:
-      res = gst_pad_push_event (decoder->sinkpad, event);
+      res = gst_pad_push_event_full (decoder->sinkpad, event);
       break;
   }
-done:
   return res;
 
 convert_error:
   GST_DEBUG_OBJECT (decoder, "could not convert format");
-  goto done;
+  return GST_FLOW_ERROR;
 }
 
-static gboolean
+static GstFlowReturn
 gst_video_decoder_src_event (GstPad * pad, GstObject * parent, GstEvent * event)
 {
   GstVideoDecoder *decoder;
   GstVideoDecoderClass *decoder_class;
-  gboolean ret = FALSE;
 
   decoder = GST_VIDEO_DECODER (parent);
   decoder_class = GST_VIDEO_DECODER_GET_CLASS (decoder);
@@ -1878,10 +1887,16 @@ gst_video_decoder_src_event (GstPad * pad, GstObject * parent, GstEvent * event)
   GST_DEBUG_OBJECT (decoder, "received event %d, %s", GST_EVENT_TYPE (event),
       GST_EVENT_TYPE_NAME (event));
 
-  if (decoder_class->src_event)
-    ret = decoder_class->src_event (decoder, event);
+  if (decoder_class->src_event == wrap_src_eventfunc) {
+    g_assert (decoder_class->src_event_full);
+    return decoder_class->src_event_full (decoder, event);
+  }
 
-  return ret;
+  GST_FIXME_OBJECT (decoder, "Implement flow-aware src_event handler");
+
+  if (decoder_class->src_event (decoder, event))
+    return GST_FLOW_OK;
+  return GST_FLOW_ERROR;
 }
 
 static gboolean

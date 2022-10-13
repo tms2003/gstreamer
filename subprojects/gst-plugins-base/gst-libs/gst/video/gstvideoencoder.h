@@ -295,8 +295,30 @@ struct _GstVideoEncoderClass
                                    GstVideoCodecFrame *frame,
                                    GstMeta * meta);
 
+  /**
+   * GstVideoEncoderClass::sink_event_full:
+   *
+   * Optional. Event handler on the sink pad. Subclasses should chain up to the
+   * parent implementation to invoke the default handler.
+   *
+   * Since: 1.22
+   */
+  gboolean      (*sink_event_full) (GstVideoEncoder *encoder,
+				    GstEvent *event);
+
+  /**
+   * GstVideoEncoderClass::src_event_full:
+   *
+   * Optional. Event handler on the src pad. Subclasses should chain up to the
+   * parent implementation to invoke the default handler.
+   *
+   * Since: 1.22
+   */
+  gboolean      (*src_event_full)  (GstVideoEncoder *encoder,
+				    GstEvent *event);
+
   /*< private >*/
-  gpointer       _gst_reserved[GST_PADDING_LARGE-4];
+  gpointer       _gst_reserved[GST_PADDING_LARGE-6];
 };
 
 GST_VIDEO_API
