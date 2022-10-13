@@ -108,7 +108,7 @@ static GstFlowReturn gst_rtp_base_depayload_chain (GstPad * pad,
     GstObject * parent, GstBuffer * in);
 static GstFlowReturn gst_rtp_base_depayload_chain_list (GstPad * pad,
     GstObject * parent, GstBufferList * list);
-static gboolean gst_rtp_base_depayload_handle_sink_event (GstPad * pad,
+static GstFlowReturn gst_rtp_base_depayload_handle_sink_event (GstPad * pad,
     GstObject * parent, GstEvent * event);
 
 static GstStateChangeReturn gst_rtp_base_depayload_change_state (GstElement *
@@ -116,7 +116,9 @@ static GstStateChangeReturn gst_rtp_base_depayload_change_state (GstElement *
 
 static gboolean gst_rtp_base_depayload_packet_lost (GstRTPBaseDepayload *
     filter, GstEvent * event);
-static gboolean gst_rtp_base_depayload_handle_event (GstRTPBaseDepayload *
+static gboolean wrap_handle_event (GstRTPBaseDepayload *
+    filter, GstEvent * event);
+static GstFlowReturn gst_rtp_base_depayload_handle_event (GstRTPBaseDepayload *
     filter, GstEvent * event);
 
 static GstElementClass *parent_class = NULL;
@@ -349,7 +351,8 @@ gst_rtp_base_depayload_class_init (GstRTPBaseDepayloadClass * klass)
   gstelement_class->change_state = gst_rtp_base_depayload_change_state;
 
   klass->packet_lost = gst_rtp_base_depayload_packet_lost;
-  klass->handle_event = gst_rtp_base_depayload_handle_event;
+  klass->handle_event = wrap_handle_event;
+  klass->handle_event_full = gst_rtp_base_depayload_handle_event;
 
   GST_DEBUG_CATEGORY_INIT (rtpbasedepayload_debug, "rtpbasedepayload", 0,
       "Base class for RTP Depayloaders");
@@ -375,7 +378,7 @@ gst_rtp_base_depayload_init (GstRTPBaseDepayload * filter,
   gst_pad_set_chain_function (filter->sinkpad, gst_rtp_base_depayload_chain);
   gst_pad_set_chain_list_function (filter->sinkpad,
       gst_rtp_base_depayload_chain_list);
-  gst_pad_set_event_function (filter->sinkpad,
+  gst_pad_set_event_full_function (filter->sinkpad,
       gst_rtp_base_depayload_handle_sink_event);
   gst_element_add_pad (GST_ELEMENT (filter), filter->sinkpad);
 
@@ -909,10 +912,16 @@ done:
 }
 
 static gboolean
+wrap_handle_event (GstRTPBaseDepayload * filter, GstEvent * event)
+{
+  return gst_rtp_base_depayload_handle_event (filter, event) == GST_FLOW_OK;
+}
+
+static GstFlowReturn
 gst_rtp_base_depayload_handle_event (GstRTPBaseDepayload * filter,
     GstEvent * event)
 {
-  gboolean res = TRUE;
+  GstFlowReturn res = GST_FLOW_OK;
   gboolean forward = TRUE;
 
   switch (GST_EVENT_TYPE (event)) {
@@ -931,7 +940,8 @@ gst_rtp_base_depayload_handle_event (GstRTPBaseDepayload * filter,
 
       gst_event_parse_caps (event, &caps);
 
-      res = gst_rtp_base_depayload_setcaps (filter, caps);
+      if (!gst_rtp_base_depayload_setcaps (filter, caps))
+        return GST_FLOW_NOT_NEGOTIATED;
       forward = FALSE;
       break;
     }
@@ -976,7 +986,8 @@ gst_rtp_base_depayload_handle_event (GstRTPBaseDepayload * filter,
          *  - ignore the packet lost.
          */
         if (bclass->packet_lost)
-          res = bclass->packet_lost (filter, event);
+          if (!bclass->packet_lost (filter, event))
+            res = GST_FLOW_ERROR;
         forward = FALSE;
       }
       break;
@@ -986,7 +997,7 @@ gst_rtp_base_depayload_handle_event (GstRTPBaseDepayload * filter,
   }
 
   if (forward)
-    res = gst_pad_push_event (filter->srcpad, event);
+    res = gst_pad_push_event_full (filter->srcpad, event);
   else
     gst_event_unref (event);
 
@@ -997,18 +1008,22 @@ static gboolean
 gst_rtp_base_depayload_handle_sink_event (GstPad * pad, GstObject * parent,
     GstEvent * event)
 {
-  gboolean res = FALSE;
   GstRTPBaseDepayload *filter;
   GstRTPBaseDepayloadClass *bclass;
 
   filter = GST_RTP_BASE_DEPAYLOAD (parent);
   bclass = GST_RTP_BASE_DEPAYLOAD_GET_CLASS (filter);
-  if (bclass->handle_event)
-    res = bclass->handle_event (filter, event);
-  else
-    gst_event_unref (event);
 
-  return res;
+  if (bclass->handle_event == wrap_handle_event) {
+    g_assert (bclass->handle_event_full);
+    return bclass->handle_event_full (filter, event);
+  }
+
+  GST_FIXME_OBJECT (filter, "Implement flow-aware handle_event handler");
+
+  if (bclass->handle_event (filter, event))
+    return GST_FLOW_OK;
+  return GST_FLOW_ERROR;
 }
 
 static GstEvent *

@@ -107,8 +107,18 @@ struct _GstRTPBaseDepayloadClass
 
   GstBuffer * (*process_rtp_packet) (GstRTPBaseDepayload *base, GstRTPBuffer * rtp_buffer);
 
+   /**
+   * GstRTPBaseDepayloadClass::handle_event_full:
+   *
+   * Optional. Custom event handling. Subclasses should chain up to the parent
+   * implementation to invoke the default handler.
+   *
+   * Since: 1.22
+   */
+   gboolean (*handle_event_full) (GstRTPBaseDepayload * filter, GstEvent * event);
+
   /*< private >*/
-  gpointer _gst_reserved[GST_PADDING - 1];
+  gpointer _gst_reserved[GST_PADDING - 2];
 };
 
 GST_RTP_API

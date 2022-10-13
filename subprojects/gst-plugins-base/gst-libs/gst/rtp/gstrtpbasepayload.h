@@ -142,8 +142,27 @@ struct _GstRTPBasePayloadClass
   gboolean      (*src_event)            (GstRTPBasePayload *payload, GstEvent * event);
   gboolean      (*query)                (GstRTPBasePayload *payload, GstPad *pad, GstQuery * query);
 
+  /**
+   * GstRTPBasePayloadClass::sink_event_full:
+   *
+   * Optional. Event handler on the sink pad. Subclasses should chain up to the
+   * parent implementation to invoke the default handler.
+   *
+   * Since: 1.22
+   */
+  gboolean      (*sink_event_full)           (GstRTPBasePayload *payload, GstEvent * event);
+
+  /**
+   * GstRTPBasePayloadClass::src_event_full:
+   *
+   * Optional. Event handler on the sink pad. Subclasses should chain up to the
+   * parent implementation to invoke the default handler.
+   *
+   * Since: 1.22
+   */
+  gboolean      (*src_event_full)            (GstRTPBasePayload *payload, GstEvent * event);
   /*< private >*/
-  gpointer _gst_reserved[GST_PADDING];
+  gpointer _gst_reserved[GST_PADDING - 2];
 };
 
 GST_RTP_API
