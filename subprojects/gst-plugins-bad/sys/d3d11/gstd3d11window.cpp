@@ -972,40 +972,6 @@ gst_d3d11_window_render (GstD3D11Window * window, GstBuffer * buffer)
       window->backbuffer);
 }
 
-GstFlowReturn
-gst_d3d11_window_render_on_shared_handle (GstD3D11Window * window,
-    GstBuffer * buffer, HANDLE shared_handle, guint texture_misc_flags,
-    guint64 acquire_key, guint64 release_key)
-{
-  GstD3D11WindowClass *klass;
-  GstFlowReturn ret = GST_FLOW_OK;
-  GstD3D11WindowSharedHandleData data = { nullptr, };
-
-  g_return_val_if_fail (GST_IS_D3D11_WINDOW (window), GST_FLOW_ERROR);
-
-  klass = GST_D3D11_WINDOW_GET_CLASS (window);
-
-  g_assert (klass->open_shared_handle != NULL);
-  g_assert (klass->release_shared_handle != NULL);
-
-  data.shared_handle = shared_handle;
-  data.texture_misc_flags = texture_misc_flags;
-  data.acquire_key = acquire_key;
-  data.release_key = release_key;
-
-  GstD3D11DeviceLockGuard (window->device);
-  if (!klass->open_shared_handle (window, &data)) {
-    GST_ERROR_OBJECT (window, "Couldn't open shared handle");
-    return GST_FLOW_OK;
-  }
-
-  ret = gst_d3d111_window_present (window, buffer, data.render_target);
-
-  klass->release_shared_handle (window, &data);
-
-  return ret;
-}
-
 gboolean
 gst_d3d11_window_unlock (GstD3D11Window * window)
 {

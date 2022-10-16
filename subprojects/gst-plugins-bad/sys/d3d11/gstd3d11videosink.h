@@ -18,46 +18,15 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#ifndef __GST_D3D11_VIDEO_SINK_H__
-#define __GST_D3D11_VIDEO_SINK_H__
+#pragma once
 
 #include <gst/gst.h>
 #include <gst/video/video.h>
-#include <gst/video/gstvideosink.h>
-#include <gst/video/videooverlay.h>
-#include <gst/video/navigation.h>
-#include <gst/d3d11/gstd3d11.h>
-#include "gstd3d11window.h"
 
 G_BEGIN_DECLS
 
-#define GST_TYPE_D3D11_VIDEO_SINK             (gst_d3d11_video_sink_get_type())
-#define GST_D3D11_VIDEO_SINK(obj)             (G_TYPE_CHECK_INSTANCE_CAST((obj),GST_TYPE_D3D11_VIDEO_SINK, GstD3D11VideoSink))
-#define GST_D3D11_VIDEO_SINK_CLASS(klass)     (G_TYPE_CHECK_CLASS_CAST((klass), GST_TYPE_D3D11_VIDEO_SINK, GstD3D11VideoSinkClass))
-#define GST_IS_D3D11_VIDEO_SINK(obj)          (G_TYPE_CHECK_INSTANCE_TYPE((obj),GST_TYPE_D3D11_VIDEO_SINK))
-#define GST_IS_D3D11_VIDEO_SINK_CLASS(klass)  (G_TYPE_CHECK_CLASS_TYPE((klass), GST_TYPE_D3D11_VIDEO_SINK))
-#define GST_D3D11_VIDEO_SINK_GET_CLASS(obj)   (G_TYPE_INSTANCE_GET_CLASS((obj), GST_TYPE_D3D11_VIDEO_SINK, GstD3D11VideoSinkClass))
-#define GST_D3D11_VIDEO_SINK_CAST(obj)        ((GstD3D11VideoSink *) obj)
-
-typedef struct _GstD3D11VideoSink GstD3D11VideoSink;
-typedef struct _GstD3D11VideoSinkClass GstD3D11VideoSinkClass;
-struct _GstD3D11VideoSinkClass
-{
-  GstVideoSinkClass parent_class;
-
-  /* signals */
-  void      (*begin_draw) (GstD3D11VideoSink * videosink);
-
-  /* actions */
-  gboolean  (*draw)       (GstD3D11VideoSink * videosink,
-                           gpointer shared_handle,
-                           guint texture_misc_flags,
-                           guint64 acquire_key,
-                           guint64 release_key);
-};
-
-GType gst_d3d11_video_sink_get_type (void);
+#define GST_TYPE_D3D11_VIDEO_SINK (gst_d3d11_video_sink_get_type())
+G_DECLARE_FINAL_TYPE (GstD3D11VideoSink, gst_d3d11_video_sink,
+    GST, D3D11_VIDEO_SINK, GstVideoSink);
 
 G_END_DECLS
-
-#endif /* __GST_D3D11_VIDEO_SINK_H__ */

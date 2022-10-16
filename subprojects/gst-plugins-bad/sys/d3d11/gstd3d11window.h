@@ -155,12 +155,6 @@ struct _GstD3D11WindowClass
 
   void          (*unprepare)              (GstD3D11Window * window);
 
-  gboolean      (*open_shared_handle)     (GstD3D11Window * window,
-                                           GstD3D11WindowSharedHandleData * data);
-
-  gboolean      (*release_shared_handle)  (GstD3D11Window * window,
-                                           GstD3D11WindowSharedHandleData * data);
-
   void          (*set_render_rectangle)   (GstD3D11Window * window,
                                            const GstVideoRectangle * rect);
 
@@ -191,13 +185,6 @@ gboolean      gst_d3d11_window_prepare              (GstD3D11Window * window,
 
 GstFlowReturn gst_d3d11_window_render               (GstD3D11Window * window,
                                                      GstBuffer * buffer);
-
-GstFlowReturn gst_d3d11_window_render_on_shared_handle (GstD3D11Window * window,
-                                                        GstBuffer * buffer,
-                                                        HANDLE shared_handle,
-                                                        guint texture_misc_flags,
-                                                        guint64 acquire_key,
-                                                        guint64 release_key);
 
 gboolean      gst_d3d11_window_unlock               (GstD3D11Window * window);
 
