@@ -303,10 +303,21 @@ exit_bool (Vp9BoolDecoder * bd)
   while (bits) {
     n = MIN (bits, 8);
     padding = gst_bit_reader_get_bits_uint32_unchecked (bd->bit_reader, n);
-    if (padding != 0 || (n < 8 && (padding & 0xe0) == 0xc0)) {
+
+    // 9.2.3: It is a requirement of bitstream conformance that padding is equal to 0.
+    if (n == 8 && padding != 0) {
       GST_ERROR
-          ("Invalid padding at end of frame. Total padding bits is %d and the wrong byte is: %x",
-          bd->bits_left, padding);
+          ("Invalid padding at end of frame. Padding should be zero was %d",
+          padding);
+      return GST_VP9_PARSER_BROKEN_DATA;
+    } else if (n < 8 && (padding & 0xe0) == 0xc0) {
+      // It is a requirement of bitstream conformance that enough padding bits
+      // are inserted to ensure that the final coded byte of a frame is not
+      // equal to a superframe marker. A byte b is equal to a superframe marker
+      // if and only if (b & 0xe0) is equal to 0xcO0, i.e. if the most
+      // significant 3 bits are equal to 0b110.
+      GST_ERROR
+          ("Invalid padding at end of frame. Last byte should not be a superframe marker");
       return GST_VP9_PARSER_BROKEN_DATA;
     }
     bits -= n;
