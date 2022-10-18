@@ -19,17 +19,17 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#ifndef __GST_FRAMERATE_TRACER_H__
-#define __GST_FRAMERATE_TRACER_H__
+#ifndef __GST_BUFFER_RATE_TRACER_H__
+#define __GST_BUFFER_RATE_TRACER_H__
 
 #include <gst/gst.h>
 #include <gst/gsttracer.h>
 
 G_BEGIN_DECLS
 
-#define GST_TYPE_FRAMERATE_TRACER (gst_framerate_tracer_get_type())
-G_DECLARE_FINAL_TYPE (GstFramerateTracer, gst_framerate_tracer, GST, FRAMERATE_TRACER, GstTracer)
+#define GST_TYPE_BUFFER_RATE_TRACER (gst_buffer_rate_tracer_get_type())
+G_DECLARE_FINAL_TYPE (GstBufferRateTracer, gst_buffer_rate_tracer, GST, BUFFER_RATE_TRACER, GstTracer)
 
 G_END_DECLS
 
-#endif /* __GST_FRAMERATE_TRACER_H__ */
+#endif /* __GST_BUFFER_RATE_TRACER_H__ */

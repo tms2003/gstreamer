@@ -30,13 +30,13 @@
 #include "gststats.h"
 #include "gstleaks.h"
 #include "gstfactories.h"
-#include "gstframerate.h"
+#include "gstbufferrate.h"
 
 static gboolean
 plugin_init (GstPlugin * plugin)
 {
-  if (!gst_tracer_register (plugin, "framerate",
-          gst_framerate_tracer_get_type ()))
+  if (!gst_tracer_register (plugin, "bufferrate",
+          gst_buffer_rate_tracer_get_type ()))
     return FALSE;
   if (!gst_tracer_register (plugin, "latency", gst_latency_tracer_get_type ()))
     return FALSE;

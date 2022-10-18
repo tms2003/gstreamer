@@ -1,7 +1,7 @@
 /* GStreamer
  * Copyright (C) 2022 Jimena Salas <jimena.salas@ridgerun.com>
  *
- * gstframerate.c: tracing module that logs processing framerate stats
+ * gstbufferrate.c: tracing module that logs processing buffer rate stats
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -19,14 +19,14 @@
  * Boston, MA 02110-1301, USA.
  */
 /**
- * SECTION: tracer-framerate
- * @short_description: shows the framerate on every src pad in the pipeline.
+ * SECTION: tracer-bufferrate
+ * @short_description: shows the buffer rate on every src pad in the pipeline.
  *
- * A tracing module that displays the amount of frames per second on every
+ * A tracing module that displays the amount of buffers per second on every
  * src pad of every element of the running pipeline.
  *
  * ```
- * GST_TRACERS="framerate" GST_DEBUG=GST_TRACER:7 ./...
+ * GST_TRACERS="bufferrate" GST_DEBUG=GST_TRACER:7 ./...
  * ```
  */
 
@@ -34,45 +34,45 @@
 #  include "config.h"
 #endif
 
-#include "gstframerate.h"
+#include "gstbufferrate.h"
 
-struct _GstFramerateTracer
+struct _GstBufferRateTracer
 {
   GstTracer parent;
 
-  GHashTable *frame_counters;
+  GHashTable *buffer_counters;
   guint callback_id;
   guint pipes_running;
 };
 
-static gboolean log_framerate (gpointer * data);
-static void add_frame_count_to_pad (GstFramerateTracer * self, GstPad * pad,
+static gboolean log_buffer_rate (gpointer * data);
+static void add_buffer_count_to_pad (GstBufferRateTracer * self, GstPad * pad,
     guint count);
-static void pad_push_buffer_pre (GstFramerateTracer * self, guint64 timestamp,
+static void pad_push_buffer_pre (GstBufferRateTracer * self, guint64 timestamp,
     GstPad * pad, GstBuffer * buffer);
-static void pad_push_list_pre (GstFramerateTracer * self,
+static void pad_push_list_pre (GstBufferRateTracer * self,
     GstClockTime timestamp, GstPad * pad, GstBufferList * list);
-static void pad_pull_range_pre (GstFramerateTracer * self,
+static void pad_pull_range_pre (GstBufferRateTracer * self,
     GstClockTime timestamp, GstPad * pad, guint64 offset, guint size);
-static void element_change_state_post (GstFramerateTracer * self,
+static void element_change_state_post (GstBufferRateTracer * self,
     guint64 timestamp, GstElement * element, GstStateChange transition,
     GstStateChangeReturn result);
 static GstElement *get_real_pad_parent (GstPad * pad);
-static void set_periodic_callback (GstFramerateTracer * self);
+static void set_periodic_callback (GstBufferRateTracer * self);
 
-static void remove_periodic_callback (GstFramerateTracer * self);
-static void reset_pad_counters (GstFramerateTracer * self);
-static void gst_framerate_tracer_finalize (GObject * obj);
+static void remove_periodic_callback (GstBufferRateTracer * self);
+static void reset_pad_counters (GstBufferRateTracer * self);
+static void gst_buffer_rate_tracer_finalize (GObject * obj);
 
-static GstTracerRecord *tr_framerate = NULL;
+static GstTracerRecord *tr_buffer_rate = NULL;
 
-GST_DEBUG_CATEGORY_STATIC (gst_framerate_debug);
-#define GST_CAT_DEFAULT gst_framerate_debug
+GST_DEBUG_CATEGORY_STATIC (gst_buffer_rate_debug);
+#define GST_CAT_DEFAULT gst_buffer_rate_debug
 
-#define gst_framerate_tracer_parent_class parent_class
-G_DEFINE_TYPE_WITH_CODE (GstFramerateTracer, gst_framerate_tracer,
-    GST_TYPE_TRACER, GST_DEBUG_CATEGORY_INIT (gst_framerate_debug, "framerate",
-        0, "framerate tracer"));
+#define gst_buffer_rate_tracer_parent_class parent_class
+G_DEFINE_TYPE_WITH_CODE (GstBufferRateTracer, gst_buffer_rate_tracer,
+    GST_TYPE_TRACER, GST_DEBUG_CATEGORY_INIT (gst_buffer_rate_debug,
+        "bufferrate", 0, "buffer rate tracer"));
 
 /* TODO(jsalas98): This function is already used by other tracers so it should
    be refactored to a common header or exposed as part of the pad API */
@@ -98,32 +98,32 @@ get_real_pad_parent (GstPad * pad)
 }
 
 static gboolean
-log_framerate (gpointer * data)
+log_buffer_rate (gpointer * data)
 {
-  GstFramerateTracer *self = NULL;
+  GstBufferRateTracer *self = NULL;
   gpointer key = NULL;
   gpointer value = NULL;
   GHashTableIter iter = { 0 };
 
   g_return_val_if_fail (data, FALSE);
 
-  self = GST_FRAMERATE_TRACER (data);
+  self = GST_BUFFER_RATE_TRACER (data);
 
   /* Lock the tracer to make sure no new pad is added while we are logging */
   GST_OBJECT_LOCK (self);
 
-  /* Using the iterator functions to go through the Hash table and print the
-     framerate of every element stored */
-  g_hash_table_iter_init (&iter, self->frame_counters);
+  /* Using the iterator functions to go through the hash table and print the
+     buffer rate of every element stored */
+  g_hash_table_iter_init (&iter, self->buffer_counters);
   while (g_hash_table_iter_next (&iter, &key, &value)) {
     GstPad *pad = GST_PAD_CAST (key);
     GstElement *element = get_real_pad_parent (pad);
     guint count = GPOINTER_TO_UINT (value);
 
-    gst_tracer_record_log (tr_framerate, GST_OBJECT_NAME (element),
+    gst_tracer_record_log (tr_buffer_rate, GST_OBJECT_NAME (element),
         GST_OBJECT_NAME (pad), count);
     /* Reset counter */
-    g_hash_table_insert (self->frame_counters, pad, NULL);
+    g_hash_table_insert (self->buffer_counters, pad, NULL);
   }
 
   GST_OBJECT_UNLOCK (self);
@@ -132,10 +132,10 @@ log_framerate (gpointer * data)
 }
 
 static void
-add_frame_count_to_pad (GstFramerateTracer * self, GstPad * pad, guint count)
+add_buffer_count_to_pad (GstBufferRateTracer * self, GstPad * pad, guint count)
 {
   gpointer ptr = NULL;
-  guint frames_so_far = 0;
+  guint buffers_so_far = 0;
 
   g_return_if_fail (self);
   g_return_if_fail (pad);
@@ -145,40 +145,40 @@ add_frame_count_to_pad (GstFramerateTracer * self, GstPad * pad, guint count)
      a pad) lookup will return NULL, which works in our favor because
      it is converted to 0
    */
-  ptr = g_hash_table_lookup (self->frame_counters, pad);
+  ptr = g_hash_table_lookup (self->buffer_counters, pad);
 
-  frames_so_far = GPOINTER_TO_UINT (ptr);
-  frames_so_far += count;
+  buffers_so_far = GPOINTER_TO_UINT (ptr);
+  buffers_so_far += count;
 
-  ptr = GUINT_TO_POINTER (frames_so_far);
+  ptr = GUINT_TO_POINTER (buffers_so_far);
 
-  g_hash_table_insert (self->frame_counters, pad, ptr);
+  g_hash_table_insert (self->buffer_counters, pad, ptr);
   GST_OBJECT_UNLOCK (self);
 }
 
 static void
-pad_push_buffer_pre (GstFramerateTracer * self, guint64 timestamp, GstPad * pad,
-    GstBuffer * buffer)
+pad_push_buffer_pre (GstBufferRateTracer * self, guint64 timestamp,
+    GstPad * pad, GstBuffer * buffer)
 {
-  add_frame_count_to_pad (self, pad, 1);
+  add_buffer_count_to_pad (self, pad, 1);
 }
 
 static void
-pad_push_list_pre (GstFramerateTracer * self, GstClockTime timestamp,
+pad_push_list_pre (GstBufferRateTracer * self, GstClockTime timestamp,
     GstPad * pad, GstBufferList * list)
 {
-  add_frame_count_to_pad (self, pad, gst_buffer_list_length (list));
+  add_buffer_count_to_pad (self, pad, gst_buffer_list_length (list));
 }
 
 static void
-pad_pull_range_pre (GstFramerateTracer * self, GstClockTime timestamp,
+pad_pull_range_pre (GstBufferRateTracer * self, GstClockTime timestamp,
     GstPad * pad, guint64 offset, guint size)
 {
-  add_frame_count_to_pad (self, pad, 1);
+  add_buffer_count_to_pad (self, pad, 1);
 }
 
 static void
-element_change_state_post (GstFramerateTracer * self, guint64 timestamp,
+element_change_state_post (GstBufferRateTracer * self, guint64 timestamp,
     GstElement * element, GstStateChange transition,
     GstStateChangeReturn result)
 {
@@ -204,9 +204,9 @@ element_change_state_post (GstFramerateTracer * self, guint64 timestamp,
 }
 
 static void
-set_periodic_callback (GstFramerateTracer * self)
+set_periodic_callback (GstBufferRateTracer * self)
 {
-  static const guint framerate_log_period = 1;
+  static const gfloat bufferrate_log_period = 1;
 
   g_return_if_fail (self);
 
@@ -217,8 +217,8 @@ set_periodic_callback (GstFramerateTracer * self)
         "First pipeline started running, starting profiling");
 
     self->callback_id =
-        g_timeout_add_seconds (framerate_log_period,
-        (GSourceFunc) log_framerate, (gpointer) self);
+        g_timeout_add_seconds (bufferrate_log_period,
+        (GSourceFunc) log_buffer_rate, (gpointer) self);
   }
 
   self->pipes_running++;
@@ -228,7 +228,7 @@ set_periodic_callback (GstFramerateTracer * self)
 }
 
 static void
-remove_periodic_callback (GstFramerateTracer * self)
+remove_periodic_callback (GstBufferRateTracer * self)
 {
   g_return_if_fail (self);
 
@@ -247,7 +247,7 @@ remove_periodic_callback (GstFramerateTracer * self)
 }
 
 static void
-reset_pad_counters (GstFramerateTracer * self)
+reset_pad_counters (GstBufferRateTracer * self)
 {
   gpointer key = NULL;
   gpointer value = NULL;
@@ -256,34 +256,34 @@ reset_pad_counters (GstFramerateTracer * self)
   g_return_if_fail (self);
 
   GST_OBJECT_LOCK (self);
-  g_hash_table_iter_init (&iter, self->frame_counters);
+  g_hash_table_iter_init (&iter, self->buffer_counters);
 
   while (g_hash_table_iter_next (&iter, &key, &value)) {
     GstPad *pad = GST_PAD_CAST (key);
-    g_hash_table_insert (self->frame_counters, pad, NULL);
+    g_hash_table_insert (self->buffer_counters, pad, NULL);
   }
   GST_OBJECT_UNLOCK (self);
 }
 
 static void
-gst_framerate_tracer_finalize (GObject * obj)
+gst_buffer_rate_tracer_finalize (GObject * obj)
 {
-  GstFramerateTracer *self = GST_FRAMERATE_TRACER (obj);
+  GstBufferRateTracer *self = GST_BUFFER_RATE_TRACER (obj);
 
-  g_hash_table_destroy (self->frame_counters);
+  g_hash_table_destroy (self->buffer_counters);
 
-  G_OBJECT_CLASS (gst_framerate_tracer_parent_class)->finalize (obj);
+  G_OBJECT_CLASS (gst_buffer_rate_tracer_parent_class)->finalize (obj);
 }
 
 static void
-gst_framerate_tracer_class_init (GstFramerateTracerClass * klass)
+gst_buffer_rate_tracer_class_init (GstBufferRateTracerClass * klass)
 {
   GObjectClass *gobject_class = G_OBJECT_CLASS (klass);
 
-  gobject_class->finalize = gst_framerate_tracer_finalize;
+  gobject_class->finalize = gst_buffer_rate_tracer_finalize;
 
   /* *INDENT-OFF* */
-  tr_framerate = gst_tracer_record_new ("framerate.class",
+  tr_buffer_rate = gst_tracer_record_new ("bufferrate.class",
       "element", GST_TYPE_STRUCTURE, gst_structure_new ("scope",
           "type", G_TYPE_GTYPE, G_TYPE_STRING,
           "related-to", GST_TYPE_TRACER_VALUE_SCOPE,
@@ -293,26 +293,26 @@ gst_framerate_tracer_class_init (GstFramerateTracerClass * klass)
           "type", G_TYPE_GTYPE, G_TYPE_STRING,
           "related-to", GST_TYPE_TRACER_VALUE_SCOPE, GST_TRACER_VALUE_SCOPE_PAD,
           NULL),
-      "fps", GST_TYPE_STRUCTURE, gst_structure_new ("value",
+      "buffers-per-second", GST_TYPE_STRUCTURE, gst_structure_new ("value",
           "type", G_TYPE_GTYPE, G_TYPE_UINT,
-          "description", G_TYPE_STRING, "Frames per second",
+          "description", G_TYPE_STRING, "Buffers per second",
           "flags", GST_TYPE_TRACER_VALUE_FLAGS,
           GST_TRACER_VALUE_FLAGS_AGGREGATED, "min", G_TYPE_UINT, 0, "max",
           G_TYPE_UINT, G_MAXUINT, NULL),
       NULL);
   /* *INDENT-ON* */
 
-  GST_OBJECT_FLAG_SET (tr_framerate, GST_OBJECT_FLAG_MAY_BE_LEAKED);
+  GST_OBJECT_FLAG_SET (tr_buffer_rate, GST_OBJECT_FLAG_MAY_BE_LEAKED);
 }
 
 static void
-gst_framerate_tracer_init (GstFramerateTracer * self)
+gst_buffer_rate_tracer_init (GstBufferRateTracer * self)
 {
   GstTracer *tracer = GST_TRACER (self);
 
   self->pipes_running = 0;
   self->callback_id = 0;
-  self->frame_counters = g_hash_table_new (NULL, NULL);
+  self->buffer_counters = g_hash_table_new (NULL, NULL);
 
   gst_tracing_register_hook (tracer, "pad-push-pre",
       G_CALLBACK (pad_push_buffer_pre));
