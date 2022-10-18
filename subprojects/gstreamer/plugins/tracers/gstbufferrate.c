@@ -74,6 +74,8 @@ G_DEFINE_TYPE_WITH_CODE (GstBufferRateTracer, gst_buffer_rate_tracer,
     GST_TYPE_TRACER, GST_DEBUG_CATEGORY_INIT (gst_buffer_rate_debug,
         "bufferrate", 0, "buffer rate tracer"));
 
+#define BUFFER_RATE_LOG_PERIOD_SECONDS 1
+
 /* TODO(jsalas98): This function is already used by other tracers so it should
    be refactored to a common header or exposed as part of the pad API */
 static GstElement *
@@ -119,9 +121,11 @@ log_buffer_rate (gpointer * data)
     GstPad *pad = GST_PAD_CAST (key);
     GstElement *element = get_real_pad_parent (pad);
     guint count = GPOINTER_TO_UINT (value);
+    gfloat buffers_per_second =
+        ((gfloat) count) / BUFFER_RATE_LOG_PERIOD_SECONDS;
 
     gst_tracer_record_log (tr_buffer_rate, GST_OBJECT_NAME (element),
-        GST_OBJECT_NAME (pad), count);
+        GST_OBJECT_NAME (pad), buffers_per_second);
     /* Reset counter */
     g_hash_table_insert (self->buffer_counters, pad, NULL);
   }
@@ -205,8 +209,6 @@ element_change_state_post (GstBufferRateTracer * self, guint64 timestamp,
 static void
 set_periodic_callback (GstBufferRateTracer * self)
 {
-  static const gfloat bufferrate_log_period = 1;
-
   g_return_if_fail (self);
 
   GST_OBJECT_LOCK (self);
@@ -218,7 +220,7 @@ set_periodic_callback (GstBufferRateTracer * self)
     reset_pad_counters (self);
 
     self->callback_id =
-        g_timeout_add_seconds (bufferrate_log_period,
+        g_timeout_add_seconds (BUFFER_RATE_LOG_PERIOD_SECONDS,
         (GSourceFunc) log_buffer_rate, (gpointer) self);
   }
 
@@ -293,11 +295,11 @@ gst_buffer_rate_tracer_class_init (GstBufferRateTracerClass * klass)
           "related-to", GST_TYPE_TRACER_VALUE_SCOPE, GST_TRACER_VALUE_SCOPE_PAD,
           NULL),
       "buffers-per-second", GST_TYPE_STRUCTURE, gst_structure_new ("value",
-          "type", G_TYPE_GTYPE, G_TYPE_UINT,
+          "type", G_TYPE_GTYPE, G_TYPE_FLOAT,
           "description", G_TYPE_STRING, "Buffers per second",
           "flags", GST_TYPE_TRACER_VALUE_FLAGS,
-          GST_TRACER_VALUE_FLAGS_AGGREGATED, "min", G_TYPE_UINT, 0, "max",
-          G_TYPE_UINT, G_MAXUINT, NULL),
+          GST_TRACER_VALUE_FLAGS_AGGREGATED, "min", G_TYPE_FLOAT, 0.0, "max",
+          G_TYPE_FLOAT, G_MAXFLOAT, NULL),
       NULL);
   /* *INDENT-ON* */
 
