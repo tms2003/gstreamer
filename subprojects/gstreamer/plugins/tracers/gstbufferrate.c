@@ -26,7 +26,8 @@
  * src pad of every element of the running pipeline.
  *
  * ```
- * GST_TRACERS="bufferrate" GST_DEBUG=GST_TRACER:7 ./...
+ * GST_DEBUG=GST_TRACER:7 GST_TRACERS="bufferrate" gst-launch-1.0 \
+ *   videotestsrc is-live=true ! queue ! fakesink
  * ```
  */
 
