@@ -1,7 +1,7 @@
 /* GStreamer
  * Copyright (C) 2022 Jimena Salas <jimena.salas@ridgerun.com>
  *
- * gstbufferrate.c: tracing module that logs processing buffer rate stats
+ * gstbufferrate.c: tracing module that logs buffer and bits per second stats
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -20,10 +20,11 @@
  */
 /**
  * SECTION: tracer-bufferrate
- * @short_description: shows the buffer rate on every src pad in the pipeline.
+ * @short_description: shows the buffer and bit rate on every src pad in the
+ * pipeline.
  *
- * A tracing module that displays the amount of buffers per second on every
- * src pad of every element of the running pipeline.
+ * A tracing module that displays the amount of buffers and bits per second on
+ * every src pad of every element of the running pipeline.
  *
  * ```
  * GST_DEBUG=GST_TRACER:7 GST_TRACERS="bufferrate" gst-launch-1.0 \
@@ -41,7 +42,7 @@ struct _GstBufferRateTracer
 {
   GstTracer parent;
 
-  /* Buffer counter for every pad. Protected by object lock */
+  /* GstBufferRateCounter struct for every pad. Protected by object lock */
   GHashTable *buffer_counters;
   /* Periodic callback ID */
   guint callback_id;
@@ -50,15 +51,24 @@ struct _GstBufferRateTracer
   guint pipes_running;
 };
 
+struct _GstBufferRateCounter
+{
+  guint64 buffer_count;
+  guint64 bit_count;
+};
+
+typedef struct _GstBufferRateCounter GstBufferRateCounter;
+
 static gboolean log_buffer_rate (gpointer * data);
-static void add_buffer_count_to_pad (GstBufferRateTracer * self, GstPad * pad,
-    guint count);
+static void add_count_to_pad (GstBufferRateTracer * self, GstPad * pad,
+    guint64 bit_count);
 static void pad_push_buffer_pre (GstBufferRateTracer * self, guint64 timestamp,
     GstPad * pad, GstBuffer * buffer);
 static void pad_push_list_pre (GstBufferRateTracer * self,
     GstClockTime timestamp, GstPad * pad, GstBufferList * list);
-static void pad_pull_range_pre (GstBufferRateTracer * self,
-    GstClockTime timestamp, GstPad * pad, guint64 offset, guint size);
+static void pad_pull_range_post (GstBufferRateTracer * self,
+    GstClockTime timestamp, GstPad * pad, GstBuffer * buffer,
+    GstFlowReturn ret);
 static void element_change_state_post (GstBufferRateTracer * self,
     guint64 timestamp, GstElement * element, GstStateChange transition,
     GstStateChangeReturn result);
@@ -125,14 +135,18 @@ log_buffer_rate (gpointer * data)
   while (g_hash_table_iter_next (&iter, &key, &value)) {
     GstPad *pad = GST_PAD_CAST (key);
     GstElement *element = get_real_pad_parent (pad);
-    guint count = GPOINTER_TO_UINT (value);
-    gfloat buffers_per_second =
-        ((gfloat) count) / BUFFER_RATE_LOG_PERIOD_SECONDS;
+    GstBufferRateCounter *pad_counter = (GstBufferRateCounter *) value;
+    gdouble buffers_per_second =
+        ((gdouble) pad_counter->buffer_count) / BUFFER_RATE_LOG_PERIOD_SECONDS;
+    gdouble bits_per_second =
+        ((gdouble) pad_counter->bit_count) / BUFFER_RATE_LOG_PERIOD_SECONDS;
 
     gst_tracer_record_log (tr_buffer_rate, GST_OBJECT_NAME (element),
-        GST_OBJECT_NAME (pad), buffers_per_second);
-    /* Reset counter */
-    g_hash_table_insert (self->buffer_counters, pad, NULL);
+        GST_OBJECT_NAME (pad), buffers_per_second, bits_per_second);
+
+    /* Reset counters */
+    pad_counter->buffer_count = 0;
+    pad_counter->bit_count = 0;
   }
 
   GST_OBJECT_UNLOCK (self);
@@ -141,27 +155,30 @@ log_buffer_rate (gpointer * data)
 }
 
 static void
-add_buffer_count_to_pad (GstBufferRateTracer * self, GstPad * pad, guint count)
+add_count_to_pad (GstBufferRateTracer * self, GstPad * pad, guint64 bit_count)
 {
-  gpointer ptr = NULL;
-  guint buffers_so_far = 0;
+  GstBufferRateCounter *pad_counter = NULL;
 
   g_return_if_fail (self);
   g_return_if_fail (pad);
 
   GST_OBJECT_LOCK (self);
-  /* If the key doesn't exist (the first time the hook gets called for
-     a pad) lookup will return NULL, which works in our favor because
-     it is converted to 0
-   */
-  ptr = g_hash_table_lookup (self->buffer_counters, pad);
 
-  buffers_so_far = GPOINTER_TO_UINT (ptr);
-  buffers_so_far += count;
+  pad_counter =
+      (GstBufferRateCounter *) g_hash_table_lookup (self->buffer_counters, pad);
 
-  ptr = GUINT_TO_POINTER (buffers_so_far);
+  if (NULL != pad_counter) {
+    pad_counter->buffer_count += 1;
+    pad_counter->bit_count += bit_count;
+  } else {
+    pad_counter = g_malloc (sizeof (GstBufferRateCounter));
+    pad_counter->buffer_count = 1;
+    pad_counter->bit_count = bit_count;
 
-  g_hash_table_insert (self->buffer_counters, pad, ptr);
+    g_hash_table_insert (self->buffer_counters, gst_object_ref (pad),
+        pad_counter);
+  }
+
   GST_OBJECT_UNLOCK (self);
 }
 
@@ -169,21 +186,31 @@ static void
 pad_push_buffer_pre (GstBufferRateTracer * self, guint64 timestamp,
     GstPad * pad, GstBuffer * buffer)
 {
-  add_buffer_count_to_pad (self, pad, 1);
+  static const guint bits_per_byte = 8;
+
+  guint64 bit_count = gst_buffer_get_size (buffer) * bits_per_byte;
+
+  add_count_to_pad (self, pad, bit_count);
 }
 
 static void
 pad_push_list_pre (GstBufferRateTracer * self, GstClockTime timestamp,
     GstPad * pad, GstBufferList * list)
 {
-  add_buffer_count_to_pad (self, pad, gst_buffer_list_length (list));
+  guint idx = 0;
+  GstBuffer *buffer = NULL;
+
+  for (idx = 0; idx < gst_buffer_list_length (list); ++idx) {
+    buffer = gst_buffer_list_get (list, idx);
+    pad_push_buffer_pre (self, timestamp, pad, buffer);
+  }
 }
 
 static void
-pad_pull_range_pre (GstBufferRateTracer * self, GstClockTime timestamp,
-    GstPad * pad, guint64 offset, guint size)
+pad_pull_range_post (GstBufferRateTracer * self, GstClockTime timestamp,
+    GstPad * pad, GstBuffer * buffer, GstFlowReturn ret)
 {
-  add_buffer_count_to_pad (self, pad, 1);
+  pad_push_buffer_pre (self, timestamp, pad, buffer);
 }
 
 static void
@@ -266,8 +293,9 @@ reset_pad_counters (GstBufferRateTracer * self)
   g_hash_table_iter_init (&iter, self->buffer_counters);
 
   while (g_hash_table_iter_next (&iter, &key, &value)) {
-    GstPad *pad = GST_PAD_CAST (key);
-    g_hash_table_insert (self->buffer_counters, pad, NULL);
+    GstBufferRateCounter *pad_counter = (GstBufferRateCounter *) value;
+    pad_counter->buffer_count = 0;
+    pad_counter->bit_count = 0;
   }
 }
 
@@ -300,11 +328,18 @@ gst_buffer_rate_tracer_class_init (GstBufferRateTracerClass * klass)
           "related-to", GST_TYPE_TRACER_VALUE_SCOPE, GST_TRACER_VALUE_SCOPE_PAD,
           NULL),
       "buffers-per-second", GST_TYPE_STRUCTURE, gst_structure_new ("value",
-          "type", G_TYPE_GTYPE, G_TYPE_FLOAT,
+          "type", G_TYPE_GTYPE, G_TYPE_DOUBLE,
           "description", G_TYPE_STRING, "Buffers per second",
           "flags", GST_TYPE_TRACER_VALUE_FLAGS,
-          GST_TRACER_VALUE_FLAGS_AGGREGATED, "min", G_TYPE_FLOAT, 0.0, "max",
-          G_TYPE_FLOAT, G_MAXFLOAT, NULL),
+          GST_TRACER_VALUE_FLAGS_AGGREGATED,
+          "min", G_TYPE_DOUBLE, 0.0,
+          "max", G_TYPE_DOUBLE, G_MAXDOUBLE, NULL),
+      "bits-per-second", GST_TYPE_STRUCTURE, gst_structure_new ("value",
+          "type", G_TYPE_GTYPE, G_TYPE_DOUBLE,
+          "description", G_TYPE_STRING, "Bits per second",
+          "min", G_TYPE_DOUBLE, 0.0,
+          "max", G_TYPE_DOUBLE, G_MAXDOUBLE,
+          NULL),
       NULL);
   /* *INDENT-ON* */
 
@@ -318,14 +353,15 @@ gst_buffer_rate_tracer_init (GstBufferRateTracer * self)
 
   self->pipes_running = 0;
   self->callback_id = 0;
-  self->buffer_counters = g_hash_table_new (NULL, NULL);
+  self->buffer_counters =
+      g_hash_table_new_full (NULL, NULL, gst_object_unref, g_free);
 
   gst_tracing_register_hook (tracer, "pad-push-pre",
       G_CALLBACK (pad_push_buffer_pre));
   gst_tracing_register_hook (tracer, "pad-push-list-pre",
       G_CALLBACK (pad_push_list_pre));
-  gst_tracing_register_hook (tracer, "pad-pull-range-pre",
-      G_CALLBACK (pad_pull_range_pre));
+  gst_tracing_register_hook (tracer, "pad-pull-range-post",
+      G_CALLBACK (pad_pull_range_post));
   gst_tracing_register_hook (tracer, "element-change-state-post",
       G_CALLBACK (element_change_state_post));
 }
