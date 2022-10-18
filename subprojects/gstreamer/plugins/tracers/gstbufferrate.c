@@ -194,7 +194,6 @@ element_change_state_post (GstBufferRateTracer * self, guint64 timestamp,
       && result == GST_STATE_CHANGE_SUCCESS) {
     GST_DEBUG_OBJECT (self, "Pipeline %s changed to playing",
         GST_OBJECT_NAME (element));
-    reset_pad_counters (self);
     set_periodic_callback (self);
   } else if (transition == GST_STATE_CHANGE_PLAYING_TO_PAUSED) {
     GST_DEBUG_OBJECT (self, "Pipeline %s changed to paused",
@@ -215,6 +214,8 @@ set_periodic_callback (GstBufferRateTracer * self)
   if (0 == self->pipes_running) {
     GST_INFO_OBJECT (self,
         "First pipeline started running, starting profiling");
+
+    reset_pad_counters (self);
 
     self->callback_id =
         g_timeout_add_seconds (bufferrate_log_period,
@@ -255,14 +256,12 @@ reset_pad_counters (GstBufferRateTracer * self)
 
   g_return_if_fail (self);
 
-  GST_OBJECT_LOCK (self);
   g_hash_table_iter_init (&iter, self->buffer_counters);
 
   while (g_hash_table_iter_next (&iter, &key, &value)) {
     GstPad *pad = GST_PAD_CAST (key);
     g_hash_table_insert (self->buffer_counters, pad, NULL);
   }
-  GST_OBJECT_UNLOCK (self);
 }
 
 static void
