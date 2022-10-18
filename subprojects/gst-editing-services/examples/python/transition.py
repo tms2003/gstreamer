@@ -19,6 +19,7 @@
 # License along with this library; if not, write to the
 # Free Software Foundation, Inc., 51 Franklin Street, Suite 500,
 # Boston, MA 02110-1335, USA.
+import argparse
 import os
 import gi
 
@@ -33,7 +34,7 @@ DEFAULT_TRANSITION_DURATION = 3 * Gst.SECOND
 
 
 class Transition:
-    def __init__(self):
+    def __init__(self, transition_id):
         timeline = GES.Timeline.new()
         video_caps = Gst.Caps.from_string("video/x-raw")
         video_track = GES.Track.new(GES.TrackType.VIDEO, video_caps)
@@ -46,8 +47,9 @@ class Transition:
         clip1.props.vpattern = GES.VideoTestPattern.RED
         clip1.props.priority = 1
 
+        transition_asset = GES.Asset.request(GES.TransitionClip, transition_id)
         transition_clip = GES.TransitionClip()
-        transition_clip.props.vtype = GES.VideoStandardTransitionType.FADE_IN
+        transition_clip.set_asset(transition_asset)
         transition_clip.props.start =\
             clip1.props.duration - DEFAULT_TRANSITION_DURATION
         transition_clip.props.duration = DEFAULT_TRANSITION_DURATION
@@ -87,5 +89,14 @@ class Transition:
 
 Gst.init(None)
 GES.init()
-transition = Transition()
+
+transition_choices = [asset.props.id
+                      for asset in GES.list_assets(GES.TransitionClip)]
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--transition', default=transition_choices[0],
+                    choices=transition_choices, required=False)
+args = parser.parse_args()
+
+transition = Transition(args.transition)
 transition.start()
