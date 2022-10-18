@@ -41,8 +41,12 @@ struct _GstBufferRateTracer
 {
   GstTracer parent;
 
+  /* Buffer counter for every pad. Protected by object lock */
   GHashTable *buffer_counters;
+  /* Periodic callback ID */
   guint callback_id;
+  /* Number of running pipelines. Log should be done only if one or more
+   * pipelines are running */
   guint pipes_running;
 };
 
