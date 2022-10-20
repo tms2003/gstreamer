@@ -1,5 +1,7 @@
 /* GStreamer
  * Copyright (C) 2022 Seungha Yang <seungha@centricular.com>
+ * Copyright (C) 2022 Fluendo S.A. <contact@fluendo.com>
+ *   Authors: Andoni Morales Alastruey <amorales@fluendo.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -252,6 +254,7 @@ typedef struct
   GstCaps *src_caps;
 
   gint64 adapter_luid;
+  guint instance_idx;
 
   GstAmfH264EncDeviceCaps dev_caps;
 } GstAmfH264EncClassData;
@@ -273,6 +276,7 @@ enum
   PROP_REF_FRAMES,
   PROP_AUD,
   PROP_CABAC,
+  PROP_INSTANCE_INDEX,
 };
 
 #define DEFAULT_USAGE AMF_VIDEO_ENCODER_USAGE_TRANSCODING
@@ -317,6 +321,7 @@ typedef struct _GstAmfH264EncClass
   GstAmfH264EncDeviceCaps dev_caps;
 
   gint64 adapter_luid;
+  guint instance_idx;
 } GstAmfH264EncClass;
 
 #define GST_AMF_H264_ENC(object) ((GstAmfH264Enc *) (object))
@@ -362,6 +367,11 @@ gst_amf_h264_enc_class_init (GstAmfH264EncClass * klass, gpointer data)
       g_param_spec_int64 ("adapter-luid", "Adapter LUID",
           "DXGI Adapter LUID (Locally Unique Identifier) of associated GPU",
           G_MININT64, G_MAXINT64, cdata->adapter_luid, param_flags));
+  g_object_class_install_property (object_class, PROP_INSTANCE_INDEX,
+      g_param_spec_uint ("instance-index", "Instance Index",
+          "Set the instance index", 0,
+          (guint) dev_caps->num_of_hw_instances, cdata->instance_idx,
+          G_PARAM_READABLE));
   g_object_class_install_property (object_class, PROP_USAGE,
       g_param_spec_enum ("usage", "Usage",
           "Target usage", GST_TYPE_AMF_H264_ENC_USAGE,
@@ -440,6 +450,7 @@ gst_amf_h264_enc_class_init (GstAmfH264EncClass * klass, gpointer data)
 
   klass->dev_caps = cdata->dev_caps;
   klass->adapter_luid = cdata->adapter_luid;
+  klass->instance_idx = cdata->instance_idx;
 
   gst_caps_unref (cdata->sink_caps);
   gst_caps_unref (cdata->src_caps);
@@ -644,6 +655,9 @@ gst_amf_h264_enc_get_property (GObject * object, guint prop_id,
       break;
     case PROP_CABAC:
       g_value_set_boolean (value, self->cabac);
+      break;
+    case PROP_INSTANCE_INDEX:
+      g_value_set_uint (value, klass->instance_idx);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -902,6 +916,14 @@ gst_amf_h264_enc_set_format (GstAmfEncoder * encoder,
           GST_AMF_RESULT_FORMAT, GST_AMF_RESULT_ARGS (result));
       goto error;
     }
+  }
+
+  result = comp->SetProperty (AMF_VIDEO_ENCODER_INSTANCE_INDEX,
+      (amf_int64) klass->instance_idx);
+  if (result != AMF_OK) {
+    GST_ERROR_OBJECT (self, "Failed to set instance index, result %"
+        GST_AMF_RESULT_FORMAT, GST_AMF_RESULT_ARGS (result));
+    goto error;
   }
 
   result = comp->Init (AMF_SURFACE_NV12, info->width, info->height);
@@ -1289,7 +1311,7 @@ gst_amf_h264_enc_check_reconfigure (GstAmfEncoder * encoder)
 
 static GstAmfH264EncClassData *
 gst_amf_h264_enc_create_class_data (GstD3D11Device * device,
-    AMFComponent * comp)
+    guint instance_idx, AMFComponent * comp)
 {
   AMF_RESULT result;
   GstAmfH264EncDeviceCaps dev_caps = { 0, };
@@ -1522,6 +1544,7 @@ gst_amf_h264_enc_create_class_data (GstD3D11Device * device,
   cdata->sink_caps = sink_caps;
   cdata->src_caps = gst_caps_from_string (src_caps_str.c_str ());
   cdata->dev_caps = dev_caps;
+  cdata->instance_idx = instance_idx;
   g_object_get (device, "adapter-luid", &cdata->adapter_luid, nullptr);
 
   GST_MINI_OBJECT_FLAG_SET (cdata->sink_caps,
@@ -1537,26 +1560,14 @@ gst_amf_h264_enc_create_class_data (GstD3D11Device * device,
 
 void
 gst_amf_h264_enc_register_d3d11 (GstPlugin * plugin, GstD3D11Device * device,
-    gpointer context, guint rank)
+    gpointer context, AMFComponent *comp, guint instance_idx, guint rank)
 {
   GstAmfH264EncClassData *cdata;
-  AMFContext *amf_context = (AMFContext *) context;
-  AMFFactory *factory = (AMFFactory *) gst_amf_get_factory ();
-  AMFComponentPtr comp;
-  AMF_RESULT result;
 
   GST_DEBUG_CATEGORY_INIT (gst_amf_h264_enc_debug, "amfh264enc", 0,
       "amfh264enc");
 
-  result = factory->CreateComponent (amf_context, AMFVideoEncoderVCE_AVC,
-      &comp);
-  if (result != AMF_OK) {
-    GST_WARNING_OBJECT (device, "Failed to create component, result %"
-        GST_AMF_RESULT_FORMAT, GST_AMF_RESULT_ARGS (result));
-    return;
-  }
-
-  cdata = gst_amf_h264_enc_create_class_data (device, comp.GetPtr ());
+  cdata = gst_amf_h264_enc_create_class_data (device, instance_idx, comp);
   if (!cdata)
     return;
 

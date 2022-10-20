@@ -1,5 +1,7 @@
 /* GStreamer
  * Copyright (C) 2022 Seungha Yang <seungha@centricular.com>
+ * Copyright (C) 2022 Fluendo S.A. <contact@fluendo.com>
+ *   Authors: Andoni Morales Alastruey <amorales@fluendo.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -32,6 +34,8 @@
 #include <wrl.h>
 #include <core/Factory.h>
 #include <versionhelpers.h>
+#include <components/VideoEncoderHEVC.h>
+#include <components/VideoEncoderVCE.h>
 #include "gstamfutils.h"
 #include "gstamfh264enc.h"
 #include "gstamfh265enc.h"
@@ -40,6 +44,71 @@
 using namespace Microsoft::WRL;
 using namespace amf;
 /* *INDENT-ON* */
+
+static void
+register_h264_encoders (GstPlugin *plugin, AMFContextPtr context,
+    AMFFactory *factory, GstD3D11Device *device)
+{
+  AMFComponentPtr comp;
+  AMF_RESULT result;
+  AMFCapsPtr amf_caps;
+  amf_int64 num_hw_instances = 0;
+  guint idx=0;
+
+  result = factory->CreateComponent (context, AMFVideoEncoderVCE_AVC, &comp);
+  if (result != AMF_OK) {
+    GST_WARNING_OBJECT (device, "Failed to create AVC component, result %"
+    GST_AMF_RESULT_FORMAT, GST_AMF_RESULT_ARGS (result));
+    return;
+  }
+
+  result = comp->GetCaps (&amf_caps);
+  if (result != AMF_OK) {
+    GST_WARNING_OBJECT (device, "Unable to get caps");
+    return;
+  }
+
+  result = amf_caps->GetProperty (AMF_VIDEO_ENCODER_CAP_NUM_OF_HW_INSTANCES,
+      &num_hw_instances);
+
+  for (idx=0; idx < num_hw_instances; idx++) {
+     gst_amf_h264_enc_register_d3d11 (plugin, device,
+          (gpointer) context.GetPtr (), comp, idx, GST_RANK_NONE);
+  }
+}
+
+static void
+register_h265_encoders (GstPlugin *plugin, AMFContextPtr context,
+    AMFFactory *factory, GstD3D11Device *device)
+{
+  AMFComponentPtr comp;
+  AMF_RESULT result;
+  AMFCapsPtr amf_caps;
+  amf_int64 num_hw_instances = 0;
+  guint idx=0;
+
+  result = factory->CreateComponent (context, AMFVideoEncoder_HEVC, &comp);
+  if (result != AMF_OK) {
+    GST_WARNING_OBJECT (device, "Failed to create component, result %"
+    GST_AMF_RESULT_FORMAT, GST_AMF_RESULT_ARGS (result));
+    return;
+  }
+
+  result = comp->GetCaps (&amf_caps);
+  if (result != AMF_OK) {
+    GST_WARNING_OBJECT (device, "Unable to get caps");
+    return;
+  }
+
+  result = amf_caps->GetProperty (AMF_VIDEO_ENCODER_HEVC_CAP_NUM_OF_HW_INSTANCES,
+      &num_hw_instances);
+
+  for (idx=0; idx < num_hw_instances; idx++) {
+     gst_amf_h265_enc_register_d3d11 (plugin, device,
+          (gpointer) context.GetPtr (), comp, idx, GST_RANK_NONE);
+  }
+}
+
 
 static gboolean
 plugin_init (GstPlugin * plugin)
@@ -104,10 +173,8 @@ plugin_init (GstPlugin * plugin)
       result = context->InitDX11 (device_handle, dx_ver);
 
     if (result == AMF_OK) {
-      gst_amf_h264_enc_register_d3d11 (plugin, device,
-          (gpointer) context.GetPtr (), GST_RANK_NONE);
-      gst_amf_h265_enc_register_d3d11 (plugin, device,
-          (gpointer) context.GetPtr (), GST_RANK_NONE);
+      register_h264_encoders (plugin, context, amf_factory, device);
+      register_h265_encoders (plugin, context, amf_factory, device);
     }
 
     gst_clear_object (&device);
