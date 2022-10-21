@@ -258,6 +258,27 @@ gst_play_sink_convert_bin_sink_event (GstPad * pad, GstObject * parent,
   return gst_pad_event_default (pad, parent, event);
 }
 
+static gboolean
+gst_play_sink_convert_bin_src_event (GstPad * pad, GstObject * parent,
+    GstEvent * event)
+{
+  GstPlaySinkConvertBin *self = GST_PLAY_SINK_CONVERT_BIN (parent);
+
+  switch (GST_EVENT_TYPE (event)) {
+    case GST_EVENT_RECONFIGURE:
+    {
+      /* in case of passthrough do not require pad reconfigure */
+      if (!self->raw)
+        return gst_pad_push_event (self->sinkpad, event);
+      break;
+    }
+    default:
+      break;
+  }
+
+  return gst_pad_event_default (pad, parent, event);
+}
+
 static void
 block_proxypad (GstPlaySinkConvertBin * self)
 {
@@ -684,6 +705,8 @@ gst_play_sink_convert_bin_init (GstPlaySinkConvertBin * self)
   self->srcpad = gst_ghost_pad_new_no_target_from_template ("src", templ);
   gst_pad_set_query_function (self->srcpad,
       GST_DEBUG_FUNCPTR (gst_play_sink_convert_bin_query));
+  gst_pad_set_event_function (self->srcpad,
+      GST_DEBUG_FUNCPTR (gst_play_sink_convert_bin_src_event));
   gst_element_add_pad (GST_ELEMENT_CAST (self), self->srcpad);
   gst_object_unref (templ);
 
