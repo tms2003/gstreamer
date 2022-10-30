@@ -1551,6 +1551,50 @@ GST_START_TEST (dash_mpdparser_contentProtection_no_value_no_encoding)
 GST_END_TEST;
 
 /*
+ * Test parsing Period AdaptationSet RepresentationBase
+ * EssentialProperty attributes
+ */
+GST_START_TEST (dash_mpdparser_get_essential_property)
+{
+  GstMPDPeriodNode *periodNode;
+  GstMPDAdaptationSetNode *adaptationSet;
+  GstMPDRepresentationBaseNode *representationBase;
+  GstMPDDescriptorTypeNode *essentialProperty;
+  GstMPDRepresentationNode *rep;
+
+  const gchar *xml =
+      "<?xml version=\"1.0\"?>"
+      "<MPD mediaPresentationDuration=\"PT634.566S\" minBufferTime=\"PT2.00S\" profiles=\"urn:hbbtv:dash:profile:isoff-live:2012,urn:mpeg:dash:profile:isoff-live:2011\" type=\"static\" xmlns=\"urn:mpeg:dash:schema:mpd:2011\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:schemaLocation=\"urn:mpeg:DASH:schema:MPD:2011 DASH-MPD.xsd\">"
+      " <Period>"
+      "  <AdaptationSet id=\"3\" mimeType=\"image/jpeg\" contentType=\"image\">"
+      "    <SegmentTemplate media=\"$RepresentationID$/tile_$Number$.jpg\" duration=\"100\" startNumber=\"1\"/>"
+      "    <Representation bandwidth=\"12288\" id=\"thumbnails_320x180\" width=\"3200\" height=\"180\">"
+      "      <EssentialProperty schemeIdUri=\"http://dashif.org/thumbnail_tile\" value=\"10x1\"/>"
+      "    </Representation>" "  </AdaptationSet>" " </Period>" "</MPD>";
+
+  gboolean ret;
+  GstMPDClient2 *mpdclient = gst_mpd_client2_new ();
+  gint i;
+
+  ret = gst_mpd_client2_parse (mpdclient, xml, (gint) strlen (xml));
+  assert_equals_int (ret, TRUE);
+
+  periodNode = (GstMPDPeriodNode *) mpdclient->mpd_root_node->Periods->data;
+  adaptationSet = (GstMPDAdaptationSetNode *) periodNode->AdaptationSets->data;
+  rep = (GstMPDRepresentationNode *) adaptationSet->Representations->data;
+
+  essentialProperty = (GstMPDDescriptorTypeNode *)
+      GST_MPD_REPRESENTATION_BASE_NODE (rep)->EssentialProperty->data;
+  assert_equals_string (essentialProperty->schemeIdUri,
+      "http://dashif.org/thumbnail_tile");
+  assert_equals_string (essentialProperty->value, "10x1");
+
+  gst_mpd_client2_free (mpdclient);
+}
+
+GST_END_TEST;
+
+/*
  * Test parsing Period AdaptationSet Accessibility attributes
  *
  */
@@ -6492,6 +6536,7 @@ dash_suite (void)
   tcase_add_test (tc_complexMPD, dash_mpdparser_segment_template);
   tcase_add_test (tc_complexMPD, dash_mpdparser_segment_timeline);
   tcase_add_test (tc_complexMPD, dash_mpdparser_multiple_inherited_segmentURL);
+  tcase_add_test (tc_complexMPD, dash_mpdparser_get_essential_property);
 
   /* tests checking the parsing of missing/incomplete attributes of xml */
   tcase_add_test (tc_negativeTests, dash_mpdparser_missing_xml);

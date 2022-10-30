@@ -598,6 +598,10 @@ gst_mpdparser_parse_representation_base (GstMPDRepresentationBaseNode *
               (xmlChar *) "ContentProtection") == 0) {
         gst_mpdparser_parse_content_protection_node
             (&representation_base->ContentProtection, cur_node);
+      } else if (xmlStrcmp (cur_node->name,
+              (xmlChar *) "EssentialProperty") == 0) {
+        gst_mpdparser_parse_descriptor_type
+            (&representation_base->EssentialProperty, cur_node);
       }
     }
   }
