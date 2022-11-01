@@ -155,11 +155,9 @@ gst_cc_extractor_iterate_internal_links (GstPad * pad, GstObject * parent)
 }
 
 static void
-gst_cc_extractor_reset (GstCCExtractor * filter)
+gst_cc_extractor_reset_captionpad (GstCCExtractor * filter)
 {
   filter->caption_type = GST_VIDEO_CAPTION_TYPE_UNKNOWN;
-  gst_flow_combiner_reset (filter->combiner);
-  gst_flow_combiner_add_pad (filter->combiner, filter->srcpad);
 
   if (filter->captionpad) {
     gst_flow_combiner_remove_pad (filter->combiner, filter->captionpad);
@@ -167,6 +165,15 @@ gst_cc_extractor_reset (GstCCExtractor * filter)
     gst_element_remove_pad ((GstElement *) filter, filter->captionpad);
     filter->captionpad = NULL;
   }
+}
+
+static void
+gst_cc_extractor_reset (GstCCExtractor * filter)
+{
+  gst_flow_combiner_reset (filter->combiner);
+  gst_flow_combiner_add_pad (filter->combiner, filter->srcpad);
+
+  gst_cc_extractor_reset_captionpad (filter);
 
   memset (&filter->video_info, 0, sizeof (filter->video_info));
 }
@@ -231,12 +238,32 @@ gst_cc_extractor_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
   switch (GST_EVENT_TYPE (event)) {
     case GST_EVENT_CAPS:{
       GstCaps *caps;
+      gint fps_n;
+      gint fps_d;
 
       gst_event_parse_caps (event, &caps);
+
+      fps_n = GST_VIDEO_INFO_FPS_N (&filter->video_info);
+      fps_d = GST_VIDEO_INFO_FPS_D (&filter->video_info);
+
       if (!gst_video_info_from_caps (&filter->video_info, caps)) {
         /* We require any kind of video caps here */
         gst_event_unref (event);
         return FALSE;
+      }
+
+      if (filter->captionpad
+          && ((fps_n != GST_VIDEO_INFO_FPS_N (&filter->video_info))
+              || (fps_d != GST_VIDEO_INFO_FPS_D (&filter->video_info)))) {
+        GST_DEBUG_OBJECT (filter,
+            "Caption framerate changed from %d/%d to %d/%d", fps_n, fps_d,
+            GST_VIDEO_INFO_FPS_N (&filter->video_info),
+            GST_VIDEO_INFO_FPS_D (&filter->video_info));
+
+        /* Remove the captionpad to allow the user to handle
+         * framerate changes with pad added/removed signals.
+         */
+        gst_cc_extractor_reset_captionpad (filter);
       }
       break;
     }
