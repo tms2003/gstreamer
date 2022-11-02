@@ -502,9 +502,9 @@ static void gst_audio_aggregator_get_property (GObject * object, guint prop_id,
     GValue * value, GParamSpec * pspec);
 static void gst_audio_aggregator_dispose (GObject * object);
 
-static gboolean gst_audio_aggregator_src_event (GstAggregator * agg,
+static GstFlowReturn gst_audio_aggregator_src_event (GstAggregator * agg,
     GstEvent * event);
-static gboolean gst_audio_aggregator_sink_event (GstAggregator * agg,
+static GstFlowReturn gst_audio_aggregator_sink_event (GstAggregator * agg,
     GstAggregatorPad * aggpad, GstEvent * event);
 static gboolean gst_audio_aggregator_src_query (GstAggregator * agg,
     GstQuery * query);
@@ -646,9 +646,9 @@ gst_audio_aggregator_class_init (GstAudioAggregatorClass * klass)
   gobject_class->get_property = gst_audio_aggregator_get_property;
   gobject_class->dispose = gst_audio_aggregator_dispose;
 
-  gstaggregator_class->src_event =
+  gstaggregator_class->src_event_full =
       GST_DEBUG_FUNCPTR (gst_audio_aggregator_src_event);
-  gstaggregator_class->sink_event =
+  gstaggregator_class->sink_event_full =
       GST_DEBUG_FUNCPTR (gst_audio_aggregator_sink_event);
   gstaggregator_class->src_query =
       GST_DEBUG_FUNCPTR (gst_audio_aggregator_src_query);
@@ -1267,10 +1267,10 @@ gst_audio_aggregator_negotiated_src_caps (GstAggregator * agg, GstCaps * caps)
 
 /* event handling */
 
-static gboolean
+static GstFlowReturn
 gst_audio_aggregator_src_event (GstAggregator * agg, GstEvent * event)
 {
-  gboolean result;
+  GstFlowReturn result;
 
   GstAudioAggregator *aagg = GST_AUDIO_AGGREGATOR (agg);
   GST_DEBUG_OBJECT (agg->srcpad, "Got %s event on src pad",
@@ -1280,11 +1280,11 @@ gst_audio_aggregator_src_event (GstAggregator * agg, GstEvent * event)
     case GST_EVENT_QOS:
       /* QoS might be tricky */
       gst_event_unref (event);
-      return FALSE;
+      return GST_FLOW_ERROR;
     case GST_EVENT_NAVIGATION:
       /* navigation is rather pointless. */
       gst_event_unref (event);
-      return FALSE;
+      return GST_FLOW_ERROR;
       break;
     case GST_EVENT_SEEK:
     {
@@ -1301,13 +1301,13 @@ gst_audio_aggregator_src_event (GstAggregator * agg, GstEvent * event)
       /* Check the seeking parameters before linking up */
       if ((start_type != GST_SEEK_TYPE_NONE)
           && (start_type != GST_SEEK_TYPE_SET)) {
-        result = FALSE;
+        result = GST_FLOW_ERROR;
         GST_DEBUG_OBJECT (aagg,
             "seeking failed, unhandled seek type for start: %d", start_type);
         goto done;
       }
       if ((stop_type != GST_SEEK_TYPE_NONE) && (stop_type != GST_SEEK_TYPE_SET)) {
-        result = FALSE;
+        result = GST_FLOW_ERROR;
         GST_DEBUG_OBJECT (aagg,
             "seeking failed, unhandled seek type for end: %d", stop_type);
         goto done;
@@ -1317,7 +1317,7 @@ gst_audio_aggregator_src_event (GstAggregator * agg, GstEvent * event)
       dest_format = GST_AGGREGATOR_PAD (agg->srcpad)->segment.format;
       GST_OBJECT_UNLOCK (agg);
       if (seek_format != dest_format) {
-        result = FALSE;
+        result = GST_FLOW_ERROR;
         GST_DEBUG_OBJECT (aagg,
             "seeking failed, unhandled seek format: %s",
             gst_format_get_name (seek_format));
@@ -1330,20 +1330,20 @@ gst_audio_aggregator_src_event (GstAggregator * agg, GstEvent * event)
   }
 
   return
-      GST_AGGREGATOR_CLASS (gst_audio_aggregator_parent_class)->src_event (agg,
-      event);
+      GST_AGGREGATOR_CLASS (gst_audio_aggregator_parent_class)->src_event_full
+      (agg, event);
 
 done:
   return result;
 }
 
 
-static gboolean
+static GstFlowReturn
 gst_audio_aggregator_sink_event (GstAggregator * agg,
     GstAggregatorPad * aggpad, GstEvent * event)
 {
   GstAudioAggregatorPad *aaggpad = GST_AUDIO_AGGREGATOR_PAD (aggpad);
-  gboolean res = TRUE;
+  GstFlowReturn res = GST_FLOW_OK;
 
   GST_DEBUG_OBJECT (aggpad, "Got %s event on sink pad",
       GST_EVENT_TYPE_NAME (event));
@@ -1360,7 +1360,7 @@ gst_audio_aggregator_sink_event (GstAggregator * agg,
             gst_format_get_name (segment->format));
         gst_event_unref (event);
         event = NULL;
-        res = FALSE;
+        res = GST_FLOW_ERROR;
         break;
       }
 
@@ -1369,12 +1369,12 @@ gst_audio_aggregator_sink_event (GstAggregator * agg,
         GST_ERROR_OBJECT (aggpad,
             "Got segment event with wrong rate %lf, expected %lf",
             segment->rate, GST_AGGREGATOR_PAD (agg->srcpad)->segment.rate);
-        res = FALSE;
+        res = GST_FLOW_ERROR;
         gst_event_unref (event);
         event = NULL;
       } else if (segment->rate < 0.0) {
         GST_ERROR_OBJECT (aggpad, "Negative rates not supported yet");
-        res = FALSE;
+        res = GST_FLOW_ERROR;
         gst_event_unref (event);
         event = NULL;
       } else {
@@ -1395,7 +1395,8 @@ gst_audio_aggregator_sink_event (GstAggregator * agg,
 
       gst_event_parse_caps (event, &caps);
       GST_INFO_OBJECT (aggpad, "Got caps %" GST_PTR_FORMAT, caps);
-      res = gst_audio_aggregator_sink_setcaps (aaggpad, agg, caps);
+      if (!gst_audio_aggregator_sink_setcaps (aaggpad, agg, caps))
+        res = GST_FLOW_NOT_NEGOTIATED;
       gst_event_unref (event);
       event = NULL;
       break;
@@ -1404,7 +1405,7 @@ gst_audio_aggregator_sink_event (GstAggregator * agg,
       break;
   }
 
-  if (!res) {
+  if (res != GST_FLOW_OK) {
     if (event)
       gst_event_unref (event);
     return res;
@@ -1412,8 +1413,9 @@ gst_audio_aggregator_sink_event (GstAggregator * agg,
 
   if (event != NULL)
     return
-        GST_AGGREGATOR_CLASS (gst_audio_aggregator_parent_class)->sink_event
-        (agg, aggpad, event);
+        GST_AGGREGATOR_CLASS
+        (gst_audio_aggregator_parent_class)->sink_event_full (agg, aggpad,
+        event);
 
   return res;
 }

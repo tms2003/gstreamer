@@ -2162,11 +2162,11 @@ _store_seek_event_data (GstValidatePadMonitor * pad_monitor, GstEvent * event)
   return data;
 }
 
-static gboolean
+static GstFlowReturn
 gst_validate_pad_monitor_src_event_check (GstValidatePadMonitor * pad_monitor,
     GstObject * parent, GstEvent * event, GstPadEventFunction handler)
 {
-  gboolean ret = TRUE;
+  GstFlowReturn ret = GST_FLOW_OK;
   GstPad *pad =
       GST_PAD (gst_validate_monitor_get_target (GST_VALIDATE_MONITOR
           (pad_monitor)));
@@ -2182,11 +2182,16 @@ gst_validate_pad_monitor_src_event_check (GstValidatePadMonitor * pad_monitor,
     if (GST_EVENT_TYPE (event) == GST_EVENT_SEEK)
       seekdata = _store_seek_event_data (pad_monitor, event);
     GST_VALIDATE_MONITOR_UNLOCK (pad_monitor);
-    ret = pad_monitor->event_func (pad, parent, event);
+    if (pad_monitor->event_full_func)
+      ret = pad_monitor->event_full_func (pad, parent, event);
+    else if (pad_monitor->event_func (pad, parent, event))
+      ret = GST_FLOW_OK;
+    else
+      ret = GST_FLOW_ERROR;
 
     GST_VALIDATE_MONITOR_LOCK (pad_monitor);
 
-    if (seekdata && !ret) {
+    if (seekdata && ret != GST_FLOW_OK) {
       /* Remove failed seek from list */
       GST_LOG_OBJECT (pad, "Failed seek, removing stored seek data");
       pad_monitor->seeks = g_list_remove (pad_monitor->seeks, seekdata);
@@ -2427,6 +2432,20 @@ gst_validate_pad_monitor_src_event_func (GstPad * pad, GstObject * parent,
 {
   GstValidatePadMonitor *pad_monitor = _GET_PAD_MONITOR (pad);
   gboolean ret;
+
+  GST_VALIDATE_MONITOR_LOCK (pad_monitor);
+  ret = gst_validate_pad_monitor_src_event_check (pad_monitor, parent, event,
+      pad_monitor->event_func) == GST_FLOW_OK;
+  GST_VALIDATE_MONITOR_UNLOCK (pad_monitor);
+  return ret;
+}
+
+static GstFlowReturn
+gst_validate_pad_monitor_src_event_full_func (GstPad * pad, GstObject * parent,
+    GstEvent * event)
+{
+  GstValidatePadMonitor *pad_monitor = _GET_PAD_MONITOR (pad);
+  GstFlowReturn ret;
 
   GST_VALIDATE_MONITOR_LOCK (pad_monitor);
   ret = gst_validate_pad_monitor_src_event_check (pad_monitor, parent, event,
@@ -3012,7 +3031,11 @@ gst_validate_pad_monitor_do_setup (GstValidateMonitor * monitor)
       gst_pad_set_event_function (pad,
           gst_validate_pad_monitor_sink_event_func);
   } else {
-    gst_pad_set_event_function (pad, gst_validate_pad_monitor_src_event_func);
+    if (pad_monitor->event_full_func)
+      gst_pad_set_event_full_function (pad,
+          gst_validate_pad_monitor_src_event_full_func);
+    else
+      gst_pad_set_event_function (pad, gst_validate_pad_monitor_src_event_func);
 
     /* add buffer/event probes */
     pad_monitor->pad_probe_id =

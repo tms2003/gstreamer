@@ -1744,7 +1744,7 @@ activate_failed:
   }
 }
 
-static gboolean
+static GstFlowReturn
 gst_x_image_sink_event (GstBaseSink * sink, GstEvent * event)
 {
   GstXImageSink *ximagesink = GST_X_IMAGE_SINK (sink);
@@ -1769,7 +1769,7 @@ gst_x_image_sink_event (GstBaseSink * sink, GstEvent * event)
     default:
       break;
   }
-  return GST_BASE_SINK_CLASS (parent_class)->event (sink, event);
+  return GST_BASE_SINK_CLASS (parent_class)->event_full (sink, event);
 }
 
 static gboolean
@@ -2304,7 +2304,7 @@ gst_x_image_sink_class_init (GstXImageSinkClass * klass)
   gstbasesink_class->get_times = GST_DEBUG_FUNCPTR (gst_x_image_sink_get_times);
   gstbasesink_class->propose_allocation =
       GST_DEBUG_FUNCPTR (gst_x_image_sink_propose_allocation);
-  gstbasesink_class->event = GST_DEBUG_FUNCPTR (gst_x_image_sink_event);
+  gstbasesink_class->event_full = GST_DEBUG_FUNCPTR (gst_x_image_sink_event);
 
   videosink_class->show_frame = GST_DEBUG_FUNCPTR (gst_x_image_sink_show_frame);
 }

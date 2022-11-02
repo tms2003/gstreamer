@@ -187,12 +187,12 @@ static GstFlowReturn gst_download_buffer_chain (GstPad * pad,
     GstObject * parent, GstBuffer * buffer);
 static void gst_download_buffer_loop (GstPad * pad);
 
-static gboolean gst_download_buffer_handle_sink_event (GstPad * pad,
+static GstFlowReturn gst_download_buffer_handle_sink_event (GstPad * pad,
     GstObject * parent, GstEvent * event);
 static gboolean gst_download_buffer_handle_sink_query (GstPad * pad,
     GstObject * parent, GstQuery * query);
 
-static gboolean gst_download_buffer_handle_src_event (GstPad * pad,
+static GstFlowReturn gst_download_buffer_handle_src_event (GstPad * pad,
     GstObject * parent, GstEvent * event);
 static gboolean gst_download_buffer_handle_src_query (GstPad * pad,
     GstObject * parent, GstQuery * query);
@@ -293,7 +293,7 @@ gst_download_buffer_init (GstDownloadBuffer * dlbuf)
       GST_DEBUG_FUNCPTR (gst_download_buffer_chain));
   gst_pad_set_activatemode_function (dlbuf->sinkpad,
       GST_DEBUG_FUNCPTR (gst_download_buffer_sink_activate_mode));
-  gst_pad_set_event_function (dlbuf->sinkpad,
+  gst_pad_set_event_full_function (dlbuf->sinkpad,
       GST_DEBUG_FUNCPTR (gst_download_buffer_handle_sink_event));
   gst_pad_set_query_function (dlbuf->sinkpad,
       GST_DEBUG_FUNCPTR (gst_download_buffer_handle_sink_query));
@@ -306,7 +306,7 @@ gst_download_buffer_init (GstDownloadBuffer * dlbuf)
       GST_DEBUG_FUNCPTR (gst_download_buffer_src_activate_mode));
   gst_pad_set_getrange_function (dlbuf->srcpad,
       GST_DEBUG_FUNCPTR (gst_download_buffer_get_range));
-  gst_pad_set_event_function (dlbuf->srcpad,
+  gst_pad_set_event_full_function (dlbuf->srcpad,
       GST_DEBUG_FUNCPTR (gst_download_buffer_handle_src_event));
   gst_pad_set_query_function (dlbuf->srcpad,
       GST_DEBUG_FUNCPTR (gst_download_buffer_handle_src_query));
@@ -998,11 +998,11 @@ gst_download_buffer_locked_flush (GstDownloadBuffer * dlbuf, gboolean full,
   gst_event_replace (&dlbuf->segment_event, NULL);
 }
 
-static gboolean
+static GstFlowReturn
 gst_download_buffer_handle_sink_event (GstPad * pad, GstObject * parent,
     GstEvent * event)
 {
-  gboolean ret = TRUE;
+  GstFlowReturn ret = GST_FLOW_OK;
   GstDownloadBuffer *dlbuf;
 
   dlbuf = GST_DOWNLOAD_BUFFER (parent);
@@ -1013,7 +1013,7 @@ gst_download_buffer_handle_sink_event (GstPad * pad, GstObject * parent,
       GST_LOG_OBJECT (dlbuf, "received flush start event");
       if (GST_PAD_MODE (dlbuf->srcpad) == GST_PAD_MODE_PUSH) {
         /* forward event */
-        ret = gst_pad_push_event (dlbuf->srcpad, event);
+        ret = gst_pad_push_event_full (dlbuf->srcpad, event);
 
         /* now unblock the chain function */
         GST_DOWNLOAD_BUFFER_MUTEX_LOCK (dlbuf);
@@ -1043,7 +1043,7 @@ gst_download_buffer_handle_sink_event (GstPad * pad, GstObject * parent,
 
       if (GST_PAD_MODE (dlbuf->srcpad) == GST_PAD_MODE_PUSH) {
         /* forward event */
-        ret = gst_pad_push_event (dlbuf->srcpad, event);
+        ret = gst_pad_push_event_full (dlbuf->srcpad, event);
 
         GST_DOWNLOAD_BUFFER_MUTEX_LOCK (dlbuf);
         gst_download_buffer_locked_flush (dlbuf, FALSE, TRUE);
@@ -1104,7 +1104,7 @@ gst_download_buffer_handle_sink_event (GstPad * pad, GstObject * parent,
           gst_element_post_message (GST_ELEMENT_CAST (dlbuf), msg);
       } else {
         /* non-serialized events are passed upstream. */
-        ret = gst_pad_push_event (dlbuf->srcpad, event);
+        ret = gst_pad_push_event_full (dlbuf->srcpad, event);
       }
       break;
   }
@@ -1116,7 +1116,7 @@ out_flushing:
     GST_DEBUG_OBJECT (dlbuf, "refusing event, we are flushing");
     GST_DOWNLOAD_BUFFER_MUTEX_UNLOCK (dlbuf);
     gst_event_unref (event);
-    return FALSE;
+    return GST_FLOW_FLUSHING;
   }
 }
 
@@ -1377,11 +1377,11 @@ out_flushing:
   }
 }
 
-static gboolean
+static GstFlowReturn
 gst_download_buffer_handle_src_event (GstPad * pad, GstObject * parent,
     GstEvent * event)
 {
-  gboolean res = TRUE;
+  gboolean res = GST_FLOW_OK;
   GstDownloadBuffer *dlbuf = GST_DOWNLOAD_BUFFER (parent);
 
 #ifndef GST_DISABLE_GST_DEBUG
@@ -1399,7 +1399,7 @@ gst_download_buffer_handle_src_event (GstPad * pad, GstObject * parent,
       GST_DOWNLOAD_BUFFER_MUTEX_UNLOCK (dlbuf);
 
       /* when using a temp file, we eat the event */
-      res = TRUE;
+      res = GST_FLOW_OK;
       gst_event_unref (event);
       break;
     case GST_EVENT_FLUSH_STOP:
@@ -1409,7 +1409,7 @@ gst_download_buffer_handle_src_event (GstPad * pad, GstObject * parent,
       GST_DOWNLOAD_BUFFER_MUTEX_UNLOCK (dlbuf);
 
       /* when using a temp file, we eat the event */
-      res = TRUE;
+      res = GST_FLOW_OK;
       gst_event_unref (event);
       break;
     case GST_EVENT_RECONFIGURE:
@@ -1425,10 +1425,10 @@ gst_download_buffer_handle_src_event (GstPad * pad, GstObject * parent,
       }
       GST_DOWNLOAD_BUFFER_MUTEX_UNLOCK (dlbuf);
 
-      res = gst_pad_push_event (dlbuf->sinkpad, event);
+      res = gst_pad_push_event_full (dlbuf->sinkpad, event);
       break;
     default:
-      res = gst_pad_push_event (dlbuf->sinkpad, event);
+      res = gst_pad_push_event_full (dlbuf->sinkpad, event);
       break;
   }
 

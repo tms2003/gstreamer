@@ -103,7 +103,7 @@ GST_STATIC_PAD_TEMPLATE ("sink",
 static void gst_ogg_avi_parse_finalize (GObject * object);
 static GstStateChangeReturn gst_ogg_avi_parse_change_state (GstElement *
     element, GstStateChange transition);
-static gboolean gst_ogg_avi_parse_event (GstPad * pad, GstObject * parent,
+static GstFlowReturn gst_ogg_avi_parse_event (GstPad * pad, GstObject * parent,
     GstEvent * event);
 static GstFlowReturn gst_ogg_avi_parse_chain (GstPad * pad,
     GstObject * parent, GstBuffer * buffer);
@@ -139,7 +139,7 @@ gst_ogg_avi_parse_init (GstOggAviParse * ogg)
   ogg->sinkpad =
       gst_pad_new_from_static_template (&ogg_avi_parse_sink_template_factory,
       "sink");
-  gst_pad_set_event_function (ogg->sinkpad, gst_ogg_avi_parse_event);
+  gst_pad_set_event_full_function (ogg->sinkpad, gst_ogg_avi_parse_event);
   gst_pad_set_chain_function (ogg->sinkpad, gst_ogg_avi_parse_chain);
   gst_element_add_pad (GST_ELEMENT (ogg), ogg->sinkpad);
 
@@ -264,11 +264,11 @@ buffer_too_small:
   }
 }
 
-static gboolean
+static GstFlowReturn
 gst_ogg_avi_parse_event (GstPad * pad, GstObject * parent, GstEvent * event)
 {
   GstOggAviParse *ogg;
-  gboolean ret;
+  GstFlowReturn ret;
 
   ogg = GST_OGG_AVI_PARSE (parent);
 
@@ -278,21 +278,23 @@ gst_ogg_avi_parse_event (GstPad * pad, GstObject * parent, GstEvent * event)
       GstCaps *caps;
 
       gst_event_parse_caps (event, &caps);
-      ret = gst_ogg_avi_parse_setcaps (pad, caps);
+      ret =
+          gst_ogg_avi_parse_setcaps (pad,
+          caps) ? GST_FLOW_OK : GST_FLOW_NOT_NEGOTIATED;
       gst_event_unref (event);
       break;
     }
     case GST_EVENT_FLUSH_START:
-      ret = gst_pad_push_event (ogg->srcpad, event);
+      ret = gst_pad_push_event_full (ogg->srcpad, event);
       break;
     case GST_EVENT_FLUSH_STOP:
       ogg_sync_reset (&ogg->sync);
       ogg_stream_reset (&ogg->stream);
       ogg->discont = TRUE;
-      ret = gst_pad_push_event (ogg->srcpad, event);
+      ret = gst_pad_push_event_full (ogg->srcpad, event);
       break;
     default:
-      ret = gst_pad_push_event (ogg->srcpad, event);
+      ret = gst_pad_push_event_full (ogg->srcpad, event);
       break;
   }
   return ret;

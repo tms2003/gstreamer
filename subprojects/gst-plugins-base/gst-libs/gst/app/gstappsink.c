@@ -200,7 +200,7 @@ static gboolean gst_app_sink_unlock_start (GstBaseSink * bsink);
 static gboolean gst_app_sink_unlock_stop (GstBaseSink * bsink);
 static gboolean gst_app_sink_start (GstBaseSink * psink);
 static gboolean gst_app_sink_stop (GstBaseSink * psink);
-static gboolean gst_app_sink_event (GstBaseSink * sink, GstEvent * event);
+static GstFlowReturn gst_app_sink_event (GstBaseSink * sink, GstEvent * event);
 static gboolean gst_app_sink_query (GstBaseSink * bsink, GstQuery * query);
 static GstFlowReturn gst_app_sink_preroll (GstBaseSink * psink,
     GstBuffer * buffer);
@@ -532,7 +532,7 @@ gst_app_sink_class_init (GstAppSinkClass * klass)
   basesink_class->unlock_stop = gst_app_sink_unlock_stop;
   basesink_class->start = gst_app_sink_start;
   basesink_class->stop = gst_app_sink_stop;
-  basesink_class->event = gst_app_sink_event;
+  basesink_class->event_full = gst_app_sink_event;
   basesink_class->preroll = gst_app_sink_preroll;
   basesink_class->render = gst_app_sink_render;
   basesink_class->render_list = gst_app_sink_render_list;
@@ -797,7 +797,7 @@ gst_app_sink_setcaps (GstBaseSink * sink, GstCaps * caps)
   return TRUE;
 }
 
-static gboolean
+static GstFlowReturn
 gst_app_sink_event (GstBaseSink * sink, GstEvent * event)
 {
   GstAppSink *appsink = GST_APP_SINK_CAST (sink);
@@ -830,12 +830,14 @@ gst_app_sink_event (GstBaseSink * sink, GstEvent * event)
        */
       while (priv->num_buffers > 0 && !priv->flushing && priv->wait_on_eos) {
         if (priv->unlock) {
+          GstFlowReturn res;
           /* we are asked to unlock, call the wait_preroll method */
           g_mutex_unlock (&priv->mutex);
-          if (gst_base_sink_wait_preroll (sink) != GST_FLOW_OK) {
+          res = gst_base_sink_wait_preroll (sink);
+          if (res != GST_FLOW_OK) {
             /* Directly go out of here */
             gst_event_unref (event);
-            return FALSE;
+            return res;
           }
 
           /* we are allowed to continue now */
@@ -910,11 +912,11 @@ gst_app_sink_event (GstBaseSink * sink, GstEvent * event)
 
     if (ret) {
       gst_event_unref (event);
-      return TRUE;
+      return GST_FLOW_OK;
     }
   }
 
-  return GST_BASE_SINK_CLASS (parent_class)->event (sink, event);
+  return GST_BASE_SINK_CLASS (parent_class)->event_full (sink, event);
 }
 
 static GstFlowReturn

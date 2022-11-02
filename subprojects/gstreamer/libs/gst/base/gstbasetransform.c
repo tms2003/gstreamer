@@ -266,14 +266,17 @@ static gboolean gst_base_transform_activate (GstBaseTransform * trans,
 static gboolean gst_base_transform_get_unit_size (GstBaseTransform * trans,
     GstCaps * caps, gsize * size);
 
-static gboolean gst_base_transform_src_event (GstPad * pad, GstObject * parent,
+static gboolean wrap_src_eventfunc (GstBaseTransform * trans, GstEvent * event);
+static GstFlowReturn gst_base_transform_src_event (GstPad * pad,
+    GstObject * parent, GstEvent * event);
+static GstFlowReturn gst_base_transform_src_eventfunc (GstBaseTransform * trans,
     GstEvent * event);
-static gboolean gst_base_transform_src_eventfunc (GstBaseTransform * trans,
+static gboolean wrap_sink_eventfunc (GstBaseTransform * trans,
     GstEvent * event);
-static gboolean gst_base_transform_sink_event (GstPad * pad, GstObject * parent,
-    GstEvent * event);
-static gboolean gst_base_transform_sink_eventfunc (GstBaseTransform * trans,
-    GstEvent * event);
+static GstFlowReturn gst_base_transform_sink_event (GstPad * pad,
+    GstObject * parent, GstEvent * event);
+static GstFlowReturn gst_base_transform_sink_eventfunc (GstBaseTransform *
+    trans, GstEvent * event);
 static GstFlowReturn gst_base_transform_getrange (GstPad * pad,
     GstObject * parent, guint64 offset, guint length, GstBuffer ** buffer);
 static GstFlowReturn gst_base_transform_chain (GstPad * pad, GstObject * parent,
@@ -288,8 +291,8 @@ static gboolean gst_base_transform_acceptcaps_default (GstBaseTransform * trans,
     GstPadDirection direction, GstCaps * caps);
 static gboolean gst_base_transform_setcaps (GstBaseTransform * trans,
     GstPad * pad, GstCaps * caps);
-static gboolean gst_base_transform_default_decide_allocation (GstBaseTransform
-    * trans, GstQuery * query);
+static gboolean gst_base_transform_default_decide_allocation (GstBaseTransform *
+    trans, GstQuery * query);
 static gboolean gst_base_transform_default_propose_allocation (GstBaseTransform
     * trans, GstQuery * decide_query, GstQuery * query);
 static gboolean gst_base_transform_query (GstPad * pad, GstObject * parent,
@@ -362,8 +365,11 @@ gst_base_transform_class_init (GstBaseTransformClass * klass)
   klass->transform_meta =
       GST_DEBUG_FUNCPTR (gst_base_transform_default_transform_meta);
 
-  klass->sink_event = GST_DEBUG_FUNCPTR (gst_base_transform_sink_eventfunc);
-  klass->src_event = GST_DEBUG_FUNCPTR (gst_base_transform_src_eventfunc);
+  klass->sink_event = GST_DEBUG_FUNCPTR (wrap_sink_eventfunc);
+  klass->sink_event_full =
+      GST_DEBUG_FUNCPTR (gst_base_transform_sink_eventfunc);
+  klass->src_event = GST_DEBUG_FUNCPTR (wrap_src_eventfunc);
+  klass->src_event_full = GST_DEBUG_FUNCPTR (gst_base_transform_src_eventfunc);
   klass->prepare_output_buffer =
       GST_DEBUG_FUNCPTR (default_prepare_output_buffer);
   klass->copy_metadata = GST_DEBUG_FUNCPTR (default_copy_metadata);
@@ -386,7 +392,7 @@ gst_base_transform_init (GstBaseTransform * trans,
       gst_element_class_get_pad_template (GST_ELEMENT_CLASS (bclass), "sink");
   g_return_if_fail (pad_template != NULL);
   trans->sinkpad = gst_pad_new_from_template (pad_template, "sink");
-  gst_pad_set_event_function (trans->sinkpad,
+  gst_pad_set_event_full_function (trans->sinkpad,
       GST_DEBUG_FUNCPTR (gst_base_transform_sink_event));
   gst_pad_set_chain_function (trans->sinkpad,
       GST_DEBUG_FUNCPTR (gst_base_transform_chain));
@@ -400,7 +406,7 @@ gst_base_transform_init (GstBaseTransform * trans,
       gst_element_class_get_pad_template (GST_ELEMENT_CLASS (bclass), "src");
   g_return_if_fail (pad_template != NULL);
   trans->srcpad = gst_pad_new_from_template (pad_template, "src");
-  gst_pad_set_event_function (trans->srcpad,
+  gst_pad_set_event_full_function (trans->srcpad,
       GST_DEBUG_FUNCPTR (gst_base_transform_src_event));
   gst_pad_set_getrange_function (trans->srcpad,
       GST_DEBUG_FUNCPTR (gst_base_transform_getrange));
@@ -1895,29 +1901,37 @@ gst_base_transform_get_unit_size (GstBaseTransform * trans, GstCaps * caps,
   return res;
 }
 
-static gboolean
+static GstFlowReturn
 gst_base_transform_sink_event (GstPad * pad, GstObject * parent,
     GstEvent * event)
 {
-  GstBaseTransform *trans;
-  GstBaseTransformClass *bclass;
-  gboolean ret = TRUE;
+  GstBaseTransform *trans = GST_BASE_TRANSFORM_CAST (parent);
+  GstBaseTransformClass *bclass = GST_BASE_TRANSFORM_GET_CLASS (trans);
 
-  trans = GST_BASE_TRANSFORM_CAST (parent);
-  bclass = GST_BASE_TRANSFORM_GET_CLASS (trans);
+  if (bclass->sink_event == wrap_sink_eventfunc) {
+    g_assert (bclass->sink_event_full);
+    return bclass->sink_event_full (trans, event);
+  }
 
-  if (bclass->sink_event)
-    ret = bclass->sink_event (trans, event);
-  else
-    gst_event_unref (event);
+  GST_CAT_FIXME_OBJECT (GST_CAT_EVENT, trans,
+      "Implement flow-aware sink_event handler");
 
-  return ret;
+  if (bclass->sink_event (trans, event))
+    return GST_FLOW_OK;
+  return GST_FLOW_ERROR;
 }
 
 static gboolean
+wrap_sink_eventfunc (GstBaseTransform * trans, GstEvent * event)
+{
+  return gst_base_transform_sink_eventfunc (trans, event) == GST_FLOW_OK;
+}
+
+static GstFlowReturn
 gst_base_transform_sink_eventfunc (GstBaseTransform * trans, GstEvent * event)
 {
-  gboolean ret = TRUE, forward = TRUE;
+  GstFlowReturn ret = GST_FLOW_OK;
+  gboolean forward = TRUE;
   GstBaseTransformPrivate *priv = trans->priv;
 
   switch (GST_EVENT_TYPE (event)) {
@@ -1948,10 +1962,10 @@ gst_base_transform_sink_eventfunc (GstBaseTransform * trans, GstEvent * event)
       gst_event_parse_caps (event, &caps);
       /* clear any pending reconfigure flag */
       gst_pad_check_reconfigure (trans->srcpad);
-      ret = gst_base_transform_setcaps (trans, trans->sinkpad, caps);
-      if (!ret)
+      if (!gst_base_transform_setcaps (trans, trans->sinkpad, caps)) {
         gst_pad_mark_reconfigure (trans->srcpad);
-
+        ret = GST_FLOW_NOT_NEGOTIATED;
+      }
       forward = FALSE;
       break;
     }
@@ -1968,45 +1982,46 @@ gst_base_transform_sink_eventfunc (GstBaseTransform * trans, GstEvent * event)
       break;
   }
 
-  if (ret && forward)
-    ret = gst_pad_push_event (trans->srcpad, event);
+  if (ret == GST_FLOW_OK && forward)
+    ret = gst_pad_push_event_full (trans->srcpad, event);
   else
     gst_event_unref (event);
 
   return ret;
 }
 
-static gboolean
+static GstFlowReturn
 gst_base_transform_src_event (GstPad * pad, GstObject * parent,
     GstEvent * event)
 {
-  GstBaseTransform *trans;
-  GstBaseTransformClass *bclass;
-  gboolean ret = TRUE;
+  GstBaseTransform *trans = GST_BASE_TRANSFORM_CAST (parent);
+  GstBaseTransformClass *bclass = GST_BASE_TRANSFORM_GET_CLASS (trans);
 
-  trans = GST_BASE_TRANSFORM_CAST (parent);
-  bclass = GST_BASE_TRANSFORM_GET_CLASS (trans);
+  if (bclass->src_event == wrap_src_eventfunc) {
+    g_assert (bclass->src_event_full);
+    return bclass->src_event_full (trans, event);
+  }
 
-  if (bclass->src_event)
-    ret = bclass->src_event (trans, event);
-  else
-    gst_event_unref (event);
+  GST_CAT_FIXME_OBJECT (GST_CAT_EVENT, trans,
+      "Implement flow-aware src_event handler");
 
-  return ret;
+  if (bclass->src_event (trans, event))
+    return GST_FLOW_OK;
+  return GST_FLOW_ERROR;
 }
 
 static gboolean
+wrap_src_eventfunc (GstBaseTransform * trans, GstEvent * event)
+{
+  return gst_base_transform_src_eventfunc (trans, event) == GST_FLOW_OK;
+}
+
+static GstFlowReturn
 gst_base_transform_src_eventfunc (GstBaseTransform * trans, GstEvent * event)
 {
-  gboolean ret;
-
   GST_DEBUG_OBJECT (trans, "handling event %p %" GST_PTR_FORMAT, event, event);
 
   switch (GST_EVENT_TYPE (event)) {
-    case GST_EVENT_SEEK:
-      break;
-    case GST_EVENT_NAVIGATION:
-      break;
     case GST_EVENT_QOS:
     {
       gdouble proportion;
@@ -2021,9 +2036,7 @@ gst_base_transform_src_eventfunc (GstBaseTransform * trans, GstEvent * event)
       break;
   }
 
-  ret = gst_pad_push_event (trans->sinkpad, event);
-
-  return ret;
+  return gst_pad_push_event_full (trans->sinkpad, event);
 }
 
 /* Takes the input buffer */
@@ -2837,8 +2850,8 @@ gst_base_transform_reconfigure_sink (GstBaseTransform * trans)
   g_return_if_fail (GST_IS_BASE_TRANSFORM (trans));
 
   /* push the renegotiate event */
-  if (!gst_pad_push_event (GST_BASE_TRANSFORM_SINK_PAD (trans),
-          gst_event_new_reconfigure ()))
+  if (gst_pad_push_event_full (GST_BASE_TRANSFORM_SINK_PAD (trans),
+          gst_event_new_reconfigure ()) != GST_FLOW_OK)
     GST_DEBUG_OBJECT (trans, "Renegotiate event wasn't handled");
 }
 
@@ -2924,8 +2937,8 @@ gst_base_transform_update_src_caps (GstBaseTransform * trans,
 {
   g_return_val_if_fail (GST_IS_BASE_TRANSFORM (trans), FALSE);
 
-  if (gst_pad_push_event (GST_BASE_TRANSFORM_SRC_PAD (trans),
-          gst_event_new_caps (updated_caps))) {
+  if (gst_pad_push_event_full (GST_BASE_TRANSFORM_SRC_PAD (trans),
+          gst_event_new_caps (updated_caps)) == GST_FLOW_OK) {
     gst_pad_mark_reconfigure (trans->srcpad);
 
     return TRUE;

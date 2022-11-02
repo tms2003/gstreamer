@@ -184,8 +184,6 @@ static GstFlowReturn gst_tee_chain (GstPad * pad, GstObject * parent,
     GstBuffer * buffer);
 static GstFlowReturn gst_tee_chain_list (GstPad * pad, GstObject * parent,
     GstBufferList * list);
-static gboolean gst_tee_sink_event (GstPad * pad, GstObject * parent,
-    GstEvent * event);
 static gboolean gst_tee_sink_query (GstPad * pad, GstObject * parent,
     GstQuery * query);
 static gboolean gst_tee_sink_activate_mode (GstPad * pad, GstObject * parent,
@@ -309,8 +307,6 @@ gst_tee_init (GstTee * tee)
   tee->sinkpad = gst_pad_new_from_static_template (&sinktemplate, "sink");
   tee->sink_mode = GST_PAD_MODE_NONE;
 
-  gst_pad_set_event_function (tee->sinkpad,
-      GST_DEBUG_FUNCPTR (gst_tee_sink_event));
   gst_pad_set_query_function (tee->sinkpad,
       GST_DEBUG_FUNCPTR (gst_tee_sink_query));
   gst_pad_set_activatemode_function (tee->sinkpad,
@@ -549,20 +545,6 @@ gst_tee_get_property (GObject * object, guint prop_id, GValue * value,
       break;
   }
   GST_OBJECT_UNLOCK (tee);
-}
-
-static gboolean
-gst_tee_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
-{
-  gboolean res;
-
-  switch (GST_EVENT_TYPE (event)) {
-    default:
-      res = gst_pad_event_default (pad, parent, event);
-      break;
-  }
-
-  return res;
 }
 
 struct AllocQueryCtx

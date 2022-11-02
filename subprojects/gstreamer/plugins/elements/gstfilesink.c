@@ -173,7 +173,7 @@ static void gst_file_sink_close_file (GstFileSink * sink);
 
 static gboolean gst_file_sink_start (GstBaseSink * sink);
 static gboolean gst_file_sink_stop (GstBaseSink * sink);
-static gboolean gst_file_sink_event (GstBaseSink * sink, GstEvent * event);
+static GstFlowReturn gst_file_sink_event (GstBaseSink * sink, GstEvent * event);
 static GstFlowReturn gst_file_sink_render (GstBaseSink * sink,
     GstBuffer * buffer);
 static GstFlowReturn gst_file_sink_render_list (GstBaseSink * sink,
@@ -265,7 +265,7 @@ gst_file_sink_class_init (GstFileSinkClass * klass)
   gstbasesink_class->render = GST_DEBUG_FUNCPTR (gst_file_sink_render);
   gstbasesink_class->render_list =
       GST_DEBUG_FUNCPTR (gst_file_sink_render_list);
-  gstbasesink_class->event = GST_DEBUG_FUNCPTR (gst_file_sink_event);
+  gstbasesink_class->event_full = GST_DEBUG_FUNCPTR (gst_file_sink_event);
   gstbasesink_class->unlock = GST_DEBUG_FUNCPTR (gst_file_sink_unlock);
   gstbasesink_class->unlock_stop =
       GST_DEBUG_FUNCPTR (gst_file_sink_unlock_stop);
@@ -593,7 +593,7 @@ seek_failed:
 }
 
 /* handle events (search) */
-static gboolean
+static GstFlowReturn
 gst_file_sink_event (GstBaseSink * sink, GstEvent * event)
 {
   GstEventType type;
@@ -651,7 +651,7 @@ gst_file_sink_event (GstBaseSink * sink, GstEvent * event)
       break;
   }
 
-  return GST_BASE_SINK_CLASS (parent_class)->event (sink, event);
+  return GST_BASE_SINK_CLASS (parent_class)->event_full (sink, event);
 
   /* ERRORS */
 seek_failed:
@@ -660,14 +660,14 @@ seek_failed:
         (_("Error while seeking in file \"%s\"."), filesink->filename),
         GST_ERROR_SYSTEM);
     gst_event_unref (event);
-    return FALSE;
+    return GST_FLOW_ERROR;
   }
 flush_buffer_failed:
   {
     GST_ELEMENT_ERROR (filesink, RESOURCE, WRITE,
         (_("Error while writing to file \"%s\"."), filesink->filename), NULL);
     gst_event_unref (event);
-    return FALSE;
+    return GST_FLOW_ERROR;
   }
 truncate_failed:
   {
@@ -675,7 +675,7 @@ truncate_failed:
         (_("Error while writing to file \"%s\"."), filesink->filename),
         GST_ERROR_SYSTEM);
     gst_event_unref (event);
-    return FALSE;
+    return GST_FLOW_ERROR;
   }
 }
 

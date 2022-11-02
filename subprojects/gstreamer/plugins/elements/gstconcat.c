@@ -136,12 +136,12 @@ static void gst_concat_release_pad (GstElement * element, GstPad * pad);
 
 static GstFlowReturn gst_concat_sink_chain (GstPad * pad, GstObject * parent,
     GstBuffer * buffer);
-static gboolean gst_concat_sink_event (GstPad * pad, GstObject * parent,
+static GstFlowReturn gst_concat_sink_event (GstPad * pad, GstObject * parent,
     GstEvent * event);
 static gboolean gst_concat_sink_query (GstPad * pad, GstObject * parent,
     GstQuery * query);
 
-static gboolean gst_concat_src_event (GstPad * pad, GstObject * parent,
+static GstFlowReturn gst_concat_src_event (GstPad * pad, GstObject * parent,
     GstEvent * event);
 static gboolean gst_concat_src_query (GstPad * pad, GstObject * parent,
     GstQuery * query);
@@ -194,7 +194,7 @@ gst_concat_init (GstConcat * self)
   g_cond_init (&self->cond);
 
   self->srcpad = gst_pad_new_from_static_template (&src_template, "src");
-  gst_pad_set_event_function (self->srcpad,
+  gst_pad_set_event_full_function (self->srcpad,
       GST_DEBUG_FUNCPTR (gst_concat_src_event));
   gst_pad_set_query_function (self->srcpad,
       GST_DEBUG_FUNCPTR (gst_concat_src_query));
@@ -304,7 +304,7 @@ gst_concat_request_new_pad (GstElement * element, GstPadTemplate * templ,
 
   gst_pad_set_chain_function (sinkpad,
       GST_DEBUG_FUNCPTR (gst_concat_sink_chain));
-  gst_pad_set_event_function (sinkpad,
+  gst_pad_set_event_full_function (sinkpad,
       GST_DEBUG_FUNCPTR (gst_concat_sink_event));
   gst_pad_set_query_function (sinkpad,
       GST_DEBUG_FUNCPTR (gst_concat_sink_query));
@@ -518,12 +518,12 @@ gst_concat_notify_active_pad (GstConcat * self)
   g_object_notify_by_pspec ((GObject *) self, pspec_active_pad);
 }
 
-static gboolean
+static GstFlowReturn
 gst_concat_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
 {
   GstConcat *self = GST_CONCAT (parent);
   GstConcatPad *spad = GST_CONCAT_PAD_CAST (pad);
-  gboolean ret = TRUE;
+  GstFlowReturn ret = GST_FLOW_OK;
   gboolean adjust_base;
 
   GST_LOG_OBJECT (pad, "received event %" GST_PTR_FORMAT, event);
@@ -535,7 +535,7 @@ gst_concat_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
   switch (GST_EVENT_TYPE (event)) {
     case GST_EVENT_STREAM_START:{
       if (!gst_concat_pad_wait (spad, self)) {
-        ret = FALSE;
+        ret = GST_FLOW_FLUSHING;
         gst_event_replace (&event, NULL);
       }
       break;
@@ -553,7 +553,7 @@ gst_concat_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
           g_mutex_unlock (&self->lock);
           GST_ELEMENT_ERROR (self, CORE, FAILED, (NULL),
               ("Can only operate in TIME or BYTES format"));
-          ret = FALSE;
+          ret = GST_FLOW_ERROR;
           break;
         }
         self->format = spad->segment.format;
@@ -565,14 +565,14 @@ gst_concat_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
             ("Operating in %s format but new pad has %s",
                 gst_format_get_name (self->format),
                 gst_format_get_name (spad->segment.format)));
-        ret = FALSE;
+        ret = GST_FLOW_ERROR;
         break;
       }
 
       g_mutex_unlock (&self->lock);
 
       if (!gst_concat_pad_wait (spad, self)) {
-        ret = FALSE;
+        ret = GST_FLOW_FLUSHING;
       } else {
         GstSegment segment = spad->segment;
 
@@ -620,14 +620,14 @@ gst_concat_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
       gst_event_replace (&event, NULL);
 
       if (!gst_concat_pad_wait (spad, self)) {
-        ret = FALSE;
+        ret = GST_FLOW_FLUSHING;
       } else {
         gboolean next;
 
         g_mutex_lock (&self->lock);
         next = gst_concat_switch_pad (self);
         g_mutex_unlock (&self->lock);
-        ret = TRUE;
+        ret = GST_FLOW_OK;
 
         gst_concat_notify_active_pad (self);
 
@@ -687,7 +687,7 @@ gst_concat_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
       /* Wait for other serialized events before forwarding */
       if (GST_EVENT_IS_SERIALIZED (event) && !gst_concat_pad_wait (spad, self)) {
         gst_event_replace (&event, NULL);
-        ret = FALSE;
+        ret = GST_FLOW_FLUSHING;
       }
       break;
     }
@@ -705,7 +705,7 @@ gst_concat_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
       gst_event_set_running_time_offset (event, offset);
     }
     g_mutex_unlock (&self->lock);
-    ret = gst_pad_event_default (pad, parent, event);
+    ret = gst_pad_event_full_default (pad, parent, event);
   }
 
   return ret;
@@ -734,11 +734,11 @@ gst_concat_sink_query (GstPad * pad, GstObject * parent, GstQuery * query)
   return ret;
 }
 
-static gboolean
+static GstFlowReturn
 gst_concat_src_event (GstPad * pad, GstObject * parent, GstEvent * event)
 {
   GstConcat *self = GST_CONCAT (parent);
-  gboolean ret = TRUE;
+  GstFlowReturn ret = GST_FLOW_OK;
   GstPad *sinkpad = NULL;
 
   GST_LOG_OBJECT (pad, "received event %" GST_PTR_FORMAT, event);
@@ -755,7 +755,7 @@ gst_concat_src_event (GstPad * pad, GstObject * parent, GstEvent * event)
       g_mutex_unlock (&self->lock);
       if (!sinkpad) {
         gst_event_replace (&event, NULL);
-        ret = FALSE;
+        ret = GST_FLOW_ERROR;
       }
       break;
     }
@@ -767,7 +767,7 @@ gst_concat_src_event (GstPad * pad, GstObject * parent, GstEvent * event)
 
       if (!sinkpad) {
         gst_event_replace (&event, NULL);
-        ret = FALSE;
+        ret = GST_FLOW_ERROR;
       }
       break;
     }
@@ -800,9 +800,9 @@ gst_concat_src_event (GstPad * pad, GstObject * parent, GstEvent * event)
     g_mutex_unlock (&self->lock);
 
     if (sinkpad)
-      ret = gst_pad_push_event (sinkpad, event);
+      ret = gst_pad_push_event_full (sinkpad, event);
     else
-      ret = gst_pad_event_default (pad, parent, event);
+      ret = gst_pad_event_full_default (pad, parent, event);
   }
 
   if (sinkpad)

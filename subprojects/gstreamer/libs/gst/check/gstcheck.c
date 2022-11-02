@@ -853,7 +853,7 @@ gst_check_buffer_data (GstBuffer * buffer, gconstpointer data, gsize size)
   gst_buffer_unmap (buffer, &info);
 }
 
-static gboolean
+static GstFlowReturn
 buffer_event_function (GstPad * pad, GstObject * noparent, GstEvent * event)
 {
   if (GST_EVENT_TYPE (event) == GST_EVENT_CAPS) {
@@ -865,10 +865,10 @@ buffer_event_function (GstPad * pad, GstObject * noparent, GstEvent * event)
     fail_unless (gst_caps_is_fixed (event_caps));
     fail_unless (gst_caps_is_equal_fixed (event_caps, expected_caps));
     gst_event_unref (event);
-    return TRUE;
+    return GST_FLOW_OK;
   }
 
-  return gst_pad_event_default (pad, noparent, event);
+  return gst_pad_event_full_default (pad, noparent, event);
 }
 
 /**
@@ -950,7 +950,7 @@ gst_check_element_push_buffer_list (const gchar * element_name,
     gst_pad_set_active (sink_pad, TRUE);
     if (caps_out) {
       gst_pad_set_element_private (sink_pad, caps_out);
-      gst_pad_set_event_function (sink_pad, buffer_event_function);
+      gst_pad_set_event_full_function (sink_pad, buffer_event_function);
     }
     /* get the peer pad */
     pad_peer = gst_element_get_static_pad (element, "src");

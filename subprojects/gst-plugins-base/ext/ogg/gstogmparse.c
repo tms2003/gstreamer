@@ -152,7 +152,7 @@ static void gst_ogm_audio_parse_init (GstOgmParse * ogm);
 static void gst_ogm_text_parse_init (GstOgmParse * ogm);
 static void gst_ogm_parse_element_init (GstPlugin * plugin);
 
-static gboolean gst_ogm_parse_sink_event (GstPad * pad, GstObject * parent,
+static GstFlowReturn gst_ogm_parse_sink_event (GstPad * pad, GstObject * parent,
     GstEvent * event);
 static gboolean gst_ogm_parse_sink_query (GstPad * pad, GstObject * parent,
     GstQuery * query);
@@ -368,7 +368,7 @@ gst_ogm_audio_parse_init (GstOgmParse * ogm)
       GST_DEBUG_FUNCPTR (gst_ogm_parse_sink_query));
   gst_pad_set_chain_function (ogm->sinkpad,
       GST_DEBUG_FUNCPTR (gst_ogm_parse_chain));
-  gst_pad_set_event_function (ogm->sinkpad,
+  gst_pad_set_event_full_function (ogm->sinkpad,
       GST_DEBUG_FUNCPTR (gst_ogm_parse_sink_event));
   gst_element_add_pad (GST_ELEMENT (ogm), ogm->sinkpad);
 
@@ -384,7 +384,7 @@ gst_ogm_video_parse_init (GstOgmParse * ogm)
       GST_DEBUG_FUNCPTR (gst_ogm_parse_sink_query));
   gst_pad_set_chain_function (ogm->sinkpad,
       GST_DEBUG_FUNCPTR (gst_ogm_parse_chain));
-  gst_pad_set_event_function (ogm->sinkpad,
+  gst_pad_set_event_full_function (ogm->sinkpad,
       GST_DEBUG_FUNCPTR (gst_ogm_parse_sink_event));
   gst_element_add_pad (GST_ELEMENT (ogm), ogm->sinkpad);
 
@@ -400,7 +400,7 @@ gst_ogm_text_parse_init (GstOgmParse * ogm)
       GST_DEBUG_FUNCPTR (gst_ogm_parse_sink_query));
   gst_pad_set_chain_function (ogm->sinkpad,
       GST_DEBUG_FUNCPTR (gst_ogm_parse_chain));
-  gst_pad_set_event_function (ogm->sinkpad,
+  gst_pad_set_event_full_function (ogm->sinkpad,
       GST_DEBUG_FUNCPTR (gst_ogm_parse_sink_event));
   gst_element_add_pad (GST_ELEMENT (ogm), ogm->sinkpad);
 
@@ -915,11 +915,11 @@ buffer_too_small:
   }
 }
 
-static gboolean
+static GstFlowReturn
 gst_ogm_parse_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
 {
   GstOgmParse *ogm = GST_OGM_PARSE (parent);
-  gboolean res;
+  GstFlowReturn res;
 
   GST_LOG_OBJECT (ogm, "processing %s event", GST_EVENT_TYPE_NAME (event));
 
@@ -927,10 +927,10 @@ gst_ogm_parse_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
   if (ogm->srcpad == NULL) {
     ogm->cached_events = g_list_append (ogm->cached_events, event);
     GST_OBJECT_UNLOCK (ogm);
-    res = TRUE;
+    res = GST_FLOW_OK;
   } else {
     GST_OBJECT_UNLOCK (ogm);
-    res = gst_pad_event_default (pad, parent, event);
+    res = gst_pad_event_full_default (pad, parent, event);
   }
 
   return res;

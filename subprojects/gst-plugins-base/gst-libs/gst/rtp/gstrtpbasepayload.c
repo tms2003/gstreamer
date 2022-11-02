@@ -148,13 +148,17 @@ static void gst_rtp_base_payload_finalize (GObject * object);
 static GstCaps *gst_rtp_base_payload_getcaps_default (GstRTPBasePayload *
     rtpbasepayload, GstPad * pad, GstCaps * filter);
 
-static gboolean gst_rtp_base_payload_sink_event_default (GstRTPBasePayload *
+static gboolean wrap_sink_eventfunc (GstRTPBasePayload *
     rtpbasepayload, GstEvent * event);
-static gboolean gst_rtp_base_payload_sink_event (GstPad * pad,
+static GstFlowReturn gst_rtp_base_payload_sink_event_default (GstRTPBasePayload
+    * rtpbasepayload, GstEvent * event);
+static GstFlowReturn gst_rtp_base_payload_sink_event (GstPad * pad,
     GstObject * parent, GstEvent * event);
-static gboolean gst_rtp_base_payload_src_event_default (GstRTPBasePayload *
+static gboolean wrap_src_eventfunc (GstRTPBasePayload * rtpbasepayload,
+    GstEvent * event);
+static GstFlowReturn gst_rtp_base_payload_src_event_default (GstRTPBasePayload *
     rtpbasepayload, GstEvent * event);
-static gboolean gst_rtp_base_payload_src_event (GstPad * pad,
+static GstFlowReturn gst_rtp_base_payload_src_event (GstPad * pad,
     GstObject * parent, GstEvent * event);
 static gboolean gst_rtp_base_payload_query_default (GstRTPBasePayload *
     rtpbasepayload, GstPad * pad, GstQuery * query);
@@ -495,8 +499,10 @@ gst_rtp_base_payload_class_init (GstRTPBasePayloadClass * klass)
   gstelement_class->change_state = gst_rtp_base_payload_change_state;
 
   klass->get_caps = gst_rtp_base_payload_getcaps_default;
-  klass->sink_event = gst_rtp_base_payload_sink_event_default;
-  klass->src_event = gst_rtp_base_payload_src_event_default;
+  klass->sink_event = wrap_sink_eventfunc;
+  klass->sink_event_full = gst_rtp_base_payload_sink_event_default;
+  klass->src_event = wrap_src_eventfunc;
+  klass->src_event_full = gst_rtp_base_payload_src_event_default;
   klass->query = gst_rtp_base_payload_query_default;
 
   GST_DEBUG_CATEGORY_INIT (rtpbasepayload_debug, "rtpbasepayload", 0,
@@ -517,7 +523,7 @@ gst_rtp_base_payload_init (GstRTPBasePayload * rtpbasepayload, gpointer g_class)
   g_return_if_fail (templ != NULL);
 
   rtpbasepayload->srcpad = gst_pad_new_from_template (templ, "src");
-  gst_pad_set_event_function (rtpbasepayload->srcpad,
+  gst_pad_set_event_full_function (rtpbasepayload->srcpad,
       gst_rtp_base_payload_src_event);
   gst_element_add_pad (GST_ELEMENT (rtpbasepayload), rtpbasepayload->srcpad);
 
@@ -528,7 +534,7 @@ gst_rtp_base_payload_init (GstRTPBasePayload * rtpbasepayload, gpointer g_class)
   rtpbasepayload->sinkpad = gst_pad_new_from_template (templ, "sink");
   gst_pad_set_chain_function (rtpbasepayload->sinkpad,
       gst_rtp_base_payload_chain);
-  gst_pad_set_event_function (rtpbasepayload->sinkpad,
+  gst_pad_set_event_full_function (rtpbasepayload->sinkpad,
       gst_rtp_base_payload_sink_event);
   gst_pad_set_query_function (rtpbasepayload->sinkpad,
       gst_rtp_base_payload_query);
@@ -608,18 +614,25 @@ gst_rtp_base_payload_getcaps_default (GstRTPBasePayload * rtpbasepayload,
 }
 
 static gboolean
+wrap_sink_eventfunc (GstRTPBasePayload * rtpbasepayload, GstEvent * event)
+{
+  return gst_rtp_base_payload_sink_event_default (rtpbasepayload,
+      event) == GST_FLOW_OK;
+}
+
+static GstFlowReturn
 gst_rtp_base_payload_sink_event_default (GstRTPBasePayload * rtpbasepayload,
     GstEvent * event)
 {
   GstObject *parent = GST_OBJECT_CAST (rtpbasepayload);
-  gboolean res = FALSE;
+  GstFlowReturn res = GST_FLOW_ERROR;
 
   switch (GST_EVENT_TYPE (event)) {
     case GST_EVENT_FLUSH_START:
-      res = gst_pad_event_default (rtpbasepayload->sinkpad, parent, event);
+      res = gst_pad_event_full_default (rtpbasepayload->sinkpad, parent, event);
       break;
     case GST_EVENT_FLUSH_STOP:
-      res = gst_pad_event_default (rtpbasepayload->sinkpad, parent, event);
+      res = gst_pad_event_full_default (rtpbasepayload->sinkpad, parent, event);
       gst_segment_init (&rtpbasepayload->segment, GST_FORMAT_UNDEFINED);
       gst_event_replace (&rtpbasepayload->priv->pending_segment, NULL);
       break;
@@ -627,6 +640,7 @@ gst_rtp_base_payload_sink_event_default (GstRTPBasePayload * rtpbasepayload,
     {
       GstRTPBasePayloadClass *rtpbasepayload_class;
       GstCaps *caps;
+      gboolean capsret;
 
       gst_event_parse_caps (event, &caps);
       GST_DEBUG_OBJECT (rtpbasepayload, "setting caps %" GST_PTR_FORMAT, caps);
@@ -635,11 +649,12 @@ gst_rtp_base_payload_sink_event_default (GstRTPBasePayload * rtpbasepayload,
 
       rtpbasepayload_class = GST_RTP_BASE_PAYLOAD_GET_CLASS (rtpbasepayload);
       if (rtpbasepayload_class->set_caps)
-        res = rtpbasepayload_class->set_caps (rtpbasepayload, caps);
+        capsret = rtpbasepayload_class->set_caps (rtpbasepayload, caps);
       else
-        res = gst_rtp_base_payload_negotiate (rtpbasepayload);
+        capsret = gst_rtp_base_payload_negotiate (rtpbasepayload);
 
-      rtpbasepayload->priv->negotiated = res;
+      rtpbasepayload->priv->negotiated = capsret;
+      res = capsret ? GST_FLOW_OK : GST_FLOW_NOT_NEGOTIATED;
 
       gst_event_unref (event);
       break;
@@ -658,9 +673,10 @@ gst_rtp_base_payload_sink_event_default (GstRTPBasePayload * rtpbasepayload,
       if (rtpbasepayload->priv->delay_segment) {
         gst_event_replace (&rtpbasepayload->priv->pending_segment, event);
         gst_event_unref (event);
-        res = TRUE;
+        res = GST_FLOW_OK;
       } else {
-        res = gst_pad_event_default (rtpbasepayload->sinkpad, parent, event);
+        res =
+            gst_pad_event_full_default (rtpbasepayload->sinkpad, parent, event);
       }
       break;
     }
@@ -672,41 +688,52 @@ gst_rtp_base_payload_sink_event_default (GstRTPBasePayload * rtpbasepayload,
         rtpbasepayload->priv->pending_segment = FALSE;
         rtpbasepayload->priv->delay_segment = FALSE;
       }
-      res = gst_pad_event_default (rtpbasepayload->sinkpad, parent, event);
+      res = gst_pad_event_full_default (rtpbasepayload->sinkpad, parent, event);
       break;
     }
     default:
-      res = gst_pad_event_default (rtpbasepayload->sinkpad, parent, event);
+      res = gst_pad_event_full_default (rtpbasepayload->sinkpad, parent, event);
       break;
   }
   return res;
 }
 
-static gboolean
+static GstFlowReturn
 gst_rtp_base_payload_sink_event (GstPad * pad, GstObject * parent,
     GstEvent * event)
 {
   GstRTPBasePayload *rtpbasepayload;
   GstRTPBasePayloadClass *rtpbasepayload_class;
-  gboolean res = FALSE;
 
   rtpbasepayload = GST_RTP_BASE_PAYLOAD (parent);
   rtpbasepayload_class = GST_RTP_BASE_PAYLOAD_GET_CLASS (rtpbasepayload);
 
-  if (rtpbasepayload_class->sink_event)
-    res = rtpbasepayload_class->sink_event (rtpbasepayload, event);
-  else
-    gst_event_unref (event);
+  if (rtpbasepayload_class->sink_event == wrap_sink_eventfunc) {
+    g_assert (rtpbasepayload_class->sink_event_full);
+    return rtpbasepayload_class->sink_event_full (rtpbasepayload, event);
+  }
 
-  return res;
+  GST_FIXME_OBJECT (rtpbasepayload, "Implement flow-aware sink_event handler");
+
+  if (rtpbasepayload_class->sink_event (rtpbasepayload, event))
+    return GST_FLOW_OK;
+  return GST_FLOW_ERROR;
 }
 
 static gboolean
+wrap_src_eventfunc (GstRTPBasePayload * rtpbasepayload, GstEvent * event)
+{
+  return gst_rtp_base_payload_src_event_default (rtpbasepayload,
+      event) == GST_FLOW_OK;
+}
+
+static GstFlowReturn
 gst_rtp_base_payload_src_event_default (GstRTPBasePayload * rtpbasepayload,
     GstEvent * event)
 {
   GstObject *parent = GST_OBJECT_CAST (rtpbasepayload);
-  gboolean res = TRUE, forward = TRUE;
+  gboolean forward = TRUE;
+  GstFlowReturn result = GST_FLOW_OK;
 
   switch (GST_EVENT_TYPE (event)) {
     case GST_EVENT_CUSTOM_UPSTREAM:
@@ -738,7 +765,8 @@ gst_rtp_base_payload_src_event_default (GstRTPBasePayload * rtpbasepayload,
             caps = gst_caps_make_writable (caps);
             gst_caps_set_simple (caps,
                 "ssrc", G_TYPE_UINT, rtpbasepayload->current_ssrc, NULL);
-            res = gst_pad_set_caps (rtpbasepayload->srcpad, caps);
+            if (!gst_pad_set_caps (rtpbasepayload->srcpad, caps))
+              result = GST_FLOW_NOT_NEGOTIATED;
             gst_caps_unref (caps);
           }
 
@@ -753,30 +781,33 @@ gst_rtp_base_payload_src_event_default (GstRTPBasePayload * rtpbasepayload,
   }
 
   if (forward)
-    res = gst_pad_event_default (rtpbasepayload->srcpad, parent, event);
+    result = gst_pad_event_full_default (rtpbasepayload->srcpad, parent, event);
   else
     gst_event_unref (event);
 
-  return res;
+  return result;
 }
 
-static gboolean
+static GstFlowReturn
 gst_rtp_base_payload_src_event (GstPad * pad, GstObject * parent,
     GstEvent * event)
 {
   GstRTPBasePayload *rtpbasepayload;
   GstRTPBasePayloadClass *rtpbasepayload_class;
-  gboolean res = FALSE;
 
   rtpbasepayload = GST_RTP_BASE_PAYLOAD (parent);
   rtpbasepayload_class = GST_RTP_BASE_PAYLOAD_GET_CLASS (rtpbasepayload);
 
-  if (rtpbasepayload_class->src_event)
-    res = rtpbasepayload_class->src_event (rtpbasepayload, event);
-  else
-    gst_event_unref (event);
+  if (rtpbasepayload_class->src_event == wrap_src_eventfunc) {
+    g_assert (rtpbasepayload_class->src_event_full);
+    return rtpbasepayload_class->src_event_full (rtpbasepayload, event);
+  }
 
-  return res;
+  GST_FIXME_OBJECT (rtpbasepayload, "Implement flow-aware src_event handler");
+
+  if (rtpbasepayload_class->src_event (rtpbasepayload, event))
+    return GST_FLOW_OK;
+  return GST_FLOW_ERROR;
 }
 
 

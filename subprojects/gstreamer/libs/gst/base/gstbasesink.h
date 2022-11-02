@@ -130,7 +130,8 @@ struct _GstBaseSink {
  *     gst_base_sink_wait() or gst_wait_sink_wait_clock() return or
  *     #GstBaseSinkClass::render is called again.
  * @query: perform a #GstQuery on the element.
- * @event: Override this to handle events arriving on the sink pad
+ * @event: Override this to handle events arriving on the sink pad (deprecated,
+ *     use @event_full)
  * @wait_event: Override this to implement custom logic to wait for the event
  *     time (for events like EOS and GAP). Subclasses should always first
  *     chain up to the default implementation.
@@ -209,8 +210,17 @@ struct _GstBaseSinkClass {
   /* Render a BufferList */
   GstFlowReturn (*render_list)  (GstBaseSink *sink, GstBufferList *buffer_list);
 
+  /**
+   * GstBaseSinkClass::event_full:
+   * @event: (transfer full):
+   *
+   * notify subclass of event (with flow return)
+   *
+   * Since: 1.22
+   */
+   GstFlowReturn (*event_full)   (GstBaseSink *sink, GstEvent *event);
   /*< private >*/
-  gpointer       _gst_reserved[GST_PADDING_LARGE];
+  gpointer       _gst_reserved[GST_PADDING_LARGE - 1];
 };
 
 GST_BASE_API

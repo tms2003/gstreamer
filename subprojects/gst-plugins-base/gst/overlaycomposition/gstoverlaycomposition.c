@@ -89,7 +89,7 @@ GST_ELEMENT_REGISTER_DEFINE (overlaycomposition, "overlaycomposition",
 
 static GstFlowReturn gst_overlay_composition_sink_chain (GstPad * pad,
     GstObject * parent, GstBuffer * buffer);
-static gboolean gst_overlay_composition_sink_event (GstPad * pad,
+static GstFlowReturn gst_overlay_composition_sink_event (GstPad * pad,
     GstObject * parent, GstEvent * event);
 static gboolean gst_overlay_composition_sink_query (GstPad * pad,
     GstObject * parent, GstQuery * query);
@@ -157,7 +157,7 @@ gst_overlay_composition_init (GstOverlayComposition * self)
   self->sinkpad = gst_pad_new_from_static_template (&sink_template, "sink");
   gst_pad_set_chain_function (self->sinkpad,
       GST_DEBUG_FUNCPTR (gst_overlay_composition_sink_chain));
-  gst_pad_set_event_function (self->sinkpad,
+  gst_pad_set_event_full_function (self->sinkpad,
       GST_DEBUG_FUNCPTR (gst_overlay_composition_sink_event));
   gst_pad_set_query_function (self->sinkpad,
       GST_DEBUG_FUNCPTR (gst_overlay_composition_sink_query));
@@ -368,17 +368,17 @@ no_format:
   }
 }
 
-static gboolean
+static GstFlowReturn
 gst_overlay_composition_sink_event (GstPad * pad, GstObject * parent,
     GstEvent * event)
 {
   GstOverlayComposition *self = GST_OVERLAY_COMPOSITION (parent);
-  gboolean ret = FALSE;
+  GstFlowReturn ret = GST_FLOW_ERROR;
 
   switch (GST_EVENT_TYPE (event)) {
     case GST_EVENT_SEGMENT:
       gst_event_copy_segment (event, &self->segment);
-      ret = gst_pad_event_default (pad, parent, event);
+      ret = gst_pad_event_full_default (pad, parent, event);
       break;
     case GST_EVENT_CAPS:{
       GstCaps *caps;
@@ -386,29 +386,29 @@ gst_overlay_composition_sink_event (GstPad * pad, GstObject * parent,
       gst_event_parse_caps (event, &caps);
       if (!gst_video_info_from_caps (&self->info, caps)) {
         gst_event_unref (event);
-        ret = FALSE;
+        ret = GST_FLOW_NOT_NEGOTIATED;
         break;
       }
 
       if (!gst_overlay_composition_negotiate (self, caps)) {
         gst_event_unref (event);
-        ret = FALSE;
+        ret = GST_FLOW_NOT_NEGOTIATED;
         break;
       }
 
       gst_caps_replace (&self->caps, caps);
 
-      ret = TRUE;
+      ret = GST_FLOW_OK;
       gst_event_unref (event);
 
       break;
     }
     case GST_EVENT_FLUSH_STOP:
       gst_segment_init (&self->segment, GST_FORMAT_UNDEFINED);
-      ret = gst_pad_event_default (pad, parent, event);
+      ret = gst_pad_event_full_default (pad, parent, event);
       break;
     default:
-      ret = gst_pad_event_default (pad, parent, event);
+      ret = gst_pad_event_full_default (pad, parent, event);
       break;
   }
 

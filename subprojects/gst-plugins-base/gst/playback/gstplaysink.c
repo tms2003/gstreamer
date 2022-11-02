@@ -387,8 +387,8 @@ static gboolean gst_play_sink_audio_sink_event (GstPad * pad, GstEvent * event);
 static GstFlowReturn gst_play_sink_audio_sink_chain (GstPad * pad,
     GstBuffer * buffer);
 #endif
-static gboolean gst_play_sink_text_sink_event (GstPad * pad, GstObject * parent,
-    GstEvent * event);
+static GstFlowReturn gst_play_sink_text_sink_event (GstPad * pad,
+    GstObject * parent, GstEvent * event);
 static GstFlowReturn gst_play_sink_text_sink_chain (GstPad * pad,
     GstObject * parent, GstBuffer * buffer);
 
@@ -2172,14 +2172,14 @@ setup_video_chain (GstPlaySink * playsink, gboolean raw, gboolean async)
   return TRUE;
 }
 
-static gboolean
+static GstFlowReturn
 gst_play_sink_sink_event (GstPad * pad, GstObject * parent, GstEvent * event,
     const gchar * sink_type,
     gboolean * sink_ignore_wrong_state,
     gboolean * sink_custom_flush_finished, gboolean * sink_pending_flush)
 {
   GstPlaySink *playsink = GST_PLAY_SINK_CAST (gst_object_get_parent (parent));
-  gboolean ret;
+  GstFlowReturn ret;
   const GstStructure *structure = gst_event_get_structure (event);
 
   if (GST_EVENT_TYPE (event) == GST_EVENT_CUSTOM_DOWNSTREAM_OOB && structure) {
@@ -2212,7 +2212,7 @@ gst_play_sink_sink_event (GstPad * pad, GstObject * parent, GstEvent * event,
   }
 
   GST_DEBUG_OBJECT (pad, "Forwarding event %" GST_PTR_FORMAT, event);
-  ret = gst_pad_event_default (pad, parent, gst_event_ref (event));
+  ret = gst_pad_event_full_default (pad, parent, gst_event_ref (event));
 
   gst_event_unref (event);
   gst_object_unref (playsink);
@@ -2381,12 +2381,12 @@ gst_play_sink_audio_sink_chain (GstPad * pad, GstBuffer * buffer)
 }
 #endif
 
-static gboolean
+static GstFlowReturn
 gst_play_sink_text_sink_event (GstPad * pad, GstObject * parent,
     GstEvent * event)
 {
   GstPlaySink *playsink = GST_PLAY_SINK_CAST (gst_object_get_parent (parent));
-  gboolean ret;
+  GstFlowReturn ret;
 
   ret = gst_play_sink_sink_event (pad, parent, event, "subtitle",
       &playsink->text_ignore_wrong_state,
@@ -2412,11 +2412,11 @@ gst_play_sink_text_sink_chain (GstPad * pad, GstObject * parent,
   return ret;
 }
 
-static gboolean
+static GstFlowReturn
 gst_play_sink_text_src_event (GstPad * pad, GstObject * parent,
     GstEvent * event)
 {
-  gboolean ret;
+  GstFlowReturn ret;
   const GstStructure *structure;
 
   GST_DEBUG_OBJECT (pad, "Got event %" GST_PTR_FORMAT, event);
@@ -2431,11 +2431,11 @@ gst_play_sink_text_src_event (GstPad * pad, GstObject * parent,
      * must be dropped here */
     GST_DEBUG_OBJECT (pad, "Dropping event with reset "
         "segment marker set: %" GST_PTR_FORMAT, event);
-    ret = TRUE;
+    ret = GST_FLOW_OK;
     goto out;
   }
 
-  ret = gst_pad_event_default (pad, parent, gst_event_ref (event));
+  ret = gst_pad_event_full_default (pad, parent, gst_event_ref (event));
 
 out:
   gst_event_unref (event);
@@ -2636,7 +2636,7 @@ gen_text_chain (GstPlaySink * playsink)
     chain->textsinkpad = gst_ghost_pad_new ("text_sink", textsinkpad);
     gst_object_unref (textsinkpad);
 
-    gst_pad_set_event_function (chain->textsinkpad,
+    gst_pad_set_event_full_function (chain->textsinkpad,
         GST_DEBUG_FUNCPTR (gst_play_sink_text_sink_event));
     gst_pad_set_chain_function (chain->textsinkpad,
         GST_DEBUG_FUNCPTR (gst_play_sink_text_sink_chain));
@@ -2647,7 +2647,7 @@ gen_text_chain (GstPlaySink * playsink)
     chain->srcpad = gst_ghost_pad_new ("src", srcpad);
     gst_object_unref (srcpad);
 
-    gst_pad_set_event_function (chain->srcpad,
+    gst_pad_set_event_full_function (chain->srcpad,
         GST_DEBUG_FUNCPTR (gst_play_sink_text_src_event));
 
     gst_element_add_pad (chain->chain.bin, chain->srcpad);

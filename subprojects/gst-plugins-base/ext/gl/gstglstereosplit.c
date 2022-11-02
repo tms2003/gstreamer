@@ -81,12 +81,10 @@ static GstStateChangeReturn stereosplit_change_state (GstElement * element,
     GstStateChange transition);
 static gboolean stereosplit_sink_query (GstPad * pad, GstObject * parent,
     GstQuery * query);
-static gboolean stereosplit_sink_event (GstPad * pad, GstObject * parent,
+static GstFlowReturn stereosplit_sink_event (GstPad * pad, GstObject * parent,
     GstEvent * event);
-static gboolean stereosplit_src_query (GstPad * pad, GstObject * parent,
+static GstFlowReturn stereosplit_src_query (GstPad * pad, GstObject * parent,
     GstQuery * query);
-static gboolean stereosplit_src_event (GstPad * pad, GstObject * parent,
-    GstEvent * event);
 static gboolean ensure_context (GstGLStereoSplit * self);
 static gboolean ensure_context_unlocked (GstGLStereoSplit * self);
 
@@ -123,20 +121,18 @@ gst_gl_stereosplit_init (GstGLStereoSplit * self)
 
   gst_pad_set_chain_function (pad, (GstPadChainFunction) (stereosplit_chain));
   gst_pad_set_query_function (pad, stereosplit_sink_query);
-  gst_pad_set_event_function (pad, stereosplit_sink_event);
+  gst_pad_set_event_full_function (pad, stereosplit_sink_event);
 
   gst_element_add_pad (GST_ELEMENT (self), self->sink_pad);
 
   pad = self->left_pad =
       gst_pad_new_from_static_template (&src_left_template, "left");
   gst_pad_set_query_function (pad, stereosplit_src_query);
-  gst_pad_set_event_function (pad, stereosplit_src_event);
   gst_element_add_pad (GST_ELEMENT (self), self->left_pad);
 
   pad = self->right_pad =
       gst_pad_new_from_static_template (&src_right_template, "right");
   gst_pad_set_query_function (pad, stereosplit_src_query);
-  gst_pad_set_event_function (pad, stereosplit_src_event);
   gst_element_add_pad (GST_ELEMENT (self), self->right_pad);
 
   self->viewconvert = gst_gl_view_convert_new ();
@@ -329,12 +325,12 @@ stereosplit_get_src_caps (GstGLStereoSplit * split,
   return outcaps;
 }
 
-static gboolean
+static GstFlowReturn
 stereosplit_set_output_caps (GstGLStereoSplit * split, GstCaps * sinkcaps)
 {
   GstCaps *left = NULL, *right = NULL, *tridcaps = NULL;
   GstCaps *tmp, *combined;
-  gboolean res = FALSE;
+  GstFlowReturn res = GST_FLOW_ERROR;
 
   /* Choose some preferred output caps.
    * Keep input width/height and PAR, preserve preferred output
@@ -342,10 +338,8 @@ stereosplit_set_output_caps (GstGLStereoSplit * split, GstCaps * sinkcaps)
    * left right pad to either left/mono and right/mono, as they prefer
    */
 
-  if (!ensure_context (split)) {
-    res = FALSE;
+  if (!ensure_context (split))
     goto fail;
-  }
 
   /* Calculate what downstream can collectively support */
   left =
@@ -388,6 +382,7 @@ stereosplit_set_output_caps (GstGLStereoSplit * split, GstCaps * sinkcaps)
 
   if (G_UNLIKELY (gst_caps_is_empty (tridcaps))) {
     gst_caps_unref (tridcaps);
+    res = GST_FLOW_NOT_NEGOTIATED;
     goto fail;
   }
 
@@ -398,7 +393,8 @@ stereosplit_set_output_caps (GstGLStereoSplit * split, GstCaps * sinkcaps)
   gst_caps_unref (left);
   left = tmp;
   left = gst_caps_fixate (left);
-  if (!gst_pad_set_caps (split->left_pad, left)) {
+  res = gst_pad_push_event_full (split->left_pad, gst_event_new_caps (left));
+  if (res != GST_FLOW_OK) {
     GST_ERROR_OBJECT (split,
         "Failed to set left output caps %" GST_PTR_FORMAT, left);
     goto fail;
@@ -408,7 +404,8 @@ stereosplit_set_output_caps (GstGLStereoSplit * split, GstCaps * sinkcaps)
   gst_caps_unref (right);
   right = tmp;
   right = gst_caps_fixate (right);
-  if (!gst_pad_set_caps (split->right_pad, right)) {
+  res = gst_pad_push_event_full (split->right_pad, gst_event_new_caps (right));
+  if (res != GST_FLOW_OK) {
     GST_ERROR_OBJECT (split,
         "Failed to set right output caps %" GST_PTR_FORMAT, right);
     goto fail;
@@ -428,11 +425,12 @@ stereosplit_set_output_caps (GstGLStereoSplit * split, GstCaps * sinkcaps)
   if (!gst_gl_view_convert_set_caps (split->viewconvert, sinkcaps, tridcaps)) {
     g_rec_mutex_unlock (&split->context_lock);
     GST_ERROR_OBJECT (split, "Failed to set caps on converter");
+    res = GST_FLOW_NOT_NEGOTIATED;
     goto fail;
   }
   g_rec_mutex_unlock (&split->context_lock);
 
-  res = TRUE;
+  res = GST_FLOW_OK;
 
 fail:
   if (left)
@@ -745,12 +743,6 @@ stereosplit_src_query (GstPad * pad, GstObject * parent, GstQuery * query)
 }
 
 static gboolean
-stereosplit_src_event (GstPad * pad, GstObject * parent, GstEvent * event)
-{
-  return gst_pad_event_default (pad, parent, event);
-}
-
-static gboolean
 stereosplit_sink_query (GstPad * pad, GstObject * parent, GstQuery * query)
 {
   GstGLStereoSplit *split = GST_GL_STEREOSPLIT (parent);
@@ -871,7 +863,7 @@ stereosplit_sink_query (GstPad * pad, GstObject * parent, GstQuery * query)
   }
 }
 
-static gboolean
+static GstFlowReturn
 stereosplit_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
 {
   GstGLStereoSplit *split = GST_GL_STEREOSPLIT (parent);
@@ -886,6 +878,6 @@ stereosplit_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
       return stereosplit_set_output_caps (split, caps);
     }
     default:
-      return gst_pad_event_default (pad, parent, event);
+      return gst_pad_event_full_default (pad, parent, event);
   }
 }

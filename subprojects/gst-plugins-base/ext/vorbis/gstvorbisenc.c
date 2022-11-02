@@ -94,7 +94,7 @@ static gboolean gst_vorbis_enc_set_format (GstAudioEncoder * enc,
     GstAudioInfo * info);
 static GstFlowReturn gst_vorbis_enc_handle_frame (GstAudioEncoder * enc,
     GstBuffer * in_buf);
-static gboolean gst_vorbis_enc_sink_event (GstAudioEncoder * enc,
+static GstFlowReturn gst_vorbis_enc_sink_event (GstAudioEncoder * enc,
     GstEvent * event);
 
 static gboolean gst_vorbis_enc_setup (GstVorbisEnc * vorbisenc);
@@ -181,7 +181,7 @@ gst_vorbis_enc_class_init (GstVorbisEncClass * klass)
   base_class->stop = GST_DEBUG_FUNCPTR (gst_vorbis_enc_stop);
   base_class->set_format = GST_DEBUG_FUNCPTR (gst_vorbis_enc_set_format);
   base_class->handle_frame = GST_DEBUG_FUNCPTR (gst_vorbis_enc_handle_frame);
-  base_class->sink_event = GST_DEBUG_FUNCPTR (gst_vorbis_enc_sink_event);
+  base_class->sink_event_full = GST_DEBUG_FUNCPTR (gst_vorbis_enc_sink_event);
   base_class->flush = GST_DEBUG_FUNCPTR (gst_vorbis_enc_flush);
 }
 
@@ -757,7 +757,7 @@ gst_vorbis_enc_buffer_from_header_packet (GstVorbisEnc * vorbisenc,
   return outbuf;
 }
 
-static gboolean
+static GstFlowReturn
 gst_vorbis_enc_sink_event (GstAudioEncoder * enc, GstEvent * event)
 {
   GstVorbisEnc *vorbisenc;
@@ -782,7 +782,7 @@ gst_vorbis_enc_sink_event (GstAudioEncoder * enc, GstEvent * event)
   }
 
   /* we only peeked, let base class handle it */
-  return GST_AUDIO_ENCODER_CLASS (parent_class)->sink_event (enc, event);
+  return GST_AUDIO_ENCODER_CLASS (parent_class)->sink_event_full (enc, event);
 }
 
 /*

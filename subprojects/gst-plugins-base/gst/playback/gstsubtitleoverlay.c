@@ -1684,13 +1684,13 @@ gst_subtitle_overlay_src_proxy_chain (GstPad * proxypad, GstObject * parent,
   return ret;
 }
 
-static gboolean
+static GstFlowReturn
 gst_subtitle_overlay_src_proxy_event (GstPad * proxypad, GstObject * parent,
     GstEvent * event)
 {
   GstPad *ghostpad = NULL;
   GstSubtitleOverlay *self = NULL;
-  gboolean ret = FALSE;
+  GstFlowReturn ret = GST_FLOW_ERROR;
   const GstStructure *s;
 
   ghostpad = GST_PAD_CAST (parent);
@@ -1707,9 +1707,9 @@ gst_subtitle_overlay_src_proxy_event (GstPad * proxypad, GstObject * parent,
         gst_event_get_structure (event));
     gst_event_unref (event);
     event = NULL;
-    ret = TRUE;
+    ret = GST_FLOW_OK;
   } else {
-    ret = gst_pad_event_default (proxypad, parent, event);
+    ret = gst_pad_event_full_default (proxypad, parent, event);
     event = NULL;
   }
 
@@ -1766,12 +1766,12 @@ out:
   return ret;
 }
 
-static gboolean
+static GstFlowReturn
 gst_subtitle_overlay_video_sink_event (GstPad * pad, GstObject * parent,
     GstEvent * event)
 {
   GstSubtitleOverlay *self = GST_SUBTITLE_OVERLAY (parent);
-  gboolean ret;
+  GstFlowReturn ret;
 
   switch (GST_EVENT_TYPE (event)) {
     case GST_EVENT_CAPS:
@@ -1779,16 +1779,17 @@ gst_subtitle_overlay_video_sink_event (GstPad * pad, GstObject * parent,
       GstCaps *caps;
 
       gst_event_parse_caps (event, &caps);
-      ret = gst_subtitle_overlay_video_sink_setcaps (self, caps);
-      if (!ret)
+      if (!gst_subtitle_overlay_video_sink_setcaps (self, caps)) {
+        ret = GST_FLOW_NOT_NEGOTIATED;
         goto done;
+      }
       break;
     }
     default:
       break;
   }
 
-  ret = gst_pad_event_default (pad, parent, gst_event_ref (event));
+  ret = gst_pad_event_full_default (pad, parent, gst_event_ref (event));
 
 done:
   gst_event_unref (event);
@@ -1953,12 +1954,12 @@ gst_subtitle_overlay_subtitle_sink_unlink (GstPad * pad, GstObject * parent)
   GST_SUBTITLE_OVERLAY_UNLOCK (self);
 }
 
-static gboolean
+static GstFlowReturn
 gst_subtitle_overlay_subtitle_sink_event (GstPad * pad, GstObject * parent,
     GstEvent * event)
 {
   GstSubtitleOverlay *self = GST_SUBTITLE_OVERLAY (parent);
-  gboolean ret;
+  GstFlowReturn ret = GST_FLOW_OK;
 
   GST_DEBUG_OBJECT (pad, "Got event %" GST_PTR_FORMAT, event);
 
@@ -1974,7 +1975,6 @@ gst_subtitle_overlay_subtitle_sink_event (GstPad * pad, GstObject * parent,
 
     gst_event_unref (event);
     event = NULL;
-    ret = TRUE;
     goto out;
   }
 
@@ -1984,9 +1984,10 @@ gst_subtitle_overlay_subtitle_sink_event (GstPad * pad, GstObject * parent,
       GstCaps *caps;
 
       gst_event_parse_caps (event, &caps);
-      ret = gst_subtitle_overlay_subtitle_sink_setcaps (self, caps);
-      if (!ret)
+      if (!gst_subtitle_overlay_subtitle_sink_setcaps (self, caps)) {
+        ret = GST_FLOW_NOT_NEGOTIATED;
         goto out;
+      }
       break;
     }
     case GST_EVENT_FLUSH_STOP:
@@ -2009,7 +2010,7 @@ gst_subtitle_overlay_subtitle_sink_event (GstPad * pad, GstObject * parent,
       break;
   }
 
-  ret = gst_pad_event_default (pad, parent, gst_event_ref (event));
+  ret = gst_pad_event_full_default (pad, parent, gst_event_ref (event));
 
   gst_event_unref (event);
 
@@ -2064,7 +2065,7 @@ gst_subtitle_overlay_init (GstSubtitleOverlay * self)
 
   proxypad =
       GST_PAD_CAST (gst_proxy_pad_get_internal (GST_PROXY_PAD (self->srcpad)));
-  gst_pad_set_event_function (proxypad,
+  gst_pad_set_event_full_function (proxypad,
       GST_DEBUG_FUNCPTR (gst_subtitle_overlay_src_proxy_event));
   gst_pad_set_chain_function (proxypad,
       GST_DEBUG_FUNCPTR (gst_subtitle_overlay_src_proxy_chain));
@@ -2076,7 +2077,7 @@ gst_subtitle_overlay_init (GstSubtitleOverlay * self)
   self->video_sinkpad =
       gst_ghost_pad_new_no_target_from_template ("video_sink", templ);
   gst_object_unref (templ);
-  gst_pad_set_event_function (self->video_sinkpad,
+  gst_pad_set_event_full_function (self->video_sinkpad,
       GST_DEBUG_FUNCPTR (gst_subtitle_overlay_video_sink_event));
   gst_pad_set_chain_function (self->video_sinkpad,
       GST_DEBUG_FUNCPTR (gst_subtitle_overlay_video_sink_chain));
@@ -2096,7 +2097,7 @@ gst_subtitle_overlay_init (GstSubtitleOverlay * self)
       GST_DEBUG_FUNCPTR (gst_subtitle_overlay_subtitle_sink_link));
   gst_pad_set_unlink_function (self->subtitle_sinkpad,
       GST_DEBUG_FUNCPTR (gst_subtitle_overlay_subtitle_sink_unlink));
-  gst_pad_set_event_function (self->subtitle_sinkpad,
+  gst_pad_set_event_full_function (self->subtitle_sinkpad,
       GST_DEBUG_FUNCPTR (gst_subtitle_overlay_subtitle_sink_event));
   gst_pad_set_query_function (self->subtitle_sinkpad,
       GST_DEBUG_FUNCPTR (gst_subtitle_overlay_subtitle_sink_query));

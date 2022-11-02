@@ -85,7 +85,7 @@ static void gst_streamid_demux_get_property (GObject * object, guint prop_id,
     GValue * value, GParamSpec * pspec);
 static GstFlowReturn gst_streamid_demux_chain (GstPad * pad,
     GstObject * parent, GstBuffer * buf);
-static gboolean gst_streamid_demux_event (GstPad * pad, GstObject * parent,
+static GstFlowReturn gst_streamid_demux_event (GstPad * pad, GstObject * parent,
     GstEvent * event);
 static GstStateChangeReturn gst_streamid_demux_change_state (GstElement *
     element, GstStateChange transition);
@@ -131,7 +131,7 @@ gst_streamid_demux_init (GstStreamidDemux * demux)
       "sink");
   gst_pad_set_chain_function (demux->sinkpad,
       GST_DEBUG_FUNCPTR (gst_streamid_demux_chain));
-  gst_pad_set_event_function (demux->sinkpad,
+  gst_pad_set_event_full_function (demux->sinkpad,
       GST_DEBUG_FUNCPTR (gst_streamid_demux_event));
 
   gst_element_add_pad (GST_ELEMENT (demux), demux->sinkpad);
@@ -264,10 +264,10 @@ done:
   return srcpad;
 }
 
-static gboolean
+static GstFlowReturn
 gst_streamid_demux_event (GstPad * pad, GstObject * parent, GstEvent * event)
 {
-  gboolean res = TRUE;
+  GstFlowReturn res = TRUE;
   GstStreamidDemux *demux;
   const gchar *stream_id = NULL;
   GstPad *active_srcpad = NULL;
@@ -311,13 +311,13 @@ gst_streamid_demux_event (GstPad * pad, GstObject * parent, GstEvent * event)
   if (GST_EVENT_TYPE (event) == GST_EVENT_FLUSH_START
       || GST_EVENT_TYPE (event) == GST_EVENT_FLUSH_STOP
       || GST_EVENT_TYPE (event) == GST_EVENT_EOS) {
-    res = gst_pad_event_default (pad, parent, event);
+    res = gst_pad_event_full_default (pad, parent, event);
   } else if (demux->active_srcpad) {
     GstPad *srcpad = NULL;
     GST_OBJECT_LOCK (demux);
     srcpad = gst_object_ref (demux->active_srcpad);
     GST_OBJECT_UNLOCK (demux);
-    res = gst_pad_push_event (srcpad, event);
+    res = gst_pad_push_event_full (srcpad, event);
     gst_object_unref (srcpad);
   } else {
     gst_event_unref (event);
@@ -332,7 +332,7 @@ no_stream_id:
         ("no stream-id found at %s", GST_EVENT_TYPE_NAME (event)));
 
     gst_event_unref (event);
-    return FALSE;
+    return GST_FLOW_ERROR;
   }
 
 fail_create_srcpad:
@@ -341,7 +341,7 @@ fail_create_srcpad:
         ("Error occurred trying to create a srcpad"),
         ("Failed to create a srcpad via stream-id:%s", stream_id));
     gst_event_unref (event);
-    return FALSE;
+    return GST_FLOW_ERROR;
   }
 }
 

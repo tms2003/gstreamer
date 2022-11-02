@@ -42,7 +42,7 @@ static gboolean gst_gio_base_sink_start (GstBaseSink * base_sink);
 static gboolean gst_gio_base_sink_stop (GstBaseSink * base_sink);
 static gboolean gst_gio_base_sink_unlock (GstBaseSink * base_sink);
 static gboolean gst_gio_base_sink_unlock_stop (GstBaseSink * base_sink);
-static gboolean gst_gio_base_sink_event (GstBaseSink * base_sink,
+static GstFlowReturn gst_gio_base_sink_event (GstBaseSink * base_sink,
     GstEvent * event);
 static GstFlowReturn gst_gio_base_sink_render (GstBaseSink * base_sink,
     GstBuffer * buffer);
@@ -68,7 +68,7 @@ gst_gio_base_sink_class_init (GstGioBaseSinkClass * klass)
   gstbasesink_class->unlock_stop =
       GST_DEBUG_FUNCPTR (gst_gio_base_sink_unlock_stop);
   gstbasesink_class->query = GST_DEBUG_FUNCPTR (gst_gio_base_sink_query);
-  gstbasesink_class->event = GST_DEBUG_FUNCPTR (gst_gio_base_sink_event);
+  gstbasesink_class->event_full = GST_DEBUG_FUNCPTR (gst_gio_base_sink_event);
   gstbasesink_class->render = GST_DEBUG_FUNCPTR (gst_gio_base_sink_render);
 
   gst_type_mark_as_plugin_api (GST_TYPE_GIO_BASE_SINK, 0);
@@ -199,14 +199,14 @@ gst_gio_base_sink_unlock_stop (GstBaseSink * base_sink)
   return TRUE;
 }
 
-static gboolean
+static GstFlowReturn
 gst_gio_base_sink_event (GstBaseSink * base_sink, GstEvent * event)
 {
   GstGioBaseSink *sink = GST_GIO_BASE_SINK (base_sink);
   GstFlowReturn ret = GST_FLOW_OK;
 
   if (sink->stream == NULL)
-    return TRUE;
+    return GST_FLOW_OK;
 
   switch (GST_EVENT_TYPE (event)) {
     case GST_EVENT_SEGMENT:
@@ -253,10 +253,10 @@ gst_gio_base_sink_event (GstBaseSink * base_sink, GstEvent * event)
       break;
   }
   if (ret == GST_FLOW_OK)
-    return GST_BASE_SINK_CLASS (parent_class)->event (base_sink, event);
+    return GST_BASE_SINK_CLASS (parent_class)->event_full (base_sink, event);
   else {
     gst_event_unref (event);
-    return FALSE;
+    return ret;
   }
 }
 

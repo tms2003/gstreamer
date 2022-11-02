@@ -151,7 +151,8 @@ struct _GstBaseSrc {
  *    state they set during #GstBaseSrcClass::unlock, such as clearing command
  *    queues.
  * @query: Handle a requested query.
- * @event: Override this to implement custom event handling.
+ * @event: Override this to implement custom event handling (deprecated,
+ *    use @event_full).
  * @create: Ask the subclass to create a buffer with offset and size.  When the
  *   subclass returns GST_FLOW_OK, it MUST return a buffer of the requested size
  *   unless fewer bytes are available because an EOS condition is near. No
@@ -260,9 +261,17 @@ struct _GstBaseSrcClass {
   /* ask the subclass to fill the buffer with data from offset and size */
   GstFlowReturn (*fill)         (GstBaseSrc *src, guint64 offset, guint size,
                                  GstBuffer *buf);
-
+  /**
+   * GstBaseSrcClass::event_full:
+   * @event: (transfer full):
+   *
+   * notify subclass of event (with flow return)
+   *
+   * Since: 1.22
+   */
+   GstFlowReturn (*event_full)   (GstBaseSrc *src, GstEvent *event);
   /*< private >*/
-  gpointer       _gst_reserved[GST_PADDING_LARGE];
+  gpointer       _gst_reserved[GST_PADDING_LARGE - 1];
 };
 
 GST_BASE_API

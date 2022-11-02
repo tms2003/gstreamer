@@ -119,7 +119,7 @@ static GstFlowReturn gst_funnel_sink_chain (GstPad * pad, GstObject * parent,
     GstBuffer * buffer);
 static GstFlowReturn gst_funnel_sink_chain_list (GstPad * pad,
     GstObject * parent, GstBufferList * list);
-static gboolean gst_funnel_sink_event (GstPad * pad, GstObject * parent,
+static GstFlowReturn gst_funnel_sink_event (GstPad * pad, GstObject * parent,
     GstEvent * event);
 
 static void
@@ -232,7 +232,7 @@ gst_funnel_request_new_pad (GstElement * element, GstPadTemplate * templ,
       GST_DEBUG_FUNCPTR (gst_funnel_sink_chain));
   gst_pad_set_chain_list_function (sinkpad,
       GST_DEBUG_FUNCPTR (gst_funnel_sink_chain_list));
-  gst_pad_set_event_function (sinkpad,
+  gst_pad_set_event_full_function (sinkpad,
       GST_DEBUG_FUNCPTR (gst_funnel_sink_event));
 
   GST_OBJECT_FLAG_SET (sinkpad, GST_PAD_FLAG_PROXY_CAPS);
@@ -363,13 +363,13 @@ gst_funnel_sink_chain (GstPad * pad, GstObject * parent, GstBuffer * buffer)
       GST_MINI_OBJECT_CAST (buffer));
 }
 
-static gboolean
+static GstFlowReturn
 gst_funnel_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
 {
   GstFunnel *funnel = GST_FUNNEL_CAST (parent);
   GstFunnelPad *fpad = GST_FUNNEL_PAD_CAST (pad);
   gboolean forward = TRUE;
-  gboolean res = TRUE;
+  GstFlowReturn res = GST_FLOW_OK;
   gboolean unlock = FALSE;
 
   GST_DEBUG_OBJECT (pad, "received event %" GST_PTR_FORMAT, event);
@@ -416,7 +416,7 @@ gst_funnel_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
   }
 
   if (forward)
-    res = gst_pad_push_event (funnel->srcpad, event);
+    res = gst_pad_push_event_full (funnel->srcpad, event);
   else
     gst_event_unref (event);
 

@@ -409,11 +409,12 @@ static void gst_base_sink_loop (GstPad * pad);
 static gboolean gst_base_sink_pad_activate (GstPad * pad, GstObject * parent);
 static gboolean gst_base_sink_pad_activate_mode (GstPad * pad,
     GstObject * parent, GstPadMode mode, gboolean active);
-static gboolean gst_base_sink_default_event (GstBaseSink * basesink,
+static gboolean wrap_sink_event (GstBaseSink * basesink, GstEvent * event);
+static GstFlowReturn gst_base_sink_default_event (GstBaseSink * basesink,
     GstEvent * event);
 static GstFlowReturn gst_base_sink_default_wait_event (GstBaseSink * basesink,
     GstEvent * event);
-static gboolean gst_base_sink_event (GstPad * pad, GstObject * parent,
+static GstFlowReturn gst_base_sink_event (GstPad * pad, GstObject * parent,
     GstEvent * event);
 
 static gboolean gst_base_sink_default_query (GstBaseSink * sink,
@@ -604,7 +605,8 @@ gst_base_sink_class_init (GstBaseSinkClass * klass)
       GST_DEBUG_FUNCPTR (gst_base_sink_default_activate_pull);
   klass->get_times = GST_DEBUG_FUNCPTR (gst_base_sink_default_get_times);
   klass->query = GST_DEBUG_FUNCPTR (gst_base_sink_default_query);
-  klass->event = GST_DEBUG_FUNCPTR (gst_base_sink_default_event);
+  klass->event = GST_DEBUG_FUNCPTR (wrap_sink_event);
+  klass->event_full = GST_DEBUG_FUNCPTR (gst_base_sink_default_event);
   klass->wait_event = GST_DEBUG_FUNCPTR (gst_base_sink_default_wait_event);
 
   /* Registering debug symbols for function pointers */
@@ -698,7 +700,7 @@ gst_base_sink_init (GstBaseSink * basesink, gpointer g_class)
   gst_pad_set_activatemode_function (basesink->sinkpad,
       gst_base_sink_pad_activate_mode);
   gst_pad_set_query_function (basesink->sinkpad, gst_base_sink_sink_query);
-  gst_pad_set_event_function (basesink->sinkpad, gst_base_sink_event);
+  gst_pad_set_event_full_function (basesink->sinkpad, gst_base_sink_event);
   gst_pad_set_chain_function (basesink->sinkpad, gst_base_sink_chain);
   gst_pad_set_chain_list_function (basesink->sinkpad, gst_base_sink_chain_list);
   gst_element_add_pad (GST_ELEMENT_CAST (basesink), basesink->sinkpad);
@@ -3320,9 +3322,15 @@ gst_base_sink_wait_event (GstBaseSink * basesink, GstEvent * event)
 }
 
 static gboolean
+wrap_sink_event (GstBaseSink * basesink, GstEvent * event)
+{
+  return gst_base_sink_default_event (basesink, event) == GST_FLOW_OK;
+}
+
+static GstFlowReturn
 gst_base_sink_default_event (GstBaseSink * basesink, GstEvent * event)
 {
-  gboolean result = TRUE;
+  GstFlowReturn result = GST_FLOW_OK;
   GstBaseSinkClass *bclass;
 
   bclass = GST_BASE_SINK_GET_CLASS (basesink);
@@ -3354,11 +3362,9 @@ gst_base_sink_default_event (GstBaseSink * basesink, GstEvent * event)
       basesink->priv->received_eos = TRUE;
 
       /* wait for EOS */
-      if (G_UNLIKELY (gst_base_sink_wait_event (basesink,
-                  event) != GST_FLOW_OK)) {
-        result = FALSE;
+      result = gst_base_sink_wait_event (basesink, event);
+      if (G_UNLIKELY (result != GST_FLOW_OK))
         goto done;
-      }
 
       /* the EOS event is completely handled so we mark
        * ourselves as being in the EOS state. eos is also
@@ -3414,9 +3420,10 @@ gst_base_sink_default_event (GstBaseSink * basesink, GstEvent * event)
             "New caps equal to old ones: %" GST_PTR_FORMAT, caps);
       } else {
         if (bclass->set_caps)
-          result = bclass->set_caps (basesink, caps);
+          if (!bclass->set_caps (basesink, caps))
+            result = GST_FLOW_NOT_NEGOTIATED;
 
-        if (result) {
+        if (result == GST_FLOW_OK) {
           GST_OBJECT_LOCK (basesink);
           gst_caps_replace (&basesink->priv->caps, caps);
           GST_OBJECT_UNLOCK (basesink);
@@ -3562,9 +3569,7 @@ gst_base_sink_default_event (GstBaseSink * basesink, GstEvent * event)
     }
     case GST_EVENT_GAP:
     {
-      if (G_UNLIKELY (gst_base_sink_wait_event (basesink,
-                  event) != GST_FLOW_OK))
-        result = FALSE;
+      result = gst_base_sink_wait_event (basesink, event);
       break;
     }
     case GST_EVENT_TAG:
@@ -3644,15 +3649,32 @@ done:
   return result;
 }
 
-static gboolean
+static inline GstFlowReturn
+handle_sink_event (GstBaseSink * basesink, GstEvent * event)
+{
+  GstBaseSinkClass *bclass = GST_BASE_SINK_GET_CLASS (basesink);
+
+  if (bclass->event == wrap_sink_event) {
+    g_assert (bclass->event_full);
+    return bclass->event_full (basesink, event);
+  }
+
+  GST_CAT_FIXME_OBJECT (GST_CAT_EVENT, basesink,
+      "Implement flow-aware sink event handler");
+
+  if (bclass->event (basesink, event))
+    return GST_FLOW_OK;
+
+  return GST_FLOW_ERROR;
+}
+
+static GstFlowReturn
 gst_base_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
 {
   GstBaseSink *basesink;
-  gboolean result = TRUE;
-  GstBaseSinkClass *bclass;
+  GstFlowReturn result = GST_FLOW_OK;
 
   basesink = GST_BASE_SINK_CAST (parent);
-  bclass = GST_BASE_SINK_GET_CLASS (basesink);
 
   GST_DEBUG_OBJECT (basesink, "received event %p %" GST_PTR_FORMAT, event,
       event);
@@ -3661,8 +3683,7 @@ gst_base_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
     case GST_EVENT_FLUSH_STOP:
       /* special case for this serialized event because we don't want to grab
        * the PREROLL lock or check if we were flushing */
-      if (bclass->event)
-        result = bclass->event (basesink, event);
+      result = handle_sink_event (basesink, event);
       break;
     default:
       if (GST_EVENT_IS_SERIALIZED (event)) {
@@ -3673,13 +3694,11 @@ gst_base_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
         if (G_UNLIKELY (basesink->priv->received_eos))
           goto after_eos;
 
-        if (bclass->event)
-          result = bclass->event (basesink, event);
+        result = handle_sink_event (basesink, event);
 
         GST_BASE_SINK_PREROLL_UNLOCK (basesink);
       } else {
-        if (bclass->event)
-          result = bclass->event (basesink, event);
+        result = handle_sink_event (basesink, event);
       }
       break;
   }
@@ -3692,7 +3711,7 @@ flushing:
     GST_DEBUG_OBJECT (basesink, "we are flushing");
     GST_BASE_SINK_PREROLL_UNLOCK (basesink);
     gst_event_unref (event);
-    result = FALSE;
+    result = GST_FLOW_FLUSHING;
     goto done;
   }
 
@@ -3700,8 +3719,7 @@ after_eos:
   {
     GST_DEBUG_OBJECT (basesink, "Event received after EOS, dropping");
     GST_BASE_SINK_PREROLL_UNLOCK (basesink);
-    gst_event_unref (event);
-    result = FALSE;
+    result = GST_FLOW_EOS;
     goto done;
   }
 }
@@ -4252,7 +4270,7 @@ gst_base_sink_perform_seek (GstBaseSink * sink, GstPad * pad, GstEvent * event)
 
   if (flush) {
     GST_DEBUG_OBJECT (sink, "flushing upstream");
-    gst_pad_push_event (pad, gst_event_new_flush_start ());
+    gst_pad_push_event_full (pad, gst_event_new_flush_start ());
     gst_base_sink_flush_start (sink, pad);
   } else {
     GST_DEBUG_OBJECT (sink, "pausing pulling thread");
@@ -4300,7 +4318,7 @@ gst_base_sink_perform_seek (GstBaseSink * sink, GstPad * pad, GstEvent * event)
 
   if (flush) {
     GST_DEBUG_OBJECT (sink, "stop flushing upstream");
-    gst_pad_push_event (pad, gst_event_new_flush_stop (TRUE));
+    gst_pad_push_event_full (pad, gst_event_new_flush_stop (TRUE));
     gst_base_sink_flush_stop (sink, pad, TRUE);
   } else if (res && sink->running) {
     /* we are running the current segment and doing a non-flushing seek,

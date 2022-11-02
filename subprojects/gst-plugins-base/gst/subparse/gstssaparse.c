@@ -58,9 +58,7 @@ GST_ELEMENT_REGISTER_DEFINE_WITH_CODE (ssaparse, "ssaparse",
 static GstStateChangeReturn gst_ssa_parse_change_state (GstElement *
     element, GstStateChange transition);
 static gboolean gst_ssa_parse_setcaps (GstPad * sinkpad, GstCaps * caps);
-static gboolean gst_ssa_parse_src_event (GstPad * pad, GstObject * parent,
-    GstEvent * event);
-static gboolean gst_ssa_parse_sink_event (GstPad * pad, GstObject * parent,
+static GstFlowReturn gst_ssa_parse_sink_event (GstPad * pad, GstObject * parent,
     GstEvent * event);
 static GstFlowReturn gst_ssa_parse_chain (GstPad * sinkpad, GstObject * parent,
     GstBuffer * buf);
@@ -82,13 +80,11 @@ gst_ssa_parse_init (GstSsaParse * parse)
   parse->sinkpad = gst_pad_new_from_static_template (&sink_templ, "sink");
   gst_pad_set_chain_function (parse->sinkpad,
       GST_DEBUG_FUNCPTR (gst_ssa_parse_chain));
-  gst_pad_set_event_function (parse->sinkpad,
+  gst_pad_set_event_full_function (parse->sinkpad,
       GST_DEBUG_FUNCPTR (gst_ssa_parse_sink_event));
   gst_element_add_pad (GST_ELEMENT (parse), parse->sinkpad);
 
   parse->srcpad = gst_pad_new_from_static_template (&src_templ, "src");
-  gst_pad_set_event_function (parse->srcpad,
-      GST_DEBUG_FUNCPTR (gst_ssa_parse_src_event));
   gst_element_add_pad (GST_ELEMENT (parse), parse->srcpad);
   gst_pad_use_fixed_caps (parse->srcpad);
 
@@ -118,16 +114,10 @@ gst_ssa_parse_class_init (GstSsaParseClass * klass)
   element_class->change_state = GST_DEBUG_FUNCPTR (gst_ssa_parse_change_state);
 }
 
-static gboolean
-gst_ssa_parse_src_event (GstPad * pad, GstObject * parent, GstEvent * event)
-{
-  return gst_pad_event_default (pad, parent, event);
-}
-
-static gboolean
+static GstFlowReturn
 gst_ssa_parse_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
 {
-  gboolean res;
+  GstFlowReturn res = GST_FLOW_OK;
 
   switch (GST_EVENT_TYPE (event)) {
     case GST_EVENT_CAPS:
@@ -135,12 +125,13 @@ gst_ssa_parse_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
       GstCaps *caps;
 
       gst_event_parse_caps (event, &caps);
-      res = gst_ssa_parse_setcaps (pad, caps);
+      if (!gst_ssa_parse_setcaps (pad, caps))
+        res = GST_FLOW_NOT_NEGOTIATED;
       gst_event_unref (event);
       break;
     }
     default:
-      res = gst_pad_event_default (pad, parent, event);
+      res = gst_pad_event_full_default (pad, parent, event);
       break;
   }
   return res;

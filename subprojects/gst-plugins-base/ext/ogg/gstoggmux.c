@@ -117,10 +117,10 @@ static void gst_ogg_mux_finalize (GObject * object);
 
 static GstFlowReturn gst_ogg_mux_collected (GstCollectPads * pads,
     GstOggMux * ogg_mux);
-static gboolean gst_ogg_mux_sink_event (GstCollectPads * pads,
+static GstFlowReturn gst_ogg_mux_sink_event (GstCollectPads * pads,
     GstCollectData * pad, GstEvent * event, gpointer user_data);
-static gboolean gst_ogg_mux_handle_src_event (GstPad * pad, GstObject * parent,
-    GstEvent * event);
+static GstFlowReturn gst_ogg_mux_handle_src_event (GstPad * pad,
+    GstObject * parent, GstEvent * event);
 static GstPad *gst_ogg_mux_request_new_pad (GstElement * element,
     GstPadTemplate * templ, const gchar * name, const GstCaps * caps);
 static void gst_ogg_mux_release_pad (GstElement * element, GstPad * pad);
@@ -218,7 +218,8 @@ gst_ogg_mux_init (GstOggMux * ogg_mux)
   ogg_mux->srcpad =
       gst_pad_new_from_template (gst_element_class_get_pad_template (klass,
           "src"), "src");
-  gst_pad_set_event_function (ogg_mux->srcpad, gst_ogg_mux_handle_src_event);
+  gst_pad_set_event_full_function (ogg_mux->srcpad,
+      gst_ogg_mux_handle_src_event);
   gst_element_add_pad (GST_ELEMENT (ogg_mux), ogg_mux->srcpad);
 
   /* seed random number generator for creation of serial numbers */
@@ -228,9 +229,9 @@ gst_ogg_mux_init (GstOggMux * ogg_mux)
   gst_collect_pads_set_function (ogg_mux->collect,
       (GstCollectPadsFunction) GST_DEBUG_FUNCPTR (gst_ogg_mux_collected),
       ogg_mux);
-  gst_collect_pads_set_event_function (ogg_mux->collect,
-      (GstCollectPadsEventFunction) GST_DEBUG_FUNCPTR (gst_ogg_mux_sink_event),
-      ogg_mux);
+  gst_collect_pads_set_event_full_function (ogg_mux->collect,
+      (GstCollectPadsEventFullFunction)
+      GST_DEBUG_FUNCPTR (gst_ogg_mux_sink_event), ogg_mux);
 
   ogg_mux->max_delay = DEFAULT_MAX_DELAY;
   ogg_mux->max_page_delay = DEFAULT_MAX_PAGE_DELAY;
@@ -300,7 +301,7 @@ gst_ogg_mux_flush (GstOggMux * ogg_mux)
   gst_ogg_mux_clear (ogg_mux);
 }
 
-static gboolean
+static GstFlowReturn
 gst_ogg_mux_sink_event (GstCollectPads * pads, GstCollectData * pad,
     GstEvent * event, gpointer user_data)
 {
@@ -349,9 +350,9 @@ gst_ogg_mux_sink_event (GstCollectPads * pads, GstCollectData * pad,
 
   /* now GstCollectPads can take care of the rest, e.g. EOS */
   if (event != NULL)
-    return gst_collect_pads_event_default (pads, pad, event, FALSE);
+    return gst_collect_pads_event_full_default (pads, pad, event, FALSE);
 
-  return TRUE;
+  return GST_FLOW_OK;
 }
 
 static gboolean
@@ -524,11 +525,11 @@ gst_ogg_mux_release_pad (GstElement * element, GstPad * pad)
 }
 
 /* handle events */
-static gboolean
+static GstFlowReturn
 gst_ogg_mux_handle_src_event (GstPad * pad, GstObject * parent,
     GstEvent * event)
 {
-  gboolean res = FALSE;
+  GstFlowReturn res = GST_FLOW_ERROR;
   GstOggMux *ogg_mux = GST_OGG_MUX (parent);
 
   switch (GST_EVENT_TYPE (event)) {
@@ -548,7 +549,7 @@ gst_ogg_mux_handle_src_event (GstPad * pad, GstObject * parent,
   }
 
   if (event != NULL)
-    res = gst_pad_event_default (pad, parent, event);
+    res = gst_pad_event_full_default (pad, parent, event);
 
   return res;
 }

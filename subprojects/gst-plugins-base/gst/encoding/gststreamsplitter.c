@@ -166,12 +166,12 @@ _flush_events (GstPad * pad, GList * events)
   return NULL;
 }
 
-static gboolean
+static GstFlowReturn
 gst_stream_splitter_sink_event (GstPad * pad, GstObject * parent,
     GstEvent * event)
 {
   GstStreamSplitter *stream_splitter = (GstStreamSplitter *) parent;
-  gboolean res = TRUE;
+  GstFlowReturn res = GST_FLOW_OK;
   gboolean toall = FALSE;
   gboolean store = FALSE;
   /* FLUSH_START/STOP : forward to all
@@ -191,7 +191,8 @@ gst_stream_splitter_sink_event (GstPad * pad, GstObject * parent,
       GstCaps *caps;
 
       gst_event_parse_caps (event, &caps);
-      res = gst_stream_splitter_sink_setcaps (pad, caps);
+      if (!gst_stream_splitter_sink_setcaps (pad, caps))
+        res = GST_FLOW_NOT_NEGOTIATED;
 
       store = TRUE;
       break;
@@ -243,7 +244,7 @@ gst_stream_splitter_sink_event (GstPad * pad, GstObject * parent,
       STREAMS_UNLOCK (stream_splitter);
       /* No source pads */
       gst_event_unref (event);
-      res = FALSE;
+      res = GST_FLOW_NOT_LINKED;
       goto beach;
     }
     tmp = stream_splitter->srcpads;
@@ -252,7 +253,7 @@ gst_stream_splitter_sink_event (GstPad * pad, GstObject * parent,
       GstPad *srcpad = (GstPad *) tmp->data;
       STREAMS_UNLOCK (stream_splitter);
       gst_event_ref (event);
-      res = gst_pad_push_event (srcpad, event);
+      res = gst_pad_push_event_full (srcpad, event);
       STREAMS_LOCK (stream_splitter);
       if (G_UNLIKELY (cookie != stream_splitter->cookie))
         goto resync;
@@ -269,10 +270,10 @@ gst_stream_splitter_sink_event (GstPad * pad, GstObject * parent,
     pad = stream_splitter->current;
     STREAMS_UNLOCK (stream_splitter);
     if (pad)
-      res = gst_pad_push_event (pad, event);
+      res = gst_pad_push_event_full (pad, event);
     else {
       gst_event_unref (event);
-      res = FALSE;
+      res = GST_FLOW_NOT_LINKED;
     }
   }
 
@@ -489,7 +490,7 @@ beach:
   return res;
 }
 
-static gboolean
+static GstFlowReturn
 gst_stream_splitter_src_event (GstPad * pad, GstObject * parent,
     GstEvent * event)
 {
@@ -503,13 +504,13 @@ gst_stream_splitter_src_event (GstPad * pad, GstObject * parent,
       GST_TRACE_OBJECT (pad,
           "Drop duplicated force-key-unit event %" G_GUINT32_FORMAT, seqnum);
       gst_event_unref (event);
-      return TRUE;
+      return GST_FLOW_OK;
     }
     stream_splitter->keyunit_seqnum = seqnum;
     STREAMS_UNLOCK (stream_splitter);
   }
 
-  return gst_pad_event_default (pad, parent, event);
+  return gst_pad_event_full_default (pad, parent, event);
 }
 
 static void
@@ -519,7 +520,7 @@ gst_stream_splitter_init (GstStreamSplitter * stream_splitter)
       gst_pad_new_from_static_template (&sink_template, "sink");
   gst_pad_set_chain_function (stream_splitter->sinkpad,
       gst_stream_splitter_chain);
-  gst_pad_set_event_function (stream_splitter->sinkpad,
+  gst_pad_set_event_full_function (stream_splitter->sinkpad,
       gst_stream_splitter_sink_event);
   gst_pad_set_query_function (stream_splitter->sinkpad,
       gst_stream_splitter_sink_query);
@@ -542,7 +543,7 @@ gst_stream_splitter_request_new_pad (GstElement * element,
   gst_pad_set_active (srcpad, TRUE);
   gst_element_add_pad (element, srcpad);
   stream_splitter->cookie++;
-  gst_pad_set_event_function (srcpad, gst_stream_splitter_src_event);
+  gst_pad_set_event_full_function (srcpad, gst_stream_splitter_src_event);
   STREAMS_UNLOCK (stream_splitter);
 
   return srcpad;

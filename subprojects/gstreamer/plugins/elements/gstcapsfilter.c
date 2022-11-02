@@ -111,7 +111,7 @@ static GstFlowReturn gst_capsfilter_transform_ip (GstBaseTransform * base,
     GstBuffer * buf);
 static GstFlowReturn gst_capsfilter_prepare_buf (GstBaseTransform * trans,
     GstBuffer * input, GstBuffer ** buf);
-static gboolean gst_capsfilter_sink_event (GstBaseTransform * trans,
+static GstFlowReturn gst_capsfilter_sink_event (GstBaseTransform * trans,
     GstEvent * event);
 static gboolean gst_capsfilter_stop (GstBaseTransform * trans);
 
@@ -158,7 +158,7 @@ gst_capsfilter_class_init (GstCapsFilterClass * klass)
   trans_class->accept_caps = GST_DEBUG_FUNCPTR (gst_capsfilter_accept_caps);
   trans_class->prepare_output_buffer =
       GST_DEBUG_FUNCPTR (gst_capsfilter_prepare_buf);
-  trans_class->sink_event = GST_DEBUG_FUNCPTR (gst_capsfilter_sink_event);
+  trans_class->sink_event_full = GST_DEBUG_FUNCPTR (gst_capsfilter_sink_event);
   trans_class->stop = GST_DEBUG_FUNCPTR (gst_capsfilter_stop);
 
   gst_type_mark_as_plugin_api (GST_TYPE_CAPS_FILTER_CAPS_CHANGE_MODE, 0);
@@ -477,11 +477,11 @@ gst_capsfilter_prepare_buf (GstBaseTransform * trans, GstBuffer * input,
 }
 
 /* Queue the segment event if there was no caps event */
-static gboolean
+static GstFlowReturn
 gst_capsfilter_sink_event (GstBaseTransform * trans, GstEvent * event)
 {
   GstCapsFilter *filter = GST_CAPS_FILTER (trans);
-  gboolean ret;
+  GstFlowReturn ret = GST_FLOW_OK;
 
   if (GST_EVENT_TYPE (event) == GST_EVENT_FLUSH_STOP) {
     GList *l;
@@ -517,14 +517,14 @@ gst_capsfilter_sink_event (GstBaseTransform * trans, GstEvent * event)
 
     filter->pending_events = g_list_prepend (filter->pending_events, event);
 
-    return TRUE;
+    return GST_FLOW_OK;
   }
 
 done:
 
   GST_LOG_OBJECT (trans, "Forwarding %s event", GST_EVENT_TYPE_NAME (event));
   ret =
-      GST_BASE_TRANSFORM_CLASS (parent_class)->sink_event (trans,
+      GST_BASE_TRANSFORM_CLASS (parent_class)->sink_event_full (trans,
       gst_event_ref (event));
 
   if (GST_EVENT_TYPE (event) == GST_EVENT_CAPS) {

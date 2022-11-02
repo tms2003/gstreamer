@@ -138,9 +138,9 @@ static GstStaticPadTemplate gst_video_rate_sink_template =
 
 static void gst_video_rate_swap_prev (GstVideoRate * videorate,
     GstBuffer * buffer, gint64 time);
-static gboolean gst_video_rate_sink_event (GstBaseTransform * trans,
+static GstFlowReturn gst_video_rate_sink_event (GstBaseTransform * trans,
     GstEvent * event);
-static gboolean gst_video_rate_src_event (GstBaseTransform * trans,
+static GstFlowReturn gst_video_rate_src_event (GstBaseTransform * trans,
     GstEvent * event);
 static gboolean gst_video_rate_query (GstBaseTransform * trans,
     GstPadDirection direction, GstQuery * query);
@@ -191,8 +191,8 @@ gst_video_rate_class_init (GstVideoRateClass * klass)
   base_class->transform_caps =
       GST_DEBUG_FUNCPTR (gst_video_rate_transform_caps);
   base_class->transform_ip = GST_DEBUG_FUNCPTR (gst_video_rate_transform_ip);
-  base_class->sink_event = GST_DEBUG_FUNCPTR (gst_video_rate_sink_event);
-  base_class->src_event = GST_DEBUG_FUNCPTR (gst_video_rate_src_event);
+  base_class->sink_event_full = GST_DEBUG_FUNCPTR (gst_video_rate_sink_event);
+  base_class->src_event_full = GST_DEBUG_FUNCPTR (gst_video_rate_src_event);
   base_class->start = GST_DEBUG_FUNCPTR (gst_video_rate_start);
   base_class->stop = GST_DEBUG_FUNCPTR (gst_video_rate_stop);
   base_class->fixate_caps = GST_DEBUG_FUNCPTR (gst_video_rate_fixate_caps);
@@ -943,7 +943,7 @@ gst_video_rate_rollback_to_prev_caps_if_needed (GstVideoRate * videorate)
   return prev_caps;
 }
 
-static gboolean
+static GstFlowReturn
 gst_video_rate_sink_event (GstBaseTransform * trans, GstEvent * event)
 {
   GstVideoRate *videorate;
@@ -955,7 +955,6 @@ gst_video_rate_sink_event (GstBaseTransform * trans, GstEvent * event)
     {
       GstSegment segment;
       gint seqnum;
-      GstCaps *rolled_back_caps;
 
       gst_event_copy_segment (event, &segment);
       if (segment.format != GST_FORMAT_TIME)
@@ -969,6 +968,8 @@ gst_video_rate_sink_event (GstBaseTransform * trans, GstEvent * event)
 
 
       if (!gst_segment_is_equal (&segment, &videorate->segment)) {
+        GstCaps *rolled_back_caps;
+        GstFlowReturn result;
         rolled_back_caps =
             gst_video_rate_rollback_to_prev_caps_if_needed (videorate);
 
@@ -988,9 +989,9 @@ gst_video_rate_sink_event (GstBaseTransform * trans, GstEvent * event)
         if (rolled_back_caps) {
           GST_DEBUG_OBJECT (videorate,
               "Resetting rolled back caps %" GST_PTR_FORMAT, rolled_back_caps);
-          if (!gst_pad_send_event (GST_BASE_TRANSFORM_SINK_PAD (videorate),
-                  gst_event_new_caps (rolled_back_caps)
-              )) {
+          result = gst_pad_send_event (GST_BASE_TRANSFORM_SINK_PAD (videorate),
+              gst_event_new_caps (rolled_back_caps));
+          if (result != GST_FLOW_OK) {
 
             GST_WARNING_OBJECT (videorate,
                 "Could not resend caps after closing " " segment");
@@ -999,9 +1000,8 @@ gst_video_rate_sink_event (GstBaseTransform * trans, GstEvent * event)
                 ("Could not resend caps after closing segment"), (NULL));
             gst_caps_unref (rolled_back_caps);
 
-            return FALSE;
+            return result;
           }
-
           gst_caps_unref (rolled_back_caps);
         }
       }
@@ -1111,28 +1111,29 @@ gst_video_rate_sink_event (GstBaseTransform * trans, GstEvent * event)
     case GST_EVENT_GAP:
       /* no gaps after videorate, ignore the event */
       gst_event_unref (event);
-      return TRUE;
+      return GST_FLOW_OK;
     default:
       break;
   }
 
-  return GST_BASE_TRANSFORM_CLASS (parent_class)->sink_event (trans, event);
+  return GST_BASE_TRANSFORM_CLASS (parent_class)->sink_event_full (trans,
+      event);
 
   /* ERRORS */
 format_error:
   {
     GST_WARNING_OBJECT (videorate,
         "Got segment but doesn't have GST_FORMAT_TIME value");
-    return FALSE;
+    return GST_FLOW_ERROR;
   }
 }
 
-static gboolean
+static GstFlowReturn
 gst_video_rate_src_event (GstBaseTransform * trans, GstEvent * event)
 {
   GstVideoRate *videorate;
   GstPad *sinkpad;
-  gboolean res = FALSE;
+  GstFlowReturn res = GST_FLOW_ERROR;
 
   videorate = GST_VIDEO_RATE (trans);
   sinkpad = GST_BASE_TRANSFORM_SINK_PAD (trans);
@@ -1158,7 +1159,7 @@ gst_video_rate_src_event (GstBaseTransform * trans, GstEvent * event)
           flags, start_type, start, stop_type, stop);
       gst_event_set_seqnum (event, seqnum);
 
-      res = gst_pad_push_event (sinkpad, event);
+      res = gst_pad_push_event_full (sinkpad, event);
       break;
     }
     case GST_EVENT_QOS:
@@ -1199,7 +1200,7 @@ gst_video_rate_src_event (GstBaseTransform * trans, GstEvent * event)
       /* Fallthrough */
     }
     default:
-      res = gst_pad_push_event (sinkpad, event);
+      res = gst_pad_push_event_full (sinkpad, event);
       break;
   }
   return res;

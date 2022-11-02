@@ -288,8 +288,25 @@ struct _GstBaseParseClass {
   gboolean      (*src_query)          (GstBaseParse * parse,
                                        GstQuery     * query);
 
+  /**
+   * GstBaseParseClass::sink_event_full:
+   * @event: (transfer full):
+   *
+   * Since: 1.22
+   */
+  GstFlowReturn (*sink_event_full)    (GstBaseParse * parse,
+				       GstEvent     * event);
+
+  /**
+   * GstBaseParseClass::src_event_full:
+   * @event: (transfer full):
+   *
+   * Since: 1.22
+   */
+  GstFlowReturn (*src_event_full)     (GstBaseParse * parse,
+				       GstEvent     * event);
   /*< private >*/
-  gpointer       _gst_reserved[GST_PADDING_LARGE - 2];
+  gpointer       _gst_reserved[GST_PADDING_LARGE - 4];
 };
 
 GST_BASE_API

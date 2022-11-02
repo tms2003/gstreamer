@@ -315,8 +315,30 @@ struct _GstAudioDecoderClass
   gboolean      (*transform_meta)     (GstAudioDecoder *enc, GstBuffer *outbuf,
                                        GstMeta *meta, GstBuffer *inbuf);
 
+  /**
+   * GstAudioDecoderClass::sink_event_full:
+   *
+   * Optional. Event handler on the sink pad. Subclasses should chain up to the
+   * parent implementation to invoke the default handler.
+   *
+   * Since: 1.22
+   */
+  GstFlowReturn (*sink_event_full)    (GstAudioDecoder *dec,
+                                       GstEvent *event);
+
+  /**
+   * GstAudioDecoderClass::src_event_full:
+   *
+   * Optional. Event handler on the src pad. Subclasses should chain up to the
+   * parent implementation to invoke the default handler.
+   *
+   * Since: 1.22
+   */
+  GstFlowReturn (*src_event_full)     (GstAudioDecoder *dec,
+                                       GstEvent *event);
+
   /*< private >*/
-  gpointer       _gst_reserved[GST_PADDING_LARGE - 4];
+  gpointer       _gst_reserved[GST_PADDING_LARGE - 6];
 };
 
 GST_AUDIO_API

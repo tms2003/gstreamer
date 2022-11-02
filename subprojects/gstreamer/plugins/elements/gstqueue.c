@@ -208,8 +208,8 @@ static GstFlowReturn gst_queue_handle_sink_event (GstPad * pad,
 static gboolean gst_queue_handle_sink_query (GstPad * pad, GstObject * parent,
     GstQuery * query);
 
-static gboolean gst_queue_handle_src_event (GstPad * pad, GstObject * parent,
-    GstEvent * event);
+static GstFlowReturn gst_queue_handle_src_event (GstPad * pad,
+    GstObject * parent, GstEvent * event);
 static gboolean gst_queue_handle_src_query (GstPad * pad, GstObject * parent,
     GstQuery * query);
 
@@ -443,7 +443,7 @@ gst_queue_init (GstQueue * queue)
 
   gst_pad_set_activatemode_function (queue->srcpad,
       gst_queue_src_activate_mode);
-  gst_pad_set_event_function (queue->srcpad, gst_queue_handle_src_event);
+  gst_pad_set_event_full_function (queue->srcpad, gst_queue_handle_src_event);
   gst_pad_set_query_function (queue->srcpad, gst_queue_handle_src_query);
   GST_PAD_SET_PROXY_CAPS (queue->srcpad);
   gst_element_add_pad (GST_ELEMENT (queue), queue->srcpad);
@@ -910,7 +910,7 @@ no_item:
 static GstFlowReturn
 gst_queue_handle_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
 {
-  gboolean ret = TRUE;
+  GstFlowReturn ret = GST_FLOW_OK;
   GstQueue *queue;
 
   queue = GST_QUEUE (parent);
@@ -921,7 +921,7 @@ gst_queue_handle_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
   switch (GST_EVENT_TYPE (event)) {
     case GST_EVENT_FLUSH_START:
       /* forward event */
-      ret = gst_pad_push_event (queue->srcpad, event);
+      ret = gst_pad_push_event_full (queue->srcpad, event);
 
       /* now unblock the chain function */
       GST_QUEUE_MUTEX_LOCK (queue);
@@ -946,7 +946,7 @@ gst_queue_handle_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
       break;
     case GST_EVENT_FLUSH_STOP:
       /* forward event */
-      ret = gst_pad_push_event (queue->srcpad, event);
+      ret = gst_pad_push_event_full (queue->srcpad, event);
 
       GST_QUEUE_MUTEX_LOCK (queue);
       gst_queue_locked_flush (queue, FALSE);
@@ -1024,15 +1024,12 @@ gst_queue_handle_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
         GST_QUEUE_MUTEX_UNLOCK (queue);
       } else {
         /* non-serialized events are forwarded downstream immediately */
-        ret = gst_pad_push_event (queue->srcpad, event);
+        ret = gst_pad_push_event_full (queue->srcpad, event);
       }
       break;
   }
-  if (ret == FALSE) {
-    GST_ERROR_OBJECT (queue, "Failed to push event");
-    return GST_FLOW_ERROR;
-  }
-  return GST_FLOW_OK;
+
+  return ret;
 
   /* ERRORS */
 out_eos:
@@ -1456,7 +1453,13 @@ next:
 
     GST_QUEUE_MUTEX_UNLOCK (queue);
 
-    gst_pad_push_event (queue->srcpad, event);
+    result = gst_pad_push_event_full (queue->srcpad, event);
+    /* We only want to propagate specific flow returns from pushing
+     * events. Generic errors are ignored for now.  We also don't propagate
+     * not-linked from event push since pushing another event might trigger
+     * downstream to be linked */
+    if (result == GST_FLOW_ERROR || result == GST_FLOW_NOT_LINKED)
+      result = GST_FLOW_OK;
 
     GST_QUEUE_MUTEX_LOCK_CHECK (queue, out_flushing);
     /* if we're EOS, return EOS so that the task pauses. */
@@ -1568,16 +1571,16 @@ out_flushing:
     /* EOS is already taken care of elsewhere */
     if (eos && (ret == GST_FLOW_NOT_LINKED || ret < GST_FLOW_EOS)) {
       GST_ELEMENT_FLOW_ERROR (queue, ret);
-      gst_pad_push_event (queue->srcpad, gst_event_new_eos ());
+      gst_pad_push_event_full (queue->srcpad, gst_event_new_eos ());
     }
     return;
   }
 }
 
-static gboolean
+static GstFlowReturn
 gst_queue_handle_src_event (GstPad * pad, GstObject * parent, GstEvent * event)
 {
-  gboolean res = TRUE;
+  GstFlowReturn res = GST_FLOW_OK;
   GstQueue *queue = GST_QUEUE (parent);
 
 #ifndef GST_DISABLE_GST_DEBUG
@@ -1596,10 +1599,10 @@ gst_queue_handle_src_event (GstPad * pad, GstObject * parent, GstEvent * event)
       }
       GST_QUEUE_MUTEX_UNLOCK (queue);
 
-      res = gst_pad_push_event (queue->sinkpad, event);
+      res = gst_pad_push_event_full (queue->sinkpad, event);
       break;
     default:
-      res = gst_pad_event_default (pad, parent, event);
+      res = gst_pad_event_full_default (pad, parent, event);
       break;
   }
 

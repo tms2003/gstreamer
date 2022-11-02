@@ -116,9 +116,9 @@ GST_STATIC_PAD_TEMPLATE ("sink",
         ", layout = (string) { interleaved, non-interleaved }")
     );
 
-static gboolean gst_audio_rate_sink_event (GstPad * pad, GstObject * parent,
-    GstEvent * event);
-static gboolean gst_audio_rate_src_event (GstPad * pad, GstObject * parent,
+static GstFlowReturn gst_audio_rate_sink_event (GstPad * pad,
+    GstObject * parent, GstEvent * event);
+static GstFlowReturn gst_audio_rate_src_event (GstPad * pad, GstObject * parent,
     GstEvent * event);
 static GstFlowReturn gst_audio_rate_chain (GstPad * pad, GstObject * parent,
     GstBuffer * buf);
@@ -252,14 +252,15 @@ gst_audio_rate_init (GstAudioRate * audiorate)
 {
   audiorate->sinkpad =
       gst_pad_new_from_static_template (&gst_audio_rate_sink_template, "sink");
-  gst_pad_set_event_function (audiorate->sinkpad, gst_audio_rate_sink_event);
+  gst_pad_set_event_full_function (audiorate->sinkpad,
+      gst_audio_rate_sink_event);
   gst_pad_set_chain_function (audiorate->sinkpad, gst_audio_rate_chain);
   GST_PAD_SET_PROXY_CAPS (audiorate->sinkpad);
   gst_element_add_pad (GST_ELEMENT (audiorate), audiorate->sinkpad);
 
   audiorate->srcpad =
       gst_pad_new_from_static_template (&gst_audio_rate_src_template, "src");
-  gst_pad_set_event_function (audiorate->srcpad, gst_audio_rate_src_event);
+  gst_pad_set_event_full_function (audiorate->srcpad, gst_audio_rate_src_event);
   GST_PAD_SET_PROXY_CAPS (audiorate->srcpad);
   gst_element_add_pad (GST_ELEMENT (audiorate), audiorate->srcpad);
 
@@ -291,10 +292,10 @@ gst_audio_rate_fill_to_time (GstAudioRate * audiorate, GstClockTime time)
   gst_audio_rate_chain (audiorate->sinkpad, GST_OBJECT_CAST (audiorate), buf);
 }
 
-static gboolean
+static GstFlowReturn
 gst_audio_rate_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
 {
-  gboolean res;
+  GstFlowReturn res;
   GstAudioRate *audiorate;
 
   audiorate = GST_AUDIO_RATE (parent);
@@ -305,9 +306,10 @@ gst_audio_rate_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
       GstCaps *caps;
 
       gst_event_parse_caps (event, &caps);
-      if ((res = gst_audio_rate_setcaps (audiorate, caps))) {
-        res = gst_pad_push_event (audiorate->srcpad, event);
+      if (gst_audio_rate_setcaps (audiorate, caps)) {
+        res = gst_pad_push_event_full (audiorate->srcpad, event);
       } else {
+        res = GST_FLOW_NOT_NEGOTIATED;
         gst_event_unref (event);
       }
       break;
@@ -315,7 +317,7 @@ gst_audio_rate_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
     case GST_EVENT_FLUSH_STOP:
       GST_DEBUG_OBJECT (audiorate, "handling FLUSH_STOP");
       gst_audio_rate_reset (audiorate);
-      res = gst_pad_push_event (audiorate->srcpad, event);
+      res = gst_pad_push_event_full (audiorate->srcpad, event);
       break;
     case GST_EVENT_SEGMENT:
     {
@@ -343,13 +345,13 @@ gst_audio_rate_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
 
       if (audiorate->sink_segment.format == GST_FORMAT_TIME) {
         /* TIME formats can be copied to src and forwarded */
-        res = gst_pad_push_event (audiorate->srcpad, event);
+        res = gst_pad_push_event_full (audiorate->srcpad, event);
         gst_segment_copy_into (&audiorate->sink_segment,
             &audiorate->src_segment);
       } else {
         /* other formats will be handled in the _chain function */
         gst_event_unref (event);
-        res = TRUE;
+        res = GST_FLOW_OK;
       }
       break;
     }
@@ -357,7 +359,7 @@ gst_audio_rate_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
       /* Fill segment until the end */
       if (GST_CLOCK_TIME_IS_VALID (audiorate->src_segment.stop))
         gst_audio_rate_fill_to_time (audiorate, audiorate->src_segment.stop);
-      res = gst_pad_push_event (audiorate->srcpad, event);
+      res = gst_pad_push_event_full (audiorate->srcpad, event);
       break;
     case GST_EVENT_GAP:
     {
@@ -374,28 +376,19 @@ gst_audio_rate_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
       break;
     }
     default:
-      res = gst_pad_event_default (pad, parent, event);
+      res = gst_pad_event_full_default (pad, parent, event);
       break;
   }
 
   return res;
 }
 
-static gboolean
+static GstFlowReturn
 gst_audio_rate_src_event (GstPad * pad, GstObject * parent, GstEvent * event)
 {
-  gboolean res;
-  GstAudioRate *audiorate;
+  GstAudioRate *audiorate = GST_AUDIO_RATE (parent);
 
-  audiorate = GST_AUDIO_RATE (parent);
-
-  switch (GST_EVENT_TYPE (event)) {
-    default:
-      res = gst_pad_push_event (audiorate->sinkpad, event);
-      break;
-  }
-
-  return res;
+  return gst_pad_push_event_full (audiorate->sinkpad, event);
 }
 
 static gboolean

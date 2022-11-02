@@ -115,9 +115,9 @@ static void gst_identity_set_property (GObject * object, guint prop_id,
 static void gst_identity_get_property (GObject * object, guint prop_id,
     GValue * value, GParamSpec * pspec);
 
-static gboolean gst_identity_sink_event (GstBaseTransform * trans,
+static GstFlowReturn gst_identity_sink_event (GstBaseTransform * trans,
     GstEvent * event);
-static gboolean gst_identity_src_event (GstBaseTransform * trans,
+static GstFlowReturn gst_identity_src_event (GstBaseTransform * trans,
     GstEvent * event);
 static GstFlowReturn gst_identity_transform_ip (GstBaseTransform * trans,
     GstBuffer * buf);
@@ -315,8 +315,10 @@ gst_identity_class_init (GstIdentityClass * klass)
   gstelement_class->provide_clock =
       GST_DEBUG_FUNCPTR (gst_identity_provide_clock);
 
-  gstbasetrans_class->sink_event = GST_DEBUG_FUNCPTR (gst_identity_sink_event);
-  gstbasetrans_class->src_event = GST_DEBUG_FUNCPTR (gst_identity_src_event);
+  gstbasetrans_class->sink_event_full =
+      GST_DEBUG_FUNCPTR (gst_identity_sink_event);
+  gstbasetrans_class->src_event_full =
+      GST_DEBUG_FUNCPTR (gst_identity_src_event);
   gstbasetrans_class->transform_ip =
       GST_DEBUG_FUNCPTR (gst_identity_transform_ip);
   gstbasetrans_class->start = GST_DEBUG_FUNCPTR (gst_identity_start);
@@ -419,11 +421,11 @@ gst_identity_do_sync (GstIdentity * identity, GstClockTime running_time)
   return ret;
 }
 
-static gboolean
+static GstFlowReturn
 gst_identity_sink_event (GstBaseTransform * trans, GstEvent * event)
 {
   GstIdentity *identity;
-  gboolean ret = TRUE;
+  GstFlowReturn ret = GST_FLOW_OK;
 
   identity = GST_IDENTITY (trans);
 
@@ -506,7 +508,6 @@ gst_identity_sink_event (GstBaseTransform * trans, GstEvent * event)
         GST_DEBUG_OBJECT (identity,
             "Dropping GAP event outside segment: %" GST_PTR_FORMAT, event);
         gst_event_unref (event);
-        ret = TRUE;
         goto done;
       }
     }
@@ -522,7 +523,6 @@ gst_identity_sink_event (GstBaseTransform * trans, GstEvent * event)
   if (identity->single_segment && GST_EVENT_TYPE (event) == GST_EVENT_SEGMENT) {
     /* eat up segments */
     gst_event_unref (event);
-    ret = TRUE;
     goto done;
   }
 
@@ -547,13 +547,13 @@ gst_identity_sink_event (GstBaseTransform * trans, GstEvent * event)
       break;
   }
 
-  ret = GST_BASE_TRANSFORM_CLASS (parent_class)->sink_event (trans, event);
+  ret = GST_BASE_TRANSFORM_CLASS (parent_class)->sink_event_full (trans, event);
 
 done:
   return ret;
 }
 
-static gboolean
+static GstFlowReturn
 gst_identity_src_event (GstBaseTransform * trans, GstEvent * event)
 {
   GstIdentity *identity = GST_IDENTITY (trans);
@@ -577,7 +577,7 @@ gst_identity_src_event (GstBaseTransform * trans, GstEvent * event)
             event);
         GST_OBJECT_UNLOCK (identity);
 
-        return FALSE;
+        return GST_FLOW_ERROR;
       }
       GST_OBJECT_UNLOCK (identity);
 
@@ -587,7 +587,7 @@ gst_identity_src_event (GstBaseTransform * trans, GstEvent * event)
       break;
   }
 
-  return GST_BASE_TRANSFORM_CLASS (parent_class)->src_event (trans, event);
+  return GST_BASE_TRANSFORM_CLASS (parent_class)->src_event_full (trans, event);
 }
 
 static void

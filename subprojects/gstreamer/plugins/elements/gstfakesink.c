@@ -136,7 +136,8 @@ static GstFlowReturn gst_fake_sink_preroll (GstBaseSink * bsink,
     GstBuffer * buffer);
 static GstFlowReturn gst_fake_sink_render (GstBaseSink * bsink,
     GstBuffer * buffer);
-static gboolean gst_fake_sink_event (GstBaseSink * bsink, GstEvent * event);
+static GstFlowReturn gst_fake_sink_event (GstBaseSink * bsink,
+    GstEvent * event);
 static gboolean gst_fake_sink_query (GstBaseSink * bsink, GstQuery * query);
 
 static guint gst_fake_sink_signals[LAST_SIGNAL] = { 0 };
@@ -241,7 +242,7 @@ gst_fake_sink_class_init (GstFakeSinkClass * klass)
   gstelement_class->change_state =
       GST_DEBUG_FUNCPTR (gst_fake_sink_change_state);
 
-  gstbase_sink_class->event = GST_DEBUG_FUNCPTR (gst_fake_sink_event);
+  gstbase_sink_class->event_full = GST_DEBUG_FUNCPTR (gst_fake_sink_event);
   gstbase_sink_class->preroll = GST_DEBUG_FUNCPTR (gst_fake_sink_preroll);
   gstbase_sink_class->render = GST_DEBUG_FUNCPTR (gst_fake_sink_render);
   gstbase_sink_class->query = GST_DEBUG_FUNCPTR (gst_fake_sink_query);
@@ -361,7 +362,7 @@ gst_fake_sink_notify_last_message (GstFakeSink * sink)
   g_object_notify_by_pspec ((GObject *) sink, pspec_last_message);
 }
 
-static gboolean
+static GstFlowReturn
 gst_fake_sink_event (GstBaseSink * bsink, GstEvent * event)
 {
   GstFakeSink *sink = GST_FAKE_SINK (bsink);
@@ -406,7 +407,7 @@ gst_fake_sink_event (GstBaseSink * bsink, GstEvent * event)
     gst_fake_sink_notify_last_message (sink);
   }
 
-  return GST_BASE_SINK_CLASS (parent_class)->event (bsink, event);
+  return GST_BASE_SINK_CLASS (parent_class)->event_full (bsink, event);
 }
 
 static GstFlowReturn

@@ -82,7 +82,7 @@ static GstStateChangeReturn
 gst_tag_mux_change_state (GstElement * element, GstStateChange transition);
 static GstFlowReturn gst_tag_mux_chain (GstPad * pad, GstObject * parent,
     GstBuffer * buffer);
-static gboolean gst_tag_mux_sink_event (GstPad * pad, GstObject * parent,
+static GstFlowReturn gst_tag_mux_sink_event (GstPad * pad, GstObject * parent,
     GstEvent * event);
 
 /* we can't use G_DEFINE_ABSTRACT_TYPE because we need the klass in the _init
@@ -180,7 +180,7 @@ gst_tag_mux_init (GstTagMux * mux, GstTagMuxClass * mux_class)
   }
   gst_pad_set_chain_function (mux->priv->sinkpad,
       GST_DEBUG_FUNCPTR (gst_tag_mux_chain));
-  gst_pad_set_event_function (mux->priv->sinkpad,
+  gst_pad_set_event_full_function (mux->priv->sinkpad,
       GST_DEBUG_FUNCPTR (gst_tag_mux_sink_event));
   gst_element_add_pad (GST_ELEMENT (mux), mux->priv->sinkpad);
 
@@ -422,14 +422,14 @@ gst_tag_mux_chain (GstPad * pad, GstObject * parent, GstBuffer * buffer)
   return ret;
 }
 
-static gboolean
+static GstFlowReturn
 gst_tag_mux_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
 {
   GstTagMux *mux;
-  gboolean result;
+  GstFlowReturn result;
 
   mux = GST_TAG_MUX (parent);
-  result = FALSE;
+  result = GST_FLOW_ERROR;
 
   switch (GST_EVENT_TYPE (event)) {
     case GST_EVENT_TAG:{
@@ -451,7 +451,7 @@ gst_tag_mux_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
 
       /* just drop the event, we'll push a new tag event in render_start_tag */
       gst_event_unref (event);
-      result = TRUE;
+      result = GST_FLOW_OK;
       break;
     }
     case GST_EVENT_SEGMENT:
@@ -466,7 +466,7 @@ gst_tag_mux_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
         gst_event_unref (event);
         /* drop it quietly, so it is not seen as a failure to push event,
          * which will turn into failure to push data as it is sticky */
-        result = TRUE;
+        result = GST_FLOW_OK;
         break;
       }
 
@@ -494,7 +494,7 @@ gst_tag_mux_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
             MAX (mux->priv->max_offset, mux->priv->current_offset);
       }
       event = NULL;
-      result = TRUE;
+      result = GST_FLOW_OK;
       break;
     }
     case GST_EVENT_EOS:{
@@ -512,11 +512,11 @@ gst_tag_mux_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
       }
 
       /* Now forward EOS */
-      result = gst_pad_event_default (pad, parent, event);
+      result = gst_pad_event_full_default (pad, parent, event);
       break;
     }
     default:
-      result = gst_pad_event_default (pad, parent, event);
+      result = gst_pad_event_full_default (pad, parent, event);
       break;
   }
 

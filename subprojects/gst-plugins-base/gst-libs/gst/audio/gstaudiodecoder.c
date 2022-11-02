@@ -292,15 +292,17 @@ static GstFlowReturn gst_audio_decoder_chain_reverse (GstAudioDecoder *
 
 static GstStateChangeReturn gst_audio_decoder_change_state (GstElement *
     element, GstStateChange transition);
-static gboolean gst_audio_decoder_sink_eventfunc (GstAudioDecoder * dec,
+static gboolean wrap_sink_eventfunc (GstAudioDecoder * dec, GstEvent * event);
+static GstFlowReturn gst_audio_decoder_sink_eventfunc (GstAudioDecoder * dec,
     GstEvent * event);
-static gboolean gst_audio_decoder_src_eventfunc (GstAudioDecoder * dec,
+static gboolean wrap_src_eventfunc (GstAudioDecoder * dec, GstEvent * event);
+static GstFlowReturn gst_audio_decoder_src_eventfunc (GstAudioDecoder * dec,
     GstEvent * event);
-static gboolean gst_audio_decoder_sink_event (GstPad * pad, GstObject * parent,
-    GstEvent * event);
-static gboolean gst_audio_decoder_src_event (GstPad * pad, GstObject * parent,
-    GstEvent * event);
-static gboolean gst_audio_decoder_sink_setcaps (GstAudioDecoder * dec,
+static GstFlowReturn gst_audio_decoder_sink_event (GstPad * pad,
+    GstObject * parent, GstEvent * event);
+static GstFlowReturn gst_audio_decoder_src_event (GstPad * pad,
+    GstObject * parent, GstEvent * event);
+static GstFlowReturn gst_audio_decoder_sink_setcaps (GstAudioDecoder * dec,
     GstCaps * caps);
 static GstFlowReturn gst_audio_decoder_chain (GstPad * pad, GstObject * parent,
     GstBuffer * buf);
@@ -316,7 +318,7 @@ static gboolean gst_audio_decoder_propose_allocation_default (GstAudioDecoder *
     dec, GstQuery * query);
 static gboolean gst_audio_decoder_negotiate_default (GstAudioDecoder * dec);
 static gboolean gst_audio_decoder_negotiate_unlocked (GstAudioDecoder * dec);
-static gboolean gst_audio_decoder_handle_gap (GstAudioDecoder * dec,
+static GstFlowReturn gst_audio_decoder_handle_gap (GstAudioDecoder * dec,
     GstEvent * event);
 static gboolean gst_audio_decoder_sink_query_default (GstAudioDecoder * dec,
     GstQuery * query);
@@ -431,9 +433,11 @@ gst_audio_decoder_class_init (GstAudioDecoderClass * klass)
           -1, G_MAXINT, DEFAULT_MAX_ERRORS,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
-  audiodecoder_class->sink_event =
+  audiodecoder_class->sink_event = GST_DEBUG_FUNCPTR (wrap_sink_eventfunc);
+  audiodecoder_class->sink_event_full =
       GST_DEBUG_FUNCPTR (gst_audio_decoder_sink_eventfunc);
-  audiodecoder_class->src_event =
+  audiodecoder_class->src_event = GST_DEBUG_FUNCPTR (wrap_src_eventfunc);
+  audiodecoder_class->src_event_full =
       GST_DEBUG_FUNCPTR (gst_audio_decoder_src_eventfunc);
   audiodecoder_class->propose_allocation =
       GST_DEBUG_FUNCPTR (gst_audio_decoder_propose_allocation_default);
@@ -466,7 +470,7 @@ gst_audio_decoder_init (GstAudioDecoder * dec, GstAudioDecoderClass * klass)
   g_return_if_fail (pad_template != NULL);
 
   dec->sinkpad = gst_pad_new_from_template (pad_template, "sink");
-  gst_pad_set_event_function (dec->sinkpad,
+  gst_pad_set_event_full_function (dec->sinkpad,
       GST_DEBUG_FUNCPTR (gst_audio_decoder_sink_event));
   gst_pad_set_chain_function (dec->sinkpad,
       GST_DEBUG_FUNCPTR (gst_audio_decoder_chain));
@@ -481,7 +485,7 @@ gst_audio_decoder_init (GstAudioDecoder * dec, GstAudioDecoderClass * klass)
   g_return_if_fail (pad_template != NULL);
 
   dec->srcpad = gst_pad_new_from_template (pad_template, "src");
-  gst_pad_set_event_function (dec->srcpad,
+  gst_pad_set_event_full_function (dec->srcpad,
       GST_DEBUG_FUNCPTR (gst_audio_decoder_src_event));
   gst_pad_set_query_function (dec->srcpad,
       GST_DEBUG_FUNCPTR (gst_audio_decoder_src_query));
@@ -626,7 +630,7 @@ gst_audio_decoder_create_merged_tags_event (GstAudioDecoder * dec)
   return gst_event_new_tag (merged_tags);
 }
 
-static gboolean
+static GstFlowReturn
 gst_audio_decoder_push_event (GstAudioDecoder * dec, GstEvent * event)
 {
   switch (GST_EVENT_TYPE (event)) {
@@ -648,7 +652,7 @@ gst_audio_decoder_push_event (GstAudioDecoder * dec, GstEvent * event)
       break;
   }
 
-  return gst_pad_push_event (dec->srcpad, event);
+  return gst_pad_push_event_full (dec->srcpad, event);
 }
 
 static gboolean
@@ -900,7 +904,7 @@ refuse_caps:
   }
 }
 
-static gboolean
+static GstFlowReturn
 gst_audio_decoder_sink_setcaps (GstAudioDecoder * dec, GstCaps * caps)
 {
   GstAudioDecoderClass *klass;
@@ -938,7 +942,7 @@ gst_audio_decoder_sink_setcaps (GstAudioDecoder * dec, GstCaps * caps)
 done:
   GST_AUDIO_DECODER_STREAM_UNLOCK (dec);
 
-  return res;
+  return res ? GST_FLOW_OK : GST_FLOW_NOT_NEGOTIATED;
 }
 
 static void
@@ -2251,10 +2255,10 @@ caps_error:
   }
 }
 
-static gboolean
+static GstFlowReturn
 gst_audio_decoder_handle_gap (GstAudioDecoder * dec, GstEvent * event)
 {
-  gboolean ret;
+  GstFlowReturn ret;
   GstClockTime timestamp, duration;
   gboolean needs_reconfigure = FALSE;
 
@@ -2266,7 +2270,7 @@ gst_audio_decoder_handle_gap (GstAudioDecoder * dec, GstEvent * event)
       GST_ELEMENT_ERROR (dec, STREAM, FORMAT, (NULL),
           ("Decoder output not negotiated before GAP event."));
       gst_event_unref (event);
-      return FALSE;
+      return GST_FLOW_NOT_NEGOTIATED;
     }
     needs_reconfigure = TRUE;
   }
@@ -2300,7 +2304,7 @@ gst_audio_decoder_handle_gap (GstAudioDecoder * dec, GstEvent * event)
     GST_BUFFER_DURATION (buf) = duration;
     /* best effort, not much error handling */
     gst_audio_decoder_handle_frame (dec, klass, buf);
-    ret = TRUE;
+    ret = GST_FLOW_OK;
     dec->priv->expecting_discont_buf = TRUE;
     gst_event_unref (event);
   } else {
@@ -2313,7 +2317,7 @@ gst_audio_decoder_handle_gap (GstAudioDecoder * dec, GstEvent * event)
       send_pending_events (dec);
       ret = gst_audio_decoder_push_event (dec, event);
     } else {
-      ret = FALSE;
+      ret = GST_FLOW_ERROR;
       gst_event_unref (event);
     }
   }
@@ -2339,9 +2343,15 @@ _flush_events (GstPad * pad, GList * events)
 }
 
 static gboolean
+wrap_sink_eventfunc (GstAudioDecoder * dec, GstEvent * event)
+{
+  return gst_audio_decoder_sink_eventfunc (dec, event) == GST_FLOW_OK;
+}
+
+static GstFlowReturn
 gst_audio_decoder_sink_eventfunc (GstAudioDecoder * dec, GstEvent * event)
 {
-  gboolean ret;
+  GstFlowReturn ret;
 
   switch (GST_EVENT_TYPE (event)) {
     case GST_EVENT_STREAM_START:
@@ -2399,7 +2409,7 @@ gst_audio_decoder_sink_eventfunc (GstAudioDecoder * dec, GstEvent * event)
           GST_DEBUG_OBJECT (dec, "unsupported format; ignoring");
           GST_AUDIO_DECODER_STREAM_UNLOCK (dec);
           gst_event_unref (event);
-          ret = FALSE;
+          ret = GST_FLOW_ERROR;
           break;
         }
       }
@@ -2430,7 +2440,7 @@ gst_audio_decoder_sink_eventfunc (GstAudioDecoder * dec, GstEvent * event)
           g_list_append (dec->priv->pending_events, event);
       GST_AUDIO_DECODER_STREAM_UNLOCK (dec);
 
-      ret = TRUE;
+      ret = GST_FLOW_OK;
       break;
     }
     case GST_EVENT_INSTANT_RATE_CHANGE:
@@ -2451,7 +2461,9 @@ gst_audio_decoder_sink_eventfunc (GstAudioDecoder * dec, GstEvent * event)
       GST_OBJECT_UNLOCK (dec);
 
       /* Forward downstream */
-      ret = gst_pad_event_default (dec->sinkpad, GST_OBJECT_CAST (dec), event);
+      ret =
+          gst_pad_event_full_default (dec->sinkpad, GST_OBJECT_CAST (dec),
+          event);
       break;
     }
     case GST_EVENT_GAP:
@@ -2531,7 +2543,7 @@ gst_audio_decoder_sink_eventfunc (GstAudioDecoder * dec, GstEvent * event)
 
         /* No tags, go out of here instead of fall through */
         if (!event) {
-          ret = TRUE;
+          ret = GST_FLOW_OK;
           break;
         }
       }
@@ -2541,7 +2553,8 @@ gst_audio_decoder_sink_eventfunc (GstAudioDecoder * dec, GstEvent * event)
     default:
       if (!GST_EVENT_IS_SERIALIZED (event)) {
         ret =
-            gst_pad_event_default (dec->sinkpad, GST_OBJECT_CAST (dec), event);
+            gst_pad_event_full_default (dec->sinkpad, GST_OBJECT_CAST (dec),
+            event);
       } else {
         GST_DEBUG_OBJECT (dec, "Enqueuing event %d, %s", GST_EVENT_TYPE (event),
             GST_EVENT_TYPE_NAME (event));
@@ -2549,37 +2562,36 @@ gst_audio_decoder_sink_eventfunc (GstAudioDecoder * dec, GstEvent * event)
         dec->priv->pending_events =
             g_list_append (dec->priv->pending_events, event);
         GST_AUDIO_DECODER_STREAM_UNLOCK (dec);
-        ret = TRUE;
+        ret = GST_FLOW_OK;
       }
       break;
   }
   return ret;
 }
 
-static gboolean
+static GstFlowReturn
 gst_audio_decoder_sink_event (GstPad * pad, GstObject * parent,
     GstEvent * event)
 {
-  GstAudioDecoder *dec;
-  GstAudioDecoderClass *klass;
-  gboolean ret;
-
-  dec = GST_AUDIO_DECODER (parent);
-  klass = GST_AUDIO_DECODER_GET_CLASS (dec);
+  GstAudioDecoder *dec = GST_AUDIO_DECODER (parent);
+  GstAudioDecoderClass *klass = GST_AUDIO_DECODER_GET_CLASS (dec);
 
   GST_DEBUG_OBJECT (dec, "received event %d, %s", GST_EVENT_TYPE (event),
       GST_EVENT_TYPE_NAME (event));
 
-  if (klass->sink_event)
-    ret = klass->sink_event (dec, event);
-  else {
-    gst_event_unref (event);
-    ret = FALSE;
+  if (klass->sink_event == wrap_sink_eventfunc) {
+    g_assert (klass->sink_event_full);
+    return klass->sink_event_full (dec, event);
   }
-  return ret;
+
+  GST_FIXME_OBJECT (dec, "Implement flow-aware sink_event handler");
+
+  if (klass->sink_event (dec, event))
+    return GST_FLOW_OK;
+  return GST_FLOW_ERROR;
 }
 
-static gboolean
+static GstFlowReturn
 gst_audio_decoder_do_seek (GstAudioDecoder * dec, GstEvent * event)
 {
   GstSeekFlags flags;
@@ -2596,23 +2608,23 @@ gst_audio_decoder_do_seek (GstAudioDecoder * dec, GstEvent * event)
   /* we'll handle plain open-ended flushing seeks with the simple approach */
   if (rate != 1.0) {
     GST_DEBUG_OBJECT (dec, "unsupported seek: rate");
-    return FALSE;
+    return GST_FLOW_ERROR;
   }
 
   if (start_type != GST_SEEK_TYPE_SET) {
     GST_DEBUG_OBJECT (dec, "unsupported seek: start time");
-    return FALSE;
+    return GST_FLOW_ERROR;
   }
 
   if ((end_type != GST_SEEK_TYPE_SET && end_type != GST_SEEK_TYPE_NONE) ||
       (end_type == GST_SEEK_TYPE_SET && end_time != GST_CLOCK_TIME_NONE)) {
     GST_DEBUG_OBJECT (dec, "unsupported seek: end time");
-    return FALSE;
+    return GST_FLOW_ERROR;
   }
 
   if (!(flags & GST_SEEK_FLAG_FLUSH)) {
     GST_DEBUG_OBJECT (dec, "unsupported seek: not flushing");
-    return FALSE;
+    return GST_FLOW_ERROR;
   }
 
   memcpy (&seek_segment, &dec->output_segment, sizeof (seek_segment));
@@ -2623,7 +2635,7 @@ gst_audio_decoder_do_seek (GstAudioDecoder * dec, GstEvent * event)
   if (!gst_pad_query_convert (dec->sinkpad, GST_FORMAT_TIME, start_time,
           GST_FORMAT_BYTES, &start)) {
     GST_DEBUG_OBJECT (dec, "conversion failed");
-    return FALSE;
+    return GST_FLOW_ERROR;
   }
 
   seqnum = gst_event_get_seqnum (event);
@@ -2634,13 +2646,19 @@ gst_audio_decoder_do_seek (GstAudioDecoder * dec, GstEvent * event)
   GST_DEBUG_OBJECT (dec, "seeking to %" GST_TIME_FORMAT " at byte offset %"
       G_GINT64_FORMAT, GST_TIME_ARGS (start_time), start);
 
-  return gst_pad_push_event (dec->sinkpad, event);
+  return gst_pad_push_event_full (dec->sinkpad, event);
 }
 
 static gboolean
+wrap_src_eventfunc (GstAudioDecoder * dec, GstEvent * event)
+{
+  return gst_audio_decoder_src_eventfunc (dec, event) == GST_FLOW_OK;
+}
+
+static GstFlowReturn
 gst_audio_decoder_src_eventfunc (GstAudioDecoder * dec, GstEvent * event)
 {
-  gboolean res;
+  GstFlowReturn res;
 
   switch (GST_EVENT_TYPE (event)) {
     case GST_EVENT_SEEK:
@@ -2658,7 +2676,8 @@ gst_audio_decoder_src_eventfunc (GstAudioDecoder * dec, GstEvent * event)
       seqnum = gst_event_get_seqnum (event);
 
       /* upstream gets a chance first */
-      if ((res = gst_pad_push_event (dec->sinkpad, event)))
+      res = gst_pad_push_event_full (dec->sinkpad, event);
+      if (res == GST_FLOW_OK)
         break;
 
       /* if upstream fails for a time seek, maybe we can help if allowed */
@@ -2670,13 +2689,11 @@ gst_audio_decoder_src_eventfunc (GstAudioDecoder * dec, GstEvent * event)
 
       /* ... though a non-time seek can be aided as well */
       /* First bring the requested format to time */
-      if (!(res =
-              gst_pad_query_convert (dec->srcpad, format, start,
-                  GST_FORMAT_TIME, &tstart)))
+      if (!gst_pad_query_convert (dec->srcpad, format, start, GST_FORMAT_TIME,
+              &tstart))
         goto convert_error;
-      if (!(res =
-              gst_pad_query_convert (dec->srcpad, format, stop, GST_FORMAT_TIME,
-                  &tstop)))
+      if (!gst_pad_query_convert (dec->srcpad, format, stop, GST_FORMAT_TIME,
+              &tstop))
         goto convert_error;
 
       /* then seek with time on the peer */
@@ -2684,11 +2701,13 @@ gst_audio_decoder_src_eventfunc (GstAudioDecoder * dec, GstEvent * event)
           flags, start_type, tstart, stop_type, tstop);
       gst_event_set_seqnum (event, seqnum);
 
-      res = gst_pad_push_event (dec->sinkpad, event);
+      res = gst_pad_push_event_full (dec->sinkpad, event);
       break;
     }
     default:
-      res = gst_pad_event_default (dec->srcpad, GST_OBJECT_CAST (dec), event);
+      res =
+          gst_pad_event_full_default (dec->srcpad, GST_OBJECT_CAST (dec),
+          event);
       break;
   }
 done:
@@ -2698,6 +2717,7 @@ done:
 convert_error:
   {
     GST_DEBUG_OBJECT (dec, "cannot convert start/stop for seek");
+    res = GST_FLOW_ERROR;
     goto done;
   }
 }
@@ -2705,24 +2725,22 @@ convert_error:
 static gboolean
 gst_audio_decoder_src_event (GstPad * pad, GstObject * parent, GstEvent * event)
 {
-  GstAudioDecoder *dec;
-  GstAudioDecoderClass *klass;
-  gboolean ret;
-
-  dec = GST_AUDIO_DECODER (parent);
-  klass = GST_AUDIO_DECODER_GET_CLASS (dec);
+  GstAudioDecoder *dec = GST_AUDIO_DECODER (parent);
+  GstAudioDecoderClass *klass = GST_AUDIO_DECODER_GET_CLASS (dec);
 
   GST_DEBUG_OBJECT (dec, "received event %d, %s", GST_EVENT_TYPE (event),
       GST_EVENT_TYPE_NAME (event));
 
-  if (klass->src_event)
-    ret = klass->src_event (dec, event);
-  else {
-    gst_event_unref (event);
-    ret = FALSE;
+  if (klass->src_event == wrap_src_eventfunc) {
+    g_assert (klass->src_event_full);
+    return klass->src_event_full (dec, event);
   }
 
-  return ret;
+  GST_FIXME_OBJECT (dec, "Implement flow-aware src_event handler");
+
+  if (klass->src_event (dec, event))
+    return GST_FLOW_OK;
+  return GST_FLOW_ERROR;
 }
 
 static gboolean

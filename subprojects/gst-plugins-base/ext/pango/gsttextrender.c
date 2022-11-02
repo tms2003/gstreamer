@@ -613,17 +613,17 @@ done:
   return ret;
 }
 
-static gboolean
+static GstFlowReturn
 gst_text_render_event (GstPad * pad, GstObject * parent, GstEvent * event)
 {
   GstTextRender *render = GST_TEXT_RENDER (parent);
-  gboolean ret = TRUE;
+  GstFlowReturn ret = GST_FLOW_OK;
 
   switch (GST_EVENT_TYPE (event)) {
     case GST_EVENT_SEGMENT:
     {
       if (gst_pad_has_current_caps (render->srcpad)) {
-        ret = gst_pad_push_event (render->srcpad, event);
+        ret = gst_pad_push_event_full (render->srcpad, event);
       } else {
         gst_event_replace (&render->segment_event, event);
         gst_event_unref (event);
@@ -631,7 +631,7 @@ gst_text_render_event (GstPad * pad, GstObject * parent, GstEvent * event)
       break;
     }
     default:
-      ret = gst_pad_push_event (render->srcpad, event);
+      ret = gst_pad_push_event_full (render->srcpad, event);
       break;
   }
 
@@ -668,7 +668,7 @@ gst_text_render_init (GstTextRender * render)
   gst_object_unref (template);
   gst_pad_set_chain_function (render->sinkpad,
       GST_DEBUG_FUNCPTR (gst_text_render_chain));
-  gst_pad_set_event_function (render->sinkpad,
+  gst_pad_set_event_full_function (render->sinkpad,
       GST_DEBUG_FUNCPTR (gst_text_render_event));
 
   gst_element_add_pad (GST_ELEMENT (render), render->sinkpad);

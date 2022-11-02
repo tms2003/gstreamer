@@ -236,7 +236,7 @@ gst_harness_chain (GstPad * pad, GstObject * parent, GstBuffer * buffer)
   return GST_FLOW_OK;
 }
 
-static gboolean
+static GstFlowReturn
 gst_harness_src_event (GstPad * pad, GstObject * parent, GstEvent * event)
 {
   GstHarness *h = g_object_get_data (G_OBJECT (pad), HARNESS_KEY);
@@ -245,15 +245,15 @@ gst_harness_src_event (GstPad * pad, GstObject * parent, GstEvent * event)
   g_assert (h != NULL);
   g_atomic_int_inc (&priv->recv_upstream_events);
   g_async_queue_push (priv->src_event_queue, event);
-  return TRUE;
+  return GST_FLOW_OK;
 }
 
-static gboolean
+static GstFlowReturn
 gst_harness_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
 {
   GstHarness *h = g_object_get_data (G_OBJECT (pad), HARNESS_KEY);
   GstHarnessPrivate *priv = h->priv;
-  gboolean ret = TRUE;
+  GstFlowReturn ret = GST_FLOW_OK;
   gboolean forward;
 
   g_assert (h != NULL);
@@ -275,7 +275,7 @@ gst_harness_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
   if (priv->forwarding && forward && priv->sink_forward_pad) {
     GstPad *fwdpad = gst_object_ref (priv->sink_forward_pad);
     HARNESS_UNLOCK (h);
-    ret = gst_pad_push_event (fwdpad, event);
+    ret = gst_pad_push_event_full (fwdpad, event);
     gst_object_unref (fwdpad);
     HARNESS_LOCK (h);
   } else {
@@ -582,7 +582,7 @@ gst_harness_setup_src_pad (GstHarness * h,
   g_object_set_data (G_OBJECT (h->srcpad), HARNESS_KEY, h);
 
   gst_pad_set_query_function (h->srcpad, gst_harness_src_query);
-  gst_pad_set_event_function (h->srcpad, gst_harness_src_event);
+  gst_pad_set_event_full_function (h->srcpad, gst_harness_src_event);
 
   gst_pad_set_active (h->srcpad, TRUE);
 
@@ -604,7 +604,7 @@ gst_harness_setup_sink_pad (GstHarness * h,
 
   gst_pad_set_chain_function (h->sinkpad, gst_harness_chain);
   gst_pad_set_query_function (h->sinkpad, gst_harness_sink_query);
-  gst_pad_set_event_function (h->sinkpad, gst_harness_sink_event);
+  gst_pad_set_event_full_function (h->sinkpad, gst_harness_sink_event);
 
   gst_pad_set_active (h->sinkpad, TRUE);
 
@@ -1092,6 +1092,7 @@ gst_harness_teardown (GstHarness * h)
      * they try to access this harness through pad data */
     GST_PAD_STREAM_LOCK (h->srcpad);
     gst_pad_set_event_function (h->srcpad, NULL);
+    gst_pad_set_event_full_function (h->srcpad, NULL);
     gst_pad_set_query_function (h->srcpad, NULL);
     GST_PAD_STREAM_UNLOCK (h->srcpad);
 
@@ -1111,6 +1112,7 @@ gst_harness_teardown (GstHarness * h)
     GST_PAD_STREAM_LOCK (h->sinkpad);
     gst_pad_set_chain_function (h->sinkpad, NULL);
     gst_pad_set_event_function (h->sinkpad, NULL);
+    gst_pad_set_event_full_function (h->sinkpad, NULL);
     gst_pad_set_query_function (h->sinkpad, NULL);
     GST_PAD_STREAM_UNLOCK (h->sinkpad);
 

@@ -330,7 +330,7 @@ gst_time_overlay_class_init (GstTimeOverlayClass * klass)
   gst_type_mark_as_plugin_api (GST_TYPE_TIME_OVERLAY_TIME_LINE, 0);
 }
 
-static gboolean
+static GstFlowReturn
 gst_time_overlay_video_event (GstPad * pad, GstObject * parent,
     GstEvent * event)
 {
@@ -384,8 +384,8 @@ gst_time_overlay_init (GstTimeOverlay * overlay)
   pango_font_description_free (font_description);
 
   video_sink = gst_element_get_static_pad (GST_ELEMENT (overlay), "video_sink");
-  overlay->orig_video_event = GST_PAD_EVENTFUNC (video_sink);
-  gst_pad_set_event_function (video_sink, gst_time_overlay_video_event);
+  overlay->orig_video_event = GST_PAD_EVENTFULLFUNC (video_sink);
+  gst_pad_set_event_full_function (video_sink, gst_time_overlay_video_event);
 }
 
 static void

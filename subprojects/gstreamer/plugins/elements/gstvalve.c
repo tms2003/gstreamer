@@ -92,7 +92,7 @@ static void gst_valve_get_property (GObject * object,
 
 static GstFlowReturn gst_valve_chain (GstPad * pad, GstObject * parent,
     GstBuffer * buffer);
-static gboolean gst_valve_sink_event (GstPad * pad, GstObject * parent,
+static GstFlowReturn gst_valve_sink_event (GstPad * pad, GstObject * parent,
     GstEvent * event);
 static gboolean gst_valve_query (GstPad * pad, GstObject * parent,
     GstQuery * query);
@@ -161,7 +161,7 @@ gst_valve_init (GstValve * valve)
   valve->sinkpad = gst_pad_new_from_static_template (&sinktemplate, "sink");
   gst_pad_set_chain_function (valve->sinkpad,
       GST_DEBUG_FUNCPTR (gst_valve_chain));
-  gst_pad_set_event_function (valve->sinkpad,
+  gst_pad_set_event_full_function (valve->sinkpad,
       GST_DEBUG_FUNCPTR (gst_valve_sink_event));
   gst_pad_set_query_function (valve->sinkpad,
       GST_DEBUG_FUNCPTR (gst_valve_query));
@@ -288,13 +288,13 @@ gst_valve_event_needs_dropping (GstValve * valve, GstEvent * event)
   return FALSE;
 }
 
-static gboolean
+static GstFlowReturn
 gst_valve_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
 {
   GstValve *valve = GST_VALVE (parent);
   gboolean needs_dropping = gst_valve_event_needs_dropping (valve, event);
   gboolean is_sticky = GST_EVENT_IS_STICKY (event);
-  gboolean ret = TRUE;
+  GstFlowReturn ret = GST_FLOW_OK;
 
   valve = GST_VALVE (parent);
 
@@ -304,7 +304,7 @@ gst_valve_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
   } else {
     if (valve->need_repush_sticky)
       gst_valve_repush_sticky (valve);
-    ret = gst_pad_event_default (pad, parent, event);
+    ret = gst_pad_event_full_default (pad, parent, event);
   }
 
   /* Ignore errors if "drop" was changed while the thread was blocked
@@ -313,7 +313,7 @@ gst_valve_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
   if (g_atomic_int_get (&valve->drop)) {
     if (valve->drop_mode == GST_VALVE_DROP_MODE_DROP_ALL)
       valve->need_repush_sticky |= is_sticky;
-    ret = TRUE;
+    ret = GST_FLOW_OK;
   }
 
   return ret;

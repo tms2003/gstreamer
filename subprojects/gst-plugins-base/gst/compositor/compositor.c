@@ -1858,7 +1858,7 @@ src_pad_mouse_event (GstElement * element, GstPad * pad, gpointer user_data)
   return TRUE;
 }
 
-static gboolean
+static GstFlowReturn
 _src_event (GstAggregator * agg, GstEvent * event)
 {
   GstNavigationEventType event_type;
@@ -1875,7 +1875,7 @@ _src_event (GstAggregator * agg, GstEvent * event)
           gst_element_foreach_sink_pad (GST_ELEMENT_CAST (agg),
               src_pad_mouse_event, event);
           gst_event_unref (event);
-          return TRUE;
+          return GST_FLOW_OK;
 
         default:
           break;
@@ -1885,7 +1885,7 @@ _src_event (GstAggregator * agg, GstEvent * event)
       break;
   }
 
-  return GST_AGGREGATOR_CLASS (parent_class)->src_event (agg, event);
+  return GST_AGGREGATOR_CLASS (parent_class)->src_event_full (agg, event);
 }
 
 static gboolean
@@ -1961,7 +1961,7 @@ gst_compositor_class_init (GstCompositorClass * klass)
   gstelement_class->release_pad =
       GST_DEBUG_FUNCPTR (gst_compositor_release_pad);
   agg_class->sink_query = _sink_query;
-  agg_class->src_event = _src_event;
+  agg_class->src_event_full = _src_event;
   agg_class->fixate_src_caps = _fixate_caps;
   agg_class->negotiated_src_caps = _negotiated_caps;
   agg_class->stop = GST_DEBUG_FUNCPTR (gst_composior_stop);

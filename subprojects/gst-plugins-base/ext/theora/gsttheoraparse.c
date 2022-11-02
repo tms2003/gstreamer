@@ -107,7 +107,7 @@ static GstFlowReturn theora_parse_chain (GstPad * pad, GstObject * parent,
     GstBuffer * buffer);
 static GstStateChangeReturn theora_parse_change_state (GstElement * element,
     GstStateChange transition);
-static gboolean theora_parse_sink_event (GstPad * pad, GstObject * parent,
+static GstFlowReturn theora_parse_sink_event (GstPad * pad, GstObject * parent,
     GstEvent * event);
 static gboolean theora_parse_src_query (GstPad * pad, GstObject * parent,
     GstQuery * query);
@@ -159,7 +159,7 @@ gst_theora_parse_init (GstTheoraParse * parse)
   parse->sinkpad =
       gst_pad_new_from_static_template (&theora_parse_sink_factory, "sink");
   gst_pad_set_chain_function (parse->sinkpad, theora_parse_chain);
-  gst_pad_set_event_function (parse->sinkpad, theora_parse_sink_event);
+  gst_pad_set_event_full_function (parse->sinkpad, theora_parse_sink_event);
   gst_element_add_pad (GST_ELEMENT (parse), parse->sinkpad);
 
   parse->srcpad =
@@ -694,17 +694,16 @@ theora_parse_chain (GstPad * pad, GstObject * parent, GstBuffer * buffer)
   return ret;
 }
 
-static gboolean
+static void
 theora_parse_queue_event (GstTheoraParse * parse, GstEvent * event)
 {
   g_queue_push_tail (parse->event_queue, event);
-  return TRUE;
 }
 
-static gboolean
+static GstFlowReturn
 theora_parse_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
 {
-  gboolean ret;
+  GstFlowReturn ret;
   GstTheoraParse *parse;
 
   parse = GST_THEORA_PARSE (parent);
@@ -714,18 +713,20 @@ theora_parse_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
       theora_parse_clear_queue (parse);
       parse->prev_keyframe = -1;
       parse->prev_frame = -1;
-      ret = gst_pad_event_default (pad, parent, event);
+      ret = gst_pad_event_full_default (pad, parent, event);
       break;
     case GST_EVENT_EOS:
       theora_parse_drain_queue_prematurely (parse);
-      ret = gst_pad_event_default (pad, parent, event);
+      ret = gst_pad_event_full_default (pad, parent, event);
       break;
     default:
       if (parse->send_streamheader && GST_EVENT_IS_SERIALIZED (event)
-          && GST_EVENT_TYPE (event) > GST_EVENT_CAPS)
-        ret = theora_parse_queue_event (parse, event);
-      else
-        ret = gst_pad_event_default (pad, parent, event);
+          && GST_EVENT_TYPE (event) > GST_EVENT_CAPS) {
+        theora_parse_queue_event (parse, event);
+        ret = GST_FLOW_OK;
+      } else {
+        ret = gst_pad_event_full_default (pad, parent, event);
+      }
       break;
   }
 

@@ -237,12 +237,12 @@ unblock:
   return GST_PAD_PROBE_REMOVE;
 }
 
-static gboolean
+static GstFlowReturn
 gst_play_sink_convert_bin_sink_event (GstPad * pad, GstObject * parent,
     GstEvent * event)
 {
   GstPlaySinkConvertBin *self = GST_PLAY_SINK_CONVERT_BIN (parent);
-  gboolean ret;
+  GstFlowReturn ret;
 
   switch (GST_EVENT_TYPE (event)) {
     case GST_EVENT_CAPS:
@@ -257,7 +257,7 @@ gst_play_sink_convert_bin_sink_event (GstPad * pad, GstObject * parent,
       break;
   }
 
-  ret = gst_pad_event_default (pad, parent, gst_event_ref (event));
+  ret = gst_pad_event_full_default (pad, parent, gst_event_ref (event));
 
   gst_event_unref (event);
 
@@ -675,7 +675,7 @@ gst_play_sink_convert_bin_init (GstPlaySinkConvertBin * self)
 
   templ = gst_static_pad_template_get (&sinktemplate);
   self->sinkpad = gst_ghost_pad_new_no_target_from_template ("sink", templ);
-  gst_pad_set_event_function (self->sinkpad,
+  gst_pad_set_event_full_function (self->sinkpad,
       GST_DEBUG_FUNCPTR (gst_play_sink_convert_bin_sink_event));
   gst_pad_set_query_function (self->sinkpad,
       GST_DEBUG_FUNCPTR (gst_play_sink_convert_bin_query));

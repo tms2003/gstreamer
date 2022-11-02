@@ -102,8 +102,8 @@ static GstFlowReturn gst_output_selector_chain (GstPad * pad,
     GstObject * parent, GstBuffer * buf);
 static GstStateChangeReturn gst_output_selector_change_state (GstElement *
     element, GstStateChange transition);
-static gboolean gst_output_selector_event (GstPad * pad, GstObject * parent,
-    GstEvent * event);
+static GstFlowReturn gst_output_selector_event (GstPad * pad,
+    GstObject * parent, GstEvent * event);
 static gboolean gst_output_selector_query (GstPad * pad, GstObject * parent,
     GstQuery * query);
 static void gst_output_selector_switch_pad_negotiation_mode (GstOutputSelector *
@@ -163,7 +163,7 @@ gst_output_selector_init (GstOutputSelector * sel)
       "sink");
   gst_pad_set_chain_function (sel->sinkpad,
       GST_DEBUG_FUNCPTR (gst_output_selector_chain));
-  gst_pad_set_event_function (sel->sinkpad,
+  gst_pad_set_event_full_function (sel->sinkpad,
       GST_DEBUG_FUNCPTR (gst_output_selector_event));
   gst_pad_set_query_function (sel->sinkpad,
       GST_DEBUG_FUNCPTR (gst_output_selector_query));
@@ -327,7 +327,7 @@ forward_sticky_events (GstPad * pad, GstEvent ** event, gpointer user_data)
   return TRUE;
 }
 
-static gboolean
+static GstFlowReturn
 gst_output_selector_srcpad_event_func (GstPad * pad, GstObject * parent,
     GstEvent * event)
 {
@@ -345,7 +345,7 @@ gst_output_selector_srcpad_event_func (GstPad * pad, GstObject * parent,
         GST_DEBUG_OBJECT (pad,
             "Drop duplicated SEEK event seqnum %" G_GUINT32_FORMAT, seqnum);
         gst_event_unref (event);
-        return TRUE;
+        return GST_FLOW_OK;
       }
 
       osel->segment_seqnum = seqnum;
@@ -356,7 +356,7 @@ gst_output_selector_srcpad_event_func (GstPad * pad, GstObject * parent,
       break;
   }
 
-  return gst_pad_event_default (pad, parent, event);
+  return gst_pad_event_full_default (pad, parent, event);
 }
 
 static GstPad *
@@ -376,7 +376,8 @@ gst_output_selector_request_new_pad (GstElement * element,
   srcpad = gst_pad_new_from_template (templ, padname);
   GST_OBJECT_UNLOCK (osel);
 
-  gst_pad_set_event_function (srcpad, gst_output_selector_srcpad_event_func);
+  gst_pad_set_event_full_function (srcpad,
+      gst_output_selector_srcpad_event_func);
   gst_pad_set_active (srcpad, TRUE);
 
   /* Forward sticky events to the new srcpad */
@@ -592,16 +593,18 @@ gst_output_selector_change_state (GstElement * element,
   return result;
 }
 
-static gboolean
+static GstFlowReturn
 gst_output_selector_forward_event (GstOutputSelector * sel, GstEvent * event)
 {
-  gboolean res = TRUE;
+  GstFlowReturn res = GST_FLOW_OK;
   GstPad *active;
 
   switch (sel->pad_negotiation_mode) {
     case GST_OUTPUT_SELECTOR_PAD_NEGOTIATION_MODE_ALL:
       /* Send to all src pads */
-      res = gst_pad_event_default (sel->sinkpad, GST_OBJECT_CAST (sel), event);
+      res =
+          gst_pad_event_full_default (sel->sinkpad, GST_OBJECT_CAST (sel),
+          event);
       break;
     case GST_OUTPUT_SELECTOR_PAD_NEGOTIATION_MODE_NONE:
       gst_event_unref (event);
@@ -609,7 +612,7 @@ gst_output_selector_forward_event (GstOutputSelector * sel, GstEvent * event)
     default:
       active = gst_output_selector_get_active (sel);
       if (active) {
-        res = gst_pad_push_event (active, event);
+        res = gst_pad_push_event_full (active, event);
         gst_object_unref (active);
       } else {
         gst_event_unref (event);
@@ -620,10 +623,10 @@ gst_output_selector_forward_event (GstOutputSelector * sel, GstEvent * event)
   return res;
 }
 
-static gboolean
+static GstFlowReturn
 gst_output_selector_event (GstPad * pad, GstObject * parent, GstEvent * event)
 {
-  gboolean res = TRUE;
+  GstFlowReturn res = GST_FLOW_OK;
   GstOutputSelector *sel;
   GstPad *active = NULL;
 
@@ -646,7 +649,7 @@ gst_output_selector_event (GstPad * pad, GstObject * parent, GstEvent * event)
     {
       active = gst_output_selector_get_active (sel);
       if (active) {
-        res = gst_pad_push_event (active, event);
+        res = gst_pad_push_event_full (active, event);
         gst_object_unref (active);
       } else {
         gst_event_unref (event);
