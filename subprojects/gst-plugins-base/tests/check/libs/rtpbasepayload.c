@@ -51,6 +51,7 @@ struct _GstRtpDummyPay
 {
   GstRTPBasePayload payload;
   guint n_bufs_payloaded;
+  gboolean no_pts_in_list;
 };
 
 struct _GstRtpDummyPayClass
@@ -123,22 +124,47 @@ gst_rtp_dummy_pay_handle_buffer (GstRTPBasePayload * pay, GstBuffer * buffer)
     }
   }
 
-  paybuffer =
-      gst_rtp_base_payload_allocate_output_buffer (GST_RTP_BASE_PAYLOAD (pay),
-      0, 0, 0);
-
-  GST_BUFFER_PTS (paybuffer) = GST_BUFFER_PTS (buffer);
-  GST_BUFFER_OFFSET (paybuffer) = GST_BUFFER_OFFSET (buffer);
-
-  gst_buffer_append (paybuffer, buffer);
-
-  GST_LOG ("payloaded %" GST_PTR_FORMAT, paybuffer);
-
   if (self->n_bufs_payloaded++ < BUFFER_BEFORE_LIST) {
+    paybuffer =
+        gst_rtp_base_payload_allocate_output_buffer (GST_RTP_BASE_PAYLOAD (pay),
+        0, 0, 0);
+
+    GST_BUFFER_PTS (paybuffer) = GST_BUFFER_PTS (buffer);
+    GST_BUFFER_OFFSET (paybuffer) = GST_BUFFER_OFFSET (buffer);
+
+    gst_buffer_append (paybuffer, buffer);
+
+    GST_LOG ("payloaded %" GST_PTR_FORMAT, paybuffer);
+
     return gst_rtp_base_payload_push (pay, paybuffer);
   } else {
     GstBufferList *list = gst_buffer_list_new ();
-    gst_buffer_list_add (list, paybuffer);
+    GstClockTime pts = GST_BUFFER_PTS (buffer);
+    GstClockTime duration = GST_BUFFER_DURATION (buffer);
+    guint64 offset = GST_BUFFER_OFFSET (buffer);
+    guint i, n_buffers = 1;
+
+    /* split buffers larger than 1 second */
+    if (GST_CLOCK_TIME_IS_VALID (duration) && duration > 1 * GST_SECOND)
+      n_buffers = duration / GST_SECOND;
+
+    for (i = 0; i < n_buffers; i++) {
+      paybuffer =
+          gst_rtp_base_payload_allocate_output_buffer (GST_RTP_BASE_PAYLOAD
+          (pay), 0, 0, 0);
+
+      if (GST_CLOCK_TIME_IS_VALID (pts) && (i == 0 || !self->no_pts_in_list)) {
+        GST_BUFFER_PTS (paybuffer) = pts + i * GST_SECOND;
+      }
+      if (offset != GST_BUFFER_OFFSET_NONE) {
+        GST_BUFFER_OFFSET (paybuffer) = offset + i * DEFAULT_CLOCK_RATE;
+      }
+
+      if (i == 0)
+        gst_buffer_append (paybuffer, buffer);
+      gst_buffer_list_add (list, paybuffer);
+    }
+
     return gst_rtp_base_payload_push_list (pay, list);
   }
 }
@@ -345,6 +371,9 @@ populate_buffer_valist (GstBuffer * buf, const gchar * field, va_list var_args)
     } else if (!g_strcmp0 (field, "offset")) {
       guint64 offset = va_arg (var_args, guint64);
       GST_BUFFER_OFFSET (buf) = offset;
+    } else if (!g_strcmp0 (field, "duration")) {
+      GstClockTime duration = va_arg (var_args, GstClockTime);
+      GST_BUFFER_DURATION (buf) = duration;
     } else if (!g_strcmp0 (field, "discont")) {
       gboolean discont = va_arg (var_args, gboolean);
       if (discont) {
@@ -921,6 +950,185 @@ GST_START_TEST (rtp_base_payload_no_pts_no_offset_test)
       "rtptime", 0x42 + 1 * DEFAULT_CLOCK_RATE, NULL);
 
   validate_buffer (2,
+      "pts", GST_CLOCK_TIME_NONE,
+      "offset", GST_BUFFER_OFFSET_NONE,
+      "rtptime", 0x42 + 1 * DEFAULT_CLOCK_RATE, NULL);
+
+  validate_events_received (3);
+
+  validate_normal_start_events (0);
+
+  destroy_payloader (state);
+}
+
+GST_END_TEST;
+
+/* push 2 buffers, where the second has a long duration; the dummy payloader
+ * will split it into 1 second fragments. using non-perfect rtptime, the
+ * buffers will be timestamped with the default clock and ignore any
+ * offset set.
+ */
+GST_START_TEST (rtp_base_payload_normal_rtptime_bufferlist_test)
+{
+  State *state;
+
+  state = create_payloader ("application/x-rtp", &sinktmpl,
+      "timestamp-offset", 0x42, NULL);
+
+  /* start output of buffer lists immediately */
+  GST_RTP_DUMMY_PAY (state->element)->n_bufs_payloaded = BUFFER_BEFORE_LIST;
+
+  set_state (state, GST_STATE_PLAYING);
+
+  push_buffer (state,
+      "pts", 0 * GST_SECOND, "offset", GST_BUFFER_OFFSET_NONE, NULL);
+
+  /* wrong offset here should be ignored for rtptime calculation */
+  push_buffer (state,
+      "pts", 1 * GST_SECOND, "offset", 11 * DEFAULT_CLOCK_RATE,
+      "duration", 3 * GST_SECOND, NULL);
+
+  set_state (state, GST_STATE_NULL);
+
+  validate_buffers_received (4);
+
+  /* first input buf */
+  validate_buffer (0,
+      "pts", 0 * GST_SECOND,
+      "offset", GST_BUFFER_OFFSET_NONE, "rtptime", 0x42, NULL);
+
+  /* second input buf */
+  validate_buffer (1,
+      "pts", 1 * GST_SECOND,
+      "offset", G_GINT64_CONSTANT (11) * DEFAULT_CLOCK_RATE,
+      "rtptime", 0x42 + 1 * DEFAULT_CLOCK_RATE, NULL);
+
+  validate_buffer (2,
+      "pts", 2 * GST_SECOND,
+      "offset", G_GINT64_CONSTANT (12) * DEFAULT_CLOCK_RATE,
+      "rtptime", 0x42 + 2 * DEFAULT_CLOCK_RATE, NULL);
+
+  validate_buffer (3,
+      "pts", 3 * GST_SECOND,
+      "offset", G_GINT64_CONSTANT (13) * DEFAULT_CLOCK_RATE,
+      "rtptime", 0x42 + 3 * DEFAULT_CLOCK_RATE, NULL);
+
+  validate_events_received (3);
+
+  validate_normal_start_events (0);
+
+  destroy_payloader (state);
+}
+
+GST_END_TEST;
+
+/* push 2 buffers, where the second has a long duration; the dummy payloader
+ * will split it into 1 second fragments. using perfect rtptime, the
+ * buffers will be timestamped with a timestamp incremented with the
+ * difference in offset between them and the pts will be
+ * ignored for any buffer after the first buffer.
+ */
+GST_START_TEST (rtp_base_payload_perfect_rtptime_bufferlist_test)
+{
+  State *state;
+
+  state = create_payloader ("application/x-rtp", &sinktmpl,
+      "timestamp-offset", 0x42, "perfect-rtptime", TRUE, NULL);
+
+  /* start output of buffer lists immediately */
+  GST_RTP_DUMMY_PAY (state->element)->n_bufs_payloaded = BUFFER_BEFORE_LIST;
+
+  set_state (state, GST_STATE_PLAYING);
+
+  push_buffer (state,
+      "pts", 0 * GST_SECOND, "offset", G_GINT64_CONSTANT (0), NULL);
+
+  /* wrong pts here should be ignored for rtptime calculation */
+  push_buffer (state,
+      "pts", 11 * GST_SECOND, "offset", 1 * DEFAULT_CLOCK_RATE,
+      "duration", 3 * GST_SECOND, NULL);
+
+  set_state (state, GST_STATE_NULL);
+
+  validate_buffers_received (4);
+
+  /* first input buf */
+  validate_buffer (0,
+      "pts", 0 * GST_SECOND,
+      "offset", G_GINT64_CONSTANT (0), "rtptime", 0x42, NULL);
+
+  /* second input buf */
+  validate_buffer (1,
+      "pts", 11 * GST_SECOND,
+      "offset", G_GINT64_CONSTANT (1) * DEFAULT_CLOCK_RATE,
+      "rtptime", 0x42 + 1 * DEFAULT_CLOCK_RATE, NULL);
+
+  validate_buffer (2,
+      "pts", 12 * GST_SECOND,
+      "offset", G_GINT64_CONSTANT (2) * DEFAULT_CLOCK_RATE,
+      "rtptime", 0x42 + 2 * DEFAULT_CLOCK_RATE, NULL);
+
+  validate_buffer (3,
+      "pts", 13 * GST_SECOND,
+      "offset", G_GINT64_CONSTANT (3) * DEFAULT_CLOCK_RATE,
+      "rtptime", 0x42 + 3 * DEFAULT_CLOCK_RATE, NULL);
+
+  validate_events_received (3);
+
+  validate_normal_start_events (0);
+
+  destroy_payloader (state);
+}
+
+GST_END_TEST;
+
+/* validate that a payloader will re-use the last used rtptime when a buffer
+ * has no valid PTS, even if this buffer belongs in an output bufferlist.
+ */
+GST_START_TEST (rtp_base_payload_no_pts_bufferlist_test)
+{
+  State *state;
+
+  state = create_payloader ("application/x-rtp", &sinktmpl,
+      "timestamp-offset", 0x42, NULL);
+
+  /* start output of buffer lists immediately */
+  GST_RTP_DUMMY_PAY (state->element)->n_bufs_payloaded = BUFFER_BEFORE_LIST;
+
+  /* instruct the dummy payloader to use NONE pts after placing the first
+     split buffer on the output list */
+  GST_RTP_DUMMY_PAY (state->element)->no_pts_in_list = TRUE;
+
+  set_state (state, GST_STATE_PLAYING);
+
+  push_buffer (state,
+      "pts", 0 * GST_SECOND, "offset", GST_BUFFER_OFFSET_NONE, NULL);
+
+  push_buffer (state,
+      "pts", 1 * GST_SECOND, "offset", GST_BUFFER_OFFSET_NONE,
+      "duration", 3 * GST_SECOND, NULL);
+
+  set_state (state, GST_STATE_NULL);
+
+  validate_buffers_received (4);
+
+  /* first input buf */
+  validate_buffer (0,
+      "pts", 0 * GST_SECOND,
+      "offset", GST_BUFFER_OFFSET_NONE, "rtptime", 0x42, NULL);
+
+  /* second input buf */
+  validate_buffer (1,
+      "pts", 1 * GST_SECOND,
+      "offset", GST_BUFFER_OFFSET_NONE,
+      "rtptime", 0x42 + 1 * DEFAULT_CLOCK_RATE, NULL);
+
+  validate_buffer (2,
+      "pts", GST_CLOCK_TIME_NONE,
+      "offset", GST_BUFFER_OFFSET_NONE,
+      "rtptime", 0x42 + 1 * DEFAULT_CLOCK_RATE, NULL);
+
+  validate_buffer (3,
       "pts", GST_CLOCK_TIME_NONE,
       "offset", GST_BUFFER_OFFSET_NONE,
       "rtptime", 0x42 + 1 * DEFAULT_CLOCK_RATE, NULL);
@@ -2313,6 +2521,10 @@ rtp_basepayloading_suite (void)
   tcase_add_test (tc_chain, rtp_base_payload_normal_rtptime_test);
   tcase_add_test (tc_chain, rtp_base_payload_perfect_rtptime_test);
   tcase_add_test (tc_chain, rtp_base_payload_no_pts_no_offset_test);
+
+  tcase_add_test (tc_chain, rtp_base_payload_normal_rtptime_bufferlist_test);
+  tcase_add_test (tc_chain, rtp_base_payload_perfect_rtptime_bufferlist_test);
+  tcase_add_test (tc_chain, rtp_base_payload_no_pts_bufferlist_test);
 
   tcase_add_test (tc_chain, rtp_base_payload_downstream_caps_test);
 
