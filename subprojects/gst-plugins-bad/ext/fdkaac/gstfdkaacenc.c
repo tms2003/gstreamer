@@ -401,10 +401,26 @@ gst_fdkaacenc_set_format (GstAudioEncoder * enc, GstAudioInfo * info)
 
   /* Use explicit hierarchical signaling (2) with raw output stream-format
    * and implicit signaling (0) with ADTS/ADIF */
-  if (transmux == 0)
+  if (transmux == 0) {
     signaling_mode = 2;
-  else
+  } else if (transmux == 6 || transmux == 7 || transmux == 10) {
+    /*
+     * If HE-AACv1/v2 is being used for LATM/LOAS, AudioMuxVersion needs to
+     * be set to 1.
+     */
+    if (aot == AOT_PS || aot == AOT_SBR) {
+      if ((err = aacEncoder_SetParam (self->enc, AACENC_AUDIOMUXVER,
+                  1)) != AACENC_OK) {
+        GST_ERROR_OBJECT (self, "Unable to set audio mux version: %d", err);
+        return FALSE;
+      }
+      signaling_mode = 2;
+    } else {
+      signaling_mode = 0;
+    }
+  } else {
     signaling_mode = 0;
+  }
 
   if ((err = aacEncoder_SetParam (self->enc, AACENC_SIGNALING_MODE,
               signaling_mode)) != AACENC_OK) {
