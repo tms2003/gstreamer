@@ -50,6 +50,7 @@ typedef struct _GstRtpDummyPayClass GstRtpDummyPayClass;
 struct _GstRtpDummyPay
 {
   GstRTPBasePayload payload;
+  guint n_bufs_payloaded;
 };
 
 struct _GstRtpDummyPayClass
@@ -109,6 +110,7 @@ rtp_dummy_pay_new (void)
 static GstFlowReturn
 gst_rtp_dummy_pay_handle_buffer (GstRTPBasePayload * pay, GstBuffer * buffer)
 {
+  GstRtpDummyPay *self = GST_RTP_DUMMY_PAY (pay);
   GstBuffer *paybuffer;
 
   GST_LOG ("payloading %" GST_PTR_FORMAT, buffer);
@@ -132,7 +134,7 @@ gst_rtp_dummy_pay_handle_buffer (GstRTPBasePayload * pay, GstBuffer * buffer)
 
   GST_LOG ("payloaded %" GST_PTR_FORMAT, paybuffer);
 
-  if (GST_BUFFER_PTS (paybuffer) < BUFFER_BEFORE_LIST) {
+  if (self->n_bufs_payloaded++ < BUFFER_BEFORE_LIST) {
     return gst_rtp_base_payload_push (pay, paybuffer);
   } else {
     GstBufferList *list = gst_buffer_list_new ();
