@@ -284,24 +284,18 @@ static void
 _transport_closed (WebRTCDataChannel * channel)
 {
   GError *error;
-  gboolean both_sides_closed;
 
   GST_WEBRTC_DATA_CHANNEL_LOCK (channel);
   error = channel->stored_error;
   channel->stored_error = NULL;
 
-  both_sides_closed =
-      channel->peer_closed && channel->parent.buffered_amount <= 0;
-  if (both_sides_closed || error) {
-    channel->peer_closed = FALSE;
-  }
   GST_WEBRTC_DATA_CHANNEL_UNLOCK (channel);
 
   if (error) {
     gst_webrtc_data_channel_on_error (GST_WEBRTC_DATA_CHANNEL (channel), error);
     g_clear_error (&error);
   }
-  if (both_sides_closed || error) {
+  if (channel->parent.buffered_amount <= 0 || error) {
     gst_webrtc_data_channel_on_close (GST_WEBRTC_DATA_CHANNEL (channel));
   }
 }
@@ -366,10 +360,6 @@ _on_sctp_stream_reset (WebRTCSCTPTransport * sctp, guint stream_id,
     GST_INFO_OBJECT (channel,
         "Received channel close for SCTP stream %i label \"%s\"",
         channel->parent.id, channel->parent.label);
-
-    GST_WEBRTC_DATA_CHANNEL_LOCK (channel);
-    channel->peer_closed = TRUE;
-    GST_WEBRTC_DATA_CHANNEL_UNLOCK (channel);
 
     _channel_enqueue_task (channel, (ChannelTask) _close_procedure,
         GUINT_TO_POINTER (stream_id), NULL);
