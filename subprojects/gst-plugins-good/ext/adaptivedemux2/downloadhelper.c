@@ -651,9 +651,8 @@ downloadhelper_free (DownloadHelper * dh)
   g_free (dh);
 }
 
-/* Takes ownership of the structure */
 void
-downloadhelper_set_request_headers (DownloadHelper * dh,
+downloadhelper_take_request_headers (DownloadHelper * dh,
     GstStructure * req_headers)
 {
   g_mutex_lock (&dh->transfer_lock);
@@ -662,9 +661,8 @@ downloadhelper_set_request_headers (DownloadHelper * dh,
   g_mutex_unlock (&dh->transfer_lock);
 }
 
-/* Takes ownership of the strv */
 void
-downloadhelper_set_cookies (DownloadHelper * dh, gchar ** cookies)
+downloadhelper_take_cookies (DownloadHelper * dh, gchar ** cookies)
 {
   g_mutex_lock (&dh->transfer_lock);
   g_strfreev (dh->cookies);

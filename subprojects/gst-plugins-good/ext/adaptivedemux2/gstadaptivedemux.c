@@ -1255,11 +1255,11 @@ gst_adaptive_demux_sink_event (GstPad * pad, GstObject * parent,
         }
 
         if (c.req_headers) {
-          downloadhelper_set_request_headers (demux->download_helper,
+          downloadhelper_take_request_headers (demux->download_helper,
               c.req_headers);
         }
         if (c.cookies)
-          downloadhelper_set_cookies (demux->download_helper, c.cookies);
+          downloadhelper_take_cookies (demux->download_helper, c.cookies);
       }
       break;
     }
