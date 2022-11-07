@@ -1,6 +1,6 @@
 project('gst-rtsp-server', 'c',
   version : '1.21.2.1',
-  meson_version : '>= 0.62',
+  meson_version : '>= 0.64.1',
   default_options : ['warning_level=1', 'buildtype=debugoptimized'])
 
 gst_version = meson.project_version()
