@@ -39,7 +39,8 @@ void gst_wl_window_ensure_fullscreen (GstWlWindow * self,
 
 GST_WL_API
 GstWlWindow *gst_wl_window_new_toplevel (GstWlDisplay * display,
-        const GstVideoInfo * info, gboolean fullscreen, GMutex * render_lock);
+        const GstVideoInfo * info, GstVideoOrientationMethod orientation,
+        gboolean fullscreen, GMutex * render_lock);
 
 GST_WL_API
 GstWlWindow *gst_wl_window_new_in_surface (GstWlDisplay * display,

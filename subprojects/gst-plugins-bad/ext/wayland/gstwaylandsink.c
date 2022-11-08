@@ -792,6 +792,16 @@ gst_wayland_sink_show_frame (GstVideoSink * vsink, GstBuffer * buffer)
 
   GST_LOG_OBJECT (self, "render buffer %" GST_PTR_FORMAT "", buffer);
 
+  ometa = gst_buffer_get_video_orientation_meta (buffer);
+  if (ometa && ometa->orientation != self->last_buffer_rotate_method) {
+    self->last_buffer_rotate_method = ometa->orientation;
+    gst_wayland_sink_update_window_rotate_method (self, FALSE);
+  } else if (!ometa
+      && self->last_buffer_rotate_method != GST_VIDEO_ORIENTATION_IDENTITY) {
+    self->last_buffer_rotate_method = GST_VIDEO_ORIENTATION_IDENTITY;
+    gst_wayland_sink_update_window_rotate_method (self, FALSE);
+  }
+
   if (G_UNLIKELY (!self->window)) {
     /* ask for window handle. Unlock render_lock while doing that because
      * set_window_handle & friends will lock it in this context */
@@ -801,8 +811,10 @@ gst_wayland_sink_show_frame (GstVideoSink * vsink, GstBuffer * buffer)
 
     if (!self->window) {
       /* if we were not provided a window, create one ourselves */
-      self->window = gst_wl_window_new_toplevel (self->display,
-          &self->video_info, self->fullscreen, &self->render_lock);
+      self->window =
+          gst_wl_window_new_toplevel (self->display, &self->video_info,
+          self->last_buffer_rotate_method, self->fullscreen,
+          &self->render_lock);
       g_signal_connect_object (self->window, "closed",
           G_CALLBACK (on_window_closed), self, 0);
       g_signal_connect (self->window, "output-orientation-changed",
@@ -816,16 +828,6 @@ gst_wayland_sink_show_frame (GstVideoSink * vsink, GstBuffer * buffer)
     GST_LOG_OBJECT (self, "buffer %" GST_PTR_FORMAT " dropped (redraw pending)",
         buffer);
     goto done;
-  }
-
-  ometa = gst_buffer_get_video_orientation_meta (buffer);
-  if (ometa && ometa->orientation != self->last_buffer_rotate_method) {
-    self->last_buffer_rotate_method = ometa->orientation;
-    gst_wayland_sink_update_window_rotate_method (self, FALSE);
-  } else if (!ometa
-      && self->last_buffer_rotate_method != GST_VIDEO_ORIENTATION_IDENTITY) {
-    self->last_buffer_rotate_method = GST_VIDEO_ORIENTATION_IDENTITY;
-    gst_wayland_sink_update_window_rotate_method (self, FALSE);
   }
 
   /* make sure that the application has called set_render_rectangle() */

@@ -373,12 +373,14 @@ gst_wl_window_ensure_fullscreen (GstWlWindow * self, gboolean fullscreen)
 
 GstWlWindow *
 gst_wl_window_new_toplevel (GstWlDisplay * display, const GstVideoInfo * info,
-    gboolean fullscreen, GMutex * render_lock)
+    GstVideoOrientationMethod orientation, gboolean fullscreen,
+    GMutex * render_lock)
 {
   GstWlWindow *self;
   GstWlWindowPrivate *priv;
   struct xdg_wm_base *xdg_wm_base;
   struct zwp_fullscreen_shell_v1 *fullscreen_shell;
+  gint height, width;
 
   self = gst_wl_window_new_internal (display, render_lock);
   priv = gst_wl_window_get_instance_private (self);
@@ -437,9 +439,23 @@ gst_wl_window_new_toplevel (GstWlDisplay * display, const GstVideoInfo * info,
    * xdg_shell fullscreen mode */
   if (!(xdg_wm_base && fullscreen)) {
     /* set the initial size to be the same as the reported video size */
-    gint width =
+    width =
         gst_util_uint64_scale_int_round (info->width, info->par_n, info->par_d);
-    gst_wl_window_set_render_rectangle (self, 0, 0, width, info->height);
+
+    switch (orientation) {
+      case GST_VIDEO_ORIENTATION_90R:
+      case GST_VIDEO_ORIENTATION_90L:
+      case GST_VIDEO_ORIENTATION_UL_LR:
+      case GST_VIDEO_ORIENTATION_UR_LL:
+        height = width;
+        width = info->height;
+        break;
+      default:
+        height = info->height;
+        break;
+    }
+
+    gst_wl_window_set_render_rectangle (self, 0, 0, width, height);
   }
 
   return self;
