@@ -316,6 +316,48 @@ GST_START_TEST (test_reuse_push)
 
 GST_END_TEST;
 
+GST_START_TEST (test_seek_reverse)
+{
+  GstElement *src;
+
+  src = setup_fakesrc ();
+  g_object_set (G_OBJECT (src), "datarate", 1000, "sizetype", 2 /* fixed */ ,
+      "sizemax", 10, "format", 3 /* time */ , NULL);
+
+  fail_unless (gst_element_set_state (src,
+          GST_STATE_PAUSED) == GST_STATE_CHANGE_SUCCESS,
+      "could not set to playing");
+
+  fail_unless (gst_element_seek (src, -1.0, GST_FORMAT_TIME,
+          GST_SEEK_FLAG_FLUSH, GST_SEEK_TYPE_SET, 0,
+          GST_SEEK_TYPE_SET, 100 * GST_MSECOND));
+
+  fail_unless (buffers == NULL);
+  fail_unless (have_eos == FALSE);
+
+  gst_check_drop_buffers ();
+  have_eos = FALSE;
+
+  fail_unless (gst_element_set_state (src,
+          GST_STATE_PLAYING) == GST_STATE_CHANGE_SUCCESS,
+      "could not set to playing");
+
+  while (!have_eos) {
+    g_usleep (1000);
+  }
+
+  fail_unless_equals_int (g_list_length (buffers), 10);
+  gst_check_drop_buffers ();
+
+  fail_unless (gst_element_set_state (src,
+          GST_STATE_NULL) == GST_STATE_CHANGE_SUCCESS, "could not set to null");
+
+  /* cleanup */
+  cleanup_fakesrc (src);
+}
+
+GST_END_TEST;
+
 static Suite *
 fakesrc_suite (void)
 {
@@ -329,6 +371,7 @@ fakesrc_suite (void)
   tcase_add_test (tc_chain, test_sizetype_random);
   tcase_add_test (tc_chain, test_no_preroll);
   tcase_add_test (tc_chain, test_reuse_push);
+  tcase_add_test (tc_chain, test_seek_reverse);
 
   return s;
 }
