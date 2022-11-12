@@ -222,6 +222,8 @@ static void gst_fake_src_get_times (GstBaseSrc * basesrc, GstBuffer * buffer,
     GstClockTime * start, GstClockTime * end);
 static GstFlowReturn gst_fake_src_create (GstBaseSrc * src, guint64 offset,
     guint length, GstBuffer ** buf);
+static gboolean
+gst_fake_src_default_do_seek (GstBaseSrc * basesrc, GstSegment * segment);
 
 static guint gst_fake_src_signals[LAST_SIGNAL] = { 0 };
 
@@ -351,6 +353,7 @@ gst_fake_src_class_init (GstFakeSrcClass * klass)
   gstbase_src_class->event = GST_DEBUG_FUNCPTR (gst_fake_src_event_handler);
   gstbase_src_class->get_times = GST_DEBUG_FUNCPTR (gst_fake_src_get_times);
   gstbase_src_class->create = GST_DEBUG_FUNCPTR (gst_fake_src_create);
+  gstbase_src_class->do_seek = GST_DEBUG_FUNCPTR (gst_fake_src_default_do_seek);
 
   gst_type_mark_as_plugin_api (GST_TYPE_FAKE_SRC_DATA, 0);
   gst_type_mark_as_plugin_api (GST_TYPE_FAKE_SRC_SIZETYPE, 0);
@@ -596,6 +599,17 @@ gst_fake_src_get_property (GObject * object, guint prop_id, GValue * value,
 }
 
 static void
+fill_buffer_with_pattern (GstFakeSrc * src, guint8 * data, gsize size, gint inc)
+{
+  gsize i;
+
+  for (i = 0; i < size; i++) {
+    data[i] = src->pattern_byte;
+    src->pattern_byte += GST_BASE_SRC (src)->segment.rate > 0.0 ? 1 : -1;
+  }
+}
+
+static void
 gst_fake_src_prepare_buffer (GstFakeSrc * src, guint8 * data, gsize size)
 {
   if (size == 0)
@@ -617,16 +631,13 @@ gst_fake_src_prepare_buffer (GstFakeSrc * src, guint8 * data, gsize size)
     }
     case FAKE_SRC_FILLTYPE_PATTERN:
       src->pattern_byte = 0x00;
-    case FAKE_SRC_FILLTYPE_PATTERN_CONT:
-    {
-      gint i;
-      guint8 *ptr = data;
-
-      for (i = size; i; i--) {
-        *ptr++ = src->pattern_byte++;
-      }
+      fill_buffer_with_pattern (src, data, size, 1);
       break;
-    }
+    case FAKE_SRC_FILLTYPE_PATTERN_CONT:
+      fill_buffer_with_pattern (src, data, size,
+          (src->sizetype == FAKE_SRC_SIZETYPE_FIXED && src->datarate > 0
+              && GST_BASE_SRC (src)->segment.rate < 0.0) ? -1 : 1);
+      break;
     case FAKE_SRC_FILLTYPE_NOTHING:
     default:
       break;
@@ -671,20 +682,25 @@ gst_fake_src_alloc_buffer (GstFakeSrc * src, guint size)
 static guint
 gst_fake_src_get_size (GstFakeSrc * src)
 {
-  guint size;
+  guint size = src->next_size, next_size;
 
   switch (src->sizetype) {
     case FAKE_SRC_SIZETYPE_FIXED:
-      size = src->sizemax;
+      next_size = src->sizemax;
       break;
     case FAKE_SRC_SIZETYPE_RANDOM:
-      size = g_random_int_range (src->sizemin, src->sizemax);
+      next_size = g_random_int_range (src->sizemin, src->sizemax);
       break;
     case FAKE_SRC_SIZETYPE_EMPTY:
     default:
-      size = 0;
+      next_size = 0;
       break;
   }
+
+
+  src->next_size = next_size;
+  if (size == (guint) - 1)
+    return gst_fake_src_get_size (src);
 
   return size;
 }
@@ -790,6 +806,52 @@ gst_fake_src_get_times (GstBaseSrc * basesrc, GstBuffer * buffer,
   }
 }
 
+static gboolean
+gst_fake_src_default_do_seek (GstBaseSrc * basesrc, GstSegment * segment)
+{
+  gboolean res = TRUE;
+  GstFakeSrc *src = GST_FAKE_SRC (basesrc);
+
+  if (src->datarate <= 0 && segment->start != 0) {
+    GST_INFO_OBJECT (src,
+        "Only seeking to 0 is supported if datarate isn't set");
+    return FALSE;
+  }
+
+  if (segment->format == GST_FORMAT_BYTES) {
+    if (segment->rate < 0.0) {
+      res = FALSE;
+      GST_INFO_OBJECT (src, "Can't seek for reverse playback in bytes format.");
+    } else {
+      src->bytes_sent = segment->start;
+    }
+
+    return GST_BASE_SRC_CLASS (parent_class)->do_seek (basesrc, segment);
+  } else if (segment->format == GST_FORMAT_TIME) {
+    gboolean reverse = segment->rate < 0.0;
+    src->bytes_sent = 0;
+    src->last_ts = reverse ? segment->stop : GST_CLOCK_TIME_NONE;
+
+    if (src->filltype == FAKE_SRC_FILLTYPE_PATTERN_CONT
+        && src->sizetype == FAKE_SRC_SIZETYPE_FIXED && src->datarate > 0) {
+      GstClockTime time = reverse ?
+          (segment->stop - ((src->sizemax * GST_SECOND) / src->datarate)) :
+          segment->start;
+
+      /* Make buffers content perfectly match between forward and reverse
+       * playback in case they are timestamped and their data span between the
+       * various buffers */
+      src->pattern_byte =
+          gst_util_uint64_scale (src->datarate, time, GST_SECOND);
+    }
+  } else {
+    res = FALSE;
+    GST_INFO_OBJECT (src, "Can't do a default seek");
+  }
+
+  return res;
+}
+
 static GstFlowReturn
 gst_fake_src_create (GstBaseSrc * basesrc, guint64 offset, guint length,
     GstBuffer ** ret)
@@ -805,9 +867,25 @@ gst_fake_src_create (GstBaseSrc * basesrc, guint64 offset, guint length,
   GST_BUFFER_OFFSET (buf) = offset;
 
   if (src->datarate > 0) {
-    time = (src->bytes_sent * GST_SECOND) / src->datarate;
+    GstClockTime next_ts =
+        basesrc->segment.start + (((src->bytes_sent +
+                src->next_size) * GST_SECOND) / src->datarate);
 
-    GST_BUFFER_DURATION (buf) = size * GST_SECOND / src->datarate;
+    if (basesrc->segment.rate < 0.0) {
+      time = basesrc->segment.stop - (
+          ((src->bytes_sent + size) * GST_SECOND) / src->datarate);
+
+      GST_BUFFER_DURATION (buf) = src->last_ts - time;
+    } else if (basesrc->segment.format == GST_FORMAT_TIME) {
+      time = basesrc->segment.start + (
+          (src->bytes_sent * GST_SECOND) / src->datarate);
+
+      GST_BUFFER_DURATION (buf) = next_ts - time;
+    } else {
+      time = (src->bytes_sent * GST_SECOND) / src->datarate;
+      GST_BUFFER_DURATION (buf) = next_ts - time;
+    }
+    src->last_ts = time;
   } else if (gst_base_src_is_live (basesrc)) {
     GstClock *clock;
 
@@ -891,6 +969,7 @@ gst_fake_src_start (GstBaseSrc * basesrc)
 
   src->pattern_byte = 0x00;
   src->bytes_sent = 0;
+  src->next_size = -1;
 
   gst_base_src_set_format (basesrc, src->format);
 

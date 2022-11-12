@@ -11,6 +11,11 @@ meson.override_find_program('gst-tester-' + apiversion, gst_tester)
 
 tests = [
     'simplest',
+    'identity/single_segment.reverse',
+    'clock_sync/1bps',
+    'clock_sync/30bps',
+    'clock_sync/reverse.1bps',
+    'clock_sync/reverse.30bps',
 ]
 
 env = environment()

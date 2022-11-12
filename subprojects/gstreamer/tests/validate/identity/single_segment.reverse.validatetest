@@ -1,0 +1,20 @@
+meta,
+    handles-states=true,
+    ignore-eos=true,
+    args = {
+        "fakesrc datarate=30 sizetype=fixed filltype=pattern-span format=time sizemax=1 ! identity name=identity single-segment=true ! fakesink sync=true name=sink",
+    },
+    configs = {
+        "core, fail-on-missing-plugin=true",
+        "$(validateflow), pad=sink:sink, buffers-checksum=true, ignored-fields=\"buffers={meta,}\"",
+        "$(validateflow), pad=identity:sink, buffers-checksum=true, ignored-fields=\"buffers={meta,}\"",
+    }
+
+play
+seek, start=1.0, stop=2.0, flags=accurate+flush, rate=-1.0
+crank-clock, expected-elapsed-time=0.0
+
+crank-clock, repeat=30
+
+stop, on-message=eos
+

@@ -128,6 +128,7 @@ struct _GstFakeSrc {
   GstFakeSrcSizeType   sizetype;
   GstFakeSrcFillType   filltype;
 
+  guint next_size;
   guint		sizemin;
   guint		sizemax;
   GstBuffer	*parent;
@@ -148,6 +149,7 @@ struct _GstFakeSrc {
   guint64        bytes_sent;
 
   gchar		*last_message;
+  GstClockTime last_ts;
 };
 
 struct _GstFakeSrcClass {

@@ -1,0 +1,71 @@
+event stream-start: GstEventStreamStart, flags=(GstStreamFlags)GST_STREAM_FLAG_NONE, group-id=(uint)1;
+event segment: format=TIME, start=0:00:00.000000000, offset=0:00:00.000000000, stop=none, time=0:00:00.000000000, base=0:00:00.000000000, position=0:00:00.000000000
+buffer: checksum=5ba93c9db0cff93f52b521d7420e43f6eda2784f, dts=0:00:00.000000000, pts=0:00:00.000000000, dur=0:00:00.033333333, flags=discont tag-memory
+event flush-start: (no structure)
+event flush-stop: GstEventFlushStop, reset-time=(boolean)true;
+event segment: format=TIME, start=0:00:01.000000000, offset=0:00:00.000000000, stop=0:00:02.000000000, flags=0x01, time=0:00:01.000000000, base=0:00:00.000000000, position=0:00:01.000000000
+buffer: checksum=7fd88c329b63b57572a0032cf14e3e9ec861ce5f, dts=0:00:01.000000000, pts=0:00:01.000000000, dur=0:00:00.033333333, flags=discont tag-memory
+buffer: checksum=953efe8f531a5a87f6d2d5a65b78b05e55599abc, dts=0:00:01.033333333, pts=0:00:01.033333333, dur=0:00:00.033333333, flags=tag-memory
+buffer: checksum=b858cb282617fb0956d960215c8e84d1ccf909c6, dts=0:00:01.066666666, pts=0:00:01.066666666, dur=0:00:00.033333334, flags=tag-memory
+buffer: checksum=0ab8318acaf6e678dd02e2b5c343ed41111b393d, dts=0:00:01.100000000, pts=0:00:01.100000000, dur=0:00:00.033333333, flags=tag-memory
+buffer: checksum=2ace62c1befa19e3ea37dd52be9f6d508c5163e6, dts=0:00:01.133333333, pts=0:00:01.133333333, dur=0:00:00.033333333, flags=tag-memory
+buffer: checksum=d08f88df745fa7950b104e4a707a31cfce7b5841, dts=0:00:01.166666666, pts=0:00:01.166666666, dur=0:00:00.033333334, flags=tag-memory
+buffer: checksum=3cdf2936da2fc556bfa533ab1eb59ce710ac80e5, dts=0:00:01.200000000, pts=0:00:01.200000000, dur=0:00:00.033333333, flags=tag-memory
+buffer: checksum=4345cb1fa27885a8fbfe7c0c830a592cc76a552b, dts=0:00:01.233333333, pts=0:00:01.233333333, dur=0:00:00.033333333, flags=tag-memory
+buffer: checksum=7c4d33785daa5c2370201ffa236b427aa37c9996, dts=0:00:01.266666666, pts=0:00:01.266666666, dur=0:00:00.033333334, flags=tag-memory
+buffer: checksum=bb589d0621e5472f470fa3425a234c74b1e202e8, dts=0:00:01.300000000, pts=0:00:01.300000000, dur=0:00:00.033333333, flags=tag-memory
+buffer: checksum=28ed3a797da3c48c309a4ef792147f3c56cfec40, dts=0:00:01.333333333, pts=0:00:01.333333333, dur=0:00:00.033333333, flags=tag-memory
+buffer: checksum=e7064f0b80f61dbc65915311032d27baa569ae2a, dts=0:00:01.366666666, pts=0:00:01.366666666, dur=0:00:00.033333334, flags=tag-memory
+buffer: checksum=df58248c414f342c81e056b40bee12d17a08bf61, dts=0:00:01.400000000, pts=0:00:01.400000000, dur=0:00:00.033333333, flags=tag-memory
+buffer: checksum=a979ef10cc6f6a36df6b8a323307ee3bb2e2db9c, dts=0:00:01.433333333, pts=0:00:01.433333333, dur=0:00:00.033333333, flags=tag-memory
+buffer: checksum=5c10b5b2cd673a0616d529aa5234b12ee7153808, dts=0:00:01.466666666, pts=0:00:01.466666666, dur=0:00:00.033333334, flags=tag-memory
+buffer: checksum=3bc15c8aae3e4124dd409035f32ea2fd6835efc9, dts=0:00:01.500000000, pts=0:00:01.500000000, dur=0:00:00.033333333, flags=tag-memory
+buffer: checksum=3a52ce780950d4d969792a2559cd519d7ee8c727, dts=0:00:01.533333333, pts=0:00:01.533333333, dur=0:00:00.033333333, flags=tag-memory
+buffer: checksum=42099b4af021e53fd8fd4e056c2568d7c2e3ffa8, dts=0:00:01.566666666, pts=0:00:01.566666666, dur=0:00:00.033333334, flags=tag-memory
+buffer: checksum=b6589fc6ab0dc82cf12099d1c2d40ab994e8410c, dts=0:00:01.600000000, pts=0:00:01.600000000, dur=0:00:00.033333333, flags=tag-memory
+buffer: checksum=356a192b7913b04c54574d18c28d46e6395428ab, dts=0:00:01.633333333, pts=0:00:01.633333333, dur=0:00:00.033333333, flags=tag-memory
+buffer: checksum=da4b9237bacccdf19c0760cab7aec4a8359010b0, dts=0:00:01.666666666, pts=0:00:01.666666666, dur=0:00:00.033333334, flags=tag-memory
+buffer: checksum=77de68daecd823babbb58edb1c8e14d7106e83bb, dts=0:00:01.700000000, pts=0:00:01.700000000, dur=0:00:00.033333333, flags=tag-memory
+buffer: checksum=1b6453892473a467d07372d45eb05abc2031647a, dts=0:00:01.733333333, pts=0:00:01.733333333, dur=0:00:00.033333333, flags=tag-memory
+buffer: checksum=ac3478d69a3c81fa62e60f5c3696165a4e5e6ac4, dts=0:00:01.766666666, pts=0:00:01.766666666, dur=0:00:00.033333334, flags=tag-memory
+buffer: checksum=c1dfd96eea8cc2b62785275bca38ac261256e278, dts=0:00:01.800000000, pts=0:00:01.800000000, dur=0:00:00.033333333, flags=tag-memory
+buffer: checksum=902ba3cda1883801594b6e1b452790cc53948fda, dts=0:00:01.833333333, pts=0:00:01.833333333, dur=0:00:00.033333333, flags=tag-memory
+buffer: checksum=fe5dbbcea5ce7e2988b8c69bcfdfde8904aabc1f, dts=0:00:01.866666666, pts=0:00:01.866666666, dur=0:00:00.033333334, flags=tag-memory
+buffer: checksum=0ade7c2cf97f75d009975f4d720d1fa6c19f4897, dts=0:00:01.900000000, pts=0:00:01.900000000, dur=0:00:00.033333333, flags=tag-memory
+buffer: checksum=05a79f06cf3f67f726dae68d18a2290f6c9a50c9, dts=0:00:01.933333333, pts=0:00:01.933333333, dur=0:00:00.033333333, flags=tag-memory
+buffer: checksum=2d14ab97cc3dc294c51c0d6814f4ea45f4b4e312, dts=0:00:01.966666666, pts=0:00:01.966666666, dur=0:00:00.033333334, flags=tag-memory
+event eos: (no structure)
+event flush-start: (no structure)
+event flush-stop: GstEventFlushStop, reset-time=(boolean)true;
+event segment: format=TIME, start=0:00:00.000000000, offset=0:00:00.000000000, stop=0:00:01.000000000, flags=0x01, time=0:00:00.000000000, base=0:00:00.000000000, position=0:00:00.000000000
+buffer: checksum=5ba93c9db0cff93f52b521d7420e43f6eda2784f, dts=0:00:00.000000000, pts=0:00:00.000000000, dur=0:00:00.033333333, flags=discont tag-memory
+buffer: checksum=bf8b4530d8d246dd74ac53a13471bba17941dff7, dts=0:00:00.033333333, pts=0:00:00.033333333, dur=0:00:00.033333333, flags=tag-memory
+buffer: checksum=c4ea21bb365bbeeaf5f2c654883e56d11e43c44e, dts=0:00:00.066666666, pts=0:00:00.066666666, dur=0:00:00.033333334, flags=tag-memory
+buffer: checksum=9842926af7ca0a8cca12604f945414f07b01e13d, dts=0:00:00.100000000, pts=0:00:00.100000000, dur=0:00:00.033333333, flags=tag-memory
+buffer: checksum=a42c6cf1de3abfdea9b95f34687cbbe92b9a7383, dts=0:00:00.133333333, pts=0:00:00.133333333, dur=0:00:00.033333333, flags=tag-memory
+buffer: checksum=8dc00598417d4eb788a77ac6ccef3cb484905d8b, dts=0:00:00.166666666, pts=0:00:00.166666666, dur=0:00:00.033333334, flags=tag-memory
+buffer: checksum=2d0134ed3b9de132c720fe697b532b4c232ff9fe, dts=0:00:00.200000000, pts=0:00:00.200000000, dur=0:00:00.033333333, flags=tag-memory
+buffer: checksum=5d1be7e9dda1ee8896be5b7e34a85ee16452a7b4, dts=0:00:00.233333333, pts=0:00:00.233333333, dur=0:00:00.033333333, flags=tag-memory
+buffer: checksum=8d883f1577ca8c334b7c6d75ccb71209d71ced13, dts=0:00:00.266666666, pts=0:00:00.266666666, dur=0:00:00.033333334, flags=tag-memory
+buffer: checksum=ac9231da4082430afe8f4d40127814c613648d8e, dts=0:00:00.300000000, pts=0:00:00.300000000, dur=0:00:00.033333333, flags=tag-memory
+buffer: checksum=adc83b19e793491b1c6ea0fd8b46cd9f32e592fc, dts=0:00:00.333333333, pts=0:00:00.333333333, dur=0:00:00.033333333, flags=tag-memory
+buffer: checksum=067d5096f219c64b53bb1c7d5e3754285b565a47, dts=0:00:00.366666666, pts=0:00:00.366666666, dur=0:00:00.033333334, flags=tag-memory
+buffer: checksum=1e32e3c360501a0ede378bc45a24420dc2e53fba, dts=0:00:00.400000000, pts=0:00:00.400000000, dur=0:00:00.033333333, flags=tag-memory
+buffer: checksum=11f4de6b8b45cf8051b1d17fa4cde9ad935cea41, dts=0:00:00.433333333, pts=0:00:00.433333333, dur=0:00:00.033333333, flags=tag-memory
+buffer: checksum=320355ced694aa69924f6bb82e7b74f420303fd9, dts=0:00:00.466666666, pts=0:00:00.466666666, dur=0:00:00.033333334, flags=tag-memory
+buffer: checksum=c7255dc48b42d44f6c0676d6009051b7e1aa885b, dts=0:00:00.500000000, pts=0:00:00.500000000, dur=0:00:00.033333333, flags=tag-memory
+buffer: checksum=6e14a407faae939957b80e641a836735bbdcad5a, dts=0:00:00.533333333, pts=0:00:00.533333333, dur=0:00:00.033333333, flags=tag-memory
+buffer: checksum=a8abd012eb59b862bf9bc1ea443d2f35a1a2e222, dts=0:00:00.566666666, pts=0:00:00.566666666, dur=0:00:00.033333334, flags=tag-memory
+buffer: checksum=c4f87a6290aee1acfc1f26083974ce94621fca64, dts=0:00:00.600000000, pts=0:00:00.600000000, dur=0:00:00.033333333, flags=tag-memory
+buffer: checksum=5a8ca84c7d4d9b055f05c55b1f707f223979d387, dts=0:00:00.633333333, pts=0:00:00.633333333, dur=0:00:00.033333333, flags=tag-memory
+buffer: checksum=3ce0a1af90b6e7a3dd8d45e410884b588ea2d04c, dts=0:00:00.666666666, pts=0:00:00.666666666, dur=0:00:00.033333334, flags=tag-memory
+buffer: checksum=7762eabf9387fe8ec5d648cd3b1d9eb6d820caa2, dts=0:00:00.700000000, pts=0:00:00.700000000, dur=0:00:00.033333333, flags=tag-memory
+buffer: checksum=a9d3c9cd54b1a392b21ea14904d9a318f74636b7, dts=0:00:00.733333333, pts=0:00:00.733333333, dur=0:00:00.033333333, flags=tag-memory
+buffer: checksum=094d98b399bf4ace7b8899ab7081e867fb03f869, dts=0:00:00.766666666, pts=0:00:00.766666666, dur=0:00:00.033333334, flags=tag-memory
+buffer: checksum=c2143b1a0db17957bec1b41bb2e5f75aa135981e, dts=0:00:00.800000000, pts=0:00:00.800000000, dur=0:00:00.033333333, flags=tag-memory
+buffer: checksum=e9c5d7db93a1c17d45c5820daf458224bfa7a725, dts=0:00:00.833333333, pts=0:00:00.833333333, dur=0:00:00.033333333, flags=tag-memory
+buffer: checksum=ebdc2288a14298f5f7adf08e069b39fc42cbd909, dts=0:00:00.866666666, pts=0:00:00.866666666, dur=0:00:00.033333334, flags=tag-memory
+buffer: checksum=27f57cb359a8f86acf4af811c47a6380b4bb4209, dts=0:00:00.900000000, pts=0:00:00.900000000, dur=0:00:00.033333333, flags=tag-memory
+buffer: checksum=b830c46d24068069f0a43687826f355b21fdb941, dts=0:00:00.933333333, pts=0:00:00.933333333, dur=0:00:00.033333333, flags=tag-memory
+buffer: checksum=5983ad8f6bfea1deda79409c844f51379c52be2d, dts=0:00:00.966666666, pts=0:00:00.966666666, dur=0:00:00.033333334, flags=tag-memory
+event eos: (no structure)
