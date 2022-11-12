@@ -354,8 +354,16 @@ parse_chain_output_probe (GstPad * pad, GstPadProbeInfo * info,
       if (gst_caps_can_intersect (prop, input->dbin->caps)) {
         gst_query_set_accept_caps_result (q, TRUE);
       } else {
-        gboolean accepted = check_parser_caps_filter (input->dbin, prop);
-        /* check against caps filter */
+        gboolean accepted = TRUE;
+
+        /* If the pad is not to be exposed from the decodebin, check
+         * against caps filter. */
+        SELECTION_LOCK (input->dbin);
+        if (!g_slist_find (input->dbin->parsebin_pads_exposed, pad)) {
+          accepted = check_parser_caps_filter (input->dbin, prop);
+        }
+        SELECTION_UNLOCK (input->dbin);
+
         gst_query_set_accept_caps_result (q, accepted);
         GST_DEBUG_OBJECT (pad, "ACCEPT_CAPS query, returning %d", accepted);
       }
@@ -626,6 +634,14 @@ parsebin_pad_removed_cb (GstElement * demux, GstPad * pad, DecodebinInput * inp)
   DecodebinInputStream *input = NULL;
   GList *tmp;
   GST_DEBUG_OBJECT (pad, "removed");
+
+  SELECTION_LOCK (dbin);
+  if (g_slist_find (dbin->parsebin_pads_exposed, pad)) {
+    dbin->parsebin_pads_exposed = g_slist_remove (dbin->parsebin_pads_exposed,
+        pad);
+    gst_object_unref (pad);
+  }
+  SELECTION_UNLOCK (dbin);
 
   for (tmp = dbin->input_streams; tmp; tmp = tmp->next) {
     DecodebinInputStream *cand = (DecodebinInputStream *) tmp->data;

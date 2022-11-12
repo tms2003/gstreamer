@@ -222,6 +222,7 @@ struct _GstURIDecodeBin3
   gulong db_pad_removed_id;
   gulong db_select_stream_id;
   gulong db_about_to_finish_id;
+  gulong db_autoplug_continue_id;
 
   GList *output_pads;           /* List of OutputPad */
 
@@ -247,6 +248,10 @@ struct _GstURIDecodeBin3Class
 
     gint (*select_stream) (GstURIDecodeBin3 * dbin,
       GstStreamCollection * collection, GstStream * stream);
+
+  /* signal fired to know if we continue trying to decode the given caps */
+    gboolean (*autoplug_continue) (GstElement * element, GstPad * pad,
+      GstCaps * caps);
 };
 
 GST_DEBUG_CATEGORY_STATIC (gst_uri_decode_bin3_debug);
@@ -258,6 +263,7 @@ enum
   SIGNAL_SELECT_STREAM,
   SIGNAL_SOURCE_SETUP,
   SIGNAL_ABOUT_TO_FINISH,
+  SIGNAL_AUTOPLUG_CONTINUE,
   LAST_SIGNAL
 };
 
@@ -351,6 +357,19 @@ static gboolean gst_uri_decodebin3_send_event (GstElement * element,
     GstEvent * event);
 
 static gboolean
+_gst_boolean_accumulator (GSignalInvocationHint * ihint,
+    GValue * return_accu, const GValue * handler_return, gpointer dummy)
+{
+  gboolean myboolean;
+
+  myboolean = g_value_get_boolean (handler_return);
+  g_value_set_boolean (return_accu, myboolean);
+
+  /* stop emission if FALSE */
+  return myboolean;
+}
+
+static gboolean
 _gst_int_accumulator (GSignalInvocationHint * ihint,
     GValue * return_accu, const GValue * handler_return, gpointer dummy)
 {
@@ -364,6 +383,13 @@ _gst_int_accumulator (GSignalInvocationHint * ihint,
   return FALSE;
 }
 
+static gboolean
+gst_uri_decode_bin3_autoplug_continue (GstElement * element, GstPad * pad,
+    GstCaps * caps)
+{
+  /* by default we always continue */
+  return TRUE;
+}
 
 static void
 gst_uri_decode_bin3_class_init (GstURIDecodeBin3Class * klass)
@@ -504,6 +530,29 @@ gst_uri_decode_bin3_class_init (GstURIDecodeBin3Class * klass)
       g_signal_new ("about-to-finish", G_TYPE_FROM_CLASS (klass),
       G_SIGNAL_RUN_LAST, 0, NULL, NULL, NULL, G_TYPE_NONE, 0, G_TYPE_NONE);
 
+  /**
+   * GstURIDecodeBin3::autoplug-continue:
+   * @bin: The uridecodebin.
+   * @pad: The #GstPad.
+   * @caps: The #GstCaps found.
+   *
+   * This signal is emitted whenever uridecodebin finds a new stream. It is
+   * emitted before looking for any elements that can handle that stream.
+   *
+   * >   Invocation of signal handlers stops after the first signal handler
+   * >   returns %FALSE. Signal handlers are invoked in the order they were
+   * >   connected in.
+   *
+   * Returns: %TRUE if you wish uridecodebin to look for elements that can
+   * handle the given @caps. If %FALSE, those caps will be considered as
+   * final and the pad will be exposed as such (see 'pad-added' signal of
+   * #GstElement).
+   */
+  gst_uri_decode_bin3_signals[SIGNAL_AUTOPLUG_CONTINUE] =
+      g_signal_new ("autoplug-continue", G_TYPE_FROM_CLASS (klass),
+      G_SIGNAL_RUN_LAST, G_STRUCT_OFFSET (GstURIDecodeBin3Class,
+          autoplug_continue), _gst_boolean_accumulator, NULL,
+      NULL, G_TYPE_BOOLEAN, 2, GST_TYPE_PAD, GST_TYPE_CAPS);
 
   gst_element_class_add_static_pad_template (gstelement_class,
       &video_src_template);
@@ -522,6 +571,8 @@ gst_uri_decode_bin3_class_init (GstURIDecodeBin3Class * klass)
       GST_DEBUG_FUNCPTR (gst_uri_decodebin3_send_event);
 
   klass->select_stream = gst_uridecodebin3_select_stream;
+  klass->autoplug_continue =
+      GST_DEBUG_FUNCPTR (gst_uri_decode_bin3_autoplug_continue);
 }
 
 static GstPadProbeReturn
@@ -649,6 +700,22 @@ db_about_to_finish_cb (GstElement * decodebin, GstURIDecodeBin3 * uridecodebin)
   }
 }
 
+static gboolean
+db_autoplug_continue_cb (GstElement * decodebin, GstPad * pad,
+    GstCaps * caps, GstURIDecodeBin3 * dec)
+{
+  gboolean result;
+
+  g_signal_emit (dec,
+      gst_uri_decode_bin3_signals[SIGNAL_AUTOPLUG_CONTINUE], 0, pad, caps,
+      &result);
+
+  GST_DEBUG_OBJECT (dec, "autoplug-continue returned %d", result);
+
+  return result;
+}
+
+
 static void
 gst_uri_decode_bin3_init (GstURIDecodeBin3 * dec)
 {
@@ -678,6 +745,9 @@ gst_uri_decode_bin3_init (GstURIDecodeBin3 * dec)
   dec->db_about_to_finish_id =
       g_signal_connect (dec->decodebin, "about-to-finish",
       G_CALLBACK (db_about_to_finish_cb), dec);
+  dec->db_autoplug_continue_id =
+      g_signal_connect (dec->decodebin, "autoplug-continue",
+      G_CALLBACK (db_autoplug_continue_cb), dec);
 
   GST_OBJECT_FLAG_SET (dec, GST_ELEMENT_FLAG_SOURCE);
   gst_bin_set_suppressed_flags (GST_BIN (dec),
