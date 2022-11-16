@@ -2072,6 +2072,7 @@ gst_videomixer2_release_pad (GstElement * element, GstPad * pad)
   GST_VIDEO_MIXER2_UNLOCK (mix);
 
   gst_collect_pads_remove_pad (mix->collect, pad);
+  gst_pad_set_active (pad, FALSE);
 
   if (update_caps)
     gst_videomixer2_update_src_caps (mix);

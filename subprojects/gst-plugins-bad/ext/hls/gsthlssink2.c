@@ -558,8 +558,8 @@ gst_hls_sink2_release_pad (GstElement * element, GstPad * pad)
   }
 
   gst_object_ref (pad);
-  gst_element_remove_pad (element, pad);
   gst_pad_set_active (pad, FALSE);
+  gst_element_remove_pad (element, pad);
   if (pad == sink->audio_sink)
     sink->audio_sink = NULL;
   else

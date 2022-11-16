@@ -3345,8 +3345,10 @@ gst_matroska_read_common_reset (GstElement * element,
     for (i = 0; i < ctx->src->len; i++) {
       GstMatroskaTrackContext *context = g_ptr_array_index (ctx->src, i);
 
-      if (context->pad != NULL)
+      if (context->pad != NULL) {
+        gst_pad_set_active (context->pad, FALSE);
         gst_element_remove_pad (element, context->pad);
+      }
 
       gst_matroska_track_free (context);
     }

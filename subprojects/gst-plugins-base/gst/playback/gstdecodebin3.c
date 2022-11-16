@@ -1090,6 +1090,7 @@ free_input (GstDecodebin3 * dbin, DecodebinInput * input)
   GST_DEBUG ("Freeing input %p", input);
 
   gst_ghost_pad_set_target (GST_GHOST_PAD (input->ghost_sink), NULL);
+  gst_pad_set_active (input->ghost_sink, FALSE);
   gst_element_remove_pad (GST_ELEMENT (dbin), input->ghost_sink);
   if (input->parsebin) {
     g_signal_handler_disconnect (input->parsebin, input->pad_removed_sigid);
@@ -3385,6 +3386,7 @@ free_output_stream (GstDecodebin3 * dbin, DecodebinOutputStream * output)
   gst_object_replace ((GstObject **) & output->decoder_sink, NULL);
   gst_ghost_pad_set_target ((GstGhostPad *) output->src_pad, NULL);
   gst_object_replace ((GstObject **) & output->decoder_src, NULL);
+  gst_pad_set_active (output->src_pad, FALSE);
   if (output->src_exposed) {
     gst_element_remove_pad ((GstElement *) dbin, output->src_pad);
   }

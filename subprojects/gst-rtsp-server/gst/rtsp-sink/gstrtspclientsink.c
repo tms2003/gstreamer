@@ -1504,6 +1504,7 @@ gst_rtsp_client_sink_release_pad (GstElement * element, GstPad * pad)
 
   g_free (context);
 
+  gst_pad_set_active (pad, FALSE);
   gst_element_remove_pad (element, pad);
 }
 

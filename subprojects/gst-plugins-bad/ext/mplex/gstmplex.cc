@@ -655,6 +655,7 @@ gst_mplex_release_pad (GstElement * element, GstPad * pad)
   mpad = (GstMplexPad *) gst_pad_get_element_private (pad);
   g_return_if_fail (mpad);
 
+  gst_pad_set_active (pad, FALSE);
   if (gst_element_remove_pad (element, pad)) {
     gchar *padname;
 

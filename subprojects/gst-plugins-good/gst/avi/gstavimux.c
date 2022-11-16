@@ -1165,6 +1165,7 @@ gst_avi_mux_release_pad (GstElement * element, GstPad * pad)
       avipad->collect = NULL;
       GST_DEBUG_OBJECT (avimux, "removed pad '%s'", GST_PAD_NAME (pad));
       gst_collect_pads_remove_pad (avimux->collect, pad);
+      gst_pad_set_active (pad, FALSE);
       gst_element_remove_pad (element, pad);
       /* if not started yet, we can remove any sign this pad ever existed */
       /* in this case _start will take care of the real pad count */

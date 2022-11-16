@@ -333,6 +333,7 @@ gst_rtp_mux_release_pad (GstElement * element, GstPad * pad)
   gst_pad_set_element_private (pad, NULL);
   GST_OBJECT_UNLOCK (element);
 
+  gst_pad_set_active (pad, FALSE);
   gst_element_remove_pad (element, pad);
 
   if (padpriv) {

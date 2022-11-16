@@ -2711,6 +2711,7 @@ gst_matroska_mux_release_pad (GstElement * element, GstPad * pad)
   }
 
   gst_collect_pads_remove_pad (mux->collect, pad);
+  gst_pad_set_active (pad, FALSE);
   if (gst_element_remove_pad (element, pad))
     mux->num_streams--;
 }

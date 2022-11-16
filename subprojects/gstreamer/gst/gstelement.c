@@ -846,10 +846,10 @@ no_direction:
  * with gst_element_request_pad() should be released with the
  * gst_element_release_request_pad() function instead.
  *
- * Pads are not automatically deactivated so elements should perform the needed
- * steps to deactivate the pad in case this pad is removed in the PAUSED or
- * PLAYING state. See gst_pad_set_active() for more information about
- * deactivating pads.
+ * Pads are automatically deactivated when removed but elements should better
+ * themselves perform the needed steps to deactivate the pad in case this pad
+ * is removed in the PAUSED or PLAYING state. See gst_pad_set_active() for
+ * more information about deactivating pads.
  *
  * The pad and the element should be unlocked when calling this function.
  *
@@ -876,6 +876,8 @@ gst_element_remove_pad (GstElement * element, GstPad * pad)
   if (G_UNLIKELY (GST_PAD_PARENT (pad) != element))
     goto not_our_pad;
   GST_OBJECT_UNLOCK (pad);
+
+  gst_pad_set_active (pad, FALSE);
 
   /* unlink */
   if ((peer = gst_pad_get_peer (pad))) {

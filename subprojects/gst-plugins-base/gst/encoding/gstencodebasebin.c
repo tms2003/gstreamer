@@ -2371,6 +2371,7 @@ stream_group_free (GstEncodeBaseBin * ebin, StreamGroup * sgroup)
 
   /* Sink Ghostpad */
   if (sgroup->ghostpad) {
+    gst_pad_set_active (sgroup->ghostpad, FALSE);
     if (GST_PAD_PARENT (sgroup->ghostpad) != NULL)
       gst_element_remove_pad (GST_ELEMENT_CAST (ebin), sgroup->ghostpad);
     else

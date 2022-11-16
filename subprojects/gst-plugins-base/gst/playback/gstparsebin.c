@@ -2783,6 +2783,7 @@ gst_parse_chain_free_internal (GstParseChain * chain, gboolean hide)
   }
 
   if (chain->endpad) {
+    gst_pad_set_active (chain->endpad, FALSE);
     if (chain->endpad->exposed) {
       GstPad *endpad = GST_PAD_CAST (chain->endpad);
       GST_DEBUG_OBJECT (chain->parsebin, "Removing pad %s:%s",

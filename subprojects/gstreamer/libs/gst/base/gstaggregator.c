@@ -2008,6 +2008,7 @@ gst_aggregator_release_pad (GstElement * element, GstPad * pad)
   SRC_LOCK (self);
   gst_aggregator_pad_set_flushing (aggpad, GST_FLOW_FLUSHING, TRUE);
   gst_buffer_replace (&aggpad->priv->peeked_buffer, NULL);
+  gst_pad_set_active (pad, FALSE);
   gst_element_remove_pad (element, pad);
 
   self->priv->has_peer_latency = FALSE;

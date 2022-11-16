@@ -3640,6 +3640,7 @@ gst_splitmux_sink_release_pad (GstElement * element, GstPad * pad)
               (pad)), "video"))
     splitmux->have_video = FALSE;
 
+  gst_pad_set_active (pad, FALSE);
   gst_element_remove_pad (element, pad);
 
   /* Reset the internal elements only after all request pads are released */

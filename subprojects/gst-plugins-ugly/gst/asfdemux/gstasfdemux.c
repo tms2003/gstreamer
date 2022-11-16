@@ -164,8 +164,9 @@ gst_asf_demux_free_stream (GstASFDemux * demux, AsfStream * stream)
   }
   if (stream->pad) {
     if (stream->active) {
-      gst_element_remove_pad (GST_ELEMENT_CAST (demux), stream->pad);
       gst_flow_combiner_remove_pad (demux->flowcombiner, stream->pad);
+      gst_pad_set_active (stream->pad, FALSE);
+      gst_element_remove_pad (GST_ELEMENT_CAST (demux), stream->pad);
     } else
       gst_object_unref (stream->pad);
     stream->pad = NULL;

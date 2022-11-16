@@ -753,6 +753,7 @@ db_pad_removed_cb (GstElement * element, GstPad * pad, GstURIDecodeBin3 * dec)
     GST_LOG_OBJECT (element, "Removing output %p", output);
     /* Remove source ghost pad */
     gst_ghost_pad_set_target ((GstGhostPad *) output->ghost_pad, NULL);
+    gst_pad_set_active (output->ghost_pad, FALSE);
     gst_element_remove_pad ((GstElement *) dec, output->ghost_pad);
 
     /* Remove event probe */
