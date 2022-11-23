@@ -280,10 +280,6 @@ gst indent:
     paths:
       - 'meson-logs/'
   rules:
-    # If this matches, it means the pipeline is running against either the main
-    # or a stable branch, so make it manual
-    - if: '$CI_PROJECT_NAMESPACE == "gstreamer" && $CI_COMMIT_BRANCH == $GST_UPSTREAM_BRANCH'
-      when: manual
     - changes:
         *modules_changes
 
@@ -353,10 +349,6 @@ build clang fedora x86_64:
     # `script:` will fail
     MESON_CROSS_ARGS: ' '
   rules:
-    # If this matches, it means the pipeline is running against either the main
-    # or a stable branch, so make it manual
-    - if: '$CI_PROJECT_NAMESPACE == "gstreamer" && $CI_COMMIT_BRANCH == $GST_UPSTREAM_BRANCH'
-      when: manual
     - changes:
         *modules_changes
     - changes:
