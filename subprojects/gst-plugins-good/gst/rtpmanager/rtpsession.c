@@ -108,6 +108,7 @@ enum
   PROP_RTCP_REDUCED_SIZE,
   PROP_RTCP_DISABLE_SR_TIMESTAMP,
   PROP_TWCC_FEEDBACK_INTERVAL,
+  PROP_RTX_SSRC_MAP,
   PROP_LAST,
 };
 
@@ -643,6 +644,18 @@ rtp_session_class_init (RTPSessionClass * klass)
       0, G_MAXUINT64, DEFAULT_TWCC_FEEDBACK_INTERVAL,
       G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS);
 
+  /**
+   * RTPSession:rtx-ssrc-map:
+   *
+   * Mapping from SSRC to RTX ssrcs.
+   *
+   * Since: 1.20
+   */
+  properties[PROP_RTX_SSRC_MAP] =
+      g_param_spec_boxed ("rtx-ssrc-map", "RTX SSRC Map",
+      "Map of SSRCs to their retransmission SSRCs",
+      GST_TYPE_STRUCTURE, G_PARAM_WRITABLE | G_PARAM_STATIC_STRINGS);
+
   g_object_class_install_properties (gobject_class, PROP_LAST, properties);
 
   klass->get_source_by_ssrc =
@@ -721,6 +734,7 @@ rtp_session_init (RTPSession * sess)
   sess->last_rtcp_interval = GST_CLOCK_TIME_NONE;
 
   sess->next_early_rtcp_time = GST_CLOCK_TIME_NONE;
+  sess->next_twcc_rtcp_time = GST_CLOCK_TIME_NONE;
   sess->rtcp_feedback_retention_window = DEFAULT_RTCP_FEEDBACK_RETENTION_WINDOW;
   sess->rtcp_immediate_feedback_threshold =
       DEFAULT_RTCP_IMMEDIATE_FEEDBACK_THRESHOLD;
@@ -731,7 +745,7 @@ rtp_session_init (RTPSession * sess)
   sess->is_doing_ptp = TRUE;
 
   sess->twcc = rtp_twcc_manager_new (sess->mtu);
-  sess->twcc_stats = rtp_twcc_stats_new ();
+  sess->rtx_ssrc_to_ssrc = g_hash_table_new (NULL, NULL);
 }
 
 static void
@@ -754,7 +768,9 @@ rtp_session_finalize (GObject * object)
     g_hash_table_destroy (sess->ssrcs[i]);
 
   g_object_unref (sess->twcc);
-  rtp_twcc_stats_free (sess->twcc_stats);
+  if (sess->rtx_ssrc_map)
+    gst_structure_free (sess->rtx_ssrc_map);
+  g_hash_table_destroy (sess->rtx_ssrc_to_ssrc);
 
   g_mutex_clear (&sess->lock);
 
@@ -830,6 +846,23 @@ rtp_session_create_stats (RTPSession * sess)
   gst_structure_take_value (s, "source-stats", &source_stats_v);
 
   return s;
+}
+
+static gboolean
+structure_to_hash_table_reverse (GQuark field_id, const GValue * value,
+    gpointer hash)
+{
+  const gchar *field_str;
+  guint field_uint;
+  guint value_uint;
+
+  field_str = g_quark_to_string (field_id);
+  field_uint = atoi (field_str);
+  value_uint = g_value_get_uint (value);
+  g_hash_table_insert ((GHashTable *) hash, GUINT_TO_POINTER (value_uint),
+      GUINT_TO_POINTER (field_uint));
+
+  return TRUE;
 }
 
 static void
@@ -928,6 +961,17 @@ rtp_session_set_property (GObject * object, guint prop_id,
       rtp_twcc_manager_set_feedback_interval (sess->twcc,
           g_value_get_uint64 (value));
       break;
+    case PROP_RTX_SSRC_MAP:
+      RTP_SESSION_LOCK (sess);
+      if (sess->rtx_ssrc_map)
+        gst_structure_free (sess->rtx_ssrc_map);
+      sess->rtx_ssrc_map = g_value_dup_boxed (value);
+      g_hash_table_remove_all (sess->rtx_ssrc_to_ssrc);
+      gst_structure_foreach (sess->rtx_ssrc_map,
+          structure_to_hash_table_reverse, sess->rtx_ssrc_to_ssrc);
+      RTP_SESSION_UNLOCK (sess);
+      break;
+
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -1179,6 +1223,7 @@ rtp_session_reset (RTPSession * sess)
   sess->last_rtcp_send_time = GST_CLOCK_TIME_NONE;
   sess->last_rtcp_interval = GST_CLOCK_TIME_NONE;
   sess->next_early_rtcp_time = GST_CLOCK_TIME_NONE;
+  sess->next_twcc_rtcp_time = GST_CLOCK_TIME_NONE;
   sess->scheduled_bye = FALSE;
 
   /* reset session stats */
@@ -2115,6 +2160,14 @@ update_packet (GstBuffer ** buffer, guint idx, RTPPacketInfo * pinfo)
       /* RTP header extensions */
       pinfo->header_ext = gst_rtp_buffer_get_extension_bytes (&rtp,
           &pinfo->header_ext_bit_pattern);
+
+      /* if RTX, store the original seqnum (OSN) and SSRC */
+      if (GST_BUFFER_FLAG_IS_SET (*buffer, GST_RTP_BUFFER_FLAG_RETRANSMISSION)) {
+        guint8 *payload = gst_rtp_buffer_get_payload (&rtp);
+        if (payload) {
+          pinfo->rtx_osn = GST_READ_UINT16_BE (payload);
+        }
+      }
     }
 
     if (pinfo->ntp64_ext_id != 0 && pinfo->send && !pinfo->have_ntp64_ext) {
@@ -2185,6 +2238,8 @@ update_packet_info (RTPSession * sess, RTPPacketInfo * pinfo,
   pinfo->marker = FALSE;
   pinfo->ntp64_ext_id = send ? sess->send_ntp64_ext_id : 0;
   pinfo->have_ntp64_ext = FALSE;
+  pinfo->rtx_osn = -1;
+  pinfo->rtx_ssrc = 0;
 
   if (is_list) {
     GstBufferList *list = GST_BUFFER_LIST_CAST (data);
@@ -2197,6 +2252,11 @@ update_packet_info (RTPSession * sess, RTPPacketInfo * pinfo,
     res = update_packet (&buffer, 0, pinfo);
     pinfo->arrival_time = GST_BUFFER_DTS (buffer);
   }
+
+  if (pinfo->rtx_osn != -1)
+    pinfo->rtx_ssrc =
+        GPOINTER_TO_UINT (g_hash_table_lookup (sess->rtx_ssrc_to_ssrc,
+            GUINT_TO_POINTER (pinfo->ssrc)));
 
   return res;
 }
@@ -2925,25 +2985,21 @@ rtp_session_process_sr_req (RTPSession * sess, guint32 sender_ssrc,
 
 static void
 rtp_session_process_twcc (RTPSession * sess, guint32 sender_ssrc,
-    guint32 media_ssrc, guint8 * fci_data, guint fci_length)
+    guint32 media_ssrc, guint8 * fci_data, guint fci_length,
+    GstClockTime current_time)
 {
-  GArray *twcc_packets;
   GstStructure *twcc_packets_s;
   GstStructure *twcc_stats_s;
 
-  twcc_packets = rtp_twcc_manager_parse_fci (sess->twcc,
-      fci_data, fci_length * sizeof (guint32));
-  if (twcc_packets == NULL)
+  twcc_packets_s = rtp_twcc_manager_parse_fci (sess->twcc,
+      fci_data, fci_length * sizeof (guint32), current_time);
+  if (twcc_packets_s == NULL)
     return;
 
-  twcc_packets_s = rtp_twcc_stats_get_packets_structure (twcc_packets);
-  twcc_stats_s =
-      rtp_twcc_stats_process_packets (sess->twcc_stats, twcc_packets);
+  twcc_stats_s = rtp_twcc_manager_get_windowed_stats (sess->twcc);
 
   GST_DEBUG_OBJECT (sess, "Parsed TWCC: %" GST_PTR_FORMAT, twcc_packets_s);
   GST_INFO_OBJECT (sess, "Current TWCC stats %" GST_PTR_FORMAT, twcc_stats_s);
-
-  g_array_unref (twcc_packets);
 
   RTP_SESSION_UNLOCK (sess);
   if (sess->callbacks.notify_twcc)
@@ -3048,7 +3104,7 @@ rtp_session_process_feedback (RTPSession * sess, GstRTCPPacket * packet,
             break;
           case GST_RTCP_RTPFB_TYPE_TWCC:
             rtp_session_process_twcc (sess, sender_ssrc, media_ssrc,
-                fci_data, fci_length);
+                fci_data, fci_length, current_time);
             break;
           default:
             break;
@@ -3692,9 +3748,17 @@ rtp_session_next_timeout (RTPSession * sess, GstClockTime current_time)
   } else {
     if (sess->first_rtcp) {
       GST_DEBUG ("first RTCP packet");
-      /* we are called for the first time */
-      interval = calculate_rtcp_interval (sess, FALSE, TRUE);
-      sess->last_rtcp_interval = interval;
+      /* We have yet to generate our first rtcp packet. Compute the initial
+       * interval when the next check time is changing. Otherwise, there is
+       * nothing to do (as the next check time is still in the future and
+       * computing a new interval will cause the first rtcp to be delayed).
+       * When interval-based TWCC is enabled, there can be multiple timeouts
+       * before the initial rtcp time (and thus, without this conditional,
+       * the initial rtcp will be delayed indefinitely). */
+      if (result != sess->next_rtcp_check_time) {
+        interval = calculate_rtcp_interval (sess, FALSE, TRUE);
+        sess->last_rtcp_interval = interval;
+      }
     } else if (sess->next_rtcp_check_time < current_time) {
       GST_DEBUG ("old check time expired, getting new timeout");
       /* get a new timeout when we need to */
@@ -3728,6 +3792,18 @@ rtp_session_next_timeout (RTPSession * sess, GstClockTime current_time)
   sess->next_rtcp_check_time = result;
 
 early_exit:
+
+  sess->next_twcc_rtcp_time = rtp_twcc_manager_get_next_timeout (sess->twcc,
+      current_time);
+  if (GST_CLOCK_TIME_IS_VALID (sess->next_twcc_rtcp_time)) {
+    /* Take min(twcc-time, result) */
+    if (!GST_CLOCK_TIME_IS_VALID (result) || sess->next_twcc_rtcp_time < result) {
+      GST_DEBUG ("Using twcc time %" GST_TIME_FORMAT
+          " instead of %" GST_TIME_FORMAT,
+          GST_TIME_ARGS (sess->next_twcc_rtcp_time), GST_TIME_ARGS (result));
+      result = sess->next_twcc_rtcp_time;
+    }
+  }
 
   GST_DEBUG ("current time: %" GST_TIME_FORMAT
       ", next time: %" GST_TIME_FORMAT,
@@ -4453,8 +4529,8 @@ generate_twcc (const gchar * key, RTPSource * source, ReportData * data)
   }
 
   GST_DEBUG ("generating TWCC feedback for source %08x", source->ssrc);
-
-  while ((buf = rtp_twcc_manager_get_feedback (sess->twcc, source->ssrc))) {
+  while ((buf = rtp_twcc_manager_get_feedback (sess->twcc, source->ssrc,
+              data->current_time))) {
     ReportOutput *output = g_slice_new (ReportOutput);
     output->source = g_object_ref (source);
     output->is_bye = FALSE;
@@ -4590,6 +4666,32 @@ rtp_session_are_all_sources_bye (RTPSession * sess)
   return TRUE;
 }
 
+static gboolean
+awoken_for_twcc (RTPSession * sess, GstClockTime current_time)
+{
+  if (!GST_CLOCK_TIME_IS_VALID (rtp_twcc_manager_get_feedback_interval
+          (sess->twcc))) {
+    /* Interval-based TWCC is disabled, so this cannot be a TWCC wake */
+    return FALSE;
+  }
+
+  if (GST_CLOCK_TIME_IS_VALID (sess->next_early_rtcp_time) &&
+      sess->next_early_rtcp_time <= current_time) {
+    /* Early time is before now, so this may be a non-TWCC wake */
+    return FALSE;
+  }
+
+  if (GST_CLOCK_TIME_IS_VALID (sess->next_rtcp_check_time) &&
+      sess->next_rtcp_check_time <= current_time) {
+    /* Check time is before now, so this may be a non-TWCC wake */
+    return FALSE;
+  }
+
+  /* Interval-based TWCC is enabled, and neither early nor check times
+   * are before now, so this must be a TWCC wake */
+  return TRUE;
+}
+
 /**
  * rtp_session_on_timeout:
  * @sess: an #RTPSession
@@ -4617,6 +4719,7 @@ rtp_session_on_timeout (RTPSession * sess, GstClockTime current_time,
   GHashTable *table_copy;
   ReportOutput *output;
   gboolean all_empty = FALSE;
+  gboolean twcc_only = FALSE;
 
   g_return_val_if_fail (RTP_IS_SESSION (sess), GST_FLOW_ERROR);
 
@@ -4634,6 +4737,7 @@ rtp_session_on_timeout (RTPSession * sess, GstClockTime current_time,
   g_queue_init (&data.output);
 
   RTP_SESSION_LOCK (sess);
+
   /* get a new interval, we need this for various cleanups etc */
   data.interval = calculate_rtcp_interval (sess, TRUE, sess->first_rtcp);
 
@@ -4654,31 +4758,53 @@ rtp_session_on_timeout (RTPSession * sess, GstClockTime current_time,
     g_object_unref (source);
   }
 
-  sess->conflicting_addresses =
-      timeout_conflicting_addresses (sess->conflicting_addresses, current_time);
+  twcc_only = awoken_for_twcc (sess, current_time);
+  if (!twcc_only) {
+    sess->conflicting_addresses =
+        timeout_conflicting_addresses (sess->conflicting_addresses,
+        current_time);
 
-  /* Make a local copy of the hashtable. We need to do this because the
-   * cleanup stage below releases the session lock. */
-  table_copy = g_hash_table_new_full (NULL, NULL, NULL,
-      (GDestroyNotify) g_object_unref);
-  g_hash_table_foreach (sess->ssrcs[sess->mask_idx],
-      (GHFunc) clone_ssrcs_hashtable, table_copy);
+    /* Make a local copy of the hashtable. We need to do this because the
+     * update stage below releases the session lock. */
+    table_copy = g_hash_table_new_full (NULL, NULL, NULL,
+        (GDestroyNotify) g_object_unref);
+    g_hash_table_foreach (sess->ssrcs[sess->mask_idx],
+        (GHFunc) clone_ssrcs_hashtable, table_copy);
 
-  /* Clean up the session, mark the source for removing, this might release the
-   * session lock. */
-  g_hash_table_foreach (table_copy, (GHFunc) session_cleanup, &data);
-  g_hash_table_destroy (table_copy);
+    /* Clean up the session, mark the source for removing and update clock-rate,
+     * this might release the session lock. */
+    g_hash_table_foreach (table_copy, (GHFunc) session_cleanup, &data);
+    g_hash_table_destroy (table_copy);
 
-  /* Now remove the marked sources */
-  g_hash_table_foreach_remove (sess->ssrcs[sess->mask_idx],
-      (GHRFunc) remove_closing_sources, &data);
+    /* Now remove the marked sources */
+    g_hash_table_foreach_remove (sess->ssrcs[sess->mask_idx],
+        (GHRFunc) remove_closing_sources, &data);
 
-  /* update point-to-point status */
-  session_update_ptp (sess);
+    /* update point-to-point status */
+    session_update_ptp (sess);
+  }
+
+  /* generate interval-based twcc feedback */
+  if (GST_CLOCK_TIME_IS_VALID (rtp_twcc_manager_get_feedback_interval
+          (sess->twcc))) {
+    GST_DEBUG ("interval-based twcc. now: %" GST_TIME_FORMAT " twcc-time: %"
+        GST_TIME_FORMAT, GST_TIME_ARGS (current_time),
+        GST_TIME_ARGS (sess->next_twcc_rtcp_time));
+    if (GST_CLOCK_TIME_IS_VALID (sess->next_twcc_rtcp_time)
+        && sess->next_twcc_rtcp_time <= current_time) {
+      GST_DEBUG ("generating twcc");
+      g_hash_table_foreach (sess->ssrcs[sess->mask_idx],
+          (GHFunc) generate_twcc, &data);
+      sess->next_twcc_rtcp_time = GST_CLOCK_TIME_NONE;
+    }
+  }
 
   /* see if we need to generate SR or RR packets */
   if (!is_rtcp_time (sess, current_time, &data))
     goto done;
+
+  /* Cannot get here if TWCC only */
+  g_assert (!twcc_only);
 
   /* check if all the buffers are empty after generation */
   all_empty = TRUE;
@@ -4691,8 +4817,13 @@ rtp_session_on_timeout (RTPSession * sess, GstClockTime current_time,
   g_hash_table_foreach (sess->ssrcs[sess->mask_idx],
       (GHFunc) generate_rtcp, &data);
 
-  g_hash_table_foreach (sess->ssrcs[sess->mask_idx],
-      (GHFunc) generate_twcc, &data);
+  /* add twcc feedback if not using interval-based feedback */
+  if (!GST_CLOCK_TIME_IS_VALID (rtp_twcc_manager_get_feedback_interval
+          (sess->twcc))) {
+    GST_DEBUG ("generating irregular twcc");
+    g_hash_table_foreach (sess->ssrcs[sess->mask_idx],
+        (GHFunc) generate_twcc, &data);
+  }
 
   /* update the generation for all the sources that have been reported */
   g_hash_table_foreach (sess->ssrcs[sess->mask_idx],
@@ -4722,7 +4853,9 @@ done:
   RTP_SESSION_UNLOCK (sess);
 
   /* notify about updated statistics */
-  g_object_notify_by_pspec (G_OBJECT (sess), properties[PROP_STATS]);
+  if (!twcc_only) {
+    g_object_notify_by_pspec (G_OBJECT (sess), properties[PROP_STATS]);
+  }
 
   /* push out the RTCP packets */
   while ((output = g_queue_pop_head (&data.output))) {
@@ -4775,11 +4908,13 @@ done:
   if (all_empty)
     GST_ERROR ("generated empty RTCP messages for all the sources");
 
-  /* schedule remaining nacks */
-  RTP_SESSION_LOCK (sess);
-  g_hash_table_foreach (sess->ssrcs[sess->mask_idx],
-      (GHFunc) schedule_remaining_nacks, &data);
-  RTP_SESSION_UNLOCK (sess);
+  if (!twcc_only) {
+    /* schedule remaining nacks */
+    RTP_SESSION_LOCK (sess);
+    g_hash_table_foreach (sess->ssrcs[sess->mask_idx],
+        (GHFunc) schedule_remaining_nacks, &data);
+    RTP_SESSION_UNLOCK (sess);
+  }
 
   return result;
 }

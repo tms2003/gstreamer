@@ -279,6 +279,7 @@ struct _RTPSession {
   gboolean      allow_early;
 
   GstClockTime  next_early_rtcp_time;
+  GstClockTime  next_twcc_rtcp_time;
 
   gboolean      sr_req_pending;
   gboolean      scheduled_bye;
@@ -315,7 +316,8 @@ struct _RTPSession {
 
   /* Transport-wide cc-extension */
   RTPTWCCManager *twcc;
-  RTPTWCCStats *twcc_stats;
+  GstStructure *rtx_ssrc_map;
+  GHashTable *rtx_ssrc_to_ssrc;
 };
 
 /**
