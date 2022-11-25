@@ -62,7 +62,7 @@ if have_v4l2
 
   gstv4l2 = library('gstvideo4linux2',
     v4l2_sources,
-    c_args : gst_plugins_good_args,
+    c_args : gst_plugins_good_args + ['-D_GNU_SOURCE'],
     include_directories : [configinc, libsinc],
     dependencies : [gstbase_dep, gstvideo_dep, gstallocators_dep, gudev_dep, libv4l2_dep],
     install : true,
