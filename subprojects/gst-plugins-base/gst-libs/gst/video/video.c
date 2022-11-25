@@ -384,6 +384,14 @@ gst_video_orientation_ensure_no_flip (GstVideoOrientationMethod orientation)
   }
 }
 
+const gchar *
+gst_video_orientation_get_nick (GstVideoOrientationMethod orientation)
+{
+  GEnumClass *klass = g_type_class_peek (GST_TYPE_VIDEO_ORIENTATION_METHOD);
+  GEnumValue *ev = klass ? g_enum_get_value (klass, orientation) : NULL;
+  return ev ? ev->value_nick : "(unknown)";
+}
+
 /**
  * gst_video_orientation_apply:
  * @orientation: An orientation.

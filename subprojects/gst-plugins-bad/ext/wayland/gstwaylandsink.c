@@ -782,6 +782,7 @@ gst_wayland_sink_show_frame (GstVideoSink * vsink, GstBuffer * buffer)
   GstVideoMeta *vmeta;
   GstVideoFormat format;
   GstVideoInfo old_vinfo;
+  GstVideoOrientationMethod orientation;
   GstMemory *mem;
   struct wl_buffer *wbuf = NULL;
   GstVideoOrientationMeta *ometa = NULL;
@@ -793,12 +794,11 @@ gst_wayland_sink_show_frame (GstVideoSink * vsink, GstBuffer * buffer)
   GST_LOG_OBJECT (self, "render buffer %" GST_PTR_FORMAT "", buffer);
 
   ometa = gst_buffer_get_video_orientation_meta (buffer);
-  if (ometa && ometa->orientation != self->last_buffer_rotate_method) {
-    self->last_buffer_rotate_method = ometa->orientation;
-    gst_wayland_sink_update_window_rotate_method (self, FALSE);
-  } else if (!ometa
-      && self->last_buffer_rotate_method != GST_VIDEO_ORIENTATION_IDENTITY) {
-    self->last_buffer_rotate_method = GST_VIDEO_ORIENTATION_IDENTITY;
+  orientation = ometa ? ometa->orientation : GST_VIDEO_ORIENTATION_IDENTITY;
+  if (orientation != self->last_buffer_rotate_method) {
+    self->last_buffer_rotate_method = orientation;
+    GST_DEBUG_OBJECT (self, "Buffer orientation has changed to %s",
+        gst_video_orientation_get_nick (orientation));
     gst_wayland_sink_update_window_rotate_method (self, FALSE);
   }
 

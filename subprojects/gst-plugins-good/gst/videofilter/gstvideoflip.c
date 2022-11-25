@@ -1604,16 +1604,9 @@ gst_video_flip_update_method_internal (GstVideoFlip * self)
       gst_video_orientation_apply (self->meta_method, visual_method);
 
   if (effective_method != self->proposed_method) {
-    GEnumValue *active_method_enum, *method_enum;
-    GEnumClass *enum_class =
-        g_type_class_ref (GST_TYPE_VIDEO_ORIENTATION_METHOD);
-
-    active_method_enum = g_enum_get_value (enum_class, self->active_method);
-    method_enum = g_enum_get_value (enum_class, effective_method);
-    GST_LOG_OBJECT (self, "Changing method from %s to %s",
-        active_method_enum ? active_method_enum->value_nick : "(nil)",
-        method_enum ? method_enum->value_nick : "(nil)");
-    g_type_class_unref (enum_class);
+    GST_DEBUG_OBJECT (self, "Changing method from %s to %s",
+        gst_video_orientation_get_nick (self->active_method),
+        gst_video_orientation_get_nick (effective_method));
 
     self->proposed_method = effective_method;
     return TRUE;

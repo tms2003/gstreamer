@@ -182,6 +182,10 @@ GstVideoOrientationMethod gst_video_orientation_apply (GstVideoOrientationMethod
 GST_VIDEO_API
 GstVideoOrientationMethod gst_video_orientation_invert (GstVideoOrientationMethod orientation);
 
+GST_VIDEO_API
+const gchar *
+gst_video_orientation_get_nick (GstVideoOrientationMethod orientation);
+
 G_END_DECLS
 
 #include <gst/video/colorbalancechannel.h>
