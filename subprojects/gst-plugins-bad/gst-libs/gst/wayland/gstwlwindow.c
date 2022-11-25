@@ -70,7 +70,7 @@ typedef struct _GstWlWindowPrivate
    * visible and certain steps should be skipped */
   gboolean is_area_surface_mapped;
 
-  GHashTable *outputs;
+  GPtrArray *outputs;
 } GstWlWindowPrivate;
 
 G_DEFINE_TYPE_WITH_CODE (GstWlWindow, gst_wl_window, G_TYPE_OBJECT,
@@ -175,7 +175,7 @@ gst_wl_window_init (GstWlWindow * self)
   priv->configured = TRUE;
   g_cond_init (&priv->configure_cond);
   g_mutex_init (&priv->configure_mutex);
-  priv->outputs = g_hash_table_new (g_direct_hash, g_direct_equal);
+  priv->outputs = g_ptr_array_new ();
 }
 
 static void
@@ -184,7 +184,7 @@ gst_wl_window_finalize (GObject * gobject)
   GstWlWindow *self = GST_WL_WINDOW (gobject);
   GstWlWindowPrivate *priv = gst_wl_window_get_instance_private (self);
 
-  g_hash_table_unref (priv->outputs);
+  g_ptr_array_unref (priv->outputs);
 
   if (priv->xdg_toplevel)
     xdg_toplevel_destroy (priv->xdg_toplevel);
@@ -218,14 +218,12 @@ gst_wl_window_get_output_orientation (GstWlWindow * self)
   GstWlWindowPrivate *priv = gst_wl_window_get_instance_private (self);
   enum wl_output_transform transform =
       gst_wl_output_transform_from_orientation (priv->output_orientation);
-  GHashTableIter iter;
-  gpointer key, value;
+  GstWlOutput *output = NULL;
 
-  g_hash_table_iter_init (&iter, priv->outputs);
-  while (g_hash_table_iter_next (&iter, &key, &value)) {
-    transform = gst_wl_output_get_transform (GST_WL_OUTPUT (value));
-    break;
-  }
+  if (priv->outputs->len > 0)
+    output = g_ptr_array_index (priv->outputs, 0);
+  if (output)
+    transform = gst_wl_output_get_transform (output);
 
   return gst_wl_output_orientation_from_transform (transform);
 }
@@ -250,7 +248,7 @@ on_output_destroyed_cb (GstWlOutput * output, GstWlWindow * self)
 {
   GstWlWindowPrivate *priv = gst_wl_window_get_instance_private (self);
 
-  g_hash_table_remove (priv->outputs, output);
+  g_ptr_array_remove (priv->outputs, output);
 
   update_output_orientation (self);
 }
@@ -273,7 +271,7 @@ handle_surface_enter (void *data,
   if (!output)
     return;
 
-  g_hash_table_add (priv->outputs, output);
+  g_ptr_array_add (priv->outputs, output);
   g_signal_connect (output, "destroy", G_CALLBACK (on_output_destroyed_cb),
       self);
   g_signal_connect (output, "geometry-changed",
@@ -294,7 +292,7 @@ handle_surface_leave (void *data,
   if (!output)
     return;
 
-  g_hash_table_remove (priv->outputs, output);
+  g_ptr_array_remove (priv->outputs, output);
   g_signal_handlers_disconnect_by_data (output, self);
 
   update_output_orientation (self);
