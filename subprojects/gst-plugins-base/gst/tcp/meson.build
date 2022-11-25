@@ -12,12 +12,21 @@ tcp_sources = [
 ]
 
 if core_conf.has('HAVE_SYS_SOCKET_H')
-   tcp_sources += 'gstmultifdsink.c'
+  tcp_sources += 'gstmultifdsink.c'
+endif
+
+system = host_machine.system()
+
+compile_args = []
+if system in ['linux', 'android']
+  compile_args += [
+    '-D_GNU_SOURCE',
+  ]
 endif
 
 gsttcp = library('gsttcp',
   tcp_sources,
-  c_args : gst_plugins_base_args,
+  c_args : gst_plugins_base_args + compile_args,
   include_directories: [configinc, libsinc],
   dependencies : [gst_base_dep, gst_net_dep, gio_dep],
   install : true,
