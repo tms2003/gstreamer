@@ -2,7 +2,8 @@ project('gst-plugins-base', 'c',
   version : '1.21.2.1',
   meson_version : '>= 0.62',
   default_options : [ 'warning_level=1',
-                      'buildtype=debugoptimized' ])
+                      'buildtype=debugoptimized',
+                      'c_std=c99' ])
 
 gst_version = meson.project_version()
 version_arr = gst_version.split('.')
