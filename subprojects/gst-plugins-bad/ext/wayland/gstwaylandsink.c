@@ -214,14 +214,14 @@ gst_wayland_sink_update_window_rotate_method (GstWaylandSink * self,
   GstVideoOrientationMethod effective_rotate_method;
 
   self->requested_upstream_rotate_method =
-      gst_video_orientation_apply (gst_video_orientation_invert
+      gst_video_orientation_add (gst_video_orientation_invert
       (self->output_rotate_method), self->current_rotate_method);
 
   if (!self->window)
     return;
 
   effective_rotate_method =
-      gst_video_orientation_apply (self->current_rotate_method,
+      gst_video_orientation_add (self->current_rotate_method,
       self->last_buffer_rotate_method);
 
   gst_wl_window_set_rotate_method (self->window, effective_rotate_method,

@@ -4120,7 +4120,7 @@ GST_START_TEST (test_video_orientation_util_funcs)
     GstVideoOrientationMethod result1;
 
     result1 =
-        gst_video_orientation_apply (orientation,
+        gst_video_orientation_add (orientation,
         gst_video_orientation_invert (orientation));
     g_assert_cmpint (result1, ==, GST_VIDEO_ORIENTATION_IDENTITY);
 
@@ -4128,9 +4128,9 @@ GST_START_TEST (test_video_orientation_util_funcs)
         other < GST_VIDEO_ORIENTATION_AUTO; other++) {
       GstVideoOrientationMethod result2;
 
-      result1 = gst_video_orientation_apply (orientation, other);
+      result1 = gst_video_orientation_add (orientation, other);
       result2 =
-          gst_video_orientation_apply (result1,
+          gst_video_orientation_add (result1,
           gst_video_orientation_invert (other));
 
       g_assert_cmpint (result2, ==, orientation);
@@ -4138,72 +4138,72 @@ GST_START_TEST (test_video_orientation_util_funcs)
   }
 
   orientation =
-      gst_video_orientation_apply (GST_VIDEO_ORIENTATION_90R,
+      gst_video_orientation_add (GST_VIDEO_ORIENTATION_90R,
       GST_VIDEO_ORIENTATION_180);
   fail_unless (orientation == GST_VIDEO_ORIENTATION_90L);
 
   orientation =
-      gst_video_orientation_apply (GST_VIDEO_ORIENTATION_90L,
+      gst_video_orientation_add (GST_VIDEO_ORIENTATION_90L,
       GST_VIDEO_ORIENTATION_180);
   fail_unless (orientation == GST_VIDEO_ORIENTATION_90R);
 
   orientation =
-      gst_video_orientation_apply (GST_VIDEO_ORIENTATION_UL_LR,
+      gst_video_orientation_add (GST_VIDEO_ORIENTATION_UL_LR,
       GST_VIDEO_ORIENTATION_180);
   fail_unless (orientation == GST_VIDEO_ORIENTATION_UR_LL);
 
   orientation =
-      gst_video_orientation_apply (GST_VIDEO_ORIENTATION_UR_LL,
+      gst_video_orientation_add (GST_VIDEO_ORIENTATION_UR_LL,
       GST_VIDEO_ORIENTATION_180);
   fail_unless (orientation == GST_VIDEO_ORIENTATION_UL_LR);
 
   orientation =
-      gst_video_orientation_apply (GST_VIDEO_ORIENTATION_90R,
+      gst_video_orientation_add (GST_VIDEO_ORIENTATION_90R,
       GST_VIDEO_ORIENTATION_HORIZ);
   fail_unless (orientation == GST_VIDEO_ORIENTATION_UR_LL);
 
   orientation =
-      gst_video_orientation_apply (GST_VIDEO_ORIENTATION_90L,
+      gst_video_orientation_add (GST_VIDEO_ORIENTATION_90L,
       GST_VIDEO_ORIENTATION_HORIZ);
   fail_unless (orientation == GST_VIDEO_ORIENTATION_UL_LR);
 
   orientation =
-      gst_video_orientation_apply (GST_VIDEO_ORIENTATION_UL_LR,
+      gst_video_orientation_add (GST_VIDEO_ORIENTATION_UL_LR,
       GST_VIDEO_ORIENTATION_HORIZ);
   fail_unless (orientation == GST_VIDEO_ORIENTATION_90L);
 
   orientation =
-      gst_video_orientation_apply (GST_VIDEO_ORIENTATION_UR_LL,
+      gst_video_orientation_add (GST_VIDEO_ORIENTATION_UR_LL,
       GST_VIDEO_ORIENTATION_HORIZ);
   fail_unless (orientation == GST_VIDEO_ORIENTATION_90R);
 
   orientation =
-      gst_video_orientation_apply (GST_VIDEO_ORIENTATION_180,
+      gst_video_orientation_add (GST_VIDEO_ORIENTATION_180,
       GST_VIDEO_ORIENTATION_HORIZ);
   fail_unless (orientation == GST_VIDEO_ORIENTATION_VERT);
 
   orientation =
-      gst_video_orientation_apply (GST_VIDEO_ORIENTATION_VERT,
+      gst_video_orientation_add (GST_VIDEO_ORIENTATION_VERT,
       GST_VIDEO_ORIENTATION_HORIZ);
   fail_unless (orientation == GST_VIDEO_ORIENTATION_180);
 
   orientation =
-      gst_video_orientation_apply (GST_VIDEO_ORIENTATION_VERT,
+      gst_video_orientation_add (GST_VIDEO_ORIENTATION_VERT,
       GST_VIDEO_ORIENTATION_180);
   fail_unless (orientation == GST_VIDEO_ORIENTATION_HORIZ);
 
   orientation = GST_VIDEO_ORIENTATION_IDENTITY;
   orientation =
-      gst_video_orientation_apply (orientation, GST_VIDEO_ORIENTATION_90R);
+      gst_video_orientation_add (orientation, GST_VIDEO_ORIENTATION_90R);
   fail_unless (orientation == GST_VIDEO_ORIENTATION_90R);
   orientation =
-      gst_video_orientation_apply (orientation, GST_VIDEO_ORIENTATION_90R);
+      gst_video_orientation_add (orientation, GST_VIDEO_ORIENTATION_90R);
   fail_unless (orientation == GST_VIDEO_ORIENTATION_180);
   orientation =
-      gst_video_orientation_apply (orientation, GST_VIDEO_ORIENTATION_90R);
+      gst_video_orientation_add (orientation, GST_VIDEO_ORIENTATION_90R);
   fail_unless (orientation == GST_VIDEO_ORIENTATION_90L);
   orientation =
-      gst_video_orientation_apply (orientation, GST_VIDEO_ORIENTATION_90R);
+      gst_video_orientation_add (orientation, GST_VIDEO_ORIENTATION_90R);
   fail_unless (orientation == GST_VIDEO_ORIENTATION_IDENTITY);
 }
 

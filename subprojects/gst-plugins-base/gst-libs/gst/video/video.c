@@ -393,11 +393,11 @@ gst_video_orientation_get_nick (GstVideoOrientationMethod orientation)
 }
 
 /**
- * gst_video_orientation_apply:
+ * gst_video_orientation_add:
  * @orientation: An orientation.
  * @other: Another orientation.
  *
- * Applies an orientation to the the other and returns the resulting one.
+ * Applies @orientation to @other and returns the resulting one.
  * If @other is the inverted orientation to @orientation the result is
  * the identity.
  *
@@ -408,7 +408,7 @@ gst_video_orientation_get_nick (GstVideoOrientationMethod orientation)
  * Since: 1.22
  */
 GstVideoOrientationMethod
-gst_video_orientation_apply (GstVideoOrientationMethod orientation,
+gst_video_orientation_add (GstVideoOrientationMethod orientation,
     GstVideoOrientationMethod other)
 {
   GstVideoOrientationMethod new_orientation;

@@ -176,8 +176,8 @@ gboolean      gst_video_orientation_from_tag (GstTagList * taglist,
                                               GstVideoOrientationMethod * method);
 
 GST_VIDEO_API
-GstVideoOrientationMethod gst_video_orientation_apply (GstVideoOrientationMethod orientation,
-                                                       GstVideoOrientationMethod other);
+GstVideoOrientationMethod gst_video_orientation_add (GstVideoOrientationMethod orientation,
+                                                     GstVideoOrientationMethod other);
 
 GST_VIDEO_API
 GstVideoOrientationMethod gst_video_orientation_invert (GstVideoOrientationMethod orientation);

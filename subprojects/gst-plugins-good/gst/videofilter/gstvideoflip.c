@@ -1601,7 +1601,7 @@ gst_video_flip_update_method_internal (GstVideoFlip * self)
     visual_method = self->property_method;
 
   effective_method =
-      gst_video_orientation_apply (self->meta_method, visual_method);
+      gst_video_orientation_add (self->meta_method, visual_method);
 
   if (effective_method != self->proposed_method) {
     GST_DEBUG_OBJECT (self, "Changing method from %s to %s",
