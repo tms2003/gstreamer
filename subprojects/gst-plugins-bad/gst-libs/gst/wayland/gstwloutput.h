@@ -31,14 +31,18 @@ struct _GstWlOutput {
   GObject parent_instance;
 };
 
-GstWlOutput * gst_wl_output_new (uint32_t id);
+GstWlOutput * gst_wl_output_new (uint32_t id, struct wl_output * wl_output);
 
 uint32_t gst_wl_output_get_id (GstWlOutput * self);
+struct wl_output * gst_wl_output_get_wl_output (GstWlOutput * self);
 
 enum wl_output_transform gst_wl_output_get_transform (GstWlOutput * self);
 
 void gst_wl_output_set_transform (GstWlOutput * self,
     enum wl_output_transform transform);
+
+int32_t gst_wl_output_get_scale (GstWlOutput * self);
+void gst_wl_output_set_scale (GstWlOutput * self, int32_t scale);
 
 enum wl_output_transform gst_wl_output_transform_from_orientation (GstVideoOrientationMethod method);
 
