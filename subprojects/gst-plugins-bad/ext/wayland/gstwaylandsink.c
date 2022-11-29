@@ -352,15 +352,16 @@ gst_wayland_sink_set_display_from_context (GstWaylandSink * self,
 
   display = gst_wl_display_handle_context_get_handle (context);
   self->display = gst_wl_display_new_existing (display, FALSE, &error);
-  self->output_rotate_method =
-      gst_wl_display_get_default_output_orientation (self->display);
-  gst_wayland_sink_update_window_rotate_method (self, FALSE);
 
   if (error) {
     GST_ELEMENT_WARNING (self, RESOURCE, OPEN_READ_WRITE,
         ("Could not set display handle"),
         ("Failed to use the external wayland display: '%s'", error->message));
     g_error_free (error);
+  } else {
+    self->output_rotate_method =
+        gst_wl_display_get_default_output_orientation (self->display);
+    gst_wayland_sink_update_window_rotate_method (self, FALSE);
   }
 }
 
@@ -399,9 +400,6 @@ gst_wayland_sink_find_display (GstWaylandSink * self)
         /* if the application didn't set a display, let's create it ourselves */
         GST_OBJECT_LOCK (self);
         self->display = gst_wl_display_new (self->display_name, &error);
-        self->output_rotate_method =
-            gst_wl_display_get_default_output_orientation (self->display);
-        gst_wayland_sink_update_window_rotate_method (self, FALSE);
         GST_OBJECT_UNLOCK (self);
 
         if (error) {
@@ -410,6 +408,10 @@ gst_wayland_sink_find_display (GstWaylandSink * self)
               ("Failed to create GstWlDisplay: '%s'", error->message));
           g_error_free (error);
           ret = FALSE;
+        } else {
+          self->output_rotate_method =
+              gst_wl_display_get_default_output_orientation (self->display);
+          gst_wayland_sink_update_window_rotate_method (self, FALSE);
         }
       }
     }
