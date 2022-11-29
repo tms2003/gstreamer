@@ -1707,6 +1707,7 @@ gst_video_flip_decide_allocation (GstBaseTransform * trans, GstQuery * query)
     gst_video_flip_set_method_from_meta (self, ometa->orientation);
     self->add_video_orientation_meta = TRUE;
   } else {
+    gst_video_flip_set_method_from_meta (self, GST_VIDEO_ORIENTATION_IDENTITY);
     self->add_video_orientation_meta = FALSE;
   }
 

@@ -699,8 +699,14 @@ gst_wayland_sink_propose_allocation (GstBaseSink * bsink, GstQuery * query)
   gst_query_add_allocation_param (query, alloc, NULL);
   g_object_unref (alloc);
 
-  gst_query_add_allocation_video_orientation_meta (query,
-      self->requested_upstream_rotate_method);
+  if (self->requested_upstream_rotate_method != GST_VIDEO_ORIENTATION_IDENTITY) {
+    gst_query_add_allocation_video_orientation_meta (query,
+        self->requested_upstream_rotate_method);
+
+    GST_DEBUG_OBJECT (self, "Proposing allocation orientation %s",
+        gst_video_orientation_get_nick
+        (self->requested_upstream_rotate_method));
+  }
 
   return TRUE;
 }
