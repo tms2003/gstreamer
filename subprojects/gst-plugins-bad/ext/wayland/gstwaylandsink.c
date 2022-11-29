@@ -514,7 +514,7 @@ gst_wayland_sink_event (GstBaseSink * bsink, GstEvent * event)
   GstVideoOrientationMethod method;
   gboolean ret;
 
-  GST_DEBUG_OBJECT (self, "handling %s event", GST_EVENT_TYPE_NAME (event));
+  GST_LOG_OBJECT (self, "handling %s event", GST_EVENT_TYPE_NAME (event));
 
   switch (GST_EVENT_TYPE (event)) {
     case GST_EVENT_TAG:

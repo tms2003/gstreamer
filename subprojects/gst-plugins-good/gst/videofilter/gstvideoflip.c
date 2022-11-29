@@ -203,18 +203,18 @@ gst_video_flip_transform_caps (GstBaseTransform * trans,
   }
   GST_OBJECT_UNLOCK (videoflip);
 
-  GST_DEBUG_OBJECT (videoflip, "transformed %" GST_PTR_FORMAT " to %"
+  GST_LOG_OBJECT (videoflip, "transformed %" GST_PTR_FORMAT " to %"
       GST_PTR_FORMAT, caps, ret);
 
   if (filter) {
     GstCaps *intersection;
 
-    GST_DEBUG_OBJECT (videoflip, "Using filter caps %" GST_PTR_FORMAT, filter);
+    GST_LOG_OBJECT (videoflip, "Using filter caps %" GST_PTR_FORMAT, filter);
     intersection =
         gst_caps_intersect_full (filter, ret, GST_CAPS_INTERSECT_FIRST);
     gst_caps_unref (ret);
     ret = intersection;
-    GST_DEBUG_OBJECT (videoflip, "Intersection %" GST_PTR_FORMAT, ret);
+    GST_LOG_OBJECT (videoflip, "Intersection %" GST_PTR_FORMAT, ret);
   }
 
   return ret;
@@ -1696,7 +1696,7 @@ gst_video_flip_before_transform (GstBaseTransform * trans, GstBuffer * in)
   stream_time =
       gst_segment_to_stream_time (&trans->segment, GST_FORMAT_TIME, timestamp);
 
-  GST_DEBUG_OBJECT (videoflip, "sync to %" GST_TIME_FORMAT,
+  GST_LOG_OBJECT (videoflip, "sync to %" GST_TIME_FORMAT,
       GST_TIME_ARGS (timestamp));
 
   if (GST_CLOCK_TIME_IS_VALID (stream_time))
@@ -1780,7 +1780,7 @@ gst_video_flip_src_event (GstBaseTransform * trans, GstEvent * event)
   gboolean ret;
   GstVideoInfo *out_info = &GST_VIDEO_FILTER (trans)->out_info;
 
-  GST_DEBUG_OBJECT (vf, "handling %s event", GST_EVENT_TYPE_NAME (event));
+  GST_LOG_OBJECT (vf, "handling %s event", GST_EVENT_TYPE_NAME (event));
 
   switch (GST_EVENT_TYPE (event)) {
     case GST_EVENT_NAVIGATION:
@@ -1845,7 +1845,7 @@ gst_video_flip_sink_event (GstBaseTransform * trans, GstEvent * event)
   GstVideoOrientationMethod method;
   gboolean ret;
 
-  GST_DEBUG_OBJECT (vf, "handling %s event", GST_EVENT_TYPE_NAME (event));
+  GST_LOG_OBJECT (vf, "handling %s event", GST_EVENT_TYPE_NAME (event));
 
   switch (GST_EVENT_TYPE (event)) {
     case GST_EVENT_TAG:
