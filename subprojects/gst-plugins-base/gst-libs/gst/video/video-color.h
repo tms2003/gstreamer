@@ -271,6 +271,9 @@ gboolean     gst_video_colorimetry_is_equivalent (const GstVideoColorimetry *cin
                                                   guint bitdepth,
                                                   const GstVideoColorimetry *other,
                                                   guint other_bitdepth);
+GST_VIDEO_API
+void         gst_video_colorimetry_normalize    (GstVideoColorimetry * cinfo);
+
 
 /* compute offset and scale */
 
