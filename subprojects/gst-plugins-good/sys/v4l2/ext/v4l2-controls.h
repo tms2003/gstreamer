@@ -2299,6 +2299,9 @@ struct v4l2_ctrl_vp9_compressed_hdr {
 	struct v4l2_vp9_mv_probs mv;
 };
 
+#define V4L2_CID_MPEG_VIDEO_AV1_PROFILE (V4L2_CID_CODEC_BASE + 655)
+#define V4L2_CID_MPEG_VIDEO_AV1_LEVEL (V4L2_CID_CODEC_BASE+ 656)
+
 /* MPEG-compression definitions kept for backwards compatibility */
 #define V4L2_CTRL_CLASS_MPEG            V4L2_CTRL_CLASS_CODEC
 #define V4L2_CID_MPEG_CLASS             V4L2_CID_CODEC_CLASS
