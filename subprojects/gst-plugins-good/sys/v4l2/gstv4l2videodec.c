@@ -38,6 +38,7 @@
 #include "gstv4l2mpeg4codec.h"
 #include "gstv4l2vp8codec.h"
 #include "gstv4l2vp9codec.h"
+#include "gstv4l2av1codec.h"
 
 #include <string.h>
 #include <glib/gi18n-lib.h>
@@ -1337,6 +1338,9 @@ G_STMT_START { \
   } else if (gst_structure_has_name (s, "video/x-vp9")) {
     SET_META ("VP9");
     cdata->codec = gst_v4l2_vp9_get_codec ();
+  } else if (gst_structure_has_name (s, "video/x-av1")) {
+    SET_META ("AV1");
+    cdata->codec = gst_v4l2_av1_get_codec ();
   } else if (gst_structure_has_name (s, "video/x-bayer")) {
     SET_META ("BAYER");
   } else if (gst_structure_has_name (s, "video/x-sonix")) {
