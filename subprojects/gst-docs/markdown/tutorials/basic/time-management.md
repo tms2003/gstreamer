@@ -292,25 +292,3 @@ Remember that attached to this page you should find the complete source
 code of the tutorial and any accessory files needed to build it.
 
 It has been a pleasure having you here, and see you soon!
-
-  [playbin]: playbin
-  [gst_bus_timed_pop_filtered]: gst_bus_timed_pop_filtered
-  [GstClockTime]: GstClockTime
-  [GstQuery]: GstQuery
-  [GstElement]: GstElement
-  [GST_SECOND]: GST_SECOND
-  [GST_MSECOND]: GST_MSECOND
-  [gst_element_query_position]: gst_element_query_position
-  [gst_element_query_duration]: gst_element_query_duration
-  [GST_TIME_FORMAT]: GST_TIME_FORMAT
-  [GST_TIME_ARGS]: GST_TIME_ARGS
-  [GST_FORMAT_TIME]: GST_FORMAT_TIME
-  [GST_FORMAT_BYTES]: GST_FORMAT_BYTES
-  [gst_element_seek_simple]: gst_element_seek_simple
-  [gst_element_query]: gst_element_query
-  [GstSeekFlags]: GstSeekFlags
-  [GST_SEEK_FLAG_FLUSH]: GST_SEEK_FLAG_FLUSH
-  [GST_SEEK_FLAG_KEY_UNIT]: GST_SEEK_FLAG_KEY_UNIT
-  [GST_SEEK_FLAG_ACCURATE]: GST_SEEK_FLAG_ACCURATE
-  [gst_query_new_seeking]: gst_query_new_seeking
-  [gst_query_parse_seeking]: gst_query_parse_seeking

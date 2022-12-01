@@ -400,27 +400,3 @@ insight about the [playbin] element.
 Remember that attached to this page you should find the complete source
 code of the tutorial and any accessory files needed to build it.
 It has been a pleasure having you here, and see you soon!
-
-  [playbin]: playbin
-  [uridecodebin]: uridecodebin
-  [audioconvert]: audioconvert
-  [audioresample]: audioresample
-  [autoaudiosink]: autoaudiosink
-  [autovideosink]: autovideosink
-  [autoresample]: autoaudiosink
-  [videotestsrc]: videotestsrc
-  [videoconvert]: videoconvert
-  [g_signal_connect]: g_signal_connect
-  [pad_added_handler]: pad_added_handler
-  [gst_element_get_static_pad]: gst_element_get_static_pad
-  [gst_pad_get_current_caps]: gst_pad_get_current_caps
-  [gst_pad_query_caps]: gst_pad_query_caps
-  [gst_caps_get_structure]: gst_caps_get_structure
-  [gst_structure_get_name]: gst_structure_get_name
-  [gst_pad_link]: gst_pad_link
-  [gst_element_link]: gst_element_link
-  [GstPad]: GstPad
-  [GSignals]: GSignals
-  [GObject]: GObject
-  [GstElement]: GstElement
-  [GstStructure]: GstStructure
