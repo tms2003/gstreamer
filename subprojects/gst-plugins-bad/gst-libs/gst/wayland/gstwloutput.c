@@ -44,7 +44,6 @@ G_DEFINE_TYPE_WITH_CODE (GstWlOutput, gst_wl_output, G_TYPE_OBJECT,
 enum
 {
   SIGNAL_0,
-  SIGNAL_DESTROY,
   SIGNAL_GEOMETRY_CHANGED,
   SIGNAL_SCALE_CHANGED,
   LAST_SIGNAL
@@ -60,10 +59,6 @@ gst_wl_output_class_init (GstWlOutputClass * klass)
   GObjectClass *gobject_class = G_OBJECT_CLASS (klass);
 
   gobject_class->finalize = gst_wl_output_finalize;
-
-  gst_wl_output_signals[SIGNAL_DESTROY] =
-      g_signal_new ("destroy", G_TYPE_FROM_CLASS (klass), G_SIGNAL_RUN_LAST, 0,
-      NULL, NULL, NULL, G_TYPE_NONE, 0);
 
   gst_wl_output_signals[SIGNAL_GEOMETRY_CHANGED] =
       g_signal_new ("geometry-changed", G_TYPE_FROM_CLASS (klass),
@@ -99,8 +94,6 @@ gst_wl_output_finalize (GObject * gobject)
 {
   GstWlOutput *self = GST_WL_OUTPUT (gobject);
   GstWlOutputPrivate *priv = gst_wl_output_get_instance_private (self);
-
-  g_signal_emit (self, gst_wl_output_signals[SIGNAL_DESTROY], 0);
 
   if (wl_output_get_version (priv->wl_output) >=
       WL_OUTPUT_RELEASE_SINCE_VERSION)

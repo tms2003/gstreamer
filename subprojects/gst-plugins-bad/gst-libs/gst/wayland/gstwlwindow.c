@@ -244,16 +244,6 @@ update_output_orientation (GstWlWindow * self)
 }
 
 static void
-on_output_destroyed_cb (GstWlOutput * output, GstWlWindow * self)
-{
-  GstWlWindowPrivate *priv = gst_wl_window_get_instance_private (self);
-
-  g_ptr_array_remove (priv->outputs, output);
-
-  update_output_orientation (self);
-}
-
-static void
 on_output_geometry_changed_cb (GstWlOutput * output, GstWlWindow * self)
 {
   update_output_orientation (self);
@@ -272,8 +262,7 @@ handle_surface_enter (void *data,
     return;
 
   g_ptr_array_add (priv->outputs, output);
-  g_signal_connect (output, "destroy", G_CALLBACK (on_output_destroyed_cb),
-      self);
+
   g_signal_connect (output, "geometry-changed",
       G_CALLBACK (on_output_geometry_changed_cb), self);
 
