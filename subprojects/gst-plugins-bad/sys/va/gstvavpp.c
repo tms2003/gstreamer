@@ -415,16 +415,19 @@ gst_va_vpp_decide_allocation (GstBaseTransform * trans, GstQuery * query)
   GstVaVpp *self = GST_VA_VPP (trans);
   GstVideoOrientationMeta *ometa;
 
-  ometa = gst_query_get_allocation_video_orientation_meta (query);
+  if (g_object_class_find_property (G_OBJECT_CLASS
+          (GST_VA_VPP_GET_CLASS (self)), "video-direction")) {
+    ometa = gst_query_get_allocation_video_orientation_meta (query);
 
-  if (ometa) {
-    self->meta_orientation = ometa->orientation;
-    _update_properties_unlocked (self);
-    self->add_video_orientation_meta = TRUE;
-  } else {
-    self->meta_orientation = GST_VIDEO_ORIENTATION_IDENTITY;
-    _update_properties_unlocked (self);
-    self->add_video_orientation_meta = FALSE;
+    if (ometa) {
+      self->meta_orientation = ometa->orientation;
+      _update_properties_unlocked (self);
+      self->add_video_orientation_meta = TRUE;
+    } else {
+      self->meta_orientation = GST_VIDEO_ORIENTATION_IDENTITY;
+      _update_properties_unlocked (self);
+      self->add_video_orientation_meta = FALSE;
+    }
   }
 
   return GST_BASE_TRANSFORM_CLASS (parent_class)->decide_allocation (trans,
