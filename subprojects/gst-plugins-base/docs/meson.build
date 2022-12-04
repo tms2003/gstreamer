@@ -149,7 +149,7 @@ libs_doc = []
 foreach lib: libs
   name = lib[0]
   gir = lib[1]
-  deps = [lib[2], gir]
+  deps = lib[2]
   extra_sources = []
   if lib.length() >= 4
     extra_sources = lib[3]
@@ -167,6 +167,7 @@ foreach lib: libs
       gi_smart_index: true,
       gi_order_generated_subpages: true,
       dependencies: deps,
+      depends: gir,
       install: false,
   )]
 endforeach

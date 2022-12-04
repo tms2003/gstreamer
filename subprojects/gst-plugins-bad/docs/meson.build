@@ -195,7 +195,8 @@ foreach lib_def: libs
                 gi_index: join_paths('libs/', name, 'index.md'),
                 gi_smart_index: true,
                 gi_order_generated_subpages: true,
-                dependencies: [lib, gir],
+                dependencies: lib,
+                depends: gir,
                 c_flags: '-DGST_USE_UNSTABLE_API',
                 install: false,
             )]

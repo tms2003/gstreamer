@@ -144,7 +144,7 @@ libs = [
 foreach lib: libs
   name = lib[0]
   gir = lib[1]
-  deps = [lib[2], gir]
+  deps = lib[2]
   libs_doc += [hotdoc.generate_doc(name,
       project_version: apiversion,
       gi_c_sources: ['../libs/gst/' + name + '/*.[hc]'],
@@ -169,7 +169,7 @@ plugins_doc = [
         gst_index: 'plugins/index.md',
         gst_smart_index: true,
         gst_c_sources: ['../plugins/elements/*.c', '../plugins/elements/*.h'],
-        dependencies: [gst_plugins_doc_dep],
+        depends: [gst_plugins_doc_dep],
         gst_cache_file: plugins_cache,
         gst_plugin_name: 'coreelements',
     ),
@@ -180,7 +180,7 @@ plugins_doc = [
         gst_index: 'plugins/coretracers/index.md',
         gst_smart_index: true,
         gst_c_sources: ['../plugins/tracers/*.c', '../plugins/tracers/*.h'],
-        dependencies: [gst_plugins_doc_dep],
+        depends: [gst_plugins_doc_dep],
         gst_cache_file: plugins_cache,
         gst_plugin_name: 'coretracers',
     )
