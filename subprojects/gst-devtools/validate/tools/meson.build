@@ -14,6 +14,7 @@ if validate_video_dep.found()
     'gst-validate-images-check': {
       'files': files('gst-validate-images-check.c'),
       'deps': [validate_dep, validate_video_dep, gio_dep],
+      'extra_deps': [validate_video_dep],
     },
   }
 else

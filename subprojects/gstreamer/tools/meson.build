@@ -48,6 +48,7 @@ foreach tool : tools
     {
       'files': files(src_file),
       'deps': [glib_dep, gobject_dep, gmodule_dep, mathlib, gst_dep] + extra_deps,
+      'extra_deps': extra_deps,
       'extra_c_args': extra_c_args,
       'man_page': man_page,
     }
