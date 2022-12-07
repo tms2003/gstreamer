@@ -352,7 +352,8 @@ if building_full
   init_static_plugins_c = configure_file(
     output: 'gstinitstaticplugins.c',
     command : [generate_init_static_plugins,
-               '-o ' + '@OUTPUT@',
+               '-C ' + '@OUTPUT@',
+               '-H ' + 'gstinitstaticplugins.h',
                '-p ' + static_plugins,
                '-e ' + get_option('gst-full-elements'),
                '-t ' + get_option('gst-full-typefind-functions'),
