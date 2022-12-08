@@ -37,6 +37,65 @@ plugins_install_dir = join_paths(get_option('libdir'), 'gstreamer-1.0')
 plugins = []
 static_build = get_option('default_library') == 'static'
 
+# Mandatory GST deps
+gst_dep = dependency('gstreamer-1.0', version : gst_req,
+  fallback : ['gstreamer', 'gst_dep'])
+gstbase_dep = dependency('gstreamer-base-1.0', version : gst_req,
+  fallback : ['gstreamer', 'gst_base_dep'])
+gstnet_dep = dependency('gstreamer-net-1.0', version : gst_req,
+  fallback : ['gstreamer', 'gst_net_dep'])
+gstcontroller_dep = dependency('gstreamer-controller-1.0', version : gst_req,
+  fallback : ['gstreamer', 'gst_controller_dep'])
+gstcheck_dep = dependency('gstreamer-check-1.0', version : gst_req,
+  required : get_option('tests'),
+  fallback : ['gstreamer', 'gst_check_dep'])
+gstpbutils_dep = dependency('gstreamer-pbutils-1.0', version : gst_req,
+    fallback : ['gst-plugins-base', 'pbutils_dep'])
+gstallocators_dep = dependency('gstreamer-allocators-1.0', version : gst_req,
+    fallback : ['gst-plugins-base', 'allocators_dep'])
+gstapp_dep = dependency('gstreamer-app-1.0', version : gst_req,
+    fallback : ['gst-plugins-base', 'app_dep'])
+gstaudio_dep = dependency('gstreamer-audio-1.0', version : gst_req,
+    fallback : ['gst-plugins-base', 'audio_dep'])
+gstfft_dep = dependency('gstreamer-fft-1.0', version : gst_req,
+    fallback : ['gst-plugins-base', 'fft_dep'])
+gstriff_dep = dependency('gstreamer-riff-1.0', version : gst_req,
+    fallback : ['gst-plugins-base', 'riff_dep'])
+gstrtp_dep = dependency('gstreamer-rtp-1.0', version : gst_req,
+    fallback : ['gst-plugins-base', 'rtp_dep'])
+gstrtsp_dep = dependency('gstreamer-rtsp-1.0', version : gst_req,
+    fallback : ['gst-plugins-base', 'rtsp_dep'])
+gstsdp_dep = dependency('gstreamer-sdp-1.0', version : gst_req,
+    fallback : ['gst-plugins-base', 'sdp_dep'])
+gsttag_dep = dependency('gstreamer-tag-1.0', version : gst_req,
+    fallback : ['gst-plugins-base', 'tag_dep'])
+gstvideo_dep = dependency('gstreamer-video-1.0', version : gst_req,
+    fallback : ['gst-plugins-base', 'video_dep'])
+
+# GStreamer OpenGL
+# FIXME: automagic
+gstgl_dep = dependency('gstreamer-gl-1.0', version : gst_req,
+    fallback : ['gst-plugins-base', 'gstgl_dep'], required: false)
+gstglproto_dep = dependency('', required : false)
+gstglx11_dep = dependency('', required : false)
+gstglwayland_dep = dependency('', required : false)
+gstglegl_dep = dependency('', required : false)
+
+have_gstgl = gstgl_dep.found()
+
+cast_checks = get_option('gobject-cast-checks')
+glib_checks = get_option('glib-checks')
+glib_asserts = get_option('glib-asserts')
+
+if gst_dep.type_name() == 'internal'
+  gst_debug_disabled = not subproject('gstreamer').get_variable('gst_debug')
+else
+  # We can't check that in the case of subprojects as we won't
+  # be able to build against an internal dependency (which is not built yet)
+  gst_debug_disabled = cc.has_header_symbol('gst/gstconfig.h', 'GST_DISABLE_GST_DEBUG', dependencies: gst_dep)
+endif
+message('GStreamer debug system is ', gst_debug_disabled ? 'disabled' : 'enabled')
+
 cc = meson.get_compiler('c')
 host_system = host_machine.system()
 
@@ -68,9 +127,16 @@ if cc.get_id() == 'msvc'
       '/we4053', # one void operand for '?:'
       '/we4062', # enumerator 'identifier' in switch of enum 'enumeration' is not handled
       '/we4098', # 'function' : void function returning a value
-      '/we4101', # 'identifier' : unreferenced local variable
-      '/we4189', # 'identifier' : local variable is initialized but not referenced
     ])
+
+    # add these warnings only if checks are enabled,
+    # if the checks are not built, it will leave behind some "unused" variables
+    if not gst_debug_disabled and glib_checks.enabled()
+      msvc_args += cc.get_supported_arguments([
+        '/we4101', # 'identifier' : unreferenced local variable
+        '/we4189', # 'identifier' : local variable is initialized but not referenced
+      ])
+    endif
   endif
   if have_cxx
     add_project_arguments(msvc_args, language: ['c', 'cpp'])
@@ -116,19 +182,16 @@ if gst_version_is_dev
   add_project_arguments('-DG_DISABLE_DEPRECATED', language: 'c')
 endif
 
-cast_checks = get_option('gobject-cast-checks')
 if cast_checks.disabled() or (cast_checks.auto() and not gst_version_is_dev)
   message('Disabling GLib cast checks')
   add_project_arguments('-DG_DISABLE_CAST_CHECKS', language: 'c')
 endif
 
-glib_asserts = get_option('glib-asserts')
 if glib_asserts.disabled() or (glib_asserts.auto() and not gst_version_is_dev)
   message('Disabling GLib asserts')
   add_project_arguments('-DG_DISABLE_ASSERT', language: 'c')
 endif
 
-glib_checks = get_option('glib-checks')
 if glib_checks.disabled() or (glib_checks.auto() and not gst_version_is_dev)
   message('Disabling GLib checks')
   add_project_arguments('-DG_DISABLE_CHECKS', language: 'c')
@@ -278,52 +341,6 @@ endif
 cdata.set_quoted('GST_PACKAGE_NAME', gst_package_name)
 cdata.set_quoted('GST_PACKAGE_ORIGIN', get_option('package-origin'))
 
-# Mandatory GST deps
-gst_dep = dependency('gstreamer-1.0', version : gst_req,
-  fallback : ['gstreamer', 'gst_dep'])
-gstbase_dep = dependency('gstreamer-base-1.0', version : gst_req,
-  fallback : ['gstreamer', 'gst_base_dep'])
-gstnet_dep = dependency('gstreamer-net-1.0', version : gst_req,
-  fallback : ['gstreamer', 'gst_net_dep'])
-gstcontroller_dep = dependency('gstreamer-controller-1.0', version : gst_req,
-  fallback : ['gstreamer', 'gst_controller_dep'])
-gstcheck_dep = dependency('gstreamer-check-1.0', version : gst_req,
-  required : get_option('tests'),
-  fallback : ['gstreamer', 'gst_check_dep'])
-gstpbutils_dep = dependency('gstreamer-pbutils-1.0', version : gst_req,
-    fallback : ['gst-plugins-base', 'pbutils_dep'])
-gstallocators_dep = dependency('gstreamer-allocators-1.0', version : gst_req,
-    fallback : ['gst-plugins-base', 'allocators_dep'])
-gstapp_dep = dependency('gstreamer-app-1.0', version : gst_req,
-    fallback : ['gst-plugins-base', 'app_dep'])
-gstaudio_dep = dependency('gstreamer-audio-1.0', version : gst_req,
-    fallback : ['gst-plugins-base', 'audio_dep'])
-gstfft_dep = dependency('gstreamer-fft-1.0', version : gst_req,
-    fallback : ['gst-plugins-base', 'fft_dep'])
-gstriff_dep = dependency('gstreamer-riff-1.0', version : gst_req,
-    fallback : ['gst-plugins-base', 'riff_dep'])
-gstrtp_dep = dependency('gstreamer-rtp-1.0', version : gst_req,
-    fallback : ['gst-plugins-base', 'rtp_dep'])
-gstrtsp_dep = dependency('gstreamer-rtsp-1.0', version : gst_req,
-    fallback : ['gst-plugins-base', 'rtsp_dep'])
-gstsdp_dep = dependency('gstreamer-sdp-1.0', version : gst_req,
-    fallback : ['gst-plugins-base', 'sdp_dep'])
-gsttag_dep = dependency('gstreamer-tag-1.0', version : gst_req,
-    fallback : ['gst-plugins-base', 'tag_dep'])
-gstvideo_dep = dependency('gstreamer-video-1.0', version : gst_req,
-    fallback : ['gst-plugins-base', 'video_dep'])
-
-# GStreamer OpenGL
-# FIXME: automagic
-gstgl_dep = dependency('gstreamer-gl-1.0', version : gst_req,
-    fallback : ['gst-plugins-base', 'gstgl_dep'], required: false)
-gstglproto_dep = dependency('', required : false)
-gstglx11_dep = dependency('', required : false)
-gstglwayland_dep = dependency('', required : false)
-gstglegl_dep = dependency('', required : false)
-
-have_gstgl = gstgl_dep.found()
-
 if have_gstgl
   if gstgl_dep.type_name() == 'pkgconfig'
     gst_gl_apis = gstgl_dep.get_variable('gl_apis').split()
@@ -438,25 +455,13 @@ if host_cpu == 'x86_64'
   endif
 endif
 
-# Disable compiler warnings for unused variables and args if gst debug system is disabled
-if gst_dep.type_name() == 'internal'
-  gst_debug_disabled = not subproject('gstreamer').get_variable('gst_debug')
-else
-  # We can't check that in the case of subprojects as we won't
-  # be able to build against an internal dependency (which is not built yet)
-  gst_debug_disabled = cc.has_header_symbol('gst/gstconfig.h', 'GST_DISABLE_GST_DEBUG', dependencies: gst_dep)
-endif
-
-if gst_debug_disabled
-  message('GStreamer debug system is disabled')
-  if cc.has_argument('-Wno-unused')
-    add_project_arguments('-Wno-unused', language: 'c')
+# Disable compiler warnings for unused variables and args
+# if gst debug system or glib-checks is disabled
+if gst_debug_disabled or glib_checks.disabled()
+  add_project_arguments(cc.get_supported_arguments(['-Wno-unused']), language: 'c')
+  if have_cxx
+    add_project_arguments(cxx.get_supported_arguments(['-Wno-unused']), language: 'cpp')
   endif
-  if have_cxx and cxx.has_argument ('-Wno-unused')
-    add_project_arguments('-Wno-unused', language: 'cpp')
-  endif
-else
-  message('GStreamer debug system is enabled')
 endif
 
 presetdir = join_paths(get_option('datadir'), 'gstreamer-' + api_version, 'presets')
