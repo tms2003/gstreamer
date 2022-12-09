@@ -1054,8 +1054,7 @@ start_publish_done (GObject * source, GAsyncResult * result, gpointer user_data)
 
   if (gst_rtmp_client_start_publish_finish (connection, result,
           &self->stream_id, &error)) {
-    g_task_return_pointer (task, g_object_ref (connection),
-        gst_rtmp_connection_close_and_unref);
+    g_task_return_boolean (task, TRUE);
   } else {
     g_task_return_error (task, error);
   }
@@ -1135,8 +1134,8 @@ connect_task_done (GObject * object, GAsyncResult * result, gpointer user_data)
     g_clear_object (&self->cancellable);
   }
 
-  self->connection = g_task_propagate_pointer (task, &error);
-  if (self->connection) {
+  self->connection = g_object_ref (g_task_get_task_data (task));
+  if (g_task_propagate_boolean (task, &error)) {
     set_pacing_rate (self);
     set_chunk_size (self);
     gst_rtmp_connection_set_output_handler (self->connection,
