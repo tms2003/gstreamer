@@ -53,6 +53,7 @@ struct _GstMultiFileSrc
   int offset;
 
   gboolean loop;
+  gboolean hold;
 
   GstCaps *caps;
   gboolean successful_read;
