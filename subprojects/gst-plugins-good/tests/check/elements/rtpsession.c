@@ -235,6 +235,13 @@ session_harness_send_rtp (SessionHarness * h, GstBuffer * buf)
   return gst_harness_push (h->send_rtp_h, buf);
 }
 
+static GstFlowReturn
+session_harness_send_rtp_list (SessionHarness * h, GstBufferList * list)
+{
+  /* FIXME replace with gst_harness_push_list() when it is merged */
+  return gst_pad_push_list (h->send_rtp_h->srcpad, list);
+}
+
 static GstBuffer *
 session_harness_pull_send_rtp (SessionHarness * h)
 {
@@ -972,6 +979,115 @@ GST_START_TEST (test_ignore_suspicious_bye)
   gst_buffer_unref (session_harness_pull_rtcp (h));
   fail_unless (cb_called);
 
+  session_harness_free (h);
+}
+
+GST_END_TEST;
+
+GST_START_TEST (test_buffer_list_different_timestamps)
+{
+  SessionHarness *h = session_harness_new ();
+  GstBufferList *list = gst_buffer_list_new ();
+  guint i, stats_ssrc = 0;
+  guint64 packets_sent = 0, bitrate = 0;
+  GValueArray *stats_arr;
+  GstStructure *stats, *internal_stats;
+
+  /* let the session know the latency, so that bitrate estimation works */
+  gst_harness_push_upstream_event (h->send_rtp_h, gst_event_new_latency (0));
+
+  /* push 10 packets with **different** timestamps */
+  for (i = 0; i < 10; i++) {
+    gst_buffer_list_add (list, generate_test_buffer_full (i * GST_SECOND,
+            i, i * TEST_BUF_CLOCK_RATE, TEST_BUF_SSRC, FALSE, TEST_BUF_PT, 0,
+            0));
+  }
+
+  fail_unless_equals_int (GST_FLOW_OK, session_harness_send_rtp_list (h, list));
+
+  g_object_get (h->session, "stats", &stats, NULL);
+  stats_arr =
+      g_value_get_boxed (gst_structure_get_value (stats, "source-stats"));
+  g_assert (stats_arr != NULL);
+  fail_unless (stats_arr->n_values >= 1);
+
+  for (i = 0; i < stats_arr->n_values; i++) {
+    internal_stats = g_value_get_boxed (g_value_array_get_nth (stats_arr, i));
+    g_assert (internal_stats != NULL);
+
+    gst_structure_get (internal_stats,
+        "ssrc", G_TYPE_UINT, &stats_ssrc,
+        "packets-sent", G_TYPE_UINT64, &packets_sent,
+        "bitrate", G_TYPE_UINT64, &bitrate, NULL);
+  }
+
+  fail_unless_equals_int (stats_ssrc, TEST_BUF_SSRC);
+  fail_unless_equals_uint64 (packets_sent, 10);
+
+  /* The bitrate is updated when consecutive calls to rtp_source_send_rtp()
+   * are called with some RTPPacketInfo where pinfo->running_time progresses.
+   * If all went well and the buffer list was processed as individual packets,
+   * rtp_source_send_rtp() must have been called 10 times, therefore a bitrate
+   * estimation is available.
+   * In case it is processed as a single buffer list, rtp_source_send_rtp()
+   * will be called only once and bitrate will be zero.
+   */
+  fail_unless (bitrate != 0);
+
+  gst_structure_free (stats);
+  session_harness_free (h);
+}
+
+GST_END_TEST;
+
+GST_START_TEST (test_buffer_list_same_timestamps)
+{
+  SessionHarness *h = session_harness_new ();
+  GstBufferList *list = gst_buffer_list_new ();
+  guint i, stats_ssrc = 0;
+  guint64 packets_sent = 0, bitrate = 0;
+  GValueArray *stats_arr;
+  GstStructure *stats, *internal_stats;
+
+  /* let the session know the latency, so that bitrate estimation works */
+  gst_harness_push_upstream_event (h->send_rtp_h, gst_event_new_latency (0));
+
+  /* push 10 packets with the **same** timestamp */
+  for (i = 1; i <= 10; i++) {
+    gst_buffer_list_add (list, generate_test_buffer_full (GST_SECOND,
+            i, TEST_BUF_CLOCK_RATE, TEST_BUF_SSRC, FALSE, TEST_BUF_PT, 0, 0));
+  }
+
+  fail_unless_equals_int (GST_FLOW_OK, session_harness_send_rtp_list (h, list));
+
+  g_object_get (h->session, "stats", &stats, NULL);
+  stats_arr =
+      g_value_get_boxed (gst_structure_get_value (stats, "source-stats"));
+  g_assert (stats_arr != NULL);
+  fail_unless (stats_arr->n_values >= 1);
+
+  for (i = 0; i < stats_arr->n_values; i++) {
+    internal_stats = g_value_get_boxed (g_value_array_get_nth (stats_arr, i));
+    g_assert (internal_stats != NULL);
+
+    gst_structure_get (internal_stats,
+        "ssrc", G_TYPE_UINT, &stats_ssrc,
+        "packets-sent", G_TYPE_UINT64, &packets_sent,
+        "bitrate", G_TYPE_UINT64, &bitrate, NULL);
+  }
+
+  fail_unless_equals_int (stats_ssrc, TEST_BUF_SSRC);
+  fail_unless_equals_uint64 (packets_sent, 10);
+
+  /* The bitrate is updated when consecutive calls to rtp_source_send_rtp()
+   * are called with some RTPPacketInfo where pinfo->running_time progresses.
+   * If all went well and the buffer list was processed as a list,
+   * rtp_source_send_rtp() must have been called only once, therefore a bitrate
+   * estimation is not yet available.
+   */
+  fail_unless_equals_uint64 (bitrate, 0);
+
+  gst_structure_free (stats);
   session_harness_free (h);
 }
 
@@ -4318,6 +4434,8 @@ rtpsession_suite (void)
   tcase_add_test (tc_chain, test_receive_rtcp_app_packet);
   tcase_add_test (tc_chain, test_dont_lock_on_stats);
   tcase_add_test (tc_chain, test_ignore_suspicious_bye);
+  tcase_add_test (tc_chain, test_buffer_list_different_timestamps);
+  tcase_add_test (tc_chain, test_buffer_list_same_timestamps);
 
   tcase_add_test (tc_chain, test_ssrc_collision_when_sending);
   tcase_add_test (tc_chain, test_ssrc_collision_when_sending_loopback);
