@@ -3591,6 +3591,94 @@ gst_sdp_media_caps_adjust_h264 (GstCaps * caps)
       NULL);
 }
 
+static gchar *
+gst_sdp_media_h264_profile_level_id_from_profile_and_level (const gchar *
+    profile, const gchar * level)
+{
+  gint csf0, csf1, csf2, csf3, csf4, csf5, profile_iop, reserved_zero_2bits;
+  gint profile_idc = 0;
+  guint8 level_idc = 0;
+
+  csf0 = csf1 = csf2 = csf3 = csf4 = csf5 = reserved_zero_2bits = profile_iop =
+      0;
+
+  g_return_val_if_fail (profile != NULL, NULL);
+
+  if (level != NULL) {
+    level_idc = gst_codec_utils_h264_get_level_idc (level);
+    if (!strcmp (level, "1b")) {
+      csf3 = 1;
+    }
+  }
+
+  if (!strcmp (profile, "baseline")) {
+    profile_idc = 66;
+  } else if (!strcmp (profile, "constrained-baseline")) {
+    profile_idc = 66;
+    csf1 = 1;
+  } else if (!strcmp (profile, "main")) {
+    profile_idc = 77;
+  } else if (!strcmp (profile, "extended")) {
+    profile_idc = 88;
+  } else if (!strcmp (profile, "high")) {
+    profile_idc = 100;
+  } else if (!strcmp (profile, "constrained-high")) {
+    profile_idc = 100;
+    csf4 = 1;
+    csf5 = 1;
+  } else if (!strcmp (profile, "progressive-high")) {
+    profile_idc = 100;
+    csf4 = 1;
+  } else if (!strcmp (profile, "high-10")) {
+    profile_idc = 110;
+  } else if (!strcmp (profile, "high-10-intra")) {
+    profile_idc = 110;
+    csf3 = 1;
+  } else if (!strcmp (profile, "progressive-high-10")) {
+    profile_idc = 110;
+    csf4 = 1;
+  } else if (g_str_has_prefix (profile, "high-4:2:2")) {
+    profile_idc = 122;
+    if (!strcmp (profile, "high-4:2:2-intra")) {
+      csf3 = 1;
+    }
+  } else if (g_str_has_prefix (profile, "high-4:4:4")) {
+    profile_idc = 244;
+    if (!strcmp (profile, "high-4:4:4-intra")) {
+      csf3 = 1;
+    }
+  } else if (!strcmp (profile, "cavlc-4:4:4-intra")) {
+    profile_idc = 44;
+  } else if (!strcmp (profile, "multiview-high")) {
+    profile_idc = 118;
+  } else if (!strcmp (profile, "stereo-high")) {
+    profile_idc = 128;
+  } else if (!strcmp (profile, "scalable-baseline")) {
+    profile_idc = 83;
+  } else if (!strcmp (profile, "scalable-constrained-baseline")) {
+    profile_idc = 83;
+    csf5 = 1;
+  } else if (!strcmp (profile, "scalable-high")) {
+    profile_idc = 86;
+  } else if (!strcmp (profile, "scalable-high-intra")) {
+    profile_idc = 86;
+    csf3 = 1;
+  } else if (!strcmp (profile, "scalable-constrained-high")) {
+    profile_idc = 86;
+    csf5 = 1;
+  } else {
+    GST_FIXME ("H.264 profile %s to profile-level-id translation unimplemented",
+        profile);
+    return NULL;
+  }
+
+  profile_iop |=
+      (csf0 << 7) | (csf1 << 6) | (csf2 << 5) | (csf3 << 4) | (csf4 << 3) |
+      (csf5 << 2) | (reserved_zero_2bits << 1);
+
+  return g_strdup_printf ("%02X%02X%02X", profile_idc, profile_iop, level_idc);
+}
+
 /**
  * gst_sdp_media_get_caps_from_media:
  * @media: a #GstSDPMedia
@@ -4075,10 +4163,19 @@ gst_sdp_media_set_media_from_caps (const GstCaps * caps, GstSDPMedia * media)
     if ((fval = gst_structure_get_string (s, fname))) {
 
       /* "profile" is our internal representation of the notion of
-       * "level-asymmetry-allowed" with caps, convert it back to the SDP
-       * representation */
+       * "level-asymmetry-allowed" and "profile-level-id" with caps, convert it
+       * back to the SDP representation */
       if (!g_strcmp0 (gst_structure_get_string (s, "encoding-name"), "H264")
           && !g_strcmp0 (fname, "profile")) {
+        gchar *profile_level_id =
+            gst_sdp_media_h264_profile_level_id_from_profile_and_level (fval,
+            gst_structure_get_string (s, "level"));
+        if (profile_level_id != NULL) {
+          g_string_append_printf (fmtp, "%sprofile-level-id=%s",
+              first ? "" : ";", profile_level_id);
+          g_free (profile_level_id);
+          first = FALSE;
+        }
         fname = "level-asymmetry-allowed";
         fval = "1";
       }
