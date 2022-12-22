@@ -3563,8 +3563,8 @@ gst_sdp_media_add_rtcp_fb_attributes_from_media (const GstSDPMedia * media,
 static void
 gst_sdp_media_caps_adjust_h264 (GstCaps * caps)
 {
-  long int spsint;
-  guint8 sps[2];
+  gint64 spsint;
+  guint8 sps[3];
   const gchar *profile_level_id;
   GstStructure *s = gst_caps_get_structure (caps, 0);
 
@@ -3576,14 +3576,16 @@ gst_sdp_media_caps_adjust_h264 (GstCaps * caps)
   if (!profile_level_id)
     return;
 
-  spsint = strtol (profile_level_id, NULL, 16);
+  spsint = g_ascii_strtoll (profile_level_id, NULL, 16);
   sps[0] = spsint >> 16;
-  sps[1] = spsint >> 8;
+  sps[1] = (spsint >> 8) & 0xff;
+  sps[2] = spsint & 0xff;
 
   GST_DEBUG ("'level-asymmetry-allowed' is set so we shouldn't care about "
-      "'profile-level-id' and only set a 'profile' instead");
+      "'profile-level-id' and only set a 'profile' and 'level' instead");
   gst_structure_set (s, "profile", G_TYPE_STRING,
-      gst_codec_utils_h264_get_profile (sps, 2), NULL);
+      gst_codec_utils_h264_get_profile (sps, 3), "level", G_TYPE_STRING,
+      gst_codec_utils_h264_get_level (sps, 3), NULL);
 
   gst_structure_remove_fields (s, "level-asymmetry-allowed", "profile-level-id",
       NULL);

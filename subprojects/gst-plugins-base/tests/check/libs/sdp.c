@@ -777,6 +777,8 @@ GST_START_TEST (media_from_caps_h264_with_profile_asymmetry_allowed)
   fail_if (gst_structure_has_field (s_video, "profile-level-id"));
   fail_unless_equals_string (gst_structure_get_string (s_video, "profile"),
       "constrained-baseline");
+  fail_unless_equals_string (gst_structure_get_string (s_video, "level"),
+      "3.1");
 
   gst_caps_unref (caps_video);
   gst_sdp_message_free (message);
