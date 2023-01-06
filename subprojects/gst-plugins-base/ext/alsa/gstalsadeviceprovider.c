@@ -66,6 +66,12 @@ add_device (GstDeviceProvider * provider, snd_ctl_t * info,
       device_name, handle, template);
   gst_caps_unref (template);
 
+  if (caps == NULL) {
+    g_free (device_name);
+    snd_pcm_close (handle);
+    return NULL;
+  }
+
   snd_card_get_name (card, &card_name);
   props = gst_structure_new ("alsa-proplist",
       "device.api", G_TYPE_STRING, "alsa",
