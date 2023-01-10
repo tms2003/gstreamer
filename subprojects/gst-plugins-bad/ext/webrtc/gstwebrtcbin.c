@@ -4415,8 +4415,6 @@ _create_answer_task (GstWebRTCBin * webrtc, const GstStructure * options,
     }
 
     mid = gst_sdp_media_get_attribute_val (media, "mid");
-    /* XXX: not strictly required but a lot of functionality requires a mid */
-    g_assert (mid);
 
     /* set the a=setup: attribute */
     offer_setup = _get_dtls_setup_from_media (offer_media);
@@ -4477,7 +4475,7 @@ _create_answer_task (GstWebRTCBin * webrtc, const GstStructure * options,
       offer_caps = _rtp_caps_from_media (offer_media);
 
       if (last_answer && i < gst_sdp_message_medias_len (last_answer)
-          && (rtp_trans = _find_transceiver_for_mid (webrtc, mid))) {
+          && mid && (rtp_trans = _find_transceiver_for_mid (webrtc, mid))) {
         const GstSDPMedia *last_media =
             gst_sdp_message_get_media (last_answer, i);
         const gchar *last_mid =
