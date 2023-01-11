@@ -185,6 +185,11 @@ gst_webrtc_transceiver_class_init (GstWebRTCTransceiverClass * klass)
           GST_TYPE_WEBRTC_BIN,
           G_PARAM_WRITABLE | G_PARAM_CONSTRUCT_ONLY | G_PARAM_STATIC_STRINGS));
 
+  /**
+   * GstWebRTCTransceiver:fec-type:
+   *
+   * Since: 1.20
+   **/
   g_object_class_install_property (gobject_class,
       PROP_FEC_TYPE,
       g_param_spec_enum ("fec-type", "FEC type",
@@ -193,6 +198,14 @@ gst_webrtc_transceiver_class_init (GstWebRTCTransceiverClass * klass)
           DEFAULT_FEC_TYPE,
           G_PARAM_CONSTRUCT | G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
+  /**
+   * GstWebRTCTransceiver:do-nack:
+   *
+   * Whether to send NACK (negative acknowledgements) for feedback on packet
+   * loss. This is also known as RTP RTX (RTP retransmission).
+   *
+   * Since: 1.20
+   **/
   g_object_class_install_property (gobject_class,
       PROP_DO_NACK,
       g_param_spec_boolean ("do-nack", "Do nack",
@@ -200,12 +213,27 @@ gst_webrtc_transceiver_class_init (GstWebRTCTransceiverClass * klass)
           DEFAULT_DO_NACK,
           G_PARAM_CONSTRUCT | G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
+  /**
+   * GstWebRTCTransceiver:fec-percentage:
+   *
+   * The amount of Forward Error Correction to apply to increase resilience of
+   * the stream. The higher the value here, the more duplicate data your
+   * stream will contain to account for constant or intermittent random packet
+   * loss. See also: fec-type.
+   *
+   * Note that this will not help with packet loss due to bandwidth
+   * constraints.
+   *
+   * Since: 1.20
+   **/
   g_object_class_install_property (gobject_class,
       PROP_FEC_PERCENTAGE,
       g_param_spec_uint ("fec-percentage", "FEC percentage",
           "The amount of Forward Error Correction to apply",
           0, 100, DEFAULT_FEC_PERCENTAGE,
           G_PARAM_CONSTRUCT | G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  gst_type_mark_as_plugin_api (GST_TYPE_WEBRTC_TRANSCEIVER, 0);
 }
 
 static void
