@@ -213,6 +213,8 @@ gst_ac3_parse_reset (GstAc3Parse * ac3parse)
   ac3parse->sample_rate = -1;
   ac3parse->blocks = -1;
   ac3parse->eac = FALSE;
+  ac3parse->sub_stream_idx = 0;
+  ac3parse->sub_stream_num = 0;
   ac3parse->sent_codec_tag = FALSE;
   g_atomic_int_set (&ac3parse->align, GST_AC3_PARSE_ALIGN_NONE);
 }
@@ -396,6 +398,13 @@ gst_ac3_parse_frame_header_eac3 (GstAc3Parse * ac3parse, GstBuffer * buf,
   if (G_UNLIKELY (strmtyp == 3)) {
     GST_DEBUG_OBJECT (ac3parse, "bad strmtyp %d", strmtyp);
     goto cleanup;
+  } else if (strmtyp == 1) {
+    /* record the toal number of substream after one independent stream */
+    ac3parse->sub_stream_idx++;
+  } else if (strmtyp == 0) {
+    /* store the toal number of substream */
+    ac3parse->sub_stream_num = ac3parse->sub_stream_idx;
+    ac3parse->sub_stream_idx = 0;
   }
 
   strmid = gst_bit_reader_get_bits_uint8_unchecked (&bits, 3);  /* substreamid */
@@ -594,6 +603,35 @@ gst_ac3_parse_handle_frame (GstBaseParse * parse,
 
     /* We're now at the next frame, so no need to skip if resyncing */
     frmsiz = 0;
+  } else {
+    /* For eac3 audio of more than 5.1 channels, it will has substream.
+     * Collect all eac3 substreams and send them with independent stream */
+    if ((sid == 0) && (ac3parse->sub_stream_num)) {
+      GST_LOG_OBJECT (ac3parse, "has substream, total number %d",
+          ac3parse->sub_stream_num);
+      framesize = 0;
+
+      /* Loop till we get all substreams */
+      gint loop = ac3parse->sub_stream_num;
+      do {
+        framesize += frmsiz;
+
+        if (!gst_byte_reader_skip (&reader, frmsiz)
+            || map.size < (framesize + 6)) {
+          more = TRUE;
+          break;
+        }
+
+        if (!gst_ac3_parse_frame_header (ac3parse, buf, framesize, &frmsiz,
+                NULL, NULL, NULL, &sid, &eac)) {
+          *skipsize = off + 2;
+          goto cleanup;
+        }
+      } while (loop-- && sid);
+
+      /* We're now at the next frame, so no need to skip if resyncing */
+      frmsiz = 0;
+    }
   }
 
   if (lost_sync && !draining) {
