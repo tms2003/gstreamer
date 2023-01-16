@@ -13,6 +13,7 @@ v4l2codecs_sources = [
   'gstv4l2format.c',
   'gstv4l2codecalphadecodebin.c',
   'gstv4l2encoder.c',
+  'gstv4l2codecvp8enc.c',
 ]
 
 libgudev_dep = dependency('gudev-1.0', required: get_option('v4l2codecs'), allow_fallback: true)
