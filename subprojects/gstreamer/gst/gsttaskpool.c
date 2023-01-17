@@ -40,34 +40,80 @@
 GST_DEBUG_CATEGORY_STATIC (taskpool_debug);
 #define GST_CAT_DEFAULT (taskpool_debug)
 
-#ifndef GST_DISABLE_GST_DEBUG
+typedef struct
+{
+  GHashTable *tasks;
+  guintptr next_id;
+} GstTaskPoolPrivate;
+
 static void gst_task_pool_finalize (GObject * object);
-#endif
 
-#define _do_init \
-{ \
-  GST_DEBUG_CATEGORY_INIT (taskpool_debug, "taskpool", 0, "Thread pool"); \
-}
-
-G_DEFINE_TYPE_WITH_CODE (GstTaskPool, gst_task_pool, GST_TYPE_OBJECT, _do_init);
+G_DEFINE_TYPE_WITH_CODE (GstTaskPool, gst_task_pool, GST_TYPE_OBJECT,
+    G_ADD_PRIVATE (GstTaskPool);
+    GST_DEBUG_CATEGORY_INIT (taskpool_debug, "taskpool", 0, "Thread pool"));
 
 typedef struct
 {
   GstTaskPoolFunction func;
   gpointer user_data;
+
+  GCond cond;
+  gboolean waiting;
+  gboolean done;
+  gpointer id;
 } TaskData;
+
+static TaskData *
+task_data_new (GstTaskPoolFunction func, gpointer user_data, gpointer id)
+{
+  TaskData *tdata = g_slice_new (TaskData);
+
+  tdata->func = func;
+  tdata->user_data = user_data;
+  g_cond_init (&tdata->cond);
+  tdata->waiting = FALSE;
+  tdata->done = FALSE;
+  tdata->id = id;
+
+  return tdata;
+}
+
+static void
+task_data_free (gpointer data)
+{
+  TaskData *tdata = data;
+
+  g_cond_clear (&tdata->cond);
+  g_slice_free (TaskData, tdata);
+}
 
 static void
 default_func (TaskData * tdata, GstTaskPool * pool)
 {
-  GstTaskPoolFunction func;
-  gpointer user_data;
+  gpointer id = tdata->id;
 
-  func = tdata->func;
-  user_data = tdata->user_data;
-  g_slice_free (TaskData, tdata);
+  GST_TRACE_OBJECT (pool, "Running task #%" G_GUINTPTR_FORMAT, (guintptr) id);
 
-  func (user_data);
+  tdata->func (tdata->user_data);
+
+  GST_OBJECT_LOCK (pool);
+  if (tdata->waiting) {
+    GST_TRACE_OBJECT (pool, "Signaling task #%" G_GUINTPTR_FORMAT,
+        (guintptr) id);
+    g_assert (!tdata->done);
+    tdata->done = TRUE;
+    g_cond_signal (&tdata->cond);
+  } else {
+    GstTaskPoolPrivate *priv = gst_task_pool_get_instance_private (pool);
+
+    GST_TRACE_OBJECT (pool, "Disposing task #%" G_GUINTPTR_FORMAT,
+        (guintptr) id);
+    g_hash_table_remove (priv->tasks, id);
+  }
+  GST_OBJECT_UNLOCK (pool);
+
+  /* ref taken in `default_push` */
+  gst_object_unref (pool);
 }
 
 static void
@@ -75,6 +121,7 @@ default_prepare (GstTaskPool * pool, GError ** error)
 {
   GST_OBJECT_LOCK (pool);
   pool->pool = g_thread_pool_new ((GFunc) default_func, pool, -1, FALSE, error);
+  GST_DEBUG_OBJECT (pool, "Prepared pool %p", pool->pool);
   GST_OBJECT_UNLOCK (pool);
 }
 
@@ -92,6 +139,7 @@ default_cleanup (GstTaskPool * pool)
     /* Shut down all the threads, we still process the ones scheduled
      * because the unref happens in the thread function.
      * Also wait for currently running ones to finish. */
+    GST_DEBUG_OBJECT (pool, "Cleaning up pool %p", pool_);
     g_thread_pool_free (pool_, FALSE, TRUE);
   }
 }
@@ -100,36 +148,66 @@ static gpointer
 default_push (GstTaskPool * pool, GstTaskPoolFunction func,
     gpointer user_data, GError ** error)
 {
-  TaskData *tdata;
-
-  tdata = g_slice_new (TaskData);
-  tdata->func = func;
-  tdata->user_data = user_data;
+  GstTaskPoolPrivate *priv = gst_task_pool_get_instance_private (pool);
+  gpointer id = NULL;
 
   GST_OBJECT_LOCK (pool);
-  if (pool->pool)
+  if (pool->pool) {
+    TaskData *tdata;
+
+    id = (gpointer) (priv->next_id++);
+    tdata = task_data_new (func, user_data, id);
+
+    GST_TRACE_OBJECT (pool, "Starting task #%" G_GUINTPTR_FORMAT,
+        (guintptr) id);
+
+    /* keep the pool alive until the unref at the end of `default_func`.
+     * `default_cleanup` will ensure this happens before we shut down */
+    gst_object_ref (pool);
+
+    g_hash_table_insert (priv->tasks, id, tdata);
     g_thread_pool_push (pool->pool, tdata, error);
-  else {
-    g_slice_free (TaskData, tdata);
+  } else {
     g_set_error_literal (error, GST_CORE_ERROR, GST_CORE_ERROR_FAILED,
         "No thread pool");
-
   }
   GST_OBJECT_UNLOCK (pool);
 
-  return NULL;
+  return id;
 }
 
 static void
 default_join (GstTaskPool * pool, gpointer id)
 {
-  /* we do nothing here, we can't join from the pools */
+  GstTaskPoolPrivate *priv = gst_task_pool_get_instance_private (pool);
+  TaskData *tdata;
+
+  GST_TRACE_OBJECT (pool, "Joining task #%" G_GUINTPTR_FORMAT, (guintptr) id);
+
+  GST_OBJECT_LOCK (pool);
+
+  tdata = g_hash_table_lookup (priv->tasks, id);
+  if (tdata) {
+    GST_TRACE_OBJECT (pool, "Waiting for task #%" G_GUINTPTR_FORMAT,
+        (guintptr) id);
+    g_assert (!tdata->waiting);
+    tdata->waiting = TRUE;
+    while (!tdata->done) {
+      g_cond_wait (&tdata->cond, GST_OBJECT_GET_LOCK (pool));
+    }
+
+    GST_TRACE_OBJECT (pool, "Disposing task #%" G_GUINTPTR_FORMAT,
+        (guintptr) id);
+    g_hash_table_remove (priv->tasks, id);
+  }
+
+  GST_OBJECT_UNLOCK (pool);
 }
 
 static void
 default_dispose_handle (GstTaskPool * pool, gpointer id)
 {
-  /* we do nothing here, the default handle is NULL */
+  /* we do nothing here, the task will dispose of the handle */
 }
 
 static void
@@ -141,9 +219,7 @@ gst_task_pool_class_init (GstTaskPoolClass * klass)
   gobject_class = (GObjectClass *) klass;
   gsttaskpool_class = (GstTaskPoolClass *) klass;
 
-#ifndef GST_DISABLE_GST_DEBUG
   gobject_class->finalize = gst_task_pool_finalize;
-#endif
 
   gsttaskpool_class->prepare = default_prepare;
   gsttaskpool_class->cleanup = default_cleanup;
@@ -155,17 +231,26 @@ gst_task_pool_class_init (GstTaskPoolClass * klass)
 static void
 gst_task_pool_init (GstTaskPool * pool)
 {
+  GstTaskPoolPrivate *priv = gst_task_pool_get_instance_private (pool);
+
+  priv->tasks = g_hash_table_new_full (g_direct_hash, g_direct_equal, NULL,
+      (GDestroyNotify) task_data_free);
+  priv->next_id = 1;
 }
 
-#ifndef GST_DISABLE_GST_DEBUG
 static void
 gst_task_pool_finalize (GObject * object)
 {
-  GST_DEBUG ("taskpool %p finalize", object);
+  GstTaskPool *pool = GST_TASK_POOL_CAST (object);
+  GstTaskPoolPrivate *priv = gst_task_pool_get_instance_private (pool);
+
+  GST_DEBUG_OBJECT (object, "Finalizing pool");
+
+  g_clear_pointer (&priv->tasks, g_hash_table_unref);
 
   G_OBJECT_CLASS (gst_task_pool_parent_class)->finalize (object);
 }
-#endif
+
 /**
  * gst_task_pool_new:
  *
