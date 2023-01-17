@@ -27,14 +27,14 @@
 
 G_BEGIN_DECLS
 
-GType webrtc_transceiver_get_type(void);
-#define WEBRTC_TYPE_TRANSCEIVER            (webrtc_transceiver_get_type())
-#define WEBRTC_TRANSCEIVER(obj)            (G_TYPE_CHECK_INSTANCE_CAST((obj),WEBRTC_TYPE_TRANSCEIVER,WebRTCTransceiver))
-#define WEBRTC_IS_TRANSCEIVER(obj)         (G_TYPE_CHECK_INSTANCE_TYPE((obj),WEBRTC_TYPE_TRANSCEIVER))
-#define WEBRTC_TRANSCEIVER_CLASS(klass)    (G_TYPE_CHECK_CLASS_CAST((klass) ,WEBRTC_TYPE_TRANSCEIVER,WebRTCTransceiverClass))
-#define WEBRTC_TRANSCEIVER_GET_CLASS(obj)  (G_TYPE_INSTANCE_GET_CLASS((obj) ,WEBRTC_TYPE_TRANSCEIVER,WebRTCTransceiverClass))
+GType gst_webrtc_transceiver_get_type(void);
+#define GST_TYPE_WEBRTC_TRANSCEIVER            (gst_webrtc_transceiver_get_type())
+#define GST_WEBRTC_TRANSCEIVER(obj)            (G_TYPE_CHECK_INSTANCE_CAST((obj),GST_TYPE_WEBRTC_TRANSCEIVER,GstWebRTCTransceiver))
+#define GST_IS_WEBRTC_TRANSCEIVER(obj)         (G_TYPE_CHECK_INSTANCE_TYPE((obj),GST_TYPE_WEBRTC_TRANSCEIVER))
+#define GST_WEBRTC_TRANSCEIVER_CLASS(klass)    (G_TYPE_CHECK_CLASS_CAST((klass) ,GST_TYPE_WEBRTC_TRANSCEIVER,GstWebRTCTransceiverClass))
+#define GST_WEBRTC_TRANSCEIVER_GET_CLASS(obj)  (G_TYPE_INSTANCE_GET_CLASS((obj) ,GST_TYPE_WEBRTC_TRANSCEIVER,GstWebRTCTransceiverClass))
 
-struct _WebRTCTransceiver
+struct _GstWebRTCTransceiver
 {
   GstWebRTCRTPTransceiver   parent;
 
@@ -63,19 +63,19 @@ struct _WebRTCTransceiver
   GstElement               *redenc;
 };
 
-struct _WebRTCTransceiverClass
+struct _GstWebRTCTransceiverClass
 {
   GstWebRTCRTPTransceiverClass      parent_class;
 };
 
-WebRTCTransceiver *       webrtc_transceiver_new            (GstWebRTCBin * webrtc,
-                                                             GstWebRTCRTPSender * sender,
-                                                             GstWebRTCRTPReceiver * receiver);
+GstWebRTCTransceiver *          gst_webrtc_transceiver_new            (GstWebRTCBin * webrtc,
+                                                                       GstWebRTCRTPSender * sender,
+                                                                       GstWebRTCRTPReceiver * receiver);
 
-void                      webrtc_transceiver_set_transport  (WebRTCTransceiver * trans,
-                                                             TransportStream * stream);
+void                            gst_webrtc_transceiver_set_transport  (GstWebRTCTransceiver * trans,
+                                                                       TransportStream * stream);
 
-GstWebRTCDTLSTransport *  webrtc_transceiver_get_dtls_transport (GstWebRTCRTPTransceiver * trans);
+GstWebRTCDTLSTransport *        gst_webrtc_transceiver_get_dtls_transport (GstWebRTCRTPTransceiver * trans);
 
 G_END_DECLS
 

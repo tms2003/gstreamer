@@ -944,7 +944,7 @@ _get_stats_from_pad (GstWebRTCBin * webrtc, GstPad * pad, GstStructure * s)
       break;
   };
 
-  ts_stats.stream = WEBRTC_TRANSCEIVER (wpad->trans)->stream;
+  ts_stats.stream = GST_WEBRTC_TRANSCEIVER (wpad->trans)->stream;
   if (!ts_stats.stream)
     goto out;
 
