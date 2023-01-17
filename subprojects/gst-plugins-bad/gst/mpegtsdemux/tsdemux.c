@@ -115,6 +115,7 @@ typedef struct
 
   /* Raw PTS/DTS (in 90kHz units) */
   guint64 pts, dts;
+  guint64 pes_offset;
 } PendingBuffer;
 
 typedef struct _TSDemuxStream TSDemuxStream;
@@ -122,10 +123,18 @@ typedef struct _TSDemuxStream TSDemuxStream;
 typedef struct _TSDemuxH264ParsingInfos TSDemuxH264ParsingInfos;
 typedef struct _TSDemuxJP2KParsingInfos TSDemuxJP2KParsingInfos;
 typedef struct _TSDemuxADTSParsingInfos TSDemuxADTSParsingInfos;
+typedef struct _Indexer Indexer;
 
 /* Returns TRUE if a keyframe was found */
 typedef gboolean (*GstTsDemuxKeyFrameScanFunction) (TSDemuxStream * stream,
     guint8 * data, const gsize data_size, const gsize max_frame_offset);
+
+typedef void (*IndexerScanFunction) (Indexer * indexer, TSDemuxStream * stream,
+    GstIndex * index, GstBuffer * buffer, guint64 pes_offset);
+
+typedef void (*IndexerClearFunction) (Indexer * indexer, gboolean hard);
+
+typedef void (*IndexerFreeFunction) (Indexer * indexer);
 
 typedef struct
 {
@@ -152,6 +161,13 @@ struct _TSDemuxJP2KParsingInfos
 struct _TSDemuxADTSParsingInfos
 {
   guint mpegversion;
+};
+
+struct _Indexer
+{
+  IndexerScanFunction scan;
+  IndexerClearFunction clear;
+  IndexerFreeFunction free;
 };
 
 struct _TSDemuxStream
@@ -227,7 +243,263 @@ struct _TSDemuxStream
   TSDemuxH264ParsingInfos h264infos;
   TSDemuxJP2KParsingInfos jp2kInfos;
   TSDemuxADTSParsingInfos atdsInfos;
+
+  Indexer *indexer;
+  guint64 pes_offset;
+  gboolean contiguous;
 };
+
+typedef struct
+{
+  Indexer parent;
+  guint64 sequence_pes_offset;
+} MPEG2Indexer;
+
+
+static void
+_mpeg2_indexer_free (Indexer * indexer)
+{
+  g_free (indexer);
+}
+
+static void
+_mpeg2_indexer_clear (Indexer * indexer, gboolean hard)
+{
+  if (hard) {
+    MPEG2Indexer *mpeg2_indexer = (MPEG2Indexer *) indexer;
+
+    mpeg2_indexer->sequence_pes_offset = GST_INDEX_OFFSET_NONE;
+  }
+}
+
+static void
+_mpeg2_indexer_scan (Indexer * indexer, TSDemuxStream * stream,
+    GstIndex * index, GstBuffer * buffer, guint64 pes_offset)
+{
+  MPEG2Indexer *mpeg2_indexer = (MPEG2Indexer *) indexer;
+  GstMpegVideoPacket packet;
+  gint off = 0;
+  GstMapInfo map = GST_MAP_INFO_INIT;
+
+  gst_buffer_map (buffer, &map, GST_MAP_READ);
+
+  while (gst_mpeg_video_parse (&packet, map.data, map.size, off)) {
+    gboolean is_keyframe = FALSE;
+
+    off = packet.offset;
+
+    switch (packet.type) {
+      case GST_MPEG_VIDEO_PACKET_PICTURE:
+      {
+        GstMpegVideoPictureHdr pic_hdr = { 0, };
+
+        if (gst_mpeg_video_packet_parse_picture_header (&packet, &pic_hdr)) {
+          is_keyframe = pic_hdr.pic_type == GST_MPEG_VIDEO_PICTURE_TYPE_I;
+        }
+
+        break;
+      }
+      case GST_MPEG_VIDEO_PACKET_SEQUENCE:
+        mpeg2_indexer->sequence_pes_offset = pes_offset;
+        break;
+      default:
+        break;
+    }
+
+    if (is_keyframe &&
+        GST_INDEX_OFFSET_IS_VALID (mpeg2_indexer->sequence_pes_offset)) {
+      MpegTSBaseStream *bstream = (MpegTSBaseStream *) stream;
+
+      GST_DEBUG ("Keyframe at PTS %" GST_TIME_FORMAT
+          " can be found decoding from offset %lu",
+          GST_TIME_ARGS (GST_BUFFER_PTS (buffer)),
+          mpeg2_indexer->sequence_pes_offset);
+
+      gst_index_add_unit (index,
+          gst_stream_get_stream_id (bstream->stream_object),
+          GST_INDEX_UNIT_TYPE_SYNC_POINT,
+          GST_BUFFER_PTS (buffer), mpeg2_indexer->sequence_pes_offset,
+          stream->contiguous, NULL);
+
+      stream->contiguous = TRUE;
+
+      mpeg2_indexer->sequence_pes_offset = GST_INDEX_OFFSET_NONE;
+    }
+  }
+
+  gst_buffer_unmap (buffer, &map);
+}
+
+static Indexer *
+_mpeg2_indexer_new (void)
+{
+  MPEG2Indexer *mpeg2_indexer = g_new0 (MPEG2Indexer, 1);
+  Indexer *indexer = (Indexer *) mpeg2_indexer;
+
+  indexer->scan = _mpeg2_indexer_scan;
+  indexer->clear = _mpeg2_indexer_clear;
+  indexer->free = _mpeg2_indexer_free;
+
+  return indexer;
+}
+
+typedef struct
+{
+  Indexer parent;
+  GstH264NalParser *parser;
+  guint64 sps_pes_offset;
+  guint64 pps_pes_offset;
+} H264Indexer;
+
+static void
+_h264_indexer_free (Indexer * indexer)
+{
+  H264Indexer *h264_indexer = (H264Indexer *) indexer;
+
+  gst_h264_nal_parser_free (h264_indexer->parser);
+  g_free (h264_indexer);
+}
+
+static void
+_h264_indexer_clear (Indexer * indexer, gboolean hard)
+{
+  if (hard) {
+    H264Indexer *h264_indexer = (H264Indexer *) indexer;
+
+    gst_h264_nal_parser_free (h264_indexer->parser);
+    h264_indexer->parser = gst_h264_nal_parser_new ();
+    h264_indexer->sps_pes_offset = GST_INDEX_OFFSET_NONE;
+    h264_indexer->pps_pes_offset = GST_INDEX_OFFSET_NONE;
+  }
+}
+
+static void
+_h264_indexer_scan (Indexer * indexer, TSDemuxStream * stream, GstIndex * index,
+    GstBuffer * buffer, guint64 pes_offset)
+{
+  GstH264ParserResult res = GST_H264_PARSER_OK;
+  gint offset = 0;
+  GstH264NalUnit unit = { 0, };
+  GstH264SliceHdr slice;
+  GstMapInfo map = GST_MAP_INFO_INIT;
+  H264Indexer *h264_indexer = (H264Indexer *) indexer;
+
+  if (!GST_CLOCK_TIME_IS_VALID (GST_BUFFER_PTS (buffer))) {
+    return;
+  }
+
+  gst_buffer_map (buffer, &map, GST_MAP_READ);
+
+  g_assert (GST_INDEX_OFFSET_IS_VALID (pes_offset));
+
+  while (res == GST_H264_PARSER_OK) {
+    gboolean is_keyframe = FALSE;
+
+    res =
+        gst_h264_parser_identify_nalu (h264_indexer->parser, map.data,
+        offset, map.size, &unit);
+
+    if (res != GST_H264_PARSER_OK && res != GST_H264_PARSER_NO_NAL_END) {
+      break;
+    }
+
+    switch (unit.type) {
+      case GST_H264_NAL_SEI:{
+        GArray *messages;
+        guint i;
+
+        res =
+            gst_h264_parser_parse_sei (h264_indexer->parser, &unit, &messages);
+
+        for (i = 0; i < messages->len; i++) {
+          GstH264SEIMessage sei =
+              g_array_index (messages, GstH264SEIMessage, i);
+
+          if (sei.payloadType == GST_H264_SEI_RECOVERY_POINT) {
+            is_keyframe = TRUE;
+          }
+        }
+
+        g_array_free (messages, TRUE);
+
+        break;
+      }
+      case GST_H264_NAL_SLICE:
+        res =
+            gst_h264_parser_parse_slice_hdr (h264_indexer->parser,
+            &unit, &slice, FALSE, FALSE);
+        if (GST_H264_IS_I_SLICE (&slice) || GST_H264_IS_SI_SLICE (&slice)) {
+          is_keyframe = TRUE;
+        }
+        break;
+      case GST_H264_NAL_SLICE_IDR:
+        res = gst_h264_parser_parse_nal (h264_indexer->parser, &unit);
+        is_keyframe = TRUE;
+        break;
+      case GST_H264_NAL_SPS:
+        h264_indexer->sps_pes_offset = pes_offset;
+        res = gst_h264_parser_parse_nal (h264_indexer->parser, &unit);
+        break;
+      case GST_H264_NAL_PPS:
+        h264_indexer->pps_pes_offset = pes_offset;
+        res = gst_h264_parser_parse_nal (h264_indexer->parser, &unit);
+        break;
+      default:
+        res = gst_h264_parser_parse_nal (h264_indexer->parser, &unit);
+        break;
+    }
+
+    if (res != GST_H264_PARSER_OK) {
+      break;
+    }
+
+    if (is_keyframe &&
+        GST_INDEX_OFFSET_IS_VALID (h264_indexer->sps_pes_offset) &&
+        GST_INDEX_OFFSET_IS_VALID (h264_indexer->pps_pes_offset)) {
+      MpegTSBaseStream *bstream = (MpegTSBaseStream *) stream;
+      guint64 sync_offset = MIN (h264_indexer->sps_pes_offset,
+          h264_indexer->pps_pes_offset);
+
+      GST_DEBUG ("Keyframe at PTS %" GST_TIME_FORMAT
+          " can be found decoding from offset %lu",
+          GST_TIME_ARGS (GST_BUFFER_PTS (buffer)), sync_offset);
+
+      gst_index_add_unit (index,
+          gst_stream_get_stream_id (bstream->stream_object),
+          GST_INDEX_UNIT_TYPE_SYNC_POINT,
+          GST_BUFFER_PTS (buffer), sync_offset, stream->contiguous, NULL);
+
+      stream->contiguous = TRUE;
+
+      h264_indexer->sps_pes_offset = GST_INDEX_OFFSET_NONE;
+      h264_indexer->pps_pes_offset = GST_INDEX_OFFSET_NONE;
+    }
+
+    if (offset == unit.sc_offset + unit.size)
+      break;
+
+    offset = unit.sc_offset + unit.size;
+  }
+
+  gst_buffer_unmap (buffer, &map);
+}
+
+static Indexer *
+_h264_indexer_new (void)
+{
+  H264Indexer *h264_indexer = g_new0 (H264Indexer, 1);
+  Indexer *indexer = (Indexer *) h264_indexer;
+
+  indexer->scan = _h264_indexer_scan;
+  indexer->clear = _h264_indexer_clear;
+  indexer->free = _h264_indexer_free;
+
+  h264_indexer->parser = gst_h264_nal_parser_new ();
+  h264_indexer->sps_pes_offset = GST_INDEX_OFFSET_NONE;
+  h264_indexer->pps_pes_offset = GST_INDEX_OFFSET_NONE;
+
+  return indexer;
+}
 
 #define VIDEO_CAPS \
   GST_STATIC_CAPS (\
@@ -347,6 +619,12 @@ static void gst_ts_demux_check_and_sync_streams (GstTSDemux * demux,
     GstClockTime time);
 static void handle_psi (MpegTSBase * base, GstMpegtsSection * section);
 
+static void gst_ts_demux_set_context (GstElement * element,
+    GstContext * context);
+
+static GstStateChangeReturn gst_ts_demux_change_state (GstElement * element,
+    GstStateChange transition);
+
 static void
 _extra_init (void)
 {
@@ -444,6 +722,8 @@ gst_ts_demux_class_init (GstTSDemuxClass * klass)
       gst_static_pad_template_get (&subpicture_template));
   gst_element_class_add_pad_template (element_class,
       gst_static_pad_template_get (&private_template));
+  element_class->set_context = GST_DEBUG_FUNCPTR (gst_ts_demux_set_context);
+  element_class->change_state = GST_DEBUG_FUNCPTR (gst_ts_demux_change_state);
 
   gst_element_class_set_static_metadata (element_class,
       "MPEG transport stream demuxer",
@@ -716,6 +996,138 @@ clear_simple_buffer (SimpleBuffer * sbuf)
 }
 
 static gboolean
+_do_set_context (GstTSDemux * demux, GstContext * context)
+{
+  gboolean ret = FALSE;
+
+  GST_DEBUG_OBJECT (demux, "Setting context %p", context);
+
+  if (gst_context_has_context_type (context, "gst-index")) {
+    const GstStructure *s;
+    GObject *index_obj;
+
+    s = gst_context_get_structure (context);
+
+    if (gst_structure_get (s, "index", G_TYPE_OBJECT, &index_obj, NULL)
+        && GST_IS_INDEX (index_obj)) {
+      if (demux->index)
+        g_object_unref (demux->index);
+
+      demux->index = GST_INDEX (index_obj);
+
+      GST_INFO_OBJECT (demux, "Using index %p from context", index);
+
+      ret = TRUE;
+    } else {
+      GST_ERROR_OBJECT (demux,
+          "gst-index context does not contain an index object");
+    }
+  }
+
+  return ret;
+}
+
+
+static void
+gst_ts_demux_set_context (GstElement * element, GstContext * context)
+{
+  GstTSDemux *demux = GST_TS_DEMUX (element);
+
+  _do_set_context (demux, context);
+
+  GST_ELEMENT_CLASS (parent_class)->set_context (element, context);
+}
+
+static void
+_acquire_index_context (GstTSDemux * demux)
+{
+  MpegTSBase *base = (MpegTSBase *) demux;
+  GstQuery *query = gst_query_new_context ("gst-index");
+  GstContext *context;
+  GstMessage *msg;
+  GstIndex *index;
+  GstStructure *s;
+
+  if (demux->index) {
+    GST_INFO_OBJECT (demux, "Using pre-existing index %p", demux->index);
+    goto done;
+  }
+
+  GST_DEBUG_OBJECT (demux, "Querying index context upstream");
+
+  if (gst_pad_peer_query (base->sinkpad, query)) {
+    gst_query_parse_context (query, &context);
+
+    GST_INFO_OBJECT (demux, "Found context %p in upstream query", context);
+    if (_do_set_context (demux, context)) {
+      goto done;
+    }
+  }
+
+  GST_DEBUG_OBJECT (demux, "Posting need context message for index");
+
+  msg = gst_message_new_need_context (GST_OBJECT_CAST (demux), "gst-index");
+  gst_element_post_message (GST_ELEMENT (demux), msg);
+
+  if (demux->index)
+    goto done;
+
+  GST_DEBUG_OBJECT (demux, "Creating our own index context");
+
+  context = gst_context_new ("gst-index", TRUE);
+  index = GST_INDEX (gst_mem_index_new ());
+  s = gst_context_writable_structure (context);
+  gst_structure_set (s, "index", G_TYPE_OBJECT, index, NULL);
+
+  gst_element_set_context (GST_ELEMENT (demux), context);
+  msg = gst_message_new_have_context (GST_OBJECT (demux), context);
+  gst_element_post_message (GST_ELEMENT (demux), msg);
+
+  g_object_unref (index);
+
+done:
+  g_assert (demux->index);
+  gst_query_unref (query);
+  return;
+}
+
+static GstStateChangeReturn
+gst_ts_demux_change_state (GstElement * element, GstStateChange transition)
+{
+  GstTSDemux *demux;
+
+  demux = GST_TS_DEMUX (element);
+
+  switch (transition) {
+    case GST_STATE_CHANGE_READY_TO_PAUSED:
+      _acquire_index_context (demux);
+      break;
+    default:
+      break;
+  }
+
+  return GST_ELEMENT_CLASS (parent_class)->change_state (element, transition);
+}
+
+static void
+_clear_stream_data (TSDemuxStream * stream, gboolean do_free, gboolean hard)
+{
+  if (stream->indexer)
+    stream->indexer->clear (stream->indexer, hard);
+
+  if (do_free)
+    g_free (stream->data);
+
+  if (hard)
+    stream->pes_offset = GST_INDEX_OFFSET_NONE;
+
+  stream->data = NULL;
+  stream->current_size = 0;
+  stream->allocated_size = 0;
+  stream->expected_size = 0;
+}
+
+static gboolean
 scan_keyframe_h264 (TSDemuxStream * stream, const guint8 * data,
     const gsize data_size, const gsize max_frame_offset)
 {
@@ -859,7 +1271,8 @@ scan_keyframe_h264 (TSDemuxStream * stream, const guint8 * data,
       clear_simple_buffer (&h264infos->framedata);
     }
 
-    g_free (stream->data);
+    _clear_stream_data (stream, TRUE, FALSE);
+
     stream->current_size = gst_byte_writer_get_size (h264infos->sps);
     stream->data = gst_byte_writer_reset_and_get_data (h264infos->sps);
     gst_byte_writer_init (h264infos->sps);
@@ -909,6 +1322,57 @@ gst_ts_demux_adjust_seek_offset_for_keyframe (TSDemuxStream * stream,
   return TRUE;
 }
 
+/* Browse all streams for the current program, and determine if we
+ * can find an index entry for a keyframe for all streams that need one.
+ *
+ * If so, return the earliest offset, otherwise GST_INDEX_OFFSET_NONE
+ */
+static guint64
+_index_offset_for_target (GstTSDemux * demux, GstClockTime target)
+{
+  guint64 ret = GST_INDEX_OFFSET_NONE;
+
+  for (GList * tmp = demux->program->stream_list; tmp; tmp = tmp->next) {
+    TSDemuxStream *stream = (TSDemuxStream *) tmp->data;
+    MpegTSBaseStream *bstream = (MpegTSBaseStream *) stream;
+    int scan_pid = bstream->pid;
+    const gchar *stream_id = gst_stream_get_stream_id (bstream->stream_object);
+    GstClockTime index_stream_time;
+    guint64 index_offset;
+
+    if (!stream->indexer)
+      continue;
+
+    if (scan_pid == -1)
+      continue;
+
+    if (gst_index_lookup_unit_time (demux->index,
+            stream_id,
+            GST_INDEX_LOOKUP_METHOD_BEFORE,
+            GST_INDEX_UNIT_TYPE_SYNC_POINT,
+            GST_INDEX_LOOKUP_FLAG_CONTIGUOUS, target, &index_stream_time,
+            &index_offset, NULL)) {
+      if (!GST_INDEX_OFFSET_IS_VALID (ret) || ret >= index_offset)
+        ret = index_offset;
+    } else {
+      ret = GST_INDEX_OFFSET_NONE;
+      break;
+    }
+  }
+
+  if (GST_INDEX_OFFSET_IS_VALID (ret)) {
+    GST_DEBUG_OBJECT (demux,
+        "Seeking to %" GST_TIME_FORMAT ", index offset is %" G_GUINT64_FORMAT,
+        GST_TIME_ARGS (target), ret);
+  } else {
+    GST_DEBUG_OBJECT (demux,
+        "No index offset found for target %" GST_TIME_FORMAT,
+        GST_TIME_ARGS (target));
+  }
+
+  return ret;
+}
+
 static GstFlowReturn
 gst_ts_demux_do_seek (MpegTSBase * base, GstEvent * event)
 {
@@ -936,6 +1400,14 @@ gst_ts_demux_do_seek (MpegTSBase * base, GstEvent * event)
 
   gst_event_parse_seek (event, &rate, &format, &flags, &start_type, &start,
       &stop_type, &stop);
+
+  if (GST_CLOCK_TIME_IS_VALID (start)) {
+    start += demux->program->initial_pts_offset;
+  }
+
+  if (GST_CLOCK_TIME_IS_VALID (stop)) {
+    stop += demux->program->initial_pts_offset;
+  }
 
   if (rate <= 0.0) {
     GST_WARNING_OBJECT (demux, "Negative rate not supported");
@@ -968,20 +1440,31 @@ gst_ts_demux_do_seek (MpegTSBase * base, GstEvent * event)
   /* If the position actually changed, update == TRUE */
   g_mutex_lock (&demux->lock);
   if (update) {
+    guint64 index_offset;
     GstClockTime target = seeksegment.start;
-    if (target >= SEEK_TIMESTAMP_OFFSET)
-      target -= SEEK_TIMESTAMP_OFFSET;
-    else
-      target = 0;
+    gboolean needs_keyframe = TRUE;
 
-    start_offset =
-        mpegts_packetizer_ts_to_offset (base->packetizer, target,
-        demux->program->pcr_pid);
-    if (G_UNLIKELY (start_offset == -1)) {
-      GST_WARNING_OBJECT (demux,
-          "Couldn't convert start position to an offset");
-      g_mutex_unlock (&demux->lock);
-      goto done;
+    if ((index_offset =
+            _index_offset_for_target (demux,
+                target)) != GST_INDEX_OFFSET_NONE) {
+      start_offset = index_offset;
+      needs_keyframe = FALSE;
+    } else {
+      if (target >= SEEK_TIMESTAMP_OFFSET)
+        target -= SEEK_TIMESTAMP_OFFSET;
+      else
+        target = 0;
+
+      start_offset =
+          mpegts_packetizer_ts_to_offset (base->packetizer, target,
+          demux->program->pcr_pid);
+      if (G_UNLIKELY (start_offset == -1)) {
+        GST_WARNING_OBJECT (demux,
+            "Couldn't convert start position to an offset");
+        g_mutex_unlock (&demux->lock);
+        goto done;
+      }
+
     }
 
     base->seek_offset = start_offset;
@@ -996,12 +1479,13 @@ gst_ts_demux_do_seek (MpegTSBase * base, GstEvent * event)
       TSDemuxStream *stream = tmp->data;
 
       if (flags & GST_SEEK_FLAG_ACCURATE)
-        stream->needs_keyframe = TRUE;
+        stream->needs_keyframe = needs_keyframe;
 
       stream->seeked_pts = GST_CLOCK_TIME_NONE;
       stream->seeked_dts = GST_CLOCK_TIME_NONE;
       stream->first_pts = GST_CLOCK_TIME_NONE;
       stream->need_newsegment = TRUE;
+      stream->contiguous = FALSE;
     }
   } else {
     /* Position didn't change, just update the output segment based on
@@ -2030,12 +2514,15 @@ gst_ts_demux_stream_added (MpegTSBase * base, MpegTSBaseStream * bstream,
         gst_flow_combiner_add_pad (demux->flowcombiner, stream->pad);
     }
 
-    if (base->mode != BASE_MODE_PUSHING
-        && bstream->stream_type == GST_MPEGTS_STREAM_TYPE_VIDEO_H264) {
-      stream->scan_function =
-          (GstTsDemuxKeyFrameScanFunction) scan_keyframe_h264;
-    } else {
-      stream->scan_function = NULL;
+    if (base->mode != BASE_MODE_PUSHING) {
+      if (bstream->stream_type == GST_MPEGTS_STREAM_TYPE_VIDEO_H264) {
+        stream->scan_function =
+            (GstTsDemuxKeyFrameScanFunction) scan_keyframe_h264;
+
+        stream->indexer = _h264_indexer_new ();
+      } else if (bstream->stream_type == GST_MPEGTS_STREAM_TYPE_VIDEO_MPEG2) {
+        stream->indexer = _mpeg2_indexer_new ();
+      }
     }
 
     stream->active = FALSE;
@@ -2058,6 +2545,7 @@ gst_ts_demux_stream_added (MpegTSBase * base, MpegTSBaseStream * bstream,
     /* Only wait for a valid timestamp if we have a PCR_PID */
     stream->pending_ts = program->pcr_pid < 0x1fff;
     stream->continuity_counter = CONTINUITY_UNSET;
+    stream->contiguous = TRUE;
   }
 
   return (stream->pad != NULL);
@@ -2113,6 +2601,11 @@ gst_ts_demux_stream_removed (MpegTSBase * base, MpegTSBaseStream * bstream)
   }
 
   tsdemux_h264_parsing_info_clear (&stream->h264infos);
+
+  if (stream->indexer) {
+    stream->indexer->free (stream->indexer);
+    stream->indexer = NULL;
+  }
 }
 
 static void
@@ -2133,20 +2626,37 @@ activate_pad_for_stream (GstTSDemux * tsdemux, TSDemuxStream * stream)
 }
 
 static void
+_clear_pending_buffer (PendingBuffer * pend)
+{
+  if (pend->buffer) {
+    gst_buffer_unref (pend->buffer);
+    pend->buffer = NULL;
+  }
+
+  g_slice_free (PendingBuffer, pend);
+}
+
+static void
+_clear_pending_buffers (TSDemuxStream * stream)
+{
+  if (G_UNLIKELY (stream->pending)) {
+    GST_DEBUG ("clearing pending %p", stream);
+    g_list_free_full (stream->pending, (GDestroyNotify) _clear_pending_buffer);
+    stream->pending = NULL;
+  }
+}
+
+static void
 gst_ts_demux_stream_flush (TSDemuxStream * stream, GstTSDemux * tsdemux,
     gboolean hard)
 {
   GST_DEBUG ("flushing stream %p", stream);
 
-  g_free (stream->data);
-  stream->data = NULL;
+  _clear_stream_data (stream, TRUE, TRUE);
   g_free (stream->pending_header_data);
   stream->pending_header_data = NULL;
   stream->pending_header_size = 0;
   stream->state = PENDING_PACKET_EMPTY;
-  stream->expected_size = 0;
-  stream->allocated_size = 0;
-  stream->current_size = 0;
   stream->discont = TRUE;
   stream->pts = GST_CLOCK_TIME_NONE;
   stream->dts = GST_CLOCK_TIME_NONE;
@@ -2157,19 +2667,9 @@ gst_ts_demux_stream_flush (TSDemuxStream * stream, GstTSDemux * tsdemux,
   stream->gap_ref_buffers = 0;
   stream->gap_ref_pts = GST_CLOCK_TIME_NONE;
   stream->continuity_counter = CONTINUITY_UNSET;
+  stream->contiguous = FALSE;
 
-  if (G_UNLIKELY (stream->pending)) {
-    GList *tmp;
-
-    GST_DEBUG ("clearing pending %p", stream);
-    for (tmp = stream->pending; tmp; tmp = tmp->next) {
-      PendingBuffer *pend = (PendingBuffer *) tmp->data;
-      gst_buffer_unref (pend->buffer);
-      g_slice_free (PendingBuffer, pend);
-    }
-    g_list_free (stream->pending);
-    stream->pending = NULL;
-  }
+  _clear_pending_buffers (stream);
 
   if (hard) {
     stream->first_pts = GST_CLOCK_TIME_NONE;
@@ -2729,8 +3229,7 @@ gst_ts_demux_queue_data (GstTSDemux * demux, TSDemuxStream * stream,
         /* A mismatch is fatal, except if this is the beginning of a new
          * frame (from which we can recover) */
         if (G_UNLIKELY (stream->data)) {
-          g_free (stream->data);
-          stream->data = NULL;
+          _clear_stream_data (stream, TRUE, TRUE);
         }
         if (G_UNLIKELY (stream->pending_header_data)) {
           g_free (stream->pending_header_data);
@@ -2768,6 +3267,7 @@ gst_ts_demux_queue_data (GstTSDemux * demux, TSDemuxStream * stream,
     case PENDING_PACKET_HEADER:
     {
       GST_LOG_OBJECT (demux, "HEADER: Parsing PES header");
+      stream->pes_offset = packet->offset;
 
       /* parse the header */
       gst_ts_demux_parse_pes_header (demux, stream, data, size, packet->offset);
@@ -2791,8 +3291,7 @@ gst_ts_demux_queue_data (GstTSDemux * demux, TSDemuxStream * stream,
     {
       GST_LOG_OBJECT (demux, "DISCONT: not storing/pushing");
       if (G_UNLIKELY (stream->data)) {
-        g_free (stream->data);
-        stream->data = NULL;
+        _clear_stream_data (stream, TRUE, TRUE);
       }
       if (G_UNLIKELY (stream->pending_header_data)) {
         g_free (stream->pending_header_data);
@@ -2865,6 +3364,12 @@ calculate_and_push_newsegment (GstTSDemux * demux, TSDemuxStream * stream,
       seg->time = firstts;
       seg->rate = demux->rate;
       seg->base = base;
+
+      /* Record the offset we applied to our initial segment. From now
+       * on we can start accepting seeks and offseting the requested
+       * target position consistently.
+       */
+      target_program->initial_pts_offset = firstts;
     }
   } else if (base->out_segment.start < firstts) {
     /* Take into account the offset to the first buffer timestamp */
@@ -3067,18 +3572,14 @@ parse_opus_access_unit (TSDemuxStream * stream)
     gst_buffer_list_add (buffer_list, buffer);
   } while (gst_byte_reader_get_remaining (&reader) > 0);
 
-  g_free (stream->data);
-  stream->data = NULL;
-  stream->current_size = 0;
+  _clear_stream_data (stream, TRUE, FALSE);
 
   return buffer_list;
 
 error:
   {
     GST_ERROR ("Failed to parse Opus access unit");
-    g_free (stream->data);
-    stream->data = NULL;
-    stream->current_size = 0;
+    _clear_stream_data (stream, TRUE, TRUE);
     if (buffer_list)
       gst_buffer_list_unref (buffer_list);
     return NULL;
@@ -3232,15 +3733,12 @@ parse_jp2k_access_unit (TSDemuxStream * stream)
   retbuf = gst_buffer_new_wrapped_full (0, stream->data, stream->current_size,
       data_location, stream->current_size - data_location,
       stream->data, g_free);
-  stream->data = NULL;
-  stream->current_size = 0;
+  _clear_stream_data (stream, FALSE, FALSE);
   return retbuf;
 
 error:
   GST_ERROR ("Failed to parse JP2K access unit");
-  g_free (stream->data);
-  stream->data = NULL;
-  stream->current_size = 0;
+  _clear_stream_data (stream, TRUE, TRUE);
   return NULL;
 }
 
@@ -3450,6 +3948,7 @@ gst_ts_demux_push_pending_data (GstTSDemux * demux, TSDemuxStream * stream,
         PendingBuffer *pend;
         pend = g_slice_new0 (PendingBuffer);
         pend->buffer = buffer;
+        pend->pes_offset = stream->pes_offset;
         pend->pts = stream->raw_pts;
         pend->dts = stream->raw_dts;
         stream->pending = g_list_append (stream->pending, pend);
@@ -3463,10 +3962,12 @@ gst_ts_demux_push_pending_data (GstTSDemux * demux, TSDemuxStream * stream,
           pend->buffer = gst_buffer_ref (gst_buffer_list_get (buffer_list, i));
           pend->pts = i == 0 ? stream->raw_pts : -1;
           pend->dts = i == 0 ? stream->raw_dts : -1;
+          pend->pes_offset = stream->pes_offset;
           stream->pending = g_list_append (stream->pending, pend);
         }
         gst_buffer_list_unref (buffer_list);
       }
+      stream->pes_offset = GST_INDEX_OFFSET_NONE;
       GST_DEBUG_OBJECT (demux,
           "Not enough information to push buffers yet, storing buffer");
       goto beach;
@@ -3491,9 +3992,16 @@ gst_ts_demux_push_pending_data (GstTSDemux * demux, TSDemuxStream * stream,
         GST_BUFFER_FLAG_SET (pend->buffer, GST_BUFFER_FLAG_DISCONT);
       stream->discont = FALSE;
 
+      if (stream->indexer) {
+        stream->indexer->scan (stream->indexer, stream, demux->index,
+            pend->buffer, pend->pes_offset);
+      }
+
       res = gst_pad_push (stream->pad, pend->buffer);
+
       stream->nb_out_buffers += 1;
-      g_slice_free (PendingBuffer, pend);
+      pend->buffer = NULL;
+      _clear_pending_buffer (pend);
     }
     g_list_free (stream->pending);
     stream->pending = NULL;
@@ -3550,6 +4058,11 @@ gst_ts_demux_push_pending_data (GstTSDemux * demux, TSDemuxStream * stream,
   }
 
   if (buffer) {
+    if (stream->indexer) {
+      stream->indexer->scan (stream->indexer, stream, demux->index, buffer,
+          stream->pes_offset);
+    }
+
     res = gst_pad_push (stream->pad, buffer);
     /* Record that a buffer was pushed */
     stream->nb_out_buffers += 1;
@@ -3559,6 +4072,9 @@ gst_ts_demux_push_pending_data (GstTSDemux * demux, TSDemuxStream * stream,
     /* Record that a buffer was pushed */
     stream->nb_out_buffers += n;
   }
+
+  stream->pes_offset = GST_INDEX_OFFSET_NONE;
+
   GST_DEBUG_OBJECT (stream->pad, "Returned %s", gst_flow_get_name (res));
   res = gst_flow_combiner_update_flow (demux->flowcombiner, res);
   GST_DEBUG_OBJECT (stream->pad, "combined %s", gst_flow_get_name (res));
@@ -3599,9 +4115,7 @@ beach:
     else
       stream->expected_size -= stream->current_size;
   }
-  stream->data = NULL;
-  stream->allocated_size = 0;
-  stream->current_size = 0;
+  _clear_stream_data (stream, FALSE, FALSE);
 
   return res;
 }

@@ -22,6 +22,7 @@ core_tests = [
   [ 'gst/gstghostpad.c', not gst_registry ],
   [ 'gst/gstinfo.c' ],
   [ 'gst/gstiterator.c' ],
+  [ 'gst/gstmemindex.c' ],
   [ 'gst/gstmessage.c' ],
   [ 'gst/gstmemory.c' ],
   [ 'gst/gstmeta.c' ],

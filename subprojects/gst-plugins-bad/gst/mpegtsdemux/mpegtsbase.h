@@ -98,6 +98,8 @@ struct _MpegTSBaseProgram
 
   /* TRUE if the program shouldn't be freed */
   gboolean recycle;
+
+  GstClockTime initial_pts_offset;
 };
 
 typedef enum {

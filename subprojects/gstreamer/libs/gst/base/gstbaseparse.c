@@ -182,11 +182,6 @@
 
 #include "gstbaseparse.h"
 
-/* FIXME: get rid of old GstIndex code */
-#include "gstindex.h"
-#include "gstindex.c"
-#include "gstmemindex.c"
-
 #define GST_BASE_PARSE_FRAME_PRIVATE_FLAG_NOALLOC  (1 << 0)
 
 #define MIN_FRAMES_TO_POST_BITRATE 10
@@ -274,10 +269,10 @@ struct _GstBaseParsePrivate
   GstBuffer *cache;
 
   /* index entry storage, either ours or provided */
-  GstIndex *index;
-  gint index_id;
   gboolean own_index;
   GMutex index_lock;
+
+  GstIndex *index;
 
   /* seek table entries only maintained if upstream is BYTE seekable */
   gboolean upstream_seekable;
@@ -333,6 +328,8 @@ struct _GstBaseParsePrivate
 
   /* if TRUE, a STREAM_START event needs to be pushed */
   gboolean push_stream_start;
+  /* The stream ID of the STREAM_START event we push downstream */
+  gchar *stream_id;
 
   /* When we need to skip more data than we have currently */
   guint skip;
@@ -524,14 +521,56 @@ gst_base_parse_finalize (GObject * object)
   g_object_unref (parse->priv->adapter);
 
   if (parse->priv->index) {
-    gst_object_unref (parse->priv->index);
+    g_object_unref (parse->priv->index);
     parse->priv->index = NULL;
   }
+
   g_mutex_clear (&parse->priv->index_lock);
 
   gst_base_parse_clear_queues (parse);
 
   G_OBJECT_CLASS (parent_class)->finalize (object);
+}
+
+static gboolean
+_do_set_context (GstBaseParse * parse, GstContext * context)
+{
+  gboolean ret = FALSE;
+
+  GST_DEBUG_OBJECT (parse, "Setting context %p", context);
+
+  if (gst_context_has_context_type (context, "gst-index")) {
+    const GstStructure *s;
+    GObject *index_obj;
+
+    s = gst_context_get_structure (context);
+
+    if (gst_structure_get (s, "index", G_TYPE_OBJECT, &index_obj, NULL)
+        && GST_IS_INDEX (index_obj)) {
+      g_clear_object (&parse->priv->index);
+
+      parse->priv->index = GST_INDEX (index_obj);
+
+      GST_INFO_OBJECT (parse, "Using index %p from context", index);
+
+      ret = TRUE;
+    } else {
+      GST_ERROR_OBJECT (parse,
+          "gst-index context does not contain an index object");
+    }
+  }
+
+  return ret;
+}
+
+static void
+gst_base_parse_set_context (GstElement * element, GstContext * context)
+{
+  GstBaseParse *parse = GST_BASE_PARSE (element);
+
+  _do_set_context (parse, context);
+
+  GST_ELEMENT_CLASS (parent_class)->set_context (element, context);
 }
 
 static void
@@ -575,6 +614,8 @@ gst_base_parse_class_init (GstBaseParseClass * klass)
   gstelement_class->set_index = GST_DEBUG_FUNCPTR (gst_base_parse_set_index);
   gstelement_class->get_index = GST_DEBUG_FUNCPTR (gst_base_parse_get_index);
 #endif
+  gstelement_class->set_context =
+      GST_DEBUG_FUNCPTR (gst_base_parse_set_context);
 
   /* Default handlers */
   klass->sink_event = gst_base_parse_sink_event_default;
@@ -1534,8 +1575,16 @@ gst_base_parse_sink_event_default (GstBaseParse * parse, GstEvent * event)
     }
     case GST_EVENT_STREAM_START:
     {
-      if (parse->priv->pad_mode != GST_PAD_MODE_PULL)
+      if (parse->priv->pad_mode != GST_PAD_MODE_PULL) {
+        const gchar *stream_id;
         forward_immediate = TRUE;
+
+        g_free (parse->priv->stream_id);
+
+        gst_event_parse_stream_start (event, &stream_id);
+
+        parse->priv->stream_id = g_strdup (stream_id);
+      }
 
       gst_base_parse_set_upstream_tags (parse, NULL);
       parse->priv->tags_changed = TRUE;
@@ -2005,12 +2054,13 @@ gst_base_parse_add_index_entry (GstBaseParse * parse, guint64 offset,
     GstClockTime ts, gboolean key, gboolean force)
 {
   gboolean ret = FALSE;
-  GstIndexAssociation associations[2];
 
   g_return_val_if_fail (GST_CLOCK_TIME_IS_VALID (ts), FALSE);
+  g_return_val_if_fail (parse->priv->stream_id != NULL, FALSE);
 
   GST_LOG_OBJECT (parse, "Adding key=%d index entry %" GST_TIME_FORMAT
-      " @ offset 0x%08" G_GINT64_MODIFIER "x", key, GST_TIME_ARGS (ts), offset);
+      " @ offset 0x%08" G_GINT64_MODIFIER "x for stream_id %s", key,
+      GST_TIME_ARGS (ts), offset, parse->priv->stream_id);
 
   if (G_LIKELY (!force)) {
 
@@ -2053,17 +2103,13 @@ gst_base_parse_add_index_entry (GstBaseParse * parse, guint64 offset,
     }
   }
 
-  associations[0].format = GST_FORMAT_TIME;
-  associations[0].value = ts;
-  associations[1].format = GST_FORMAT_BYTES;
-  associations[1].value = offset;
-
   /* index might change on-the-fly, although that would be nutty app ... */
   GST_BASE_PARSE_INDEX_LOCK (parse);
-  gst_index_add_associationv (parse->priv->index, parse->priv->index_id,
-      (key) ? GST_INDEX_ASSOCIATION_FLAG_KEY_UNIT :
-      GST_INDEX_ASSOCIATION_FLAG_DELTA_UNIT, 2,
-      (const GstIndexAssociation *) &associations);
+
+  gst_index_add_unit (parse->priv->index, parse->priv->stream_id,
+      (key) ? GST_INDEX_UNIT_TYPE_SYNC_POINT :
+      GST_INDEX_UNIT_TYPE_NONE, ts, offset, TRUE, NULL);
+
   GST_BASE_PARSE_INDEX_UNLOCK (parse);
 
   if (key) {
@@ -3595,20 +3641,17 @@ gst_base_parse_loop (GstPad * pad)
   GST_LOG_OBJECT (parse, "Entering parse loop");
 
   if (G_UNLIKELY (parse->priv->push_stream_start)) {
-    gchar *stream_id;
     GstEvent *event;
 
-    stream_id =
-        gst_pad_create_stream_id (parse->srcpad, GST_ELEMENT_CAST (parse),
-        NULL);
+    g_assert_nonnull (parse->priv->stream_id);
 
-    event = gst_event_new_stream_start (stream_id);
+    event = gst_event_new_stream_start (parse->priv->stream_id);
     gst_event_set_group_id (event, gst_util_group_id_next ());
 
     GST_DEBUG_OBJECT (parse, "Pushing STREAM_START");
+
     gst_pad_push_event (parse->srcpad, event);
     parse->priv->push_stream_start = FALSE;
-    g_free (stream_id);
   }
 
   /* reverse playback:
@@ -3819,6 +3862,11 @@ gst_base_parse_sink_activate_mode (GstPad * pad, GstObject * parent,
 
         parse->priv->pending_events =
             g_list_prepend (parse->priv->pending_events, ev);
+
+        parse->priv->stream_id =
+            gst_pad_create_stream_id (parse->srcpad, GST_ELEMENT_CAST (parse),
+            NULL);
+
         result = TRUE;
       } else {
         result = gst_pad_stop_task (pad);
@@ -3832,6 +3880,11 @@ gst_base_parse_sink_activate_mode (GstPad * pad, GstObject * parent,
     parse->priv->pad_mode = active ? mode : GST_PAD_MODE_NONE;
 
   GST_DEBUG_OBJECT (parse, "sink activate return: %d", result);
+
+  if (!active) {
+    g_free (parse->priv->stream_id);
+    parse->priv->stream_id = NULL;
+  }
 
   return result;
 
@@ -4548,44 +4601,39 @@ static gint64
 gst_base_parse_find_offset (GstBaseParse * parse, GstClockTime time,
     gboolean before, GstClockTime * _ts)
 {
-  gint64 bytes = 0, ts = 0;
-  GstIndexEntry *entry = NULL;
+  gint64 bytes = 0;
+  GstClockTime target_ts = GST_CLOCK_TIME_NONE;
+  guint64 target_offset;
 
-  if (time == GST_CLOCK_TIME_NONE) {
-    ts = time;
+  if (time == GST_CLOCK_TIME_NONE || !parse->priv->stream_id) {
     bytes = -1;
     goto exit;
   }
 
   GST_BASE_PARSE_INDEX_LOCK (parse);
-  if (parse->priv->index) {
-    /* Let's check if we have an index entry for that time */
-    entry = gst_index_get_assoc_entry (parse->priv->index,
-        parse->priv->index_id,
-        before ? GST_INDEX_LOOKUP_BEFORE : GST_INDEX_LOOKUP_AFTER,
-        GST_INDEX_ASSOCIATION_FLAG_KEY_UNIT, GST_FORMAT_TIME, time);
-  }
-
-  if (entry) {
-    gst_index_entry_assoc_map (entry, GST_FORMAT_BYTES, &bytes);
-    gst_index_entry_assoc_map (entry, GST_FORMAT_TIME, &ts);
-
+  if (parse->priv->index
+      && gst_index_lookup_unit_time (parse->priv->index, parse->priv->stream_id,
+          before ? GST_INDEX_LOOKUP_METHOD_BEFORE :
+          GST_INDEX_LOOKUP_METHOD_AFTER, GST_INDEX_UNIT_TYPE_SYNC_POINT,
+          GST_INDEX_LOOKUP_FLAG_CONTIGUOUS, time, &target_ts, &target_offset,
+          NULL)) {
+    bytes = (gint64) target_offset;
     GST_DEBUG_OBJECT (parse, "found index entry for %" GST_TIME_FORMAT
         " at %" GST_TIME_FORMAT ", offset %" G_GINT64_FORMAT,
-        GST_TIME_ARGS (time), GST_TIME_ARGS (ts), bytes);
+        GST_TIME_ARGS (time), GST_TIME_ARGS (target_ts), bytes);
   } else {
     GST_DEBUG_OBJECT (parse, "no index entry found for %" GST_TIME_FORMAT,
         GST_TIME_ARGS (time));
     if (!before) {
       bytes = -1;
-      ts = GST_CLOCK_TIME_NONE;
+      target_ts = GST_CLOCK_TIME_NONE;
     }
   }
   GST_BASE_PARSE_INDEX_UNLOCK (parse);
 
 exit:
   if (_ts)
-    *_ts = ts;
+    *_ts = target_ts;
 
   return bytes;
 }
@@ -4938,6 +4986,65 @@ gst_base_parse_get_index (GstElement * element)
 }
 #endif
 
+static void
+_acquire_index_context_unlocked (GstBaseParse * parse)
+{
+  GstQuery *query;
+  GstContext *context;
+  GstMessage *msg;
+  GstIndex *index;
+  GstStructure *s;
+
+  query = gst_query_new_context ("gst-index");
+
+  GST_DEBUG_OBJECT (parse, "Querying index context upstream");
+
+  if (gst_pad_peer_query (parse->srcpad, query)) {
+    gst_query_parse_context (query, &context);
+
+    GST_INFO_OBJECT (parse, "Found context %p in upstream query", context);
+    if (_do_set_context (parse, context)) {
+      goto done;
+    }
+  }
+
+  GST_DEBUG_OBJECT (parse, "Querying index context upstream");
+
+  if (gst_pad_peer_query (parse->sinkpad, query)) {
+    gst_query_parse_context (query, &context);
+
+    GST_INFO_OBJECT (parse, "Found context %p in upstream query", context);
+    if (_do_set_context (parse, context)) {
+      goto done;
+    }
+  }
+
+  GST_DEBUG_OBJECT (parse, "Posting need context message for index");
+
+  msg = gst_message_new_need_context (GST_OBJECT_CAST (parse), "gst-index");
+  gst_element_post_message (GST_ELEMENT (parse), msg);
+
+  if (parse->priv->index)
+    goto done;
+
+  GST_DEBUG_OBJECT (parse, "Creating our own index context");
+
+  context = gst_context_new ("gst-index", TRUE);
+  index = GST_INDEX (gst_mem_index_new ());
+  s = gst_context_writable_structure (context);
+  gst_structure_set (s, "index", G_TYPE_OBJECT, index, NULL);
+
+  gst_element_set_context (GST_ELEMENT (parse), context);
+  msg = gst_message_new_have_context (GST_OBJECT (parse), context);
+  gst_element_post_message (GST_ELEMENT (parse), msg);
+
+  g_object_unref (index);
+
+done:
+  g_assert (parse->priv->index);
+  gst_query_unref (query);
+}
+
 static GstStateChangeReturn
 gst_base_parse_change_state (GstElement * element, GstStateChange transition)
 {
@@ -4951,6 +5058,8 @@ gst_base_parse_change_state (GstElement * element, GstStateChange transition)
       /* If this is our own index destroy it as the
        * old entries might be wrong for the new stream */
       GST_BASE_PARSE_INDEX_LOCK (parse);
+      _acquire_index_context_unlocked (parse);
+#if 0
       if (parse->priv->own_index) {
         gst_object_unref (parse->priv->index);
         parse->priv->index = NULL;
@@ -4966,6 +5075,7 @@ gst_base_parse_change_state (GstElement * element, GstStateChange transition)
             &parse->priv->index_id);
         parse->priv->own_index = TRUE;
       }
+#endif
       GST_BASE_PARSE_INDEX_UNLOCK (parse);
       break;
     default:

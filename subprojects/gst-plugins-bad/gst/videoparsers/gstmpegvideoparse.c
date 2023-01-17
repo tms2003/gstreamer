@@ -219,6 +219,8 @@ gst_mpegv_parse_reset (GstMpegvParse * mpvparse)
   mpvparse->seqdispext_updated = FALSE;
   mpvparse->picext_updated = FALSE;
   mpvparse->quantmatrext_updated = FALSE;
+
+  mpvparse->gop_pts = GST_CLOCK_TIME_NONE;
 }
 
 static gboolean
@@ -517,12 +519,41 @@ gst_mpegv_parse_process_sc (GstMpegvParse * mpvparse,
       ret = TRUE;
       break;
     case GST_MPEG_VIDEO_PACKET_GOP:
+    {
+      GstMpegVideoGop gop = { 0, };
+
+      if (!gst_mpeg_video_packet_parse_gop (packet, &gop)) {
+        GST_WARNING_OBJECT (mpvparse, "failed to parse GOP");
+      } else {
+        GstVideoTimeCode *tc;
+        GstVideoTimeCodeFlags tc_flags = GST_VIDEO_TIME_CODE_FLAGS_NONE;
+
+        if (gop.drop_frame_flag) {
+          tc_flags |= GST_VIDEO_TIME_CODE_FLAGS_DROP_FRAME;
+        }
+
+        if (!mpvparse->sequenceext.progressive) {
+          tc_flags |= GST_VIDEO_TIME_CODE_FLAGS_INTERLACED;
+        }
+
+        tc = gst_video_time_code_new (mpvparse->fps_num, mpvparse->fps_den,
+            NULL, tc_flags, gop.hour, gop.minute, gop.second, gop.frame,
+            mpvparse->sequenceext.progressive ? 0 : 1);
+
+        if (gst_video_time_code_is_valid (tc)) {
+          mpvparse->gop_pts = gst_video_time_code_nsec_since_daily_jam (tc);
+        }
+
+        gst_video_time_code_free (tc);
+      }
+
       GST_LOG_OBJECT (mpvparse, "startcode is GOP");
       if (mpvparse->seq_offset >= 0)
         ret = mpvparse->gop_split;
       else
         ret = TRUE;
       break;
+    }
     case GST_MPEG_VIDEO_PACKET_EXTENSION:
       mpvparse->config_flags |= FLAG_MPEG2;
       GST_LOG_OBJECT (mpvparse, "startcode is VIDEO PACKET EXTENSION");
@@ -928,10 +959,17 @@ gst_mpegv_parse_parse_frame (GstBaseParse * parse, GstBaseParseFrame * frame)
   GstMpegvParse *mpvparse = GST_MPEGVIDEO_PARSE (parse);
   GstBuffer *buffer = frame->buffer;
 
-  if (G_UNLIKELY (mpvparse->pichdr.pic_type == GST_MPEG_VIDEO_PICTURE_TYPE_I))
+  if (G_UNLIKELY (mpvparse->pichdr.pic_type == GST_MPEG_VIDEO_PICTURE_TYPE_I)) {
+    if (GST_CLOCK_TIME_IS_VALID (mpvparse->gop_pts)) {
+      GST_BUFFER_PTS (buffer) = mpvparse->gop_pts;
+    }
+
     GST_BUFFER_FLAG_UNSET (buffer, GST_BUFFER_FLAG_DELTA_UNIT);
-  else
+  } else {
     GST_BUFFER_FLAG_SET (buffer, GST_BUFFER_FLAG_DELTA_UNIT);
+  }
+
+  mpvparse->gop_pts = GST_CLOCK_TIME_NONE;
 
   /* maybe only sequence in this buffer, though not recommended,
    * so mark it as such and force 0 duration */

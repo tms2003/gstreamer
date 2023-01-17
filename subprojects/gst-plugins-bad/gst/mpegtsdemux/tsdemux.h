@@ -110,6 +110,8 @@ struct _GstTSDemux
 
   /* This is to protect demux->segment_event */
   GMutex lock;
+
+  GstIndex *index;
 };
 
 struct _GstTSDemuxClass

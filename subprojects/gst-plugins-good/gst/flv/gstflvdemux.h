@@ -72,8 +72,6 @@ struct _GstFlvDemux
   /* <private> */
   
   GstIndex *index;
-  gint index_id;
-  gboolean own_index;
   
   GArray * times;
   GArray * filepositions;
