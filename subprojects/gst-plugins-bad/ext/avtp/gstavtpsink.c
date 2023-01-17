@@ -34,6 +34,13 @@
  * application after the element transitions to PAUSED state if wanted.
  * </note>
  *
+ * <note>
+ * In order for the "buffer-time" property's flow control to work correctly it
+ * is important to properly configure the max limits of the queue elements in
+ * your pipelines. Large files fed though a filesrc _WILL_ fill up all available
+ * memory if given the option. Consider yourself warned.
+ * </note>
+ *
  * <refsect2>
  * <title>Example pipeline</title>
  * |[
@@ -63,10 +70,14 @@ GST_DEBUG_CATEGORY_STATIC (avtpsink_debug);
 #define DEFAULT_IFNAME "eth0"
 #define DEFAULT_ADDRESS "01:AA:AA:AA:AA:AA"
 #define DEFAULT_PRIORITY 0
+/* Microseconds for audiobasesink compatibility... */
+#define DEFAULT_BUFFER_TIME (500 * GST_MSECOND / 1000)
 
 #define NSEC_PER_SEC  1000000000
 #define TAI_OFFSET    (37ULL * NSEC_PER_SEC)
 #define UTC_TO_TAI(t) (t + TAI_OFFSET)
+
+#define RESEND_DELAY  50000 /* us */
 
 enum
 {
@@ -74,6 +85,7 @@ enum
   PROP_IFNAME,
   PROP_ADDRESS,
   PROP_PRIORITY,
+  PROP_BUFFER_TIME,
 };
 
 static GstStaticPadTemplate sink_template = GST_STATIC_PAD_TEMPLATE ("sink",
@@ -125,6 +137,11 @@ gst_avtp_sink_class_init (GstAvtpSinkClass * klass)
           "Priority configured into socket (SO_PRIORITY)", 0, G_MAXINT,
           DEFAULT_PRIORITY, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
           GST_PARAM_MUTABLE_READY));
+  g_object_class_install_property (object_class, PROP_BUFFER_TIME,
+      g_param_spec_uint64 ("buffer-time", "Buffer Time",
+          "Size of AVTP buffer in microseconds (0=unlimited)", 0, G_MAXUINT64,
+          DEFAULT_BUFFER_TIME, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
+          GST_PARAM_MUTABLE_READY));
 
   gst_element_class_add_static_pad_template (element_class, &sink_template);
 
@@ -149,6 +166,7 @@ gst_avtp_sink_init (GstAvtpSink * avtpsink)
   avtpsink->ifname = g_strdup (DEFAULT_IFNAME);
   avtpsink->address = g_strdup (DEFAULT_ADDRESS);
   avtpsink->priority = DEFAULT_PRIORITY;
+  avtpsink->buffer_time = DEFAULT_BUFFER_TIME * 1000;
   avtpsink->sk_fd = -1;
   memset (&avtpsink->sk_addr, 0, sizeof (avtpsink->sk_addr));
 }
@@ -169,6 +187,7 @@ gst_avtp_sink_set_property (GObject * object, guint prop_id,
     const GValue * value, GParamSpec * pspec)
 {
   GstAvtpSink *avtpsink = GST_AVTP_SINK (object);
+  GstClockTime time;
 
   GST_DEBUG_OBJECT (avtpsink, "prop_id %u", prop_id);
 
@@ -183,6 +202,11 @@ gst_avtp_sink_set_property (GObject * object, guint prop_id,
       break;
     case PROP_PRIORITY:
       avtpsink->priority = g_value_get_int (value);
+      break;
+    case PROP_BUFFER_TIME:
+      time = g_value_get_uint64 (value);
+      /* convert ms time to ns */
+      avtpsink->buffer_time = (time > 0) ? time * 1000 : time;
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -207,6 +231,11 @@ gst_avtp_sink_get_property (GObject * object, guint prop_id,
       break;
     case PROP_PRIORITY:
       g_value_set_int (value, avtpsink->priority);
+      break;
+    case PROP_BUFFER_TIME:
+      /* convert ns time to ms */
+      g_value_set_uint64 (value, (avtpsink->buffer_time > 0) ?
+          avtpsink->buffer_time / 1000 : avtpsink->buffer_time);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -367,7 +396,9 @@ gst_avtp_sink_adjust_time (GstBaseSink * basesink, GstClockTime time)
   return time;
 }
 
-static void
+/* If this function returns FALSE consider re-sending after a delay.
+ */
+static gboolean
 gst_avtp_sink_process_error_queue (GstAvtpSink * avtpsink, int fd)
 {
   uint8_t msg_control[CMSG_SPACE (sizeof (struct sock_extended_err))];
@@ -388,7 +419,9 @@ gst_avtp_sink_process_error_queue (GstAvtpSink * avtpsink, int fd)
 
   if (recvmsg (fd, &msg, MSG_ERRQUEUE) == -1) {
     GST_LOG_OBJECT (avtpsink, "Could not get socket errqueue: recvmsg failed");
-    return;
+    /* Usually means buffer is simply full (if errno == ENOBUFS), consider
+     * resending after a delay */
+    return FALSE;
   }
 
   cmsg = CMSG_FIRSTHDR (&msg);
@@ -405,38 +438,27 @@ gst_avtp_sink_process_error_queue (GstAvtpSink * avtpsink, int fd)
           break;
       }
 
-      return;
+      return TRUE;
     }
 
     cmsg = CMSG_NXTHDR (&msg, cmsg);
   }
+
+  /* Unhandled socket error */
+  return TRUE;
 }
 
 static GstFlowReturn
 gst_avtp_sink_render (GstBaseSink * basesink, GstBuffer * buffer)
 {
-  ssize_t n;
+  ssize_t n = 0;
   GstMapInfo info;
   GstAvtpSink *avtpsink = GST_AVTP_SINK (basesink);
   struct iovec *iov = avtpsink->msg->msg_iov;
-
-  if (G_LIKELY (basesink->sync)) {
-    GstClockTime base_time, running_time;
-    struct cmsghdr *cmsg = CMSG_FIRSTHDR (avtpsink->msg);
-    gint ret;
-
-    g_assert (GST_BUFFER_DTS_OR_PTS (buffer) != GST_CLOCK_TIME_NONE);
-
-    ret = gst_segment_to_running_time_full (&basesink->segment,
-        basesink->segment.format, GST_BUFFER_DTS_OR_PTS (buffer),
-        &running_time);
-    if (ret == -1)
-      running_time = -running_time;
-
-    base_time = gst_element_get_base_time (GST_ELEMENT (avtpsink));
-    running_time = gst_avtp_sink_adjust_time (basesink, running_time);
-    *(__u64 *) CMSG_DATA (cmsg) = UTC_TO_TAI (base_time + running_time);
-  }
+  GstClockTime msg_time = GST_CLOCK_TIME_NONE;
+  GstClockTime wait_time = GST_CLOCK_TIME_NONE;
+  GstClockTimeDiff clock_ahead = 0;
+  GstFlowReturn flow_ret;
 
   if (!gst_buffer_map (buffer, &info, GST_MAP_READ)) {
     GST_ERROR_OBJECT (avtpsink, "Failed to map buffer");
@@ -446,23 +468,119 @@ gst_avtp_sink_render (GstBaseSink * basesink, GstBuffer * buffer)
   iov->iov_base = info.data;
   iov->iov_len = info.size;
 
-  n = sendmsg (avtpsink->sk_fd, avtpsink->msg, 0);
-  if (n < 0) {
-    GST_INFO_OBJECT (avtpsink, "Failed to send AVTPDU: %s", g_strerror (errno));
+  do {
+    if (G_LIKELY (basesink->sync)) {
+      GstClock *clock;
+      GstClockTime base_time, running_time;
+      struct cmsghdr *cmsg = CMSG_FIRSTHDR (avtpsink->msg);
+      gint ret;
 
-    if (G_LIKELY (basesink->sync))
-      gst_avtp_sink_process_error_queue (avtpsink, avtpsink->sk_fd);
+      g_assert (GST_BUFFER_DTS_OR_PTS (buffer) != GST_CLOCK_TIME_NONE);
 
-    goto out;
-  }
-  if (n != info.size) {
-    GST_INFO_OBJECT (avtpsink, "Incomplete AVTPDU transmission");
-    goto out;
-  }
+      ret = gst_segment_to_running_time_full (&basesink->segment,
+          basesink->segment.format, GST_BUFFER_DTS_OR_PTS (buffer),
+          &running_time);
+      if (ret == -1)
+        running_time = -running_time;
+
+      base_time = gst_element_get_base_time (GST_ELEMENT (avtpsink));
+      running_time = gst_avtp_sink_adjust_time (basesink, running_time);
+      msg_time = UTC_TO_TAI (base_time + running_time);
+      *(__u64 *) CMSG_DATA (cmsg) = msg_time;
+
+      if (avtpsink->buffer_time > 0) {
+        clock = gst_element_get_clock (GST_ELEMENT (avtpsink));
+        if (G_LIKELY (clock)) {
+          GstClockTime clock_now = gst_clock_get_time (clock);
+          gst_object_unref (clock);
+          clock = NULL;
+
+          if (clock_now != GST_CLOCK_TIME_NONE && base_time != GST_CLOCK_TIME_NONE) {
+            GST_DEBUG_OBJECT (avtpsink,
+                "Clock time %" GST_TIME_FORMAT ", base time %" GST_TIME_FORMAT
+                ", target running time %" GST_TIME_FORMAT,
+                GST_TIME_ARGS (clock_now), GST_TIME_ARGS (base_time),
+                GST_TIME_ARGS (running_time));
+            if (clock_now > base_time)
+              clock_now -= base_time;
+            else
+              clock_now = 0;
+
+            clock_ahead = running_time - clock_now;
+            wait_time = running_time;
+          }
+        }
+
+        GST_DEBUG_OBJECT (avtpsink,
+            "Ahead %" GST_STIME_FORMAT " of the clock running time",
+            GST_STIME_ARGS (clock_ahead));
+      }
+    }
+
+    /* We start waiting once we have more than buffer-time buffered */
+    if (avtpsink->buffer_time > 0 &&
+        ((GstClockTime) clock_ahead) > avtpsink->buffer_time) {
+      GstClockReturn clock_ret;
+
+      GST_DEBUG_OBJECT (avtpsink,
+          "Buffered enough, wait for preroll or the clock or flushing. "
+          "Configured buffer time: %" GST_TIME_FORMAT,
+          GST_TIME_ARGS (avtpsink->buffer_time));
+
+      if (wait_time < avtpsink->buffer_time)
+        wait_time = 0;
+      else
+        wait_time -= avtpsink->buffer_time;
+
+      flow_ret =
+          gst_base_sink_do_preroll (basesink, GST_MINI_OBJECT_CAST (buffer));
+      if (flow_ret != GST_FLOW_OK)
+        goto out;
+
+      clock_ret = gst_base_sink_wait_clock (basesink, wait_time, NULL);
+      if (basesink->flushing) {
+        flow_ret = GST_FLOW_FLUSHING;
+        goto out;
+      }
+      /* Rerun the whole loop again */
+      if (clock_ret == GST_CLOCK_UNSCHEDULED)
+        continue;
+    }
+
+    n = sendmsg (avtpsink->sk_fd, avtpsink->msg, 0);
+    if (n < 0) {
+      int errno_snd = errno;
+      gboolean fatal_err = FALSE;
+
+      GST_DEBUG_OBJECT (avtpsink, "Failed to send AVTPDU@%lu: %d: %s", msg_time,
+          errno_snd, g_strerror (errno_snd));
+
+      if (G_LIKELY (basesink->sync))
+        fatal_err = gst_avtp_sink_process_error_queue (avtpsink, avtpsink->sk_fd);
+
+      /* Retry send after a short wait */
+      if (errno_snd == ENOBUFS && !fatal_err) {
+        GST_DEBUG_OBJECT (avtpsink, "Resending AVTPDU@%lu after %uus", msg_time,
+            RESEND_DELAY);
+        usleep (RESEND_DELAY);
+        continue;
+      }
+
+      break;
+    } else if (n > 0) {
+      GST_LOG_OBJECT (avtpsink, "Sent AVTPDU@%lu with size %ld", msg_time, n);
+    }
+    if (n != info.size) {
+      GST_INFO_OBJECT (avtpsink, "Incomplete AVTPDU@%lu transmission", msg_time);
+      break;
+    }
+  } while (n != info.size);
+
+  flow_ret = GST_FLOW_OK;
 
 out:
   gst_buffer_unmap (buffer, &info);
-  return GST_FLOW_OK;
+  return flow_ret;
 }
 
 static void

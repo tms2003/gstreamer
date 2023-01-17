@@ -48,7 +48,7 @@ static GstStaticPadTemplate src_template = GST_STATIC_PAD_TEMPLATE ("src",
     GST_PAD_SRC,
     GST_PAD_ALWAYS,
     GST_STATIC_CAPS ("audio/x-raw, "
-        "format = (string) { S16BE, S24BE, S32BE, F32BE }, "
+        "format = (string) { S16BE, S24BE, S24_32BE, S32BE, F32BE }, "
         "rate = (int) { 8000, 16000, 24000, 32000, 44100, 48000, 88200, 96000, 176400, 192000 }, "
         "channels = " GST_AUDIO_CHANNELS_RANGE ", "
         "layout = (string) interleaved")
@@ -93,7 +93,7 @@ gst_avtp_aaf_depay_init (GstAvtpAafDepay * avtpaafdepay)
 }
 
 static const gchar *
-avtp_to_gst_format (int avtp_format)
+avtp_to_gst_format (int avtp_format, int avtp_depth)
 {
   GstAudioFormat gst_format;
 
@@ -105,7 +105,10 @@ avtp_to_gst_format (int avtp_format)
       gst_format = GST_AUDIO_FORMAT_S24BE;
       break;
     case AVTP_AAF_FORMAT_INT_32BIT:
-      gst_format = GST_AUDIO_FORMAT_S32BE;
+      if (avtp_depth == 32)
+        gst_format = GST_AUDIO_FORMAT_S32BE;
+      else
+        gst_format = GST_AUDIO_FORMAT_S24_32BE;
       break;
     case AVTP_AAF_FORMAT_FLOAT_32BIT:
       gst_format = GST_AUDIO_FORMAT_F32BE;
@@ -157,7 +160,7 @@ gst_avtp_aaf_depay_push_caps_event (GstAvtpAafDepay * avtpaafdepay,
       GST_AVTP_BASE_DEPAYLOAD (avtpaafdepay);
 
   caps = gst_caps_new_simple ("audio/x-raw",
-      "format", G_TYPE_STRING, avtp_to_gst_format (format),
+      "format", G_TYPE_STRING, avtp_to_gst_format (format, depth),
       "rate", G_TYPE_INT, avtp_to_gst_rate (rate),
       "channels", G_TYPE_INT, channels,
       "layout", G_TYPE_STRING, "interleaved", NULL);
@@ -219,6 +222,7 @@ gst_avtp_aaf_depay_chain (GstPad * pad, GstObject * parent, GstBuffer * buffer)
       streamid_valid, data_len;
   GstAvtpBaseDepayload *avtpbasedepayload = GST_AVTP_BASE_DEPAYLOAD (parent);
   GstAvtpAafDepay *avtpaafdepay = GST_AVTP_AAF_DEPAY (avtpbasedepayload);
+  gboolean new_stream = FALSE;
 
   if (!gst_buffer_map (buffer, &info, GST_MAP_READ)) {
     GST_ELEMENT_ERROR (avtpaafdepay, RESOURCE, READ, ("Failed to map memory"),
@@ -279,6 +283,27 @@ gst_avtp_aaf_depay_chain (GstPad * pad, GstObject * parent, GstBuffer * buffer)
   }
 
   if (G_UNLIKELY (!gst_pad_has_current_caps (avtpbasedepayload->srcpad))) {
+    avtpbasedepayload->seqnum = seqnum;
+    new_stream = TRUE;
+  }
+
+  if (seqnum != avtpbasedepayload->seqnum) {
+    GST_INFO_OBJECT (avtpaafdepay, "Sequence number mismatch: expected %u"
+        " received %" G_GUINT64_FORMAT, avtpbasedepayload->seqnum, seqnum);
+    avtpbasedepayload->seqnum = seqnum;
+
+    /* If the incoming sequence number is 0 and AVTPDUs have already been
+     * received then assume this is a brand new stream starting after spending
+     * some time stopped, and the CAPS and SEGMENT need to be re-negotiated */
+    if (G_UNLIKELY (avtpbasedepayload->seqnum == 0)) {
+      GST_INFO_OBJECT (avtpaafdepay,
+          "New stream has started, re-negotiating CAPS and SEGMENT");
+      new_stream = TRUE;
+    }
+  }
+  avtpbasedepayload->seqnum++;
+
+  if (G_UNLIKELY (new_stream)) {
     if (!gst_avtp_aaf_depay_push_caps_event (avtpaafdepay, rate, depth, format,
             channels)) {
       gst_buffer_unref (buffer);
@@ -288,20 +313,11 @@ gst_avtp_aaf_depay_chain (GstPad * pad, GstObject * parent, GstBuffer * buffer)
       gst_buffer_unref (buffer);
       return GST_FLOW_ERROR;
     }
-
-    avtpbasedepayload->seqnum = seqnum;
   }
 
   if (G_UNLIKELY (!gst_avtp_aaf_depay_are_audio_features_valid (avtpaafdepay,
               rate, depth, format, channels)))
     goto discard;
-
-  if (seqnum != avtpbasedepayload->seqnum) {
-    GST_INFO_OBJECT (avtpaafdepay, "Sequence number mismatch: expected %u"
-        " received %" G_GUINT64_FORMAT, avtpbasedepayload->seqnum, seqnum);
-    avtpbasedepayload->seqnum = seqnum;
-  }
-  avtpbasedepayload->seqnum++;
 
   ptime = gst_avtp_base_depayload_tstamp_to_ptime (avtpbasedepayload, tstamp,
       avtpbasedepayload->prev_ptime);

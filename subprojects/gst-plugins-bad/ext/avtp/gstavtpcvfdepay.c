@@ -116,6 +116,7 @@ gst_avtp_cvf_depay_init (GstAvtpCvfDepay * avtpcvfdepay)
   avtpcvfdepay->out_buffer = NULL;
   avtpcvfdepay->fragments = NULL;
   avtpcvfdepay->seqnum = 0;
+  avtpcvfdepay->new_stream = FALSE;
 }
 
 static GstStateChangeReturn
@@ -176,13 +177,14 @@ gst_avtp_cvf_depay_push_caps (GstAvtpCvfDepay * avtpcvfdepay)
 }
 
 static GstFlowReturn
-gst_avtp_cvf_depay_push (GstAvtpCvfDepay * avtpcvfdepay)
+gst_avtp_cvf_depay_push (GstAvtpCvfDepay * avtpcvfdepay, gboolean M)
 {
   GstAvtpBaseDepayload *avtpbasedepayload =
       GST_AVTP_BASE_DEPAYLOAD (avtpcvfdepay);
   GstFlowReturn ret;
 
-  if (G_UNLIKELY (!gst_pad_has_current_caps (avtpbasedepayload->srcpad))) {
+  if (G_UNLIKELY (!gst_pad_has_current_caps (avtpbasedepayload->srcpad)) ||
+      G_UNLIKELY (M && avtpcvfdepay->new_stream)) {
     guint64 pts_m;
     guint32 dts, pts;
 
@@ -190,24 +192,31 @@ gst_avtp_cvf_depay_push (GstAvtpCvfDepay * avtpcvfdepay)
       GstClock *clock = gst_element_get_clock (GST_ELEMENT_CAST (avtpcvfdepay));
       if (clock == NULL) {
         GST_DEBUG_OBJECT (avtpcvfdepay,
-            "Sending initial CAPS and SEGMENT, no pipeline time.");
+            "Sending new CAPS and SEGMENT, no pipeline time.");
       } else {
         GST_DEBUG_OBJECT (avtpcvfdepay,
-            "Sending initial CAPS and SEGMENT, pipeline time: %"
+            "Sending new CAPS and SEGMENT, pipeline time: %"
             GST_TIME_FORMAT, GST_TIME_ARGS (gst_clock_get_time (clock)));
       }
     }
 
     if (!gst_avtp_cvf_depay_push_caps (avtpcvfdepay)) {
       GST_ELEMENT_ERROR (avtpcvfdepay, CORE, CAPS, (NULL), (NULL));
-      return GST_FLOW_ERROR;
+      gst_buffer_unref (avtpcvfdepay->out_buffer);
+      avtpcvfdepay->out_buffer = NULL;
+      return GST_FLOW_NOT_NEGOTIATED;
     }
 
     if (!gst_avtp_base_depayload_push_segment_event (avtpbasedepayload,
             GST_BUFFER_PTS (avtpcvfdepay->out_buffer))) {
       GST_ELEMENT_ERROR (avtpcvfdepay, CORE, EVENT,
           ("Could not send SEGMENT event"), (NULL));
+      gst_buffer_unref (avtpcvfdepay->out_buffer);
+      avtpcvfdepay->out_buffer = NULL;
+      return GST_FLOW_ERROR;
     }
+
+    avtpcvfdepay->new_stream = FALSE;
 
     /* Now that we sent our segment starting on the first Presentation
      * time available, `avtpbasedepayload->prev_ptime` saves that value,
@@ -278,7 +287,7 @@ gst_avtp_cvf_depay_push_and_discard (GstAvtpCvfDepay * avtpcvfdepay)
   if (avtpcvfdepay->out_buffer != NULL) {
     GST_DEBUG_OBJECT (avtpcvfdepay, "Pushing incomplete buffers");
 
-    ret = gst_avtp_cvf_depay_push (avtpcvfdepay);
+    ret = gst_avtp_cvf_depay_push (avtpcvfdepay, FALSE);
   }
 
   /* Discard any incomplete fragments */
@@ -387,6 +396,15 @@ gst_avtp_cvf_depay_validate_avtpdu (GstAvtpCvfDepay * avtpcvfdepay,
     /* This is not a reason to drop the packet, but it may be a good moment
      * to push everything we have - maybe we lost the M packet? */
     *lost_packet = TRUE;
+
+    /* If the incoming sequence number is 0 and AVTPDUs have already been
+     * received then assume this is a brand new stream starting after spending
+     * some time stopped, and the CAPS and SEGMENT need to be re-negotiated */
+    if (G_UNLIKELY (avtpbasedepayload->seqnum == 0)) {
+      GST_INFO_OBJECT (avtpcvfdepay,
+          "New stream has started, re-negotiating CAPS and SEGMENT");
+      avtpcvfdepay->new_stream = TRUE;
+    }
   }
   avtpcvfdepay->seqnum++;
 
@@ -465,7 +483,7 @@ gst_avtp_cvf_depay_internal_push (GstAvtpCvfDepay * avtpcvfdepay,
 
   /* We only truly push to decoder when we get the last video buffer */
   if (M) {
-    ret = gst_avtp_cvf_depay_push (avtpcvfdepay);
+    ret = gst_avtp_cvf_depay_push (avtpcvfdepay, M);
   }
 
   return ret;

@@ -48,6 +48,7 @@ struct _GstAvtpBaseDepayload
 
   guint64 streamid;
 
+  GstClockTime latency;
   GstClockTime prev_ptime;
   guint8 seqnum;
 
@@ -62,6 +63,7 @@ struct _GstAvtpBaseDepayloadClass
   GstPadChainFunction chain;
 
   GstPadEventFunction sink_event;
+  GstPadEventFunction src_event;
 
   gpointer _gst_reserved[GST_PADDING];
 };

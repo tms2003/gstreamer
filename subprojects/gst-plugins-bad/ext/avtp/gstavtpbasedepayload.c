@@ -50,6 +50,8 @@ static void gst_avtp_base_depayload_get_property (GObject * object,
 
 static gboolean gst_avtp_base_depayload_sink_event (GstPad * pad,
     GstObject * parent, GstEvent * event);
+static gboolean gst_avtp_base_depayload_src_event (GstPad * pad,
+    GstObject * parent, GstEvent * event);
 
 GType
 gst_avtp_base_depayload_get_type (void)
@@ -94,6 +96,7 @@ gst_avtp_base_depayload_class_init (GstAvtpBaseDepayloadClass * klass)
 
   klass->chain = NULL;
   klass->sink_event = GST_DEBUG_FUNCPTR (gst_avtp_base_depayload_sink_event);
+  klass->src_event = GST_DEBUG_FUNCPTR (gst_avtp_base_depayload_src_event);
 
   GST_DEBUG_CATEGORY_INIT (avtpbasedepayload_debug, "avtpbasedepayload", 0,
       "Base class for AVTP depayloaders");
@@ -117,6 +120,8 @@ gst_avtp_base_depayload_init (GstAvtpBaseDepayload * avtpbasedepayload,
   g_assert (templ != NULL);
   avtpbasedepayload->srcpad = gst_pad_new_from_template (templ, "src");
   gst_pad_use_fixed_caps (avtpbasedepayload->srcpad);
+  gst_pad_set_event_function (avtpbasedepayload->srcpad,
+      avtpbasedepayload_class->src_event);
   gst_element_add_pad (element, avtpbasedepayload->srcpad);
 
   avtpbasedepayload->sinkpad =
@@ -129,6 +134,7 @@ gst_avtp_base_depayload_init (GstAvtpBaseDepayload * avtpbasedepayload,
 
   avtpbasedepayload->streamid = DEFAULT_STREAMID;
 
+  avtpbasedepayload->latency = GST_CLOCK_TIME_NONE;
   avtpbasedepayload->prev_ptime = 0;
   avtpbasedepayload->seqnum = 0;
 }
@@ -175,7 +181,8 @@ gst_avtp_base_depayload_sink_event (GstPad * pad, GstObject * parent,
 {
   GstAvtpBaseDepayload *avtpbasedepayload = GST_AVTP_BASE_DEPAYLOAD (parent);
 
-  GST_DEBUG_OBJECT (avtpbasedepayload, "event %s", GST_EVENT_TYPE_NAME (event));
+  GST_DEBUG_OBJECT (avtpbasedepayload, "sink event %s",
+      GST_EVENT_TYPE_NAME (event));
 
   switch (GST_EVENT_TYPE (event)) {
     case GST_EVENT_SEGMENT:
@@ -196,6 +203,38 @@ gst_avtp_base_depayload_sink_event (GstPad * pad, GstObject * parent,
   }
 }
 
+static gboolean
+gst_avtp_base_depayload_src_event (GstPad * pad, GstObject * parent,
+    GstEvent * event)
+{
+  GstAvtpBaseDepayload *avtpbasedepayload = GST_AVTP_BASE_DEPAYLOAD (parent);
+
+  GST_DEBUG_OBJECT (avtpbasedepayload, "src event %s",
+      GST_EVENT_TYPE_NAME (event));
+
+  switch (GST_EVENT_TYPE (event)) {
+    case GST_EVENT_LATENCY:
+    {
+      GstClockTime latency;
+
+      gst_event_parse_latency (event, &latency);
+
+      /* save the latency, we need this to know when an AVTP packet will be
+       * rendered by any sinks in the listeners's pipeline before syncing it to
+       * the clock. */
+      avtpbasedepayload->latency = latency;
+      GST_DEBUG_OBJECT (avtpbasedepayload, "latency set to %" GST_TIME_FORMAT,
+          GST_TIME_ARGS (latency));
+
+      /* We forward this event so that all elements know about the global
+       * pipeline latency. */
+      G_GNUC_FALLTHROUGH;
+    }
+    default:
+      return gst_pad_event_default (pad, parent, event);
+  }
+}
+
 /* Helper function to convert AVTP timestamp to AVTP presentation time. Since
  * AVTP timestamp represents the lower 32-bit part from AVTP presentation time,
  * the helper requires a reference time ('ref' argument) to convert it properly.
@@ -206,18 +245,43 @@ gst_avtp_base_depayload_tstamp_to_ptime (GstAvtpBaseDepayload *
     avtpbasedepayload, guint32 tstamp, GstClockTime ref)
 {
   GstClockTime ptime;
+  GstClockTimeDiff delta;
 
   ptime = (ref & 0xFFFFFFFF00000000ULL) | tstamp;
 
-  /* If 'ptime' is less than the our reference time, it means the higher part
-   * from 'ptime' needs to be incremented by 1 in order reflect the correct
-   * presentation time.
+  /* The avtp timestamp can only represent 4.29 seconds (2^32 in ns).
+   * These 4.29 seconds (relative to the current reference time) are actually
+   * divided in 2.1 seconds in the future, 2.1 seconds in the past.
+   *
+   * This means if 'ptime' is less than the our reference time by more than
+   * G_MAXINT32 then the window has rolled over and the higher part from 'ptime'
+   * needs to be incremented by 1 in order reflect the correct presentation
+   * time.
    */
-  if (ptime < ref)
+  delta = ptime - ref;
+  if (delta < -G_MAXINT32)
     ptime += (1ULL << 32);
 
-  GST_LOG_OBJECT (avtpbasedepayload, "AVTP presentation time %" GST_TIME_FORMAT,
-      GST_TIME_ARGS (ptime));
+  if (G_UNLIKELY (avtpbasedepayload->latency == GST_CLOCK_TIME_NONE)) {
+    GstQuery *query;
+
+    query = gst_query_new_latency ();
+    if (!gst_pad_peer_query (avtpbasedepayload->sinkpad, query))
+      return GST_CLOCK_TIME_NONE;
+    gst_query_parse_latency (query, NULL, &avtpbasedepayload->latency, NULL);
+    gst_query_unref (query);
+
+    GST_DEBUG_OBJECT (avtpbasedepayload, "latency %" GST_TIME_FORMAT,
+        GST_TIME_ARGS (avtpbasedepayload->latency));
+  }
+
+  ptime = ((ptime - avtpbasedepayload->latency) > 0) ?
+      ptime - avtpbasedepayload->latency : 0;
+
+  GST_LOG_OBJECT (avtpbasedepayload, "AVTP presentation time %" GST_TIME_FORMAT
+      ", delta %" GST_STIME_FORMAT ", latency %" GST_TIME_FORMAT,
+      GST_TIME_ARGS (ptime), GST_STIME_ARGS (delta),
+      GST_TIME_ARGS (avtpbasedepayload->latency));
   return ptime;
 }
 
@@ -239,7 +303,9 @@ gst_avtp_base_depayload_push_segment_event (GstAvtpBaseDepayload *
   base_time = gst_element_get_base_time (GST_ELEMENT (avtpbasedepayload));
 
   gst_segment_init (&segment, GST_FORMAT_TIME);
-  segment.base = avtp_ptime - base_time;
+  /* Only set a base running time if we need to wait to sync up */
+  if (avtp_ptime > base_time)
+    segment.base = avtp_ptime - base_time;
   segment.start = avtp_ptime;
   segment.stop = -1;
 

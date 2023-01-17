@@ -46,6 +46,7 @@ struct _GstAvtpCvfDepay
   GstAvtpBaseDepayload depayload;
 
   guint8 seqnum;
+  gboolean new_stream;
   GstBuffer *out_buffer;
   GstBuffer *fragments;
 };

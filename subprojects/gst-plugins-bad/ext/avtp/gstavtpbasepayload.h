@@ -49,7 +49,6 @@ struct _GstAvtpBasePayload
   guint64 streamid;
   guint mtt;
   guint tu;
-  guint64 processing_deadline;
 
   GstClockTime latency;
   GstSegment segment;
@@ -66,6 +65,7 @@ struct _GstAvtpBasePayloadClass
   GstPadChainFunction chain;
 
   GstPadEventFunction sink_event;
+  GstPadEventFunction src_event;
 
   gpointer _gst_reserved[GST_PADDING];
 };

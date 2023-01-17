@@ -56,7 +56,7 @@ static GstStaticPadTemplate sink_template = GST_STATIC_PAD_TEMPLATE ("sink",
     GST_PAD_SINK,
     GST_PAD_ALWAYS,
     GST_STATIC_CAPS ("audio/x-raw, "
-        "format = (string) { S16BE, S24BE, S32BE, F32BE }, "
+        "format = (string) { S16BE, S24BE, S24_32BE, S32BE, F32BE }, "
         "rate = (int) { 8000, 16000, 24000, 32000, 44100, 48000, 88200, 96000, 176400, 192000 }, "
         "channels = " GST_AUDIO_CHANNELS_RANGE ", "
         "layout = (string) interleaved")
@@ -343,6 +343,8 @@ gst_to_avtp_format (GstAudioFormat format)
     case GST_AUDIO_FORMAT_S24BE:
       return AVTP_AAF_FORMAT_INT_24BIT;
     case GST_AUDIO_FORMAT_S32BE:
+      return AVTP_AAF_FORMAT_INT_32BIT;
+    case GST_AUDIO_FORMAT_S24_32BE:
       return AVTP_AAF_FORMAT_INT_32BIT;
     case GST_AUDIO_FORMAT_F32BE:
       return AVTP_AAF_FORMAT_FLOAT_32BIT;
