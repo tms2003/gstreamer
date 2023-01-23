@@ -21,6 +21,7 @@
 #include <gst/rtp/gstrtcpbuffer.h>
 #include <gst/base/gstbitreader.h>
 #include <gst/base/gstbitwriter.h>
+#include <gst/net/gsttxfeedback.h>
 
 #include "gstrtputils.h"
 
@@ -105,7 +106,19 @@ struct _RTPTWCCManager
   GstClockTime feedback_interval;
 };
 
-G_DEFINE_TYPE (RTPTWCCManager, rtp_twcc_manager, G_TYPE_OBJECT);
+
+static void rtp_twcc_manager_tx_feedback (GstTxFeedback * parent,
+    guint64 buffer_id, GstClockTime ts);
+
+static void
+_tx_feedback_init (gpointer g_iface, G_GNUC_UNUSED gpointer iface_data)
+{
+  GstTxFeedbackInterface *iface = g_iface;
+  iface->tx_feedback = rtp_twcc_manager_tx_feedback;
+}
+
+G_DEFINE_TYPE_WITH_CODE (RTPTWCCManager, rtp_twcc_manager, G_TYPE_OBJECT,
+    G_IMPLEMENT_INTERFACE (GST_TYPE_TX_FEEDBACK, _tx_feedback_init));
 
 static void
 rtp_twcc_manager_init (RTPTWCCManager * twcc)
@@ -262,6 +275,9 @@ _set_twcc_seqnum_data (RTPTWCCManager * twcc, RTPPacketInfo * pinfo,
       sent_packet_init (&packet, seqnum, pinfo, &rtp);
       g_array_append_val (twcc->sent_packets, packet);
 
+      gst_buffer_add_tx_feedback_meta (pinfo->data, seqnum,
+          GST_TX_FEEDBACK_CAST (twcc));
+
       GST_LOG ("Send: twcc-seqnum: %u, pt: %u, marker: %d, len: %u, ts: %"
           GST_TIME_FORMAT, seqnum, packet.pt, pinfo->marker, packet.size,
           GST_TIME_ARGS (pinfo->current_time));
@@ -310,6 +326,20 @@ rtp_twcc_manager_get_recv_twcc_seqnum (RTPTWCCManager * twcc,
   }
 
   return val;
+}
+
+GstClockTime
+rtp_twcc_manager_get_next_timeout (RTPTWCCManager * twcc,
+    GstClockTime current_time)
+{
+  if (GST_CLOCK_TIME_IS_VALID (twcc->feedback_interval)) {
+    if (!GST_CLOCK_TIME_IS_VALID (twcc->next_feedback_send_time)) {
+      /* First time through: initialise feedback time */
+      twcc->next_feedback_send_time = current_time + twcc->feedback_interval;
+    }
+    return twcc->next_feedback_send_time;
+  }
+  return GST_CLOCK_TIME_NONE;
 }
 
 static gint
@@ -810,20 +840,9 @@ rtp_twcc_manager_recv_packet (RTPTWCCManager * twcc, RTPPacketInfo * pinfo)
   if (!pinfo->marker)
     twcc->packet_count_no_marker++;
 
-  /* are we sending on an interval, or based on marker bit */
-  if (GST_CLOCK_TIME_IS_VALID (twcc->feedback_interval)) {
-    if (!GST_CLOCK_TIME_IS_VALID (twcc->next_feedback_send_time))
-      twcc->next_feedback_send_time =
-          pinfo->running_time + twcc->feedback_interval;
-
-    if (pinfo->running_time >= twcc->next_feedback_send_time) {
-      rtp_twcc_manager_create_feedback (twcc);
-      send_feedback = TRUE;
-
-      while (pinfo->running_time >= twcc->next_feedback_send_time)
-        twcc->next_feedback_send_time += twcc->feedback_interval;
-    }
-  } else if (pinfo->marker || _many_packets_some_lost (twcc, seqnum)) {
+  /* Create feedback, if sending based on marker bit */
+  if (!GST_CLOCK_TIME_IS_VALID (twcc->feedback_interval) &&
+      (pinfo->marker || _many_packets_some_lost (twcc, seqnum))) {
     rtp_twcc_manager_create_feedback (twcc);
     send_feedback = TRUE;
 
@@ -845,9 +864,28 @@ _change_rtcp_fb_sender_ssrc (GstBuffer * buf, guint32 sender_ssrc)
 }
 
 GstBuffer *
-rtp_twcc_manager_get_feedback (RTPTWCCManager * twcc, guint sender_ssrc)
+rtp_twcc_manager_get_feedback (RTPTWCCManager * twcc, guint sender_ssrc,
+    GstClockTime current_time)
 {
   GstBuffer *buf;
+
+  GST_DEBUG ("considering twcc. now: %" GST_TIME_FORMAT
+      " twcc-time: %" GST_TIME_FORMAT " packets: %d",
+      GST_TIME_ARGS (current_time),
+      GST_TIME_ARGS (twcc->next_feedback_send_time), twcc->recv_packets->len);
+
+  if (GST_CLOCK_TIME_IS_VALID (twcc->feedback_interval) &&
+      GST_CLOCK_TIME_IS_VALID (twcc->next_feedback_send_time) &&
+      twcc->next_feedback_send_time <= current_time) {
+    /* Sending on a fixed interval: compute next send time */
+    while (twcc->next_feedback_send_time <= current_time)
+      twcc->next_feedback_send_time += twcc->feedback_interval;
+
+    /* Generate feedback, if there is some to send */
+    if (twcc->recv_packets->len > 0)
+      rtp_twcc_manager_create_feedback (twcc);
+  }
+
   buf = g_queue_pop_head (twcc->rtcp_buffers);
 
   if (buf && twcc->recv_sender_ssrc != sender_ssrc) {
@@ -865,6 +903,36 @@ rtp_twcc_manager_send_packet (RTPTWCCManager * twcc, RTPPacketInfo * pinfo)
     return;
 
   rtp_twcc_manager_set_send_twcc_seqnum (twcc, pinfo);
+}
+
+static void
+rtp_twcc_manager_tx_feedback (GstTxFeedback * parent, guint64 buffer_id,
+    GstClockTime ts)
+{
+  RTPTWCCManager *twcc = RTP_TWCC_MANAGER_CAST (parent);
+  guint16 seqnum = (guint16) buffer_id;
+  SentPacket *first = NULL;
+  SentPacket *pkt = NULL;
+  guint idx;
+
+  first = &g_array_index (twcc->sent_packets, SentPacket, 0);
+  if (first == NULL) {
+    GST_WARNING ("Received a tx-feedback without having sent any packets?!?");
+    return;
+  }
+
+  idx = seqnum - first->seqnum;
+
+  if (idx < twcc->sent_packets->len) {
+    pkt = &g_array_index (twcc->sent_packets, SentPacket, idx);
+    if (pkt && pkt->seqnum == seqnum) {
+      pkt->socket_ts = ts;
+      GST_LOG ("packet #%u, setting socket-ts %" GST_TIME_FORMAT,
+          seqnum, GST_TIME_ARGS (ts));
+    }
+  } else {
+    GST_WARNING ("Unable to update send-time for twcc-seqnum #%u", seqnum);
+  }
 }
 
 static void
