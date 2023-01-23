@@ -1,5 +1,6 @@
 avtp_sources = [
   'gstavtp.c',
+  'gstavtputil.c',
   'gstavtpaafdepay.c',
   'gstavtpaafpay.c',
   'gstavtpcvfdepay.c',

@@ -42,6 +42,7 @@
 #include <gst/audio/audio-format.h>
 #include <arpa/inet.h>
 
+#include "gstavtputil.h"
 #include "gstavtpcvfdepay.h"
 
 GST_DEBUG_CATEGORY_STATIC (avtpcvfdepay_debug);
@@ -249,13 +250,13 @@ gst_avtp_cvf_depay_push (GstAvtpCvfDepay * avtpcvfdepay)
   GST_DEBUG_OBJECT (avtpcvfdepay, "Converting %" GST_TIME_FORMAT " to PTS",
       GST_TIME_ARGS (GST_BUFFER_PTS (avtpcvfdepay->out_buffer)));
   GST_BUFFER_PTS (avtpcvfdepay->out_buffer) =
-      gst_avtp_base_depayload_tstamp_to_ptime (avtpbasedepayload, GST_BUFFER_PTS
+      gst_avtp_tstamp_to_ptime (GST_ELEMENT (avtpbasedepayload), GST_BUFFER_PTS
       (avtpcvfdepay->out_buffer), avtpbasedepayload->prev_ptime);
 
   GST_DEBUG_OBJECT (avtpcvfdepay, "Converting %" GST_TIME_FORMAT " to DTS",
       GST_TIME_ARGS (GST_BUFFER_DTS (avtpcvfdepay->out_buffer)));
   GST_BUFFER_DTS (avtpcvfdepay->out_buffer) =
-      gst_avtp_base_depayload_tstamp_to_ptime (avtpbasedepayload, GST_BUFFER_DTS
+      gst_avtp_tstamp_to_ptime (GST_ELEMENT (avtpbasedepayload), GST_BUFFER_DTS
       (avtpcvfdepay->out_buffer), avtpbasedepayload->prev_ptime);
 
   /* Use DTS as prev_ptime as it is smaller or equal to PTS, so that

@@ -68,9 +68,6 @@ struct _GstAvtpBaseDepayloadClass
 
 GType gst_avtp_base_depayload_get_type (void);
 
-GstClockTime gst_avtp_base_depayload_tstamp_to_ptime (GstAvtpBaseDepayload *
-    avtpbasedepayload, guint32 tstamp, GstClockTime ref);
-
 gboolean gst_avtp_base_depayload_push_segment_event (GstAvtpBaseDepayload *
     avtpbasedepayload, guint32 avtp_tstamp);
 

@@ -45,6 +45,7 @@
 #include <glib.h>
 #include <math.h>
 
+#include "gstavtputil.h"
 #include "gstavtpcrfbase.h"
 #include "gstavtpcrfsync.h"
 #include "gstavtpcrfutil.h"
@@ -144,6 +145,12 @@ gst_avtp_crf_sync_transform_ip (GstBaseTransform * parent, GstBuffer * buffer)
   GstAvtpCrfThreadData *thread_data = &avtpcrfbase->thread_data;
   GstClockTime current_ts = thread_data->current_ts;
   gdouble avg_period = thread_data->average_period;
+  GstClockTime base_time =
+      gst_element_get_base_time (GST_ELEMENT (avtpcrfsync));
+  GstClockTime running_time =
+      gst_segment_to_running_time (&avtpcrfbase->element.segment,
+      avtpcrfbase->element.segment.format, GST_BUFFER_PTS (buffer));
+  GstClockTime ref = base_time + running_time;
   struct avtp_stream_pdu *pdu;
   gboolean h264_packet;
   GstMapInfo info;
@@ -174,13 +181,8 @@ gst_avtp_crf_sync_transform_ip (GstBaseTransform * parent, GstBuffer * buffer)
     res = avtp_cvf_pdu_get (pdu, AVTP_CVF_FIELD_H264_TIMESTAMP, &h264_time);
     g_assert (res == 0);
 
-    /*
-     * Extrapolate H264 tstamp to 64 bit and assume it's greater than CRF
-     * timestamp.
-     */
-    h264_time |= current_ts & 0xFFFFFFFF00000000;
-    if (h264_time < current_ts)
-      h264_time += (1ULL << 32);
+    h264_time =
+        gst_avtp_tstamp_to_ptime (GST_ELEMENT (avtpcrfbase), h264_time, ref);
 
     /*
      * float typecasted to guint64 truncates the decimal part. So, round() it
@@ -204,13 +206,7 @@ gst_avtp_crf_sync_transform_ip (GstBaseTransform * parent, GstBuffer * buffer)
   if (tstamp == GST_CLOCK_TIME_NONE)
     goto exit;
 
-  /*
-   * Extrapolate the 32-bit AVTP Timestamp to 64-bit and assume it's greater
-   * than the 64-bit CRF timestamp.
-   */
-  tstamp |= current_ts & 0xFFFFFFFF00000000;
-  if (tstamp < current_ts)
-    tstamp += (1ULL << 32);
+  tstamp = gst_avtp_tstamp_to_ptime (GST_ELEMENT (avtpcrfbase), tstamp, ref);
 
   /*
    * float typecasted to guint64 truncates the decimal part. So, round() it
