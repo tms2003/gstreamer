@@ -21,15 +21,16 @@
 #include "config.h"
 #endif
 
-#ifdef WIN32
+#ifdef _WIN32
 #include <windows.h>
 #endif
 
 #include <GL/gl.h>
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_opengl.h>
+#include <stdio.h>
 
-#ifndef WIN32
+#ifndef _WIN32
 #include <GL/glx.h>
 #include <SDL2/SDL_syswm.h>
 #include <gst/gl/x11/gstgldisplay_x11.h>
@@ -515,7 +516,7 @@ int
 main (int argc, char **argv)
 {
 
-#ifdef WIN32
+#ifdef _WIN32
   HGLRC gl_context = 0;
   HDC sdl_dc = 0;
 #else
@@ -562,7 +563,7 @@ main (int argc, char **argv)
 
   SDL_GL_MakeCurrent (sdl_window, sdl_gl_context);
 
-#ifdef WIN32
+#ifdef _WIN32
   gl_context = wglGetCurrentContext ();
   sdl_dc = wglGetCurrentDC ();
   gl_platform = GST_GL_PLATFORM_WGL;

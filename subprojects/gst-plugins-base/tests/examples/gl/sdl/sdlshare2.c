@@ -21,18 +21,24 @@
 #include "config.h"
 #endif
 
-#ifdef WIN32
+#ifdef _WIN32
 #include <windows.h>
 #endif
 
 #include <GL/gl.h>
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_opengl.h>
+#include <stdio.h>
 
-#ifndef WIN32
+#ifndef _WIN32
 #include <GL/glx.h>
 #include <SDL2/SDL_syswm.h>
 #include <gst/gl/x11/gstgldisplay_x11.h>
+#else
+/* The stock GL/gl.h from the Windows SDK may not have GL_CLAMP_TO_EDGE defined */
+#ifndef GL_CLAMP_TO_EDGE
+# define GL_CLAMP_TO_EDGE 0x812F
+#endif
 #endif
 
 #include <gst/gst.h>
@@ -73,7 +79,7 @@ DrawGLScene (GstVideoFrame * v_frame)
 {
   guint texture = 0;
 
-#ifdef WIN32
+#ifdef _WIN32
   if (!wglGetCurrentContext ())
     return;
 #else
@@ -290,7 +296,7 @@ sync_bus_call (GstBus * bus, GstMessage * msg, gpointer data)
 int
 main (int argc, char **argv)
 {
-#ifdef WIN32
+#ifdef _WIN32
   HGLRC gl_context = 0;
   HDC sdl_dc = 0;
 #else
@@ -340,7 +346,7 @@ main (int argc, char **argv)
 
   /* Loop, drawing and checking events */
   InitGL (640, 480);
-#ifdef WIN32
+#ifdef _WIN32
   gl_context = wglGetCurrentContext ();
   sdl_dc = wglGetCurrentDC ();
   platform = "wgl";
