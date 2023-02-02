@@ -3,6 +3,9 @@ gst_plugins_rtp_sources = [
   'gstrtpsink.c',
   'gstrtpsrc.c',
   'gstrtp-utils.c',
+  'gstrtpav1common.c',
+  'gstrtpav1pay.c',
+  'gstrtpav1depay.c',
 ]
 
 gstrtp = library('gstrtpmanagerbad',
