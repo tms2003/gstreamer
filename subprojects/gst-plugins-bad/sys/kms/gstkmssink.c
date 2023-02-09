@@ -1925,15 +1925,6 @@ gst_kms_sink_show_frame (GstVideoSink * vsink, GstBuffer * buf)
   }
 
   if ((crop = gst_buffer_get_video_crop_meta (buffer))) {
-    GstVideoInfo cropped_vinfo = *vinfo;
-
-    cropped_vinfo.width = crop->width;
-    cropped_vinfo.height = crop->height;
-
-    if (!gst_kms_sink_calculate_display_ratio (self, &cropped_vinfo, &src.w,
-            &src.h))
-      goto no_disp_ratio;
-
     src.x = crop->x;
     src.y = crop->y;
   }
@@ -2031,13 +2022,6 @@ set_plane_failed:
         dst.h);
     GST_ELEMENT_ERROR (self, RESOURCE, FAILED,
         (NULL), ("drmModeSetPlane failed: %s (%d)", g_strerror (errno), errno));
-    goto bail;
-  }
-no_disp_ratio:
-  {
-    GST_OBJECT_UNLOCK (self);
-    GST_ELEMENT_ERROR (self, CORE, NEGOTIATION, (NULL),
-        ("Error calculating the output display ratio of the video."));
     goto bail;
   }
 }
