@@ -1897,13 +1897,9 @@ gst_kms_sink_show_frame (GstVideoSink * vsink, GstBuffer * buf)
   if (buf) {
     buffer = gst_kms_sink_get_input_buffer (self, buf);
     vinfo = &self->vinfo;
-    video_width = src.w = GST_VIDEO_SINK_WIDTH (self);
-    video_height = src.h = GST_VIDEO_SINK_HEIGHT (self);
   } else if (self->last_buffer) {
     buffer = gst_buffer_ref (self->last_buffer);
     vinfo = &self->last_vinfo;
-    video_width = src.w = self->last_width;
-    video_height = src.h = self->last_height;
   }
 
   /* Make sure buf is not used accidentally */
@@ -1926,17 +1922,27 @@ gst_kms_sink_show_frame (GstVideoSink * vsink, GstBuffer * buf)
   if ((crop = gst_buffer_get_video_crop_meta (buffer))) {
     src.x = crop->x;
     src.y = crop->y;
-  }
-
-retry_set_plane:
-  gst_video_sink_center_rect (src, self->render_rect, &result, self->can_scale);
-
-  if (crop) {
     src.w = crop->width;
     src.h = crop->height;
   } else {
-    src.w = video_width;
-    src.h = video_height;
+    src.w = GST_VIDEO_INFO_WIDTH(vinfo);
+    src.h = GST_VIDEO_INFO_HEIGHT(vinfo);
+  }
+
+retry_set_plane:
+  if (!self->can_scale) {
+    gst_video_sink_center_rect (src, self->render_rect, &result, FALSE);
+  } else {
+    GstVideoRectangle s;
+
+    /* This uses the negatiated input size, but with a correction for PAR
+     * mismatch. This means s might not represent the actual video resolution, but
+     * it does have the right aspect ratio, which is all what counts when we will
+     * proportionally scale to fit th render_rect anyway. */
+    s.w = GST_VIDEO_SINK_WIDTH (self);
+    s.h = GST_VIDEO_SINK_HEIGHT (self);
+
+    gst_video_sink_center_rect (s, self->render_rect, &result, TRUE);
   }
 
   /* handle out of screen case */
