@@ -1945,7 +1945,10 @@ retry_set_plane:
     gst_video_sink_center_rect (s, self->render_rect, &result, TRUE);
   }
 
-  /* handle out of screen case */
+  /* handle out of screen case - can only happen when render_rect is not
+   * entirely inside of the display.
+   * TODO: This fix does not keep aspect ratio (in can_scale case) and does not
+   * handle a render rect that is entirely outside of the display. */
   if ((result.x + result.w) > self->hdisplay)
     result.w = self->hdisplay - result.x;
 
@@ -1957,7 +1960,8 @@ retry_set_plane:
     goto sync_frame;
   }
 
-  /* to make sure it can be show when driver don't support scale */
+  /* gst_video_sink_center_rect applies clipping to result, but this needs to be
+   * applied to src too (but when can_scale, clipping should never happen). */
   if (!self->can_scale) {
     src.w = result.w;
     src.h = result.h;
