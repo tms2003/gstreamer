@@ -1887,7 +1887,6 @@ gst_kms_sink_show_frame (GstVideoSink * vsink, GstBuffer * buf)
   GstVideoCropMeta *crop;
   GstVideoRectangle src = { 0, };
   gint video_width, video_height;
-  GstVideoRectangle dst = { 0, };
   GstVideoRectangle result;
   GstFlowReturn res;
 
@@ -1929,14 +1928,8 @@ gst_kms_sink_show_frame (GstVideoSink * vsink, GstBuffer * buf)
     src.y = crop->y;
   }
 
-  dst.w = self->render_rect.w;
-  dst.h = self->render_rect.h;
-
 retry_set_plane:
-  gst_video_sink_center_rect (src, dst, &result, self->can_scale);
-
-  result.x += self->render_rect.x;
-  result.y += self->render_rect.y;
+  gst_video_sink_center_rect (src, self->render_rect, &result, self->can_scale);
 
   if (crop) {
     src.w = crop->width;
@@ -2017,9 +2010,10 @@ set_plane_failed:
   {
     GST_OBJECT_UNLOCK (self);
     GST_DEBUG_OBJECT (self, "result = { %d, %d, %d, %d} / "
-        "src = { %d, %d, %d %d } / dst = { %d, %d, %d %d }", result.x, result.y,
-        result.w, result.h, src.x, src.y, src.w, src.h, dst.x, dst.y, dst.w,
-        dst.h);
+        "src = { %d, %d, %d %d } / render_rect = { %d, %d, %d, %d }",
+        result.x, result.y, result.w, result.h, src.x, src.y, src.w, src.h,
+        self->render_rect.x, self->render_rect.y, self->render_rect.w,
+        self->render_rect.h);
     GST_ELEMENT_ERROR (self, RESOURCE, FAILED,
         (NULL), ("drmModeSetPlane failed: %s (%d)", g_strerror (errno), errno));
     goto bail;
