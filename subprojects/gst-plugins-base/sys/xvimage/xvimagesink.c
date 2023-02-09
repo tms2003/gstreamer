@@ -247,7 +247,6 @@ gst_xv_image_sink_xvimage_put (GstXvImageSink * xvimagesink,
   GstVideoRectangle result;
   gboolean draw_border = FALSE;
   GstVideoRectangle src = { 0, };
-  GstVideoRectangle dst = { 0, };
   GstVideoRectangle mem_crop;
   GstXWindow *xwindow;
 
@@ -312,12 +311,8 @@ gst_xv_image_sink_xvimage_put (GstXvImageSink * xvimagesink,
      * which case the image will be scaled to fit the negotiated size. */
     s.w = GST_VIDEO_SINK_WIDTH (xvimagesink);
     s.h = GST_VIDEO_SINK_HEIGHT (xvimagesink);
-    dst.w = xwindow->render_rect.w;
-    dst.h = xwindow->render_rect.h;
 
-    gst_video_sink_center_rect (s, dst, &result, TRUE);
-    result.x += xwindow->render_rect.x;
-    result.y += xwindow->render_rect.y;
+    gst_video_sink_center_rect (s, xwindow->render_rect, &result, TRUE);
   } else {
     memcpy (&result, &xwindow->render_rect, sizeof (GstVideoRectangle));
   }
@@ -1298,7 +1293,6 @@ gst_xv_image_sink_navigation_send_event (GstNavigation * navigation,
   gboolean handled = FALSE;
 
   GstVideoRectangle src = { 0, };
-  GstVideoRectangle dst = { 0, };
   GstVideoRectangle result;
   gdouble x, y, xscale = 1.0, yscale = 1.0;
   GstXWindow *xwindow;
@@ -1317,12 +1311,8 @@ gst_xv_image_sink_navigation_send_event (GstNavigation * navigation,
        that respect pixel aspect ratios */
     src.w = GST_VIDEO_SINK_WIDTH (xvimagesink);
     src.h = GST_VIDEO_SINK_HEIGHT (xvimagesink);
-    dst.w = xwindow->render_rect.w;
-    dst.h = xwindow->render_rect.h;
 
-    gst_video_sink_center_rect (src, dst, &result, TRUE);
-    result.x += xwindow->render_rect.x;
-    result.y += xwindow->render_rect.y;
+    gst_video_sink_center_rect (src, xwindow->render_rect, &result, TRUE);
   } else {
     memcpy (&result, &xwindow->render_rect, sizeof (GstVideoRectangle));
   }
