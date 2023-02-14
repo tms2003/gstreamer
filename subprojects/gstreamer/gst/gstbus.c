@@ -856,6 +856,10 @@ static void
 gst_bus_source_finalize (GSource * source)
 {
   GstBusSource *bsource = (GstBusSource *) source;
+
+  if (G_UNLIKELY (bsource->bus == NULL))
+    return;
+
 #if !GLIB_CHECK_VERSION(2,63,3)
   GstBus *bus = bsource->bus;
 
