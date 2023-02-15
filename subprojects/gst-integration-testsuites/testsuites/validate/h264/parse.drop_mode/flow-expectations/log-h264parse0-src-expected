@@ -1,0 +1,12 @@
+event stream-start: GstEventStreamStart, flags=(GstStreamFlags)GST_STREAM_FLAG_NONE, group-id=(uint)1;
+event segment: format=TIME, start=1000:00:00.000000000, offset=0:00:00.000000000, stop=none, time=0:00:00.000000000, base=0:00:00.000000000, position=1000:00:00.000000000
+buffer: content-id=0, dts=1000:00:00.000000000, pts=1000:00:00.000000000, dur=0:00:00.100000000, flags=discont marker header, meta=GstVideoSEIUserDataUnregisteredMeta
+buffer: content-id=1, dts=1000:00:00.100000000, pts=1000:00:00.100000000, dur=0:00:00.100000000, flags=marker delta-unit
+buffer: content-id=2, dts=1000:00:00.200000000, pts=1000:00:00.200000000, dur=0:00:00.100000000, flags=marker delta-unit
+buffer: content-id=3, dts=1000:00:00.300000000, pts=1000:00:00.300000000, dur=0:00:00.100000000, flags=marker delta-unit
+buffer: content-id=4, dts=1000:00:00.400000000, pts=1000:00:00.400000000, dur=0:00:00.100000000, flags=marker delta-unit
+
+CHECKPOINT: Setting skip-frame to non-idr on h264parse, only keyframes should be output, ie. 2 frames per second
+
+buffer: content-id=5, dts=1000:00:00.500000000, pts=1000:00:00.500000000, dur=0:00:00.100000000, flags=marker header
+buffer: content-id=6, dts=1000:00:01.000000000, pts=1000:00:01.000000000, dur=0:00:00.100000000, flags=marker header
