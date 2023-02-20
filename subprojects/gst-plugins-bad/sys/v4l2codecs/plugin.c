@@ -25,6 +25,7 @@
 #include "gstv4l2codecav1dec.h"
 #include "gstv4l2codecdevice.h"
 #include "gstv4l2codech264dec.h"
+#include "gstv4l2codech264enc.h"
 #include "gstv4l2codech265dec.h"
 #include "gstv4l2codecmpeg2dec.h"
 #include "gstv4l2codecvp8dec.h"
@@ -117,6 +118,12 @@ register_video_encoder (GstPlugin * plugin, GstV4l2CodecDevice * device)
         GST_INFO_OBJECT (encoder, "Registering %s as VP8 Encoder",
             device->name);
         gst_v4l2_codec_vp8_enc_register (plugin, encoder, device,
+            GST_RANK_PRIMARY + 1);
+        break;
+      case V4L2_PIX_FMT_H264_SLICE:
+        GST_INFO_OBJECT (encoder, "Registering %s as H264 Encoder",
+            device->name);
+        gst_v4l2_codec_h264_enc_register (plugin, encoder, device,
             GST_RANK_PRIMARY + 1);
         break;
       default:
