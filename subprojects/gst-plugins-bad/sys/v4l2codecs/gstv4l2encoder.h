@@ -134,6 +134,8 @@ gboolean          gst_v4l2_encoder_request_failed (GstV4l2Request * request);
 
 gboolean	  gst_v4l2_codec_vp8_enc_get_qp_range (GstV4l2Encoder * self, guint * qp_min, guint * qp_max);
 
+gboolean	  gst_v4l2_codec_h264_enc_get_qp_range (GstV4l2Encoder * self, guint * qp_min, guint * qp_max);
+
 G_END_DECLS
 
 #endif /* __GST_V4L2_ENCODER_H__ */
