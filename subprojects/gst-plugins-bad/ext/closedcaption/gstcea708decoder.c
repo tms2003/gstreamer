@@ -307,6 +307,7 @@ gst_cea708dec_process_dtvcc_byte (Cea708Dec * decoder,
       decoder->output_ignore = 2;
       GST_INFO ("do not support 0x18-0x1F");
     }
+    gst_cea708dec_show_pango_window (decoder, decoder->current_window);
   } else if ((c >= 0x20) && (c <= 0x7F)) {      /* G0 */
     if (c == 0x7F) {
       gst_cea708dec_window_add_char (decoder, CC_SPECIAL_CODE_MUSIC_NOTE);
@@ -315,6 +316,7 @@ gst_cea708dec_process_dtvcc_byte (Cea708Dec * decoder,
     }
   } else if ((c >= 0x80) && (c <= 0x9F)) {      /* C1 */
     gst_cea708dec_process_command (decoder, dtvcc_buffer, index);
+    gst_cea708dec_show_pango_window (decoder, decoder->current_window);
   } else if ((c >= 0xA0) && (c <= 0xFF)) {      /* G1 */
     gst_cea708dec_window_add_char (decoder, c);
   }
