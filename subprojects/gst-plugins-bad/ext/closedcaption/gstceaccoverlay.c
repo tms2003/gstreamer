@@ -885,22 +885,27 @@ gst_cea_cc_overlay_push_frame (GstCeaCcOverlay * overlay,
   if (gst_pad_check_reconfigure (overlay->srcpad))
     gst_cea_cc_overlay_negotiate (overlay, NULL);
 
-  video_frame = gst_buffer_make_writable (video_frame);
+  if (overlay->silent) {
+    GST_LOG_OBJECT (overlay, "ADH: Silent - not pushing frame");
+  } else {
+    video_frame = gst_buffer_make_writable (video_frame);
 
-  if (overlay->attach_compo_to_buffer) {
-    GST_DEBUG_OBJECT (overlay, "Attaching text overlay image to video buffer");
-    gst_buffer_add_video_overlay_composition_meta (video_frame,
-        overlay->current_composition);
-    goto done;
+    if (overlay->attach_compo_to_buffer) {
+      GST_DEBUG_OBJECT (overlay,
+          "Attaching text overlay image to video buffer");
+      gst_buffer_add_video_overlay_composition_meta (video_frame,
+          overlay->current_composition);
+      goto done;
+    }
+
+    if (!gst_video_frame_map (&frame, &overlay->info, video_frame,
+            GST_MAP_READWRITE))
+      goto invalid_frame;
+
+    gst_video_overlay_composition_blend (overlay->current_composition, &frame);
+
+    gst_video_frame_unmap (&frame);
   }
-
-  if (!gst_video_frame_map (&frame, &overlay->info, video_frame,
-          GST_MAP_READWRITE))
-    goto invalid_frame;
-
-  gst_video_overlay_composition_blend (overlay->current_composition, &frame);
-
-  gst_video_frame_unmap (&frame);
 
 done:
 
@@ -1790,16 +1795,6 @@ wait_for_text_buf:
 
   if (overlay->video_eos)
     goto have_eos;
-
-  if (overlay->silent) {
-    GST_CEA_CC_OVERLAY_UNLOCK (overlay);
-    ret = gst_pad_push (overlay->srcpad, buffer);
-
-    /* Update position */
-    overlay->segment.position = clip_start;
-
-    return ret;
-  }
 
   /* Closed Caption pad not linked, rendering video only */
   if (!overlay->cc_pad_linked) {
