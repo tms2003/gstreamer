@@ -1510,7 +1510,7 @@ gst_cea708dec_process_command (Cea708Dec * decoder,
       decoder->output_ignore = 1;       /* 1 byte parameter = windowmap */
 
       /* Show window */
-      gst_cea708dec_for_each_window (decoder, window_list, NO_CHANGE,
+      gst_cea708dec_for_each_window (decoder, window_list, SWITCH_TO_SHOW,
           "display_window", gst_cea708dec_show_pango_window);
       return;
 
