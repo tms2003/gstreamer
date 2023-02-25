@@ -323,7 +323,7 @@ gst_cuda_context_weak_ref_notify (gpointer data, GstCudaContext * context)
     if (gst_cuda_context_push (context)) {
       while (g_hash_table_iter_next (&iter, &key, nullptr)) {
         GstCudaContext *peer = GST_CUDA_CONTEXT (key);
-        CUcontext peer_handle = gst_cuda_context_get_handle (peer);
+        CUcontext peer_handle = (CUcontext) gst_cuda_context_get_handle (peer);
         GST_DEBUG_OBJECT (context,
             "Disable peer access to %" GST_PTR_FORMAT, peer);
         gst_cuda_result (CuCtxDisablePeerAccess (peer_handle));
@@ -346,7 +346,7 @@ gst_cuda_context_weak_ref_notify (gpointer data, GstCudaContext * context)
 
     if (g_hash_table_lookup (other_priv->accessible_peer, context)) {
       if (gst_cuda_context_push (other)) {
-        self_handle = gst_cuda_context_get_handle (context);
+        self_handle = (CUcontext) gst_cuda_context_get_handle (context);
         GST_DEBUG_OBJECT (other,
             "Disable peer access to %" GST_PTR_FORMAT, context);
         gst_cuda_result (CuCtxDisablePeerAccess (self_handle));

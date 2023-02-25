@@ -74,16 +74,45 @@ if host_system == 'windows'
   endif
 endif
 
+gstcuda_incdirs = [configinc, libsinc, cuda_stubinc]
+gstcuda_deps = [gstbase_dep, gmodule_dep, gstvideo_dep, gstglproto_dep, gstd3d11_dep]
+
+have_nvmm = false
+if host_system == 'linux'
+  fs = import('fs')
+  cuda_str = fs.read('/usr/local/cuda/version.txt').strip()
+  cuda_version = cuda_str.replace('CUDA Version', '').strip()
+  cuda_version_arr = cuda_version.split('.')
+  cuda_version_major = cuda_version_arr[0].to_int()
+  cuda_version_minor = cuda_version_arr[1].to_int()
+
+  cuda_dep = dependency('cuda-@0@.@1@'.format(cuda_version_major, cuda_version_minor), required: false)
+  egl_dep = dependency('egl', required: false)
+  nvbufsurface_inc = include_directories('/opt/nvidia/deepstream/deepstream/sources/includes/')
+  nvbufsurface_lib = cc.find_library('nvbufsurface',
+    has_headers: ['nvbufsurface.h'],
+    header_include_directories: nvbufsurface_inc,
+    dirs: '/opt/nvidia/deepstream/deepstream/lib/',
+  )
+  have_nvmm = cuda_dep.found() and egl_dep.found() and nvbufsurface_lib.found()
+
+  if have_nvmm
+    extra_args += ['-DHAVE_NVCODEC_NVMM']
+    gstcuda_deps += [nvbufsurface_lib, egl_dep, cuda_dep, gstcuda_stub_dep]
+    gstcuda_incdirs += nvbufsurface_inc
+  endif
+endif
+
 pkg_name = 'gstreamer-cuda-' + api_version
 gstcuda= library('gstcuda-' + api_version,
   cuda_sources,
   c_args : gst_plugins_bad_args + extra_args,
   cpp_args : gst_plugins_bad_args + extra_args,
-  include_directories : [configinc, libsinc, cuda_stubinc],
+  include_directories : gstcuda_incdirs,
   version : libversion,
   soversion : soversion,
   install : true,
-  dependencies : [gstbase_dep, gmodule_dep, gstvideo_dep, gstglproto_dep, gstd3d11_dep, gstcuda_platform_dep]
+  dependencies : gstcuda_deps
 )
 
 gen_sources = []
@@ -129,7 +158,7 @@ endif
 gst_libraries += [[pkg_name, library_def]]
 
 pkgconfig.generate(gstcuda,
-  libraries : [gstbase_dep, gmodule_dep, gstvideo_dep, gstglproto_dep, gstcuda_platform_dep],
+  libraries : gstcuda_deps,
   variables : pkgconfig_variables,
   subdirs : pkgconfig_subdirs,
   name : pkg_name,
@@ -138,8 +167,8 @@ pkgconfig.generate(gstcuda,
 
 install_headers(cuda_headers + ['cuda-gst.h', 'gstcuda.h'], subdir : 'gstreamer-1.0/gst/cuda')
 gstcuda_dep = declare_dependency(link_with : gstcuda,
-  include_directories : [libsinc],
-  dependencies : [gstbase_dep, gmodule_dep, gstvideo_dep, gstglproto_dep, gstcuda_platform_dep],
+  include_directories : gstcuda_incdirs,
+  dependencies : gstcuda_deps,
   sources: gen_sources)
 
 meson.override_dependency(pkg_name, gstcuda_dep)

@@ -1,5 +1,6 @@
 /* GStreamer
  * Copyright (C) <2018-2019> Seungha Yang <seungha.yang@navercorp.com>
+ * Copyright (C) <2023> Cesar Fabian Orccon Chipana <cfoch.fabian@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -36,7 +37,8 @@
 #endif
 
 #ifdef HAVE_NVCODEC_NVMM
-#include "gstcudanvmm.h"
+#include <nvbufsurface.h>
+#include <cudaEGL.h>
 #endif
 
 #include "gstcudamemory.h"
@@ -775,14 +777,14 @@ static gboolean
 map_buffer_and_fill_copy2d (GstBuffer * buf, const GstVideoInfo * info,
     GstCudaBufferCopyType copy_type, GstVideoFrame * frame,
     GstMapInfo * map_info, gboolean is_src,
-    CUDA_MEMCPY2D copy_params[GST_VIDEO_MAX_PLANES])
+    CUDA_MEMCPY2D copy_params[GST_VIDEO_MAX_PLANES], GstCudaContext * context)
 {
   gboolean buffer_mapped = FALSE;
   guint i;
-
 #ifdef HAVE_NVCODEC_NVMM
+  NvBufSurface *surface;
+
   if (copy_type == GST_CUDA_BUFFER_COPY_NVMM) {
-    NvBufSurface *surface;
     NvBufSurfaceParams *surface_params;
     NvBufSurfacePlaneParams *plane_params;
 
@@ -865,6 +867,52 @@ map_buffer_and_fill_copy2d (GstBuffer * buf, const GstVideoInfo * info,
         }
         break;
       }
+      case NVBUF_MEM_SURFACE_ARRAY:
+      {
+        /* Jetson case. */
+        CUeglFrame eglFrame;
+        CUgraphicsResource cuda_resource;
+        CUdeviceptr dev_ptr;
+        size_t size;
+
+        if (!is_src) {
+          GST_ERROR
+              ("Only NVMM -> CUDAMemory is supported for NVBUF_MEM_SURFACE_ARRAY.");
+          goto error;
+        }
+
+        if (!gst_cuda_context_push (context)) {
+          GST_ERROR_OBJECT (context, "Failed to push our context");
+          goto error;
+        }
+
+        if (NvBufSurfaceMapEglImage (surface, -1) == -1) {
+          GST_ERROR_OBJECT (context, "Failed to map EGL image.");
+          goto pop_context;
+        }
+
+        if (!gst_cuda_result (cuGraphicsEGLRegisterImage (&cuda_resource,
+                    surface_params[0].mappedAddr.eglImage,
+                    CU_GRAPHICS_MAP_RESOURCE_FLAGS_NONE)))
+          goto nvmm_map_failed;
+
+        if (!gst_cuda_result (CuGraphicsResourceGetMappedPointer (&dev_ptr,
+                    &size, cuda_resource)))
+          goto nvmm_get_devptr_failed;
+
+        if (!gst_cuda_result (cuGraphicsResourceGetMappedEglFrame (&eglFrame,
+                    cuda_resource, 0, 0)))
+          goto nvmm_get_eglframe_failed;
+
+        for (int i = 0; i < plane_params->num_planes; i++) {
+          copy_params[i].srcMemoryType = CU_MEMORYTYPE_DEVICE;
+          copy_params[i].srcDevice = dev_ptr;
+          copy_params[i].srcPitch = eglFrame.pitch;
+        }
+
+        gst_cuda_context_pop (NULL);
+        break;
+      }
       default:
         GST_ERROR ("Unexpected NVMM memory type %d", surface->memType);
         goto error;
@@ -945,6 +993,27 @@ map_buffer_and_fill_copy2d (GstBuffer * buf, const GstVideoInfo * info,
 
   return TRUE;
 
+#ifdef HAVE_NVCODEC_NVMM
+nvmm_get_eglframe_failed:
+  {
+    GST_ERROR_OBJECT (context, "Failed to get mapped EGL frame.");
+  }
+nvmm_get_devptr_failed:
+  {
+    GST_ERROR_OBJECT (context, "Failed to get mapped pointer.");
+  }
+nvmm_map_failed:
+  {
+    GST_ERROR_OBJECT (context, "Failed to register EGL image.");
+
+    if (!NvBufSurfaceUnMap (surface, -1, -1))
+      GST_ERROR_OBJECT (context, "NvBufSurfaceUnMap failed.");
+  }
+pop_context:
+  {
+    gst_cuda_context_pop (NULL);
+  }
+#endif
 error:
   if (buffer_mapped) {
     gst_buffer_unmap (buf, map_info);
@@ -984,13 +1053,13 @@ gst_cuda_buffer_copy_internal (GstBuffer * dst_buf,
   memset (&src_map, 0, sizeof (GstMapInfo));
 
   if (!map_buffer_and_fill_copy2d (dst_buf, dst_info,
-          dst_type, &dst_frame, &dst_map, FALSE, copy_params)) {
+          dst_type, &dst_frame, &dst_map, FALSE, copy_params, context)) {
     GST_ERROR_OBJECT (context, "Failed to map output buffer");
     return FALSE;
   }
 
   if (!map_buffer_and_fill_copy2d (src_buf, src_info,
-          src_type, &src_frame, &src_map, TRUE, copy_params)) {
+          src_type, &src_frame, &src_map, TRUE, copy_params, context)) {
     GST_ERROR_OBJECT (context, "Failed to map input buffer");
     unmap_buffer_or_frame (dst_buf, &dst_frame, &dst_map);
     return FALSE;
@@ -1131,7 +1200,7 @@ gl_copy_thread_func (GstGLContext * gl_context, GLCopyData * data)
 
     if (!map_buffer_and_fill_copy2d (cuda_buf,
             data->dst_info, data->copy_type, &cuda_frame, &cuda_map_info,
-            FALSE, copy_params)) {
+            FALSE, copy_params, context)) {
       GST_ERROR_OBJECT (context, "Failed to map output CUDA buffer");
       return;
     }
@@ -1141,7 +1210,7 @@ gl_copy_thread_func (GstGLContext * gl_context, GLCopyData * data)
 
     if (!map_buffer_and_fill_copy2d (cuda_buf,
             data->src_info, data->copy_type, &cuda_frame, &cuda_map_info,
-            TRUE, copy_params)) {
+            TRUE, copy_params, context)) {
       GST_ERROR_OBJECT (context, "Failed to map input CUDA buffer");
       return;
     }
@@ -1371,7 +1440,7 @@ cuda_copy_d3d11_interop (GstBuffer * dst_buf, const GstVideoInfo * dst_info,
     }
     if (!map_buffer_and_fill_copy2d (cuda_buf,
             dst_info, GST_CUDA_BUFFER_COPY_CUDA, &cuda_frame, &cuda_map_info,
-            FALSE, copy_params)) {
+            FALSE, copy_params, context)) {
       GST_ERROR_OBJECT (context, "Failed to map output CUDA buffer");
       gst_video_frame_unmap (&d3d11_frame);
       return FALSE;
@@ -1386,7 +1455,7 @@ cuda_copy_d3d11_interop (GstBuffer * dst_buf, const GstVideoInfo * dst_info,
     }
     if (!map_buffer_and_fill_copy2d (cuda_buf,
             src_info, GST_CUDA_BUFFER_COPY_CUDA, &cuda_frame, &cuda_map_info,
-            TRUE, copy_params)) {
+            TRUE, copy_params, context)) {
       GST_ERROR_OBJECT (context, "Failed to map input CUDA buffer");
       gst_video_frame_unmap (&d3d11_frame);
       return FALSE;
