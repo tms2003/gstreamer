@@ -374,6 +374,65 @@ qtdemux_dump_stsd_metx (GstQTDemux * qtdemux, GstByteReader * data, int depth)
   return TRUE;
 }
 
+static gboolean
+qtdemux_dump_stsd_mhaC (GstQTDemux * qtdemux, GstByteReader * data, int depth)
+{
+  guint32 size, fourcc;
+  guint16 data_ref_id, n_channels, sample_size;
+  guint32 sample_rate;
+  guint8 config_version;
+  guint8 mpegh3da_profile_level_indication;
+  guint8 reference_channel_layout;
+  guint16 mpegh3da_config_length;
+
+  if (!gst_byte_reader_skip (data, 6) ||
+      !gst_byte_reader_get_uint16_be (data, &data_ref_id) ||
+      !gst_byte_reader_skip (data, 8) ||
+      !gst_byte_reader_get_uint16_be (data, &n_channels) ||
+      !gst_byte_reader_get_uint16_be (data, &sample_size) ||
+      !gst_byte_reader_skip (data, 4) ||
+      !gst_byte_reader_get_uint32_be (data, &sample_rate))
+    return FALSE;
+
+  GST_LOG_OBJECT (qtdemux, "%*s  data reference: %d", depth, "", data_ref_id);
+  GST_LOG_OBJECT (qtdemux, "%*s  channel count:  %d", depth, "", n_channels);
+  GST_LOG_OBJECT (qtdemux, "%*s  sample size:    %d", depth, "", sample_size);
+  GST_LOG_OBJECT (qtdemux, "%*s  sample rate:    %d", depth, "",
+      (sample_rate >> 16));
+
+  if (!gst_byte_reader_get_uint32_be (data, &size) ||
+      !qt_atom_parser_get_fourcc (data, &fourcc))
+    return FALSE;
+
+  if (fourcc != FOURCC_mhaC) {
+    GST_WARNING_OBJECT (qtdemux, "mha1 sample entry does not contain mhaC "
+        "configuration box; actual fourCC: %" GST_FOURCC_FORMAT " size: %"
+        G_GUINT32_FORMAT, GST_FOURCC_ARGS (fourcc), size);
+    return FALSE;
+  }
+
+  if (!gst_byte_reader_get_uint8 (data, &config_version) ||
+      !gst_byte_reader_get_uint8 (data, &mpegh3da_profile_level_indication) ||
+      !gst_byte_reader_get_uint8 (data, &reference_channel_layout) ||
+      !gst_byte_reader_get_uint16_be (data, &mpegh3da_config_length))
+    return FALSE;
+
+  GST_LOG_OBJECT (qtdemux,
+      "%*s  config version:                           %d", depth, "",
+      (gint) config_version);
+  GST_LOG_OBJECT (qtdemux,
+      "%*s  MPEG-H 3D audio profile level indication: %d", depth, "",
+      (gint) mpegh3da_profile_level_indication);
+  GST_LOG_OBJECT (qtdemux,
+      "%*s  reference channel layout:                 %d", depth, "",
+      (gint) reference_channel_layout);
+  GST_LOG_OBJECT (qtdemux,
+      "%*s  MPEG-H 3D audio configuration length:     %" G_GUINT16_FORMAT,
+      depth, "", mpegh3da_config_length);
+
+  return TRUE;
+}
+
 gboolean
 qtdemux_dump_stsd (GstQTDemux * qtdemux, GstByteReader * data, int depth)
 {
@@ -430,6 +489,10 @@ qtdemux_dump_stsd (GstQTDemux * qtdemux, GstByteReader * data, int depth)
         break;
       case FOURCC_metx:
         if (!qtdemux_dump_stsd_metx (qtdemux, &sub, depth + 1))
+          return FALSE;
+        break;
+      case FOURCC_mha1:
+        if (!qtdemux_dump_stsd_mhaC (qtdemux, &sub, depth + 1))
           return FALSE;
         break;
       default:

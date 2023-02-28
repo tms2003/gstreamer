@@ -448,6 +448,11 @@ G_BEGIN_DECLS
 /* ONVIF Export File Format */
 #define FOURCC_cstb     GST_MAKE_FOURCC('c','s','t','b')
 
+/* MPEG-H 3D audio */
+#define FOURCC_mhaC     GST_MAKE_FOURCC('m','h','a','C')
+#define FOURCC_mha1     GST_MAKE_FOURCC('m','h','a','1')
+#define FOURCC_mhm1     GST_MAKE_FOURCC('m','h','m','1')
+
 G_END_DECLS
 
 #endif /* __FOURCC_H__ */
