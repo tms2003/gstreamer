@@ -159,6 +159,11 @@ gst_audio_channel_mixer_fill_compatible (gfloat ** matrix, gint in_channels,
     { {
     GST_AUDIO_CHANNEL_POSITION_REAR_LEFT,
             GST_AUDIO_CHANNEL_POSITION_REAR_RIGHT}, {
+    GST_AUDIO_CHANNEL_POSITION_REAR_CENTER}},
+        /* rear center: 2 <-> 1 */
+    { {
+    GST_AUDIO_CHANNEL_POSITION_REAR_LEFT_OF_CENTER,
+            GST_AUDIO_CHANNEL_POSITION_REAR_RIGHT_OF_CENTER}, {
     GST_AUDIO_CHANNEL_POSITION_REAR_CENTER}}, { {
     GST_AUDIO_CHANNEL_POSITION_INVALID}}
   };
