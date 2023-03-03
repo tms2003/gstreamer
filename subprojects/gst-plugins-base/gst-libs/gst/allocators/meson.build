@@ -5,9 +5,23 @@ gst_allocators_headers = files([
   'gstphysmemory.h',
   'gstdmabuf.h',
 ])
+
+if cc.has_header('linux/dma-heap.h')
+  gst_allocators_headers += [
+    'gstdmabufheaps.h',
+  ]
+endif
+
 install_headers(gst_allocators_headers, subdir : 'gstreamer-1.0/gst/allocators/')
 
 gst_allocators_sources = files([ 'gstdmabuf.c', 'gstfdmemory.c', 'gstphysmemory.c'])
+
+if cc.has_header('linux/dma-heap.h')
+  gst_allocators_sources += [
+    'gstdmabufheaps.c',
+  ]
+endif
+
 gstallocators = library('gstallocators-@0@'.format(api_version),
   gst_allocators_sources,
   c_args : gst_plugins_base_args + ['-DBUILDING_GST_ALLOCATORS', '-DG_LOG_DOMAIN="GStreamer-Allocators"'],
