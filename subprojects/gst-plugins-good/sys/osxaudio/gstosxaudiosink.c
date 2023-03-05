@@ -203,6 +203,7 @@ gst_osx_audio_sink_init (GstOsxAudioSink * sink)
   GST_DEBUG ("Initialising object");
 
   sink->device_id = kAudioDeviceUnknown;
+  sink->is_default = TRUE;
   sink->volume = DEFAULT_VOLUME;
 }
 
@@ -216,6 +217,7 @@ gst_osx_audio_sink_set_property (GObject * object, guint prop_id,
 #ifndef HAVE_IOS
     case ARG_DEVICE:
       sink->device_id = g_value_get_int (value);
+      sink->is_default = FALSE;
       break;
 #endif
     case ARG_VOLUME:
@@ -501,6 +503,8 @@ gst_osx_audio_sink_create_ringbuffer (GstAudioBaseSink * sink)
    */
   if (ringbuffer->core_audio->device_id != osxsink->device_id)
     ringbuffer->core_audio->device_id = osxsink->device_id;
+
+  ringbuffer->core_audio->is_following_default = osxsink->is_default;
 
   return GST_AUDIO_RING_BUFFER (ringbuffer);
 }

@@ -73,6 +73,7 @@ struct _GstOsxAudioSrc
   GstAudioBaseSrc src;
 
   AudioDeviceID device_id;
+  gboolean is_default;
 };
 
 struct _GstOsxAudioSrcClass

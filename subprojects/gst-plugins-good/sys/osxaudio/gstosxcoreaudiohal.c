@@ -1028,6 +1028,37 @@ _io_proc_spdif_stop (GstCoreAudio * core_audio)
  *   Implementation    *
  **********************/
 
+static OSStatus
+_default_device_changed_listener (AudioObjectID inObjectID,
+    UInt32 inNumberAddresses,
+    const AudioObjectPropertyAddress inAddresses[], void *inClientData)
+{
+  OSStatus status = noErr;
+  guint i;
+  GstCoreAudio *core_audio = inClientData;
+  AudioObjectPropertySelector prop_selector;
+  AudioDeviceID default_device_id;
+
+  prop_selector =
+      core_audio->is_src ? kAudioHardwarePropertyDefaultInputDevice :
+      kAudioHardwarePropertyDefaultOutputDevice;
+
+  for (i = 0; i < inNumberAddresses; i++) {
+    if (inAddresses[i].mSelector == prop_selector) {
+      default_device_id =
+          _audio_system_get_default_device (!core_audio->is_src);
+      if (default_device_id != kAudioDeviceUnknown) {
+        core_audio->device_id = default_device_id;
+        if (!gst_core_audio_bind_device (core_audio)) {
+          GST_DEBUG ("Could not bind changed default device");
+        }
+      }
+      break;
+    }
+  }
+  return (status);
+}
+
 static gboolean
 gst_core_audio_open_impl (GstCoreAudio * core_audio)
 {
@@ -1060,8 +1091,60 @@ gst_core_audio_open_impl (GstCoreAudio * core_audio)
     goto done;
   }
 
+  if (core_audio->is_following_default) {
+    OSStatus status;
+    AudioObjectPropertySelector prop_selector;
+
+    prop_selector =
+        core_audio->is_src ? kAudioHardwarePropertyDefaultInputDevice :
+        kAudioHardwarePropertyDefaultOutputDevice;
+    AudioObjectPropertyAddress propAddress = {
+      prop_selector,
+      kAudioObjectPropertyScopeGlobal,
+      kAudioObjectPropertyElementMaster
+    };
+
+    /* Install the property listener */
+    status = AudioObjectAddPropertyListener (kAudioObjectSystemObject,
+        &propAddress, _default_device_changed_listener, (void *) core_audio);
+    if (status != noErr) {
+      GST_ERROR_OBJECT (core_audio->osxbuf,
+          "AudioObjectAddPropertyListener failed: %d", (int) status);
+      ret = FALSE;
+    }
+  }
+
 done:
   return ret;
+}
+
+static gboolean
+gst_core_audio_close_impl (GstCoreAudio * core_audio)
+{
+  if (core_audio->is_following_default) {
+    OSStatus status;
+    AudioObjectPropertySelector prop_selector;
+
+    prop_selector =
+        core_audio->is_src ? kAudioHardwarePropertyDefaultInputDevice :
+        kAudioHardwarePropertyDefaultOutputDevice;
+    AudioObjectPropertyAddress propAddress = {
+      prop_selector,
+      kAudioObjectPropertyScopeGlobal,
+      kAudioObjectPropertyElementMaster
+    };
+
+    /* Remove the property listener */
+    status = AudioObjectRemovePropertyListener (kAudioObjectSystemObject,
+        &propAddress, _default_device_changed_listener, (void *) core_audio);
+    if (status != noErr) {
+      GST_ERROR_OBJECT (core_audio->osxbuf,
+          "AudioObjectRemovePropertyListener failed: %d", (int) status);
+      return FALSE;
+    }
+  }
+
+  return TRUE;
 }
 
 static gboolean

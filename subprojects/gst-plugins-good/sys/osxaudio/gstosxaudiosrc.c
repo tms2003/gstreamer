@@ -166,6 +166,7 @@ gst_osx_audio_src_init (GstOsxAudioSrc * src)
   gst_base_src_set_live (GST_BASE_SRC (src), TRUE);
 
   src->device_id = kAudioDeviceUnknown;
+  src->is_default = TRUE;
 }
 
 static void
@@ -177,6 +178,7 @@ gst_osx_audio_src_set_property (GObject * object, guint prop_id,
   switch (prop_id) {
     case ARG_DEVICE:
       src->device_id = g_value_get_int (value);
+      src->is_default = FALSE;
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -322,6 +324,8 @@ gst_osx_audio_src_create_ringbuffer (GstAudioBaseSrc * src)
    */
   if (ringbuffer->core_audio->device_id != osxsrc->device_id)
     ringbuffer->core_audio->device_id = osxsrc->device_id;
+
+  ringbuffer->core_audio->is_following_default = osxsrc->is_default;
 
   return GST_AUDIO_RING_BUFFER (ringbuffer);
 }
