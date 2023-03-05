@@ -38,6 +38,7 @@ gst_core_audio_start_processing_impl (GstCoreAudio * core_audio)
 static gboolean
 gst_core_audio_pause_processing_impl (GstCoreAudio * core_audio)
 {
+  g_mutex_lock (&core_audio->io_proc_lock);
   GST_DEBUG_OBJECT (core_audio,
       "osx ring buffer pause ioproc: %p device_id %lu",
       core_audio->element->io_proc, (gulong) core_audio->device_id);
@@ -49,6 +50,7 @@ gst_core_audio_pause_processing_impl (GstCoreAudio * core_audio)
      */
     core_audio->io_proc_needs_deactivation = TRUE;
   }
+  g_mutex_unlock (&core_audio->io_proc_lock);
   return TRUE;
 }
 
