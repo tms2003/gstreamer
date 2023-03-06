@@ -39,6 +39,7 @@
 #include <gst/base/gstdataqueue.h>
 
 #include "gstisoff.h"
+#include "gstdashmatroska.h"
 #include "gstadaptivedemux.h"
 
 #include "gstmpdclient.h"
@@ -70,6 +71,13 @@ typedef struct _GstDashDemux2ClockDrift GstDashDemux2ClockDrift;
 typedef struct _GstDashDemux2 GstDashDemux2;
 typedef struct _GstDashDemux2Class GstDashDemux2Class;
 
+typedef enum
+{
+  GST_DASH_STREAM_PARSER_NONE,
+  GST_DASH_STREAM_PARSER_ISOBMFF,
+  GST_DASH_STREAM_PARSER_MATROSKA,
+} GstDashdemux2StreamParser;
+
 struct _GstDashDemux2Stream
 {
   GstAdaptiveDemux2Stream parent;
@@ -97,13 +105,15 @@ struct _GstDashDemux2Stream
   guint current_index_header_or_data;
 
   /* ISOBMFF box parsing */
-  gboolean is_isobmff;
   struct {
     /* index = 1, header = 2, data = 3 */
     guint32 current_fourcc;
     guint64 current_start_offset;
     guint64 current_size;
   } isobmff_parser;
+  /* matroska parsing */
+  GstDashMatroskaParser matroska_parser;
+  GstDashdemux2StreamParser stream_parser;
 
   GstMoofBox *moof;
   guint64 moof_offset, moof_size;
