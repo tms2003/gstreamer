@@ -33,18 +33,11 @@
 #include "gsttracerfactory.h"
 #include "gstregistry.h"
 
-GST_DEBUG_CATEGORY (tracer_debug);
+GST_DEBUG_CATEGORY_EXTERN (tracer_debug);
 #define GST_CAT_DEFAULT tracer_debug
 
-#define _do_init \
-{ \
-  GST_DEBUG_CATEGORY_INIT (tracer_debug, "GST_TRACER", \
-      GST_DEBUG_FG_BLUE, "tracing subsystem"); \
-}
-
 #define gst_tracer_factory_parent_class parent_class
-G_DEFINE_TYPE_WITH_CODE (GstTracerFactory, gst_tracer_factory,
-    GST_TYPE_PLUGIN_FEATURE, _do_init);
+G_DEFINE_TYPE (GstTracerFactory, gst_tracer_factory, GST_TYPE_PLUGIN_FEATURE);
 
 static void
 gst_tracer_factory_class_init (GstTracerFactoryClass * klass)
