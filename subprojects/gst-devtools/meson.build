@@ -29,6 +29,7 @@ osxversion = curversion + 1
 prefix = get_option('prefix')
 
 glib_req = '>= 2.62.0'
+gi_req = '>= 1.66'
 
 if gst_version_is_stable
   gst_req = '>= @0@.@1@.0'.format(gst_version_major, gst_version_minor)
@@ -109,7 +110,7 @@ gir_init_section = [ '--add-init-section=extern void gst_init(gint*,gchar**);' +
     'g_setenv("GST_PLUGIN_PATH_1_0", "", TRUE);' + \
     'g_setenv("GST_PLUGIN_SYSTEM_PATH_1_0", "", TRUE);' + \
     'gst_init(NULL,NULL);', '--quiet']
-gir = find_program('g-ir-scanner', required : get_option('introspection'))
+gir = find_program('g-ir-scanner', required : get_option('introspection'), version: gi_req)
 build_gir = gir.found() and (not meson.is_cross_build() or get_option('introspection').enabled())
 gnome = import('gnome')
 

@@ -28,6 +28,7 @@ libversion = '@0@.@1@.0'.format(soversion, curversion)
 osxversion = curversion + 1
 
 glib_req = '>= 2.62.0'
+gi_req = '>= 1.66'
 
 if gst_version_is_stable
   gst_req = '>= @0@.@1@.0'.format(gst_version_major, gst_version_minor)
@@ -129,7 +130,7 @@ if gstvalidate_dep.found()
     cdata.set('HAVE_GST_VALIDATE', 1)
 endif
 
-gir = find_program('g-ir-scanner', required : get_option('introspection'))
+gir = find_program('g-ir-scanner', required : get_option('introspection'), version: gi_req)
 gnome = import('gnome')
 
 # Fixme, not very elegant.

@@ -17,6 +17,7 @@ gst_version_is_stable = gst_version_minor.is_even()
 gst_version_is_dev = gst_version_minor.is_odd() and gst_version_micro < 90
 
 glib_req = '>= 2.62.0'
+gi_req = '>= 1.66'
 
 if gst_version_is_stable
   gst_req = '>= @0@.@1@.0'.format(gst_version_major, gst_version_minor)
@@ -170,7 +171,7 @@ else
   message('GStreamer debug system is enabled')
 endif
 
-gir = find_program('g-ir-scanner', required : get_option('introspection'))
+gir = find_program('g-ir-scanner', required : get_option('introspection'), version: gi_req)
 gnome = import('gnome')
 build_gir = gir.found() and (not meson.is_cross_build() or get_option('introspection').enabled())
 gir_init_section = [ '--add-init-section=extern void gst_init(gint*,gchar**);' + \
