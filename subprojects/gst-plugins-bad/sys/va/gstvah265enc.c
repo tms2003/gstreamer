@@ -349,8 +349,6 @@ struct _GstVaH265EncFrame
 
   gint poc;
   gboolean last_frame;
-  /* The total frame count we handled. */
-  guint total_frame_count;
 };
 
 /**
@@ -452,7 +450,6 @@ gst_va_h265_enc_frame_new (void)
   frame = g_new (GstVaH265EncFrame, 1);
   frame->last_frame = FALSE;
   frame->picture = NULL;
-  frame->total_frame_count = 0;
 
   return frame;
 }
@@ -4633,29 +4630,18 @@ gst_va_h265_enc_new_frame (GstVaBaseEnc * base, GstVideoCodecFrame * frame)
   GstVaH265EncFrame *frame_in;
 
   frame_in = gst_va_h265_enc_frame_new ();
-  frame_in->total_frame_count = base->input_frame_count++;
   gst_video_codec_frame_set_user_data (frame, frame_in,
       gst_va_h265_enc_frame_free);
 
   return TRUE;
 }
 
-static void
-gst_va_h265_enc_prepare_output (GstVaBaseEnc * base, GstVideoCodecFrame * frame)
+static guint
+gst_va_h265_enc_num_reorder_frames (GstVaBaseEnc * base)
 {
   GstVaH265Enc *self = GST_VA_H265_ENC (base);
-  GstVaH265EncFrame *frame_enc;
 
-  frame_enc = _enc_frame (frame);
-
-  frame->pts =
-      base->start_pts + base->frame_duration * frame_enc->total_frame_count;
-  /* The PTS should always be later than the DTS. */
-  frame->dts = base->start_pts + base->frame_duration *
-      ((gint64) base->output_frame_count -
-      (gint64) self->gop.num_reorder_frames);
-  base->output_frame_count++;
-  frame->duration = base->frame_duration;
+  return self->gop.num_reorder_frames;
 }
 
 /* *INDENT-OFF* */
@@ -4975,8 +4961,8 @@ gst_va_h265_enc_class_init (gpointer g_klass, gpointer class_data)
   va_enc_class->reorder_frame =
       GST_DEBUG_FUNCPTR (gst_va_h265_enc_reorder_frame);
   va_enc_class->encode_frame = GST_DEBUG_FUNCPTR (gst_va_h265_enc_encode_frame);
-  va_enc_class->prepare_output =
-      GST_DEBUG_FUNCPTR (gst_va_h265_enc_prepare_output);
+  va_enc_class->num_reorder_frames =
+      GST_DEBUG_FUNCPTR (gst_va_h265_enc_num_reorder_frames);
 
   {
     display = gst_va_display_platform_new (va_enc_class->render_device_path);
