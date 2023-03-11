@@ -41,7 +41,8 @@ void gst_wl_window_ensure_fullscreen (GstWlWindow * self,
 
 GST_WL_API
 GstWlWindow *gst_wl_window_new_toplevel (GstWlDisplay * display,
-        const GstVideoInfo * info, gboolean fullscreen, GMutex * render_lock);
+        const GstVideoInfo * info, GstVideoOrientationMethod orientation,
+        gboolean fullscreen, GMutex * render_lock);
 
 GST_WL_API
 GstWlWindow *gst_wl_window_new_in_surface (GstWlDisplay * display,
@@ -71,7 +72,7 @@ GST_WL_API
 const GstVideoRectangle *gst_wl_window_get_render_rectangle (GstWlWindow * self);
 
 GST_WL_API
-void gst_wl_window_set_rotate_method (GstWlWindow               *self,
-        GstVideoOrientationMethod  rotate_method);
+void gst_wl_window_set_rotate_method (GstWlWindow *self,
+        GstVideoOrientationMethod rotate_method, gboolean commit);
 
 G_END_DECLS

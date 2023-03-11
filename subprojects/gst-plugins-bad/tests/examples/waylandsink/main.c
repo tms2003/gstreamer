@@ -141,8 +141,8 @@ video_widget_draw_cb (GtkWidget * widget, cairo_t * cr, gpointer user_data)
 
   gtk_widget_get_allocation (widget, &allocation);
 
-  g_print ("draw_cb x %d, y %d, w %d, h %d\n",
-      allocation.x, allocation.y, allocation.width, allocation.height);
+  /*g_print ("draw_cb x %d, y %d, w %d, h %d\n",
+     allocation.x, allocation.y, allocation.width, allocation.height); */
 
   if (d->overlay) {
     gst_video_overlay_set_render_rectangle (d->overlay, allocation.x,
@@ -256,8 +256,8 @@ main (int argc, char **argv)
       d->pipeline = gst_parse_launch ("videotestsrc pattern=18 "
           "background-color=0xFF0062FF is-live=true ! waylandsink", NULL);
     } else {
-      d->pipeline = gst_parse_launch ("videotestsrc pattern=18 "
-          "background-color=0xFF0062FF ! waylandsink", NULL);
+      d->pipeline = gst_parse_launch ("videotestsrc pattern=smpte "
+          "background-color=0xFF0062FF ! videoflip ! waylandsink", NULL);
     }
   }
 

@@ -60,6 +60,9 @@ typedef struct _GstWlDisplayPrivate
 
   GMutex buffers_mutex;
   GHashTable *buffers;
+
+  GHashTable *outputs;
+
   gboolean shutting_down;
 } GstWlDisplayPrivate;
 
@@ -88,6 +91,8 @@ gst_wl_display_init (GstWlDisplay * self)
   priv->wl_fd_poll = gst_poll_new (TRUE);
   priv->buffers = g_hash_table_new (g_direct_hash, g_direct_equal);
   g_mutex_init (&priv->buffers_mutex);
+  priv->outputs = g_hash_table_new_full (g_direct_hash, g_direct_equal,
+      NULL, (GDestroyNotify) g_object_unref);
 
   gst_wl_linux_dmabuf_init_once ();
   gst_wl_shm_allocator_init_once ();
@@ -126,6 +131,7 @@ gst_wl_display_finalize (GObject * gobject)
   gst_poll_free (priv->wl_fd_poll);
   g_hash_table_unref (priv->buffers);
   g_mutex_clear (&priv->buffers_mutex);
+  g_hash_table_unref (priv->outputs);
 
   if (priv->viewporter)
     wp_viewporter_destroy (priv->viewporter);
@@ -250,6 +256,64 @@ static const struct xdg_wm_base_listener xdg_wm_base_listener = {
 };
 
 static void
+handle_output_geometry (void *data,
+    struct wl_output *wl_output,
+    int32_t x, int32_t y,
+    int32_t physical_width,
+    int32_t physical_height,
+    int32_t subpixel, const char *make, const char *model, int32_t transform)
+{
+  GstWlOutput *output = data;
+
+  gst_wl_output_set_transform (output, transform);
+}
+
+static void
+handle_output_mode (void *data,
+    struct wl_output *wl_output,
+    uint32_t flags, int32_t width, int32_t height, int32_t refresh)
+{
+}
+
+static void
+handle_output_done (void *data,
+    struct wl_output *wl_output)
+{
+}
+
+static void
+handle_output_scale (void *data,
+     struct wl_output *wl_output,
+     int32_t scale)
+{
+  GstWlOutput *output = data;
+
+  gst_wl_output_set_scale (output, scale);
+}
+
+static const struct wl_output_listener output_listener = {
+  handle_output_geometry,
+  handle_output_mode,
+  handle_output_done,
+  handle_output_scale,
+};
+
+static void
+gst_wl_display_add_output (GstWlDisplay * self, uint32_t id, uint32_t version)
+{
+  GstWlDisplayPrivate *priv = gst_wl_display_get_instance_private (self);
+  struct wl_output *wl_output;
+  GstWlOutput *output;
+
+  wl_output =
+      wl_registry_bind (priv->registry, id, &wl_output_interface, version);
+  output = gst_wl_output_new (id, wl_output);
+  wl_output_add_listener (wl_output, &output_listener, output);
+
+  g_hash_table_insert (priv->outputs, wl_output, output);
+}
+
+static void
 registry_handle_global (void *data, struct wl_registry *registry,
     uint32_t id, const char *interface, uint32_t version)
 {
@@ -279,14 +343,26 @@ registry_handle_global (void *data, struct wl_registry *registry,
     priv->dmabuf =
         wl_registry_bind (registry, id, &zwp_linux_dmabuf_v1_interface, 1);
     zwp_linux_dmabuf_v1_add_listener (priv->dmabuf, &dmabuf_listener, self);
+  } else if (g_strcmp0 (interface, "wl_output") == 0) {
+    gst_wl_display_add_output (self, id, MIN (version, 3));
   }
+}
+
+static gboolean
+output_has_id (struct wl_output *wl_output, GstWlOutput * output, gpointer id)
+{
+  return gst_wl_output_get_id (output) == GPOINTER_TO_UINT (id);
 }
 
 static void
 registry_handle_global_remove (void *data, struct wl_registry *registry,
-    uint32_t name)
+    uint32_t id)
 {
-  /* temporarily do nothing */
+  GstWlDisplay *self = data;
+  GstWlDisplayPrivate *priv = gst_wl_display_get_instance_private (self);
+
+  g_hash_table_foreach_remove (priv->outputs, (GHRFunc) output_has_id,
+      GUINT_TO_POINTER (id));
 }
 
 static const struct wl_registry_listener registry_listener = {
@@ -300,6 +376,7 @@ gst_wl_display_thread_run (gpointer data)
   GstWlDisplay *self = data;
   GstWlDisplayPrivate *priv = gst_wl_display_get_instance_private (self);
   GstPollFD pollfd = GST_POLL_FD_INIT;
+  int errnum = 0;
 
   pollfd.fd = wl_display_get_fd (priv->display);
   gst_poll_add_fd (priv->wl_fd_poll, &pollfd);
@@ -312,22 +389,26 @@ gst_wl_display_thread_run (gpointer data)
     wl_display_flush (priv->display);
 
     if (gst_poll_wait (priv->wl_fd_poll, GST_CLOCK_TIME_NONE) < 0) {
-      gboolean normal = (errno == EBUSY);
+      errnum = errno;
+      gboolean normal = (errnum == EBUSY);
       wl_display_cancel_read (priv->display);
       if (normal)
         break;
       else
         goto error;
     }
-    if (wl_display_read_events (priv->display) == -1)
+    if (wl_display_read_events (priv->display) == -1) {
+      errnum = errno;
       goto error;
+    }
     wl_display_dispatch_queue_pending (priv->display, priv->queue);
   }
 
   return NULL;
 
 error:
-  GST_ERROR ("Error communicating with the wayland server");
+  GST_ERROR ("Error communicating with the wayland server: (%d) '%s'", errnum,
+      g_strerror (errnum));
   return NULL;
 }
 
@@ -564,4 +645,29 @@ gst_wl_display_has_own_display (GstWlDisplay * self)
   GstWlDisplayPrivate *priv = gst_wl_display_get_instance_private (self);
 
   return priv->own_display;
+}
+
+GstWlOutput *
+gst_wl_display_lookup_output (GstWlDisplay * self, struct wl_output * wl_output)
+{
+  GstWlDisplayPrivate *priv = gst_wl_display_get_instance_private (self);
+
+  return g_hash_table_lookup (priv->outputs, wl_output);
+}
+
+GstVideoOrientationMethod
+gst_wl_display_get_default_output_orientation (GstWlDisplay * self)
+{
+  GstWlDisplayPrivate *priv = gst_wl_display_get_instance_private (self);
+  enum wl_output_transform transform = WL_OUTPUT_TRANSFORM_NORMAL;
+  GHashTableIter iter;
+  gpointer key, value;
+
+  g_hash_table_iter_init (&iter, priv->outputs);
+  while (g_hash_table_iter_next (&iter, &key, &value)) {
+    transform = gst_wl_output_get_transform (GST_WL_OUTPUT (value));
+    break;
+  }
+
+  return gst_wl_output_orientation_from_transform (transform);
 }

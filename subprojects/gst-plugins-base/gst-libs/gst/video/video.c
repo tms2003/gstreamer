@@ -291,3 +291,184 @@ gst_video_orientation_from_tag (GstTagList * taglist,
 
   return ret;
 }
+
+static gboolean
+gst_video_orientation_is_flipped (GstVideoOrientationMethod orientation)
+{
+  switch (orientation) {
+    case GST_VIDEO_ORIENTATION_IDENTITY:
+    case GST_VIDEO_ORIENTATION_90R:
+    case GST_VIDEO_ORIENTATION_180:
+    case GST_VIDEO_ORIENTATION_90L:
+      return FALSE;
+    case GST_VIDEO_ORIENTATION_HORIZ:
+    case GST_VIDEO_ORIENTATION_VERT:
+    case GST_VIDEO_ORIENTATION_UL_LR:
+    case GST_VIDEO_ORIENTATION_UR_LL:
+      return TRUE;
+    default:
+      g_assert_not_reached ();
+      return FALSE;
+  }
+}
+
+static GstVideoOrientationMethod
+gst_video_orientation_flip (GstVideoOrientationMethod orientation)
+{
+  switch (orientation) {
+    case GST_VIDEO_ORIENTATION_IDENTITY:
+      return GST_VIDEO_ORIENTATION_HORIZ;
+    case GST_VIDEO_ORIENTATION_90R:
+      return GST_VIDEO_ORIENTATION_UR_LL;
+    case GST_VIDEO_ORIENTATION_180:
+      return GST_VIDEO_ORIENTATION_VERT;
+    case GST_VIDEO_ORIENTATION_90L:
+      return GST_VIDEO_ORIENTATION_UL_LR;
+    case GST_VIDEO_ORIENTATION_HORIZ:
+      return GST_VIDEO_ORIENTATION_IDENTITY;
+    case GST_VIDEO_ORIENTATION_VERT:
+      return GST_VIDEO_ORIENTATION_180;
+    case GST_VIDEO_ORIENTATION_UL_LR:
+      return GST_VIDEO_ORIENTATION_90L;
+    case GST_VIDEO_ORIENTATION_UR_LL:
+      return GST_VIDEO_ORIENTATION_90R;
+    default:
+      g_assert_not_reached ();
+      return GST_VIDEO_ORIENTATION_IDENTITY;
+  }
+}
+
+static GstVideoOrientationMethod
+gst_video_orientation_ensure_flip (GstVideoOrientationMethod orientation)
+{
+  switch (orientation) {
+    case GST_VIDEO_ORIENTATION_IDENTITY:
+      return GST_VIDEO_ORIENTATION_HORIZ;
+    case GST_VIDEO_ORIENTATION_90R:
+      return GST_VIDEO_ORIENTATION_UL_LR;
+    case GST_VIDEO_ORIENTATION_180:
+      return GST_VIDEO_ORIENTATION_VERT;
+    case GST_VIDEO_ORIENTATION_90L:
+      return GST_VIDEO_ORIENTATION_UR_LL;
+    case GST_VIDEO_ORIENTATION_HORIZ:
+    case GST_VIDEO_ORIENTATION_VERT:
+    case GST_VIDEO_ORIENTATION_UL_LR:
+    case GST_VIDEO_ORIENTATION_UR_LL:
+      return orientation;
+    default:
+      g_assert_not_reached ();
+      return GST_VIDEO_ORIENTATION_IDENTITY;
+  }
+}
+
+static GstVideoOrientationMethod
+gst_video_orientation_ensure_no_flip (GstVideoOrientationMethod orientation)
+{
+  switch (orientation) {
+    case GST_VIDEO_ORIENTATION_IDENTITY:
+    case GST_VIDEO_ORIENTATION_90R:
+    case GST_VIDEO_ORIENTATION_180:
+    case GST_VIDEO_ORIENTATION_90L:
+      return orientation;
+    case GST_VIDEO_ORIENTATION_HORIZ:
+      return GST_VIDEO_ORIENTATION_IDENTITY;
+    case GST_VIDEO_ORIENTATION_VERT:
+      return GST_VIDEO_ORIENTATION_180;
+    case GST_VIDEO_ORIENTATION_UL_LR:
+      return GST_VIDEO_ORIENTATION_90R;
+    case GST_VIDEO_ORIENTATION_UR_LL:
+      return GST_VIDEO_ORIENTATION_90L;
+    default:
+      g_assert_not_reached ();
+      return GST_VIDEO_ORIENTATION_IDENTITY;
+  }
+}
+
+const gchar *
+gst_video_orientation_get_nick (GstVideoOrientationMethod orientation)
+{
+  GEnumClass *klass = g_type_class_peek (GST_TYPE_VIDEO_ORIENTATION_METHOD);
+  GEnumValue *ev = klass ? g_enum_get_value (klass, orientation) : NULL;
+  return ev ? ev->value_nick : "(unknown)";
+}
+
+/**
+ * gst_video_orientation_add:
+ * @orientation: An orientation.
+ * @other: Another orientation.
+ *
+ * Applies @orientation to @other and returns the resulting one.
+ * If @other is the inverted orientation to @orientation the result is
+ * the identity.
+ *
+ * This operation is not commutative.
+ *
+ * Returns: The resulting orientation.
+ *
+ * Since: 1.22
+ */
+GstVideoOrientationMethod
+gst_video_orientation_add (GstVideoOrientationMethod orientation,
+    GstVideoOrientationMethod other)
+{
+  GstVideoOrientationMethod new_orientation;
+  gboolean readd_flip = FALSE;
+
+  if (orientation == GST_VIDEO_ORIENTATION_AUTO ||
+      orientation == GST_VIDEO_ORIENTATION_CUSTOM ||
+      other == GST_VIDEO_ORIENTATION_AUTO ||
+      other == GST_VIDEO_ORIENTATION_CUSTOM) {
+    GST_WARNING ("unsupported auto or custom orientation");
+    return GST_VIDEO_ORIENTATION_IDENTITY;
+  }
+
+  if (gst_video_orientation_is_flipped (other))
+    new_orientation = gst_video_orientation_flip (orientation);
+  else
+    new_orientation = orientation;
+
+  if (gst_video_orientation_is_flipped (new_orientation))
+    readd_flip = TRUE;
+
+  new_orientation =
+      gst_video_orientation_ensure_no_flip (new_orientation) +
+      gst_video_orientation_ensure_no_flip (other);
+  new_orientation %= GST_VIDEO_ORIENTATION_HORIZ;
+
+  if (readd_flip)
+    new_orientation = gst_video_orientation_ensure_flip (new_orientation);
+
+  return new_orientation;
+}
+
+/**
+ * gst_video_orientation_invert:
+ * @orientation: An orientation.
+ *
+ * Inverts an orientation so that applying the result to @orientation results in
+ * the identity;
+ *
+ * Returns: The inverted orientation.
+ *
+ * Since: 1.22
+ */
+GstVideoOrientationMethod
+gst_video_orientation_invert (GstVideoOrientationMethod orientation)
+{
+  switch (orientation) {
+    case GST_VIDEO_ORIENTATION_90R:
+      return GST_VIDEO_ORIENTATION_90L;
+    case GST_VIDEO_ORIENTATION_90L:
+      return GST_VIDEO_ORIENTATION_90R;
+    case GST_VIDEO_ORIENTATION_IDENTITY:
+    case GST_VIDEO_ORIENTATION_180:
+    case GST_VIDEO_ORIENTATION_HORIZ:
+    case GST_VIDEO_ORIENTATION_VERT:
+    case GST_VIDEO_ORIENTATION_UL_LR:
+    case GST_VIDEO_ORIENTATION_UR_LL:
+      return orientation;
+    default:
+      g_assert_not_reached ();
+      return GST_VIDEO_ORIENTATION_IDENTITY;
+  }
+}

@@ -112,9 +112,11 @@ struct _GstVaVpp
   gboolean auto_contrast;
   gboolean auto_brightness;
   gboolean auto_saturation;
-  GstVideoOrientationMethod direction;
-  GstVideoOrientationMethod prev_direction;
-  GstVideoOrientationMethod tag_direction;
+  GstVideoOrientationMethod orientation;
+  GstVideoOrientationMethod property_orientation;
+  GstVideoOrientationMethod tag_orientation;
+  GstVideoOrientationMethod meta_orientation;
+  gboolean add_video_orientation_meta;
   gboolean add_borders;
   gint borders_h;
   gint borders_w;
@@ -153,7 +155,7 @@ enum
   VPP_CONVERT_SIZE = 1 << 0,
   VPP_CONVERT_FORMAT = 1 << 1,
   VPP_CONVERT_FILTERS = 1 << 2,
-  VPP_CONVERT_DIRECTION = 1 << 3,
+  VPP_CONVERT_ORIENTATION = 1 << 3,
   VPP_CONVERT_FEATURE = 1 << 4,
   VPP_CONVERT_CROP = 1 << 5,
   VPP_CONVERT_DUMMY = 1 << 6,
@@ -218,35 +220,36 @@ _update_properties_unlocked (GstVaVpp * self)
   if (!btrans->filter)
     return;
 
-  if ((self->direction != GST_VIDEO_ORIENTATION_AUTO
-          && self->direction != self->prev_direction)
-      || (self->direction == GST_VIDEO_ORIENTATION_AUTO
-          && self->tag_direction != self->prev_direction)) {
+  GstVideoOrientationMethod visual_orientation;
+  GstVideoOrientationMethod effective_orientation;
 
-    GstVideoOrientationMethod direction =
-        (self->direction == GST_VIDEO_ORIENTATION_AUTO) ?
-        self->tag_direction : self->direction;
+  if (self->property_orientation == GST_VIDEO_ORIENTATION_AUTO)
+    visual_orientation = self->tag_orientation;
+  else
+    visual_orientation = self->property_orientation;
 
-    if (!gst_va_filter_set_orientation (btrans->filter, direction)) {
-      if (self->direction == GST_VIDEO_ORIENTATION_AUTO)
-        self->tag_direction = self->prev_direction;
-      else
-        self->direction = self->prev_direction;
+  effective_orientation =
+      gst_video_orientation_add (self->meta_orientation, visual_orientation);
 
-      self->op_flags &= ~VPP_CONVERT_DIRECTION;
+  if (effective_orientation != self->orientation) {
+    if (!gst_va_filter_set_orientation (btrans->filter, effective_orientation)) {
+      self->op_flags &= ~VPP_CONVERT_ORIENTATION;
 
       /* FIXME: unlocked bus warning message */
-      GST_WARNING_OBJECT (self,
-          "Driver cannot set resquested orientation. Setting it back.");
+      GST_WARNING_OBJECT (self, "Driver cannot set resquested orientation.");
     } else {
-      self->prev_direction = direction;
+      GST_DEBUG_OBJECT (self, "Changed orientation from %s to %s",
+          gst_video_orientation_get_nick (self->orientation),
+          gst_video_orientation_get_nick (effective_orientation));
 
-      self->op_flags |= VPP_CONVERT_DIRECTION;
+      self->orientation = effective_orientation;
+
+      self->op_flags |= VPP_CONVERT_ORIENTATION;
 
       gst_base_transform_reconfigure_src (GST_BASE_TRANSFORM (self));
     }
   } else {
-    self->op_flags &= ~VPP_CONVERT_DIRECTION;
+    self->op_flags &= ~VPP_CONVERT_ORIENTATION;
   }
 
   if (!gst_va_filter_set_scale_method (btrans->filter, self->scale_method))
@@ -276,13 +279,9 @@ gst_va_vpp_set_property (GObject * object, guint prop_id,
         self->skintone = g_value_get_float (value);
       g_atomic_int_set (&self->rebuild_filters, TRUE);
       break;
-    case GST_VA_FILTER_PROP_VIDEO_DIR:{
-      GstVideoOrientationMethod direction = g_value_get_enum (value);
-      self->prev_direction = (direction == GST_VIDEO_ORIENTATION_AUTO) ?
-          self->tag_direction : self->direction;
-      self->direction = direction;
+    case GST_VA_FILTER_PROP_VIDEO_DIR:
+      self->property_orientation = g_value_get_enum (value);
       break;
-    }
     case GST_VA_FILTER_PROP_HUE:
       self->hue = g_value_get_float (value);
       g_atomic_int_set (&self->rebuild_filters, TRUE);
@@ -361,7 +360,7 @@ gst_va_vpp_get_property (GObject * object, guint prop_id, GValue * value,
         g_value_set_float (value, self->skintone);
       break;
     case GST_VA_FILTER_PROP_VIDEO_DIR:
-      g_value_set_enum (value, self->direction);
+      g_value_set_enum (value, self->orientation);
       break;
     case GST_VA_FILTER_PROP_HUE:
       g_value_set_float (value, self->hue);
@@ -413,6 +412,31 @@ gst_va_vpp_propose_allocation (GstBaseTransform * trans,
 
   return GST_BASE_TRANSFORM_CLASS (parent_class)->propose_allocation (trans,
       decide_query, query);
+}
+
+static gboolean
+gst_va_vpp_decide_allocation (GstBaseTransform * trans, GstQuery * query)
+{
+  GstVaVpp *self = GST_VA_VPP (trans);
+  GstVideoOrientationMeta *ometa;
+
+  if (g_object_class_find_property (G_OBJECT_CLASS
+          (GST_VA_VPP_GET_CLASS (self)), "video-direction")) {
+    ometa = gst_query_get_allocation_video_orientation_meta (query);
+
+    if (ometa) {
+      self->meta_orientation = ometa->orientation;
+      _update_properties_unlocked (self);
+      self->add_video_orientation_meta = TRUE;
+    } else {
+      self->meta_orientation = GST_VIDEO_ORIENTATION_IDENTITY;
+      _update_properties_unlocked (self);
+      self->add_video_orientation_meta = FALSE;
+    }
+  }
+
+  return GST_BASE_TRANSFORM_CLASS (parent_class)->decide_allocation (trans,
+      query);
 }
 
 static void
@@ -885,7 +909,7 @@ gst_va_vpp_transform_meta (GstBaseTransform * trans, GstBuffer * inbuf,
   else if ((self->op_flags & (VPP_CONVERT_SIZE | VPP_CONVERT_CROP))
       && gst_meta_api_type_has_tag (info->api, META_TAG_SIZE))
     return FALSE;
-  else if ((self->op_flags & VPP_CONVERT_DIRECTION)
+  else if ((self->op_flags & VPP_CONVERT_ORIENTATION)
       && gst_meta_api_type_has_tag (info->api, META_TAG_ORIENTATION))
     return FALSE;
   else if (gst_meta_api_type_has_tag (info->api, META_TAG_VIDEO))
@@ -1177,6 +1201,32 @@ score_value (GstVaVpp * self, const GstVideoFormatInfo * in_info,
   }
 
   return FALSE;
+}
+
+static GstFlowReturn
+gst_va_vpp_generate_output (GstBaseTransform * trans, GstBuffer ** outbuf)
+{
+  GstVaVpp *self = GST_VA_VPP (trans);
+  GstFlowReturn ret;
+
+  ret =
+      GST_BASE_TRANSFORM_CLASS (parent_class)->generate_output (trans, outbuf);
+
+  // TODO Should this edit or only add ometa?
+  //      Does it matter if there are multiple ometas
+  if (*outbuf && self->add_video_orientation_meta) {
+    GstVideoOrientationMeta *ometa =
+        gst_buffer_get_video_orientation_meta (*outbuf);
+    if (ometa)
+      ometa->orientation =
+          gst_video_orientation_invert (self->meta_orientation);
+    else
+      ometa =
+          gst_buffer_add_video_orientation_meta (*outbuf,
+          gst_video_orientation_invert (self->meta_orientation));
+  }
+
+  return ret;
 }
 
 static GstCaps *
@@ -1902,10 +1952,10 @@ static void
 _get_scale_factor (GstVaVpp * self, gdouble * w_factor, gdouble * h_factor)
 {
   GstVaBaseTransform *btrans = GST_VA_BASE_TRANSFORM (self);
-  gdouble w = GST_VIDEO_INFO_WIDTH (&btrans->out_info);
-  gdouble h = GST_VIDEO_INFO_HEIGHT (&btrans->out_info);
+  gdouble w = GST_VIDEO_INFO_WIDTH (&btrans->in_info);
+  gdouble h = GST_VIDEO_INFO_HEIGHT (&btrans->in_info);
 
-  switch (gst_va_filter_get_orientation (btrans->filter)) {
+  switch (self->orientation) {
     case GST_VIDEO_ORIENTATION_90R:
     case GST_VIDEO_ORIENTATION_90L:
     case GST_VIDEO_ORIENTATION_UR_LL:
@@ -1919,10 +1969,10 @@ _get_scale_factor (GstVaVpp * self, gdouble * w_factor, gdouble * h_factor)
       break;
   }
 
-  *w_factor = GST_VIDEO_INFO_WIDTH (&btrans->in_info);
+  *w_factor = GST_VIDEO_INFO_WIDTH (&btrans->out_info);
   *w_factor /= w;
 
-  *h_factor = GST_VIDEO_INFO_HEIGHT (&btrans->in_info);
+  *h_factor = GST_VIDEO_INFO_HEIGHT (&btrans->out_info);
   *h_factor /= h;
 }
 
@@ -1950,35 +2000,35 @@ gst_va_vpp_src_event (GstBaseTransform * trans, GstEvent * event)
         event = gst_event_make_writable (event);
 
         /* video-direction compensation */
-        switch (gst_va_filter_get_orientation (btrans->filter)) {
+        switch (self->orientation) {
           case GST_VIDEO_ORIENTATION_90R:
             new_x = y;
-            new_y = GST_VIDEO_INFO_WIDTH (out_info) - 1 - x;
+            new_y = GST_VIDEO_INFO_WIDTH (in_info) - 1 - x;
             break;
           case GST_VIDEO_ORIENTATION_90L:
-            new_x = GST_VIDEO_INFO_HEIGHT (out_info) - 1 - y;
+            new_x = GST_VIDEO_INFO_HEIGHT (in_info) - 1 - y;
             new_y = x;
+            break;
+          case GST_VIDEO_ORIENTATION_UR_LL:
+            new_x = GST_VIDEO_INFO_HEIGHT (in_info) - 1 - y;
+            new_y = GST_VIDEO_INFO_WIDTH (in_info) - 1 - x;
             break;
           case GST_VIDEO_ORIENTATION_UL_LR:
             new_x = y;
             new_y = x;
             break;
-          case GST_VIDEO_ORIENTATION_UR_LL:
-            new_x = GST_VIDEO_INFO_HEIGHT (out_info) - 1 - y;
-            new_y = GST_VIDEO_INFO_WIDTH (out_info) - 1 - x;
-            break;
           case GST_VIDEO_ORIENTATION_180:
             /* FIXME: is this correct? */
-            new_x = GST_VIDEO_INFO_WIDTH (out_info) - 1 - x;
-            new_y = GST_VIDEO_INFO_HEIGHT (out_info) - 1 - y;
+            new_x = GST_VIDEO_INFO_WIDTH (in_info) - 1 - x;
+            new_y = GST_VIDEO_INFO_HEIGHT (in_info) - 1 - y;
             break;
           case GST_VIDEO_ORIENTATION_HORIZ:
-            new_x = GST_VIDEO_INFO_WIDTH (out_info) - 1 - x;
+            new_x = GST_VIDEO_INFO_WIDTH (in_info) - 1 - x;
             new_y = y;
             break;
           case GST_VIDEO_ORIENTATION_VERT:
             new_x = x;
-            new_y = GST_VIDEO_INFO_HEIGHT (out_info) - 1 - y;
+            new_y = GST_VIDEO_INFO_HEIGHT (in_info) - 1 - y;
             break;
           default:
             new_x = x;
@@ -2017,14 +2067,12 @@ gst_va_vpp_sink_event (GstBaseTransform * trans, GstEvent * event)
     case GST_EVENT_TAG:
       gst_event_parse_tag (event, &taglist);
 
-      if (self->direction != GST_VIDEO_ORIENTATION_AUTO)
-        break;
-
       if (!gst_video_orientation_from_tag (taglist, &method))
         break;
 
       GST_OBJECT_LOCK (self);
-      self->tag_direction = method;
+
+      self->tag_orientation = method;
       _update_properties_unlocked (self);
       GST_OBJECT_UNLOCK (self);
 
@@ -2174,6 +2222,8 @@ gst_va_vpp_class_init (gpointer g_class, gpointer class_data)
   object_class->set_property = gst_va_vpp_set_property;
   object_class->get_property = gst_va_vpp_get_property;
 
+  trans_class->decide_allocation =
+      GST_DEBUG_FUNCPTR (gst_va_vpp_decide_allocation);
   trans_class->propose_allocation =
       GST_DEBUG_FUNCPTR (gst_va_vpp_propose_allocation);
   trans_class->transform_caps = GST_DEBUG_FUNCPTR (gst_va_vpp_transform_caps);
@@ -2184,6 +2234,7 @@ gst_va_vpp_class_init (gpointer g_class, gpointer class_data)
   trans_class->transform_meta = GST_DEBUG_FUNCPTR (gst_va_vpp_transform_meta);
   trans_class->src_event = GST_DEBUG_FUNCPTR (gst_va_vpp_src_event);
   trans_class->sink_event = GST_DEBUG_FUNCPTR (gst_va_vpp_sink_event);
+  trans_class->generate_output = GST_DEBUG_FUNCPTR (gst_va_vpp_generate_output);
 
   trans_class->transform_ip_on_passthrough = FALSE;
 
@@ -2222,9 +2273,10 @@ gst_va_vpp_init (GTypeInstance * instance, gpointer g_class)
   GstVaVpp *self = GST_VA_VPP (instance);
   GParamSpec *pspec;
 
-  self->direction = GST_VIDEO_ORIENTATION_IDENTITY;
-  self->prev_direction = self->direction;
-  self->tag_direction = GST_VIDEO_ORIENTATION_AUTO;
+  self->orientation = GST_VIDEO_ORIENTATION_IDENTITY;
+  self->property_orientation = GST_VIDEO_ORIENTATION_IDENTITY;
+  self->tag_orientation = GST_VIDEO_ORIENTATION_AUTO;
+  self->meta_orientation = GST_VIDEO_ORIENTATION_IDENTITY;
 
   pspec = g_object_class_find_property (g_class, "denoise");
   if (pspec)
