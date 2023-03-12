@@ -26,7 +26,6 @@
 #include <gst/wayland/wayland.h>
 
 G_BEGIN_DECLS
-
 #define GST_TYPE_WAYLAND_SINK \
 	    (gst_wayland_sink_get_type())
 #define GST_WAYLAND_SINK(obj) \
@@ -39,7 +38,6 @@ G_BEGIN_DECLS
 	    (G_TYPE_CHECK_CLASS_TYPE((klass),GST_TYPE_WAYLAND_SINK))
 #define GST_WAYLAND_SINK_GET_CLASS(inst) \
         (G_TYPE_INSTANCE_GET_CLASS ((inst), GST_TYPE_WAYLAND_SINK, GstWaylandSinkClass))
-
 typedef struct _GstWaylandSink GstWaylandSink;
 typedef struct _GstWaylandSinkClass GstWaylandSinkClass;
 
@@ -66,6 +64,9 @@ struct _GstWaylandSink
   GstVideoOrientationMethod sink_rotate_method;
   GstVideoOrientationMethod tag_rotate_method;
   GstVideoOrientationMethod current_rotate_method;
+  GstVideoOrientationMethod requested_upstream_rotate_method;
+  GstVideoOrientationMethod output_rotate_method;
+  GstVideoOrientationMethod last_buffer_rotate_method;
 
   struct wl_callback *callback;
 };
@@ -75,7 +76,9 @@ struct _GstWaylandSinkClass
   GstVideoSinkClass parent;
 };
 
-GType gst_wayland_sink_get_type (void) G_GNUC_CONST;
+GType
+gst_wayland_sink_get_type (void)
+    G_GNUC_CONST;
 
 GST_ELEMENT_REGISTER_DECLARE (waylandsink);
 

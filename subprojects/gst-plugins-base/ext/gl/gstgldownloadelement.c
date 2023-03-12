@@ -804,6 +804,8 @@ static gboolean gst_gl_download_element_src_event (GstBaseTransform * bt,
 static gboolean gst_gl_download_element_propose_allocation (GstBaseTransform *
     bt, GstQuery * decide_query, GstQuery * query);
 static void gst_gl_download_element_finalize (GObject * object);
+static gboolean gst_gl_download_element_filter_meta (GstBaseTransform * trans,
+    GstQuery * query, GType api, const GstStructure * params);
 
 #define GST_CAPS_FEATURE_MEMORY_NVMM "memory:NVMM"
 
@@ -849,6 +851,7 @@ gst_gl_download_element_class_init (GstGLDownloadElementClass * klass)
       gst_gl_download_element_prepare_output_buffer;
   bt_class->transform = gst_gl_download_element_transform;
   bt_class->decide_allocation = gst_gl_download_element_decide_allocation;
+  bt_class->filter_meta = gst_gl_download_element_filter_meta;
   bt_class->sink_event = gst_gl_download_element_sink_event;
   bt_class->src_event = gst_gl_download_element_src_event;
   bt_class->propose_allocation = gst_gl_download_element_propose_allocation;
@@ -1353,6 +1356,16 @@ gst_gl_download_element_transform_meta (GstBaseTransform * bt,
 
   return GST_BASE_TRANSFORM_CLASS (parent_class)->transform_meta (bt, outbuf,
       meta, inbuf);
+}
+
+static gboolean
+gst_gl_download_element_filter_meta (GstBaseTransform * trans, GstQuery * query,
+    GType api, const GstStructure * params)
+{
+  if (api == GST_VIDEO_ORIENTATION_META_API_TYPE)
+    return TRUE;
+
+  return FALSE;
 }
 
 static gboolean

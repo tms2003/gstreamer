@@ -413,6 +413,76 @@ gst_buffer_add_video_time_code_meta_full                     (GstBuffer         
                                                               guint                   frames,
                                                               guint                   field_count);
 
+/**
+ * GstVideoOrientationMeta:
+ * @meta: parent #GstMeta
+ * @orientation: the #GstVideoOrientationMethod to attach
+ *
+ * Extra buffer metadata describing the #GstVideoOrientationMethod of the frame.
+ *
+ * Each frame is assumed to have its own orientation, i.e. there is no latching
+ * of previous frames.  The absence of this meta defaults to
+ * %GST_VIDEO_ORIENTATION_IDENTITY. %GST_VIDEO_ORIENTATION_AUTO and
+ * %GST_VIDEO_ORIENTATION_CUSTOM are not valid values to set on a
+ * #GstVideoOrientationMeta.
+ *
+ * Since: 1.22
+ */
+typedef struct {
+  GstMeta meta;
+
+  GstVideoOrientationMethod orientation;
+} GstVideoOrientationMeta;
+
+/**
+ * gst_video_orientation_meta_api_get_type:
+ *
+ * Since: 1.22
+ */
+GST_VIDEO_API
+GType              gst_video_orientation_meta_api_get_type (void);
+
+/**
+ * GST_VIDEO_ORIENTATION_META_API_TYPE:
+ *
+ * Since: 1.22
+ */
+#define GST_VIDEO_ORIENTATION_META_API_TYPE (gst_video_orientation_meta_api_get_type())
+
+/**
+ * gst_video_orientation_meta_get_info:
+ *
+ * Since: 1.22
+ */
+GST_VIDEO_API
+const GstMetaInfo *gst_video_orientation_meta_get_info (void);
+
+/**
+ * GST_VIDEO_ORIENTATION_META_INFO:
+ *
+ * Since: 1.22
+ */
+#define GST_VIDEO_ORIENTATION_META_INFO (gst_video_orientation_meta_get_info())
+
+/**
+ * gst_buffer_get_video_orientation_meta:
+ *
+ * Since: 1.22
+ */
+#define gst_buffer_get_video_orientation_meta(b) \
+        ((GstVideoOrientationMeta*)gst_buffer_get_meta((b),GST_VIDEO_ORIENTATION_META_API_TYPE))
+
+GST_VIDEO_API
+GstVideoOrientationMeta * gst_buffer_add_video_orientation_meta (GstBuffer * buffer,
+                                                                 GstVideoOrientationMethod orientation);
+
+GST_VIDEO_API
+GstVideoOrientationMeta * gst_query_get_allocation_video_orientation_meta (GstQuery * query);
+
+GST_VIDEO_API
+GstVideoOrientationMeta * gst_query_add_allocation_video_orientation_meta (GstQuery * query,
+                                                                           GstVideoOrientationMethod orientation);
+
 G_END_DECLS
 
 #endif /* __GST_VIDEO_META_H__ */

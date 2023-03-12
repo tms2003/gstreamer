@@ -172,8 +172,19 @@ GstSample *   gst_video_convert_sample       (GstSample     * sample,
 
 
 GST_VIDEO_API
-gboolean gst_video_orientation_from_tag (GstTagList * taglist,
-                                         GstVideoOrientationMethod * method);
+gboolean      gst_video_orientation_from_tag (GstTagList * taglist,
+                                              GstVideoOrientationMethod * method);
+
+GST_VIDEO_API
+GstVideoOrientationMethod gst_video_orientation_add (GstVideoOrientationMethod orientation,
+                                                     GstVideoOrientationMethod other);
+
+GST_VIDEO_API
+GstVideoOrientationMethod gst_video_orientation_invert (GstVideoOrientationMethod orientation);
+
+GST_VIDEO_API
+const gchar *
+gst_video_orientation_get_nick (GstVideoOrientationMethod orientation);
 
 G_END_DECLS
 

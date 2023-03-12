@@ -54,9 +54,12 @@ struct _GstGLVideoFlip
   GstCaps      *input_caps;
 
   /* properties */
-  GstVideoOrientationMethod method;
+  GstVideoOrientationMethod property_method;
   GstVideoOrientationMethod tag_method;
+  GstVideoOrientationMethod meta_method;
   GstVideoOrientationMethod active_method;
+  GstVideoOrientationMethod actual_method;
+  gboolean add_video_orientation_meta;
 
   gfloat aspect;
 };

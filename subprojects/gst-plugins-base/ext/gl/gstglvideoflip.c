@@ -204,7 +204,8 @@ gst_gl_video_flip_init (GstGLVideoFlip * flip)
 
   pad = gst_element_get_static_pad (flip->transformation, "src");
   flip->src_probe = gst_pad_add_probe (pad,
-      GST_PAD_PROBE_TYPE_QUERY_DOWNSTREAM,
+      GST_PAD_PROBE_TYPE_QUERY_DOWNSTREAM |
+      GST_PAD_PROBE_TYPE_BUFFER,
       (GstPadProbeCallback) _trans_src_probe, flip, NULL);
   gst_object_unref (pad);
 
@@ -353,39 +354,31 @@ _set_active_method (GstGLVideoFlip * vf, GstVideoOrientationMethod method,
 }
 
 static void
-gst_gl_video_flip_set_method (GstGLVideoFlip * vf,
-    GstVideoOrientationMethod method, gboolean from_tag)
+gst_gl_video_flip_update_method (GstGLVideoFlip * vf)
 {
-  GST_OBJECT_LOCK (vf);
+  GstVideoOrientationMethod visual_method;
+  GstVideoOrientationMethod effective_method;
 
-  if (method == GST_VIDEO_ORIENTATION_CUSTOM) {
-    GST_WARNING_OBJECT (vf, "unsupported custom orientation");
-    GST_OBJECT_UNLOCK (vf);
-    return;
-  }
-
-  /* Store updated method */
-  if (from_tag)
-    vf->tag_method = method;
+  if (vf->property_method == GST_VIDEO_ORIENTATION_AUTO)
+    visual_method = vf->tag_method;
   else
-    vf->method = method;
+    visual_method = vf->property_method;
 
-  /* Get the new method */
-  if (vf->method == GST_VIDEO_ORIENTATION_AUTO)
-    method = vf->tag_method;
-  else
-    method = vf->method;
+  effective_method = gst_video_orientation_add (vf->meta_method, visual_method);
 
-  if (vf->input_caps)
-    _set_active_method (vf, method, vf->input_caps);
-  else {
-    /* just store the configured method here. The actual transform configuration
-     * will be done once caps are configured. See caps handling in
-     * _input_sink_probe. */
-    vf->active_method = method;
+  if (effective_method != vf->active_method) {
+    GST_DEBUG_OBJECT (vf, "Changing method from %s to %s",
+        gst_video_orientation_get_nick (vf->active_method),
+        gst_video_orientation_get_nick (effective_method));
+    if (vf->input_caps)
+      _set_active_method (vf, effective_method, vf->input_caps);
+    else {
+      /* just store the configured method here. The actual transform configuration
+       * will be done once caps are configured. See caps handling in
+       * _input_sink_probe. */
+      vf->active_method = effective_method;
+    }
   }
-
-  GST_OBJECT_UNLOCK (vf);
 }
 
 static void
@@ -397,7 +390,10 @@ gst_gl_video_flip_set_property (GObject * object, guint prop_id,
   switch (prop_id) {
     case PROP_METHOD:
     case PROP_VIDEO_DIRECTION:
-      gst_gl_video_flip_set_method (vf, g_value_get_enum (value), FALSE);
+      GST_OBJECT_LOCK (vf);
+      vf->property_method = g_value_get_enum (value);
+      gst_gl_video_flip_update_method (vf);
+      GST_OBJECT_UNLOCK (vf);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -414,7 +410,7 @@ gst_gl_video_flip_get_property (GObject * object, guint prop_id,
   switch (prop_id) {
     case PROP_METHOD:
     case PROP_VIDEO_DIRECTION:
-      g_value_set_enum (value, vf->method);
+      g_value_set_enum (value, vf->property_method);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -437,8 +433,12 @@ _input_sink_probe (GstPad * pad, GstPadProbeInfo * info, gpointer user_data)
 
         gst_event_parse_tag (event, &taglist);
 
-        if (gst_video_orientation_from_tag (taglist, &method))
-          gst_gl_video_flip_set_method (vf, method, TRUE);
+        if (gst_video_orientation_from_tag (taglist, &method)) {
+          GST_OBJECT_LOCK (vf);
+          vf->tag_method = method;
+          gst_gl_video_flip_update_method (vf);
+          GST_OBJECT_UNLOCK (vf);
+        }
         break;
       }
       case GST_EVENT_CAPS:{
@@ -501,9 +501,43 @@ _trans_src_probe (GstPad * pad, GstPadProbeInfo * info, gpointer user_data)
           return GST_PAD_PROBE_HANDLED;
         else
           return GST_PAD_PROBE_DROP;
+        break;
+      }
+      case GST_QUERY_ALLOCATION:{
+        guint i;
+        GstVideoOrientationMeta *ometa =
+            gst_query_get_allocation_video_orientation_meta (query);
+        GST_OBJECT_LOCK (vf);
+        if (ometa) {
+          vf->meta_method = ometa->orientation;
+          vf->add_video_orientation_meta = TRUE;
+          gst_gl_video_flip_update_method (vf);
+        } else {
+          vf->meta_method = GST_VIDEO_ORIENTATION_IDENTITY;
+          vf->add_video_orientation_meta = FALSE;
+          gst_gl_video_flip_update_method (vf);
+        }
+        GST_OBJECT_UNLOCK (vf);
+        /* Remove allocation so upstream elements don't reapply rotation */
+        if (gst_query_find_allocation_meta (query,
+                GST_VIDEO_ORIENTATION_META_API_TYPE, &i))
+          gst_query_remove_nth_allocation_meta (query, i);
+        break;
       }
       default:
         break;
+    }
+  } else if (GST_PAD_PROBE_INFO_TYPE (info) & GST_PAD_PROBE_TYPE_BUFFER) {
+    GstBuffer *buf = GST_PAD_PROBE_INFO_BUFFER (info);
+    if (buf && vf->add_video_orientation_meta) {
+      GstVideoOrientationMeta *ometa =
+          gst_buffer_get_video_orientation_meta (buf);
+      if (ometa)
+        ometa->orientation = gst_video_orientation_invert (vf->meta_method);
+      else
+        ometa =
+            gst_buffer_add_video_orientation_meta (buf,
+            gst_video_orientation_invert (vf->meta_method));
     }
   }
 

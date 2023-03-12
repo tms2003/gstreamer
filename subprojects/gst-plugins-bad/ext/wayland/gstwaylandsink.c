@@ -208,6 +208,27 @@ gst_wayland_sink_set_fullscreen (GstWaylandSink * self, gboolean fullscreen)
 }
 
 static void
+gst_wayland_sink_update_window_rotate_method (GstWaylandSink * self,
+    gboolean commit)
+{
+  GstVideoOrientationMethod effective_rotate_method;
+
+  self->requested_upstream_rotate_method =
+      gst_video_orientation_add (gst_video_orientation_invert
+      (self->output_rotate_method), self->current_rotate_method);
+
+  if (!self->window)
+    return;
+
+  effective_rotate_method =
+      gst_video_orientation_add (self->current_rotate_method,
+      self->last_buffer_rotate_method);
+
+  gst_wl_window_set_rotate_method (self->window, effective_rotate_method,
+      commit);
+}
+
+static void
 gst_wayland_sink_set_rotate_method (GstWaylandSink * self,
     GstVideoOrientationMethod method, gboolean from_tag)
 {
@@ -233,13 +254,11 @@ gst_wayland_sink_set_rotate_method (GstWaylandSink * self,
     GST_DEBUG_OBJECT (self, "Changing method from %d to %d",
         self->current_rotate_method, new_method);
 
-    if (self->window) {
-      g_mutex_lock (&self->render_lock);
-      gst_wl_window_set_rotate_method (self->window, new_method);
-      g_mutex_unlock (&self->render_lock);
-    }
-
     self->current_rotate_method = new_method;
+    gst_wayland_sink_update_window_rotate_method (self, TRUE);
+
+    gst_pad_push_event (GST_VIDEO_SINK_PAD (self),
+        gst_event_new_reconfigure ());
   }
   GST_OBJECT_UNLOCK (self);
 }
@@ -339,6 +358,10 @@ gst_wayland_sink_set_display_from_context (GstWaylandSink * self,
         ("Could not set display handle"),
         ("Failed to use the external wayland display: '%s'", error->message));
     g_error_free (error);
+  } else {
+    self->output_rotate_method =
+        gst_wl_display_get_default_output_orientation (self->display);
+    gst_wayland_sink_update_window_rotate_method (self, FALSE);
   }
 }
 
@@ -385,6 +408,10 @@ gst_wayland_sink_find_display (GstWaylandSink * self)
               ("Failed to create GstWlDisplay: '%s'", error->message));
           g_error_free (error);
           ret = FALSE;
+        } else {
+          self->output_rotate_method =
+              gst_wl_display_get_default_output_orientation (self->display);
+          gst_wayland_sink_update_window_rotate_method (self, FALSE);
         }
       }
     }
@@ -489,7 +516,7 @@ gst_wayland_sink_event (GstBaseSink * bsink, GstEvent * event)
   GstVideoOrientationMethod method;
   gboolean ret;
 
-  GST_DEBUG_OBJECT (self, "handling %s event", GST_EVENT_TYPE_NAME (event));
+  GST_LOG_OBJECT (self, "handling %s event", GST_EVENT_TYPE_NAME (event));
 
   switch (GST_EVENT_TYPE (event)) {
     case GST_EVENT_TAG:
@@ -672,8 +699,16 @@ gst_wayland_sink_propose_allocation (GstBaseSink * bsink, GstQuery * query)
 
   alloc = gst_wl_shm_allocator_get ();
   gst_query_add_allocation_param (query, alloc, NULL);
-  gst_query_add_allocation_meta (query, GST_VIDEO_META_API_TYPE, NULL);
   g_object_unref (alloc);
+
+  if (self->requested_upstream_rotate_method != GST_VIDEO_ORIENTATION_IDENTITY) {
+    gst_query_add_allocation_video_orientation_meta (query,
+        self->requested_upstream_rotate_method);
+
+    GST_DEBUG_OBJECT (self, "Proposing allocation orientation %s",
+        gst_video_orientation_get_nick
+        (self->requested_upstream_rotate_method));
+  }
 
   return TRUE;
 }
@@ -733,6 +768,19 @@ on_window_closed (GstWlWindow * window, gpointer user_data)
       ("Output window was closed"), (NULL));
 }
 
+static void
+on_output_orientation_changed (GstWlWindow * window,
+    GstVideoOrientationMethod rotate_method, GstWaylandSink * self)
+{
+  if (rotate_method == self->output_rotate_method)
+    return;
+
+  self->output_rotate_method = rotate_method;
+  gst_wayland_sink_update_window_rotate_method (self, TRUE);
+
+  gst_pad_push_event (GST_VIDEO_SINK_PAD (self), gst_event_new_reconfigure ());
+}
+
 static GstFlowReturn
 gst_wayland_sink_show_frame (GstVideoSink * vsink, GstBuffer * buffer)
 {
@@ -742,14 +790,25 @@ gst_wayland_sink_show_frame (GstVideoSink * vsink, GstBuffer * buffer)
   GstVideoMeta *vmeta;
   GstVideoFormat format;
   GstVideoInfo old_vinfo;
+  GstVideoOrientationMethod orientation;
   GstMemory *mem;
   struct wl_buffer *wbuf = NULL;
+  GstVideoOrientationMeta *ometa = NULL;
 
   GstFlowReturn ret = GST_FLOW_OK;
 
   g_mutex_lock (&self->render_lock);
 
   GST_LOG_OBJECT (self, "render buffer %" GST_PTR_FORMAT "", buffer);
+
+  ometa = gst_buffer_get_video_orientation_meta (buffer);
+  orientation = ometa ? ometa->orientation : GST_VIDEO_ORIENTATION_IDENTITY;
+  if (orientation != self->last_buffer_rotate_method) {
+    self->last_buffer_rotate_method = orientation;
+    GST_DEBUG_OBJECT (self, "Buffer orientation has changed to %s",
+        gst_video_orientation_get_nick (orientation));
+    gst_wayland_sink_update_window_rotate_method (self, FALSE);
+  }
 
   if (G_UNLIKELY (!self->window)) {
     /* ask for window handle. Unlock render_lock while doing that because
@@ -760,12 +819,15 @@ gst_wayland_sink_show_frame (GstVideoSink * vsink, GstBuffer * buffer)
 
     if (!self->window) {
       /* if we were not provided a window, create one ourselves */
-      self->window = gst_wl_window_new_toplevel (self->display,
-          &self->video_info, self->fullscreen, &self->render_lock);
+      self->window =
+          gst_wl_window_new_toplevel (self->display, &self->video_info,
+          self->last_buffer_rotate_method, self->fullscreen,
+          &self->render_lock);
       g_signal_connect_object (self->window, "closed",
           G_CALLBACK (on_window_closed), self, 0);
-      gst_wl_window_set_rotate_method (self->window,
-          self->current_rotate_method);
+      g_signal_connect (self->window, "output-orientation-changed",
+          G_CALLBACK (on_output_orientation_changed), self);
+      gst_wayland_sink_update_window_rotate_method (self, FALSE);
     }
   }
 
@@ -1014,8 +1076,11 @@ gst_wayland_sink_set_window_handle (GstVideoOverlay * overlay, guintptr handle)
       } else {
         self->window = gst_wl_window_new_in_surface (self->display, surface,
             &self->render_lock);
-        gst_wl_window_set_rotate_method (self->window,
-            self->current_rotate_method);
+        g_signal_connect_object (self->window, "closed",
+            G_CALLBACK (on_window_closed), self, 0);
+        g_signal_connect (self->window, "output-orientation-changed",
+            G_CALLBACK (on_output_orientation_changed), self);
+        gst_wayland_sink_update_window_rotate_method (self, FALSE);
       }
     } else {
       GST_ERROR_OBJECT (self, "Failed to find display handle, "
