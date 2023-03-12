@@ -77,12 +77,16 @@ struct _GstVideoFlip {
   /* < private > */
   GstVideoFormat v_format;
 
-  GstVideoOrientationMethod method;
+  GstVideoOrientationMethod property_method;
   GstVideoOrientationMethod tag_method;
+  GstVideoOrientationMethod meta_method;
   GstVideoOrientationMethod proposed_method;
   gboolean change_configuring_method;
   GstVideoOrientationMethod configuring_method;
   GstVideoOrientationMethod active_method;
+
+  gboolean add_video_orientation_meta;
+
   void (*process) (GstVideoFlip *videoflip, GstVideoFrame *dest, const GstVideoFrame *src);
 };
 
