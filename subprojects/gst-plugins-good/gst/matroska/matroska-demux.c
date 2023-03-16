@@ -2777,8 +2777,7 @@ gst_matroska_demux_handle_seek_event (GstMatroskaDemux * demux,
   GstSeekFlags flags;
   GstSeekType cur_type, stop_type;
   GstFormat format;
-  gboolean flush, keyunit, instant_rate_change, before, after, accurate,
-      snap_next;
+  gboolean flush, keyunit, instant_rate_change, accurate;
   gdouble rate;
   gint64 cur, stop;
   GstMatroskaTrackContext *track = NULL;
@@ -2787,7 +2786,6 @@ gst_matroska_demux_handle_seek_event (GstMatroskaDemux * demux,
   gboolean update = TRUE;
   gboolean pad_locked = FALSE;
   guint32 seqnum;
-  GstSearchMode snap_dir;
 
   g_return_val_if_fail (event != NULL, FALSE);
 
@@ -2810,8 +2808,6 @@ gst_matroska_demux_handle_seek_event (GstMatroskaDemux * demux,
 
   flush = ! !(flags & GST_SEEK_FLAG_FLUSH);
   keyunit = ! !(flags & GST_SEEK_FLAG_KEY_UNIT);
-  after = ! !(flags & GST_SEEK_FLAG_SNAP_AFTER);
-  before = ! !(flags & GST_SEEK_FLAG_SNAP_BEFORE);
   accurate = ! !(flags & GST_SEEK_FLAG_ACCURATE);
   instant_rate_change = ! !(flags & GST_SEEK_FLAG_INSTANT_RATE_CHANGE);
 
@@ -2889,24 +2885,16 @@ gst_matroska_demux_handle_seek_event (GstMatroskaDemux * demux,
 
   GST_DEBUG_OBJECT (demux, "New segment %" GST_SEGMENT_FORMAT, &seeksegment);
 
-  /* check sanity before we start flushing and all that */
-  snap_next = after && !before;
-  if (seeksegment.rate < 0)
-    snap_dir = snap_next ? GST_SEARCH_MODE_BEFORE : GST_SEARCH_MODE_AFTER;
-  else
-    snap_dir = snap_next ? GST_SEARCH_MODE_AFTER : GST_SEARCH_MODE_BEFORE;
-
   GST_OBJECT_LOCK (demux);
 
   seekpos = seeksegment.position;
-  if (accurate) {
+  if (accurate)
     seekpos -= MIN (seeksegment.position, demux->audio_lead_in_ts);
-  }
 
   track = gst_matroska_read_common_get_seek_track (&demux->common, track);
   if ((entry = gst_matroska_read_common_do_index_seek (&demux->common, track,
               seekpos, &demux->seek_index, &demux->seek_entry,
-              snap_dir)) == NULL) {
+              flags, seeksegment.rate)) == NULL) {
     /* pull mode without index can scan later on */
     if (demux->streaming) {
       GST_DEBUG_OBJECT (demux, "No matching seek entry in index");

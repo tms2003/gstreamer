@@ -631,10 +631,13 @@ gst_matroska_index_seek_find (GstMatroskaIndex * i1, GstClockTime * time,
 GstMatroskaIndex *
 gst_matroska_read_common_do_index_seek (GstMatroskaReadCommon * common,
     GstMatroskaTrackContext * track, gint64 seek_pos, GArray ** _index,
-    gint * _entry_index, GstSearchMode snap_dir)
+    gint * _entry_index, GstSeekFlags flags, gdouble rate)
 {
   GstMatroskaIndex *entry = NULL;
   GArray *index;
+  GstSearchMode snap_dir;
+  gboolean after, before, key_unit, snap_nearest;
+  gint found_index;
 
   /* find entry just before or at the requested position */
   if (track && track->index_table) {
@@ -647,6 +650,23 @@ gst_matroska_read_common_do_index_seek (GstMatroskaReadCommon * common,
   if (!index || !index->len)
     return NULL;
 
+  after = ! !(flags & GST_SEEK_FLAG_SNAP_AFTER);
+  before = ! !(flags & GST_SEEK_FLAG_SNAP_BEFORE);
+  key_unit = ! !(flags & GST_SEEK_FLAG_KEY_UNIT);
+  snap_nearest = key_unit && ((!after && !before) || (after && before));
+
+  if (snap_nearest) {
+    /* Find lower array element, we will compare it with next one */
+    snap_dir = GST_SEARCH_MODE_BEFORE;
+  } else {
+    /* check sanity before we start flushing and all that */
+    gboolean snap_next = after && !before;
+    if (rate < 0)
+      snap_dir = snap_next ? GST_SEARCH_MODE_BEFORE : GST_SEARCH_MODE_AFTER;
+    else
+      snap_dir = snap_next ? GST_SEARCH_MODE_AFTER : GST_SEARCH_MODE_BEFORE;
+  }
+
   entry =
       gst_util_array_binary_search (index->data, index->len,
       sizeof (GstMatroskaIndex),
@@ -654,6 +674,8 @@ gst_matroska_read_common_do_index_seek (GstMatroskaReadCommon * common,
       NULL);
 
   if (entry == NULL) {
+    /* Do not compare for snap nearest, as entry is not what we wanted */
+    snap_nearest = FALSE;
     if (snap_dir == GST_SEARCH_MODE_AFTER) {
       /* Can only happen with a reverse seek past the end */
       entry = &g_array_index (index, GstMatroskaIndex, index->len - 1);
@@ -663,10 +685,26 @@ gst_matroska_read_common_do_index_seek (GstMatroskaReadCommon * common,
     }
   }
 
+  found_index = entry - (GstMatroskaIndex *) index->data;
+
   if (_index)
     *_index = index;
   if (_entry_index)
-    *_entry_index = entry - (GstMatroskaIndex *) index->data;
+    *_entry_index = found_index;
+
+  /* Use snap nearest only when array has at least 2 elements,
+   * we take next element for compare, so current entry must not be last */
+  if (snap_nearest && index->len >= 2 && found_index < index->len - 1) {
+    GstMatroskaIndex *next_entry = &g_array_index (index, GstMatroskaIndex,
+        found_index + 1);
+
+    if (seek_pos - entry->time > next_entry->time - seek_pos) {
+      if (_entry_index)
+        *_entry_index += 1;
+
+      return next_entry;
+    }
+  }
 
   return entry;
 }
