@@ -123,8 +123,8 @@
  *   of the first sink that answers the query successfully is returned. If no
  *   sink is in the bin, the query fails.
  *
- * A #GstBin will by default forward any event sent to it to all sink
- * ( %GST_EVENT_TYPE_DOWNSTREAM ) or source ( %GST_EVENT_TYPE_UPSTREAM ) elements
+ * A #GstBin will by default forward any event sent to it to all the leaves
+ * ( %GST_EVENT_TYPE_UPSTREAM ) or source ( %GST_EVENT_TYPE_DOWNSTREAM ) elements
  * depending on the event type.
  *
  * If all the elements return %TRUE, the bin will also return %TRUE, else %FALSE
@@ -1942,6 +1942,47 @@ gst_bin_iterate_recurse (GstBin * bin)
   return result;
 }
 
+static gint
+leaf_iterator_filter (const GValue * vchild, GValue * vbin)
+{
+  GstElement *child = g_value_get_object (vchild);
+  GstElement *bin = g_value_get_object (vbin);
+  gboolean not_leaf = FALSE;
+  gboolean done = FALSE;
+  GValue data = { 0, };
+  GstIterator *iter;
+
+  /* Child element is a leaf (or a fruit) if:
+   * - it doesn't have a src pad
+   * - it has an src pad that doesn't have a peer */
+  iter = gst_element_iterate_src_pads (child);
+  while (!done) {
+    switch (gst_iterator_next (iter, &data)) {
+      case GST_ITERATOR_OK:
+        /* If element has an src pad that is linked - it's not a leaf */
+        not_leaf |= gst_pad_is_linked (g_value_get_object (&data));
+        g_value_reset (&data);
+        break;
+      case GST_ITERATOR_RESYNC:
+        gst_iterator_resync (iter);
+        break;
+      case GST_ITERATOR_DONE:
+        done = TRUE;
+        break;
+      case GST_ITERATOR_ERROR:
+        g_assert_not_reached ();
+        break;
+    }
+  }
+  g_value_unset (&data);
+  gst_iterator_free (iter);
+
+  GST_LOG_OBJECT (bin, "Element %s is%s a leaf",
+      GST_OBJECT_NAME (child), not_leaf ? " not" : "");
+  /* returns 0 when TRUE because this is a GCompareFunc */
+  return not_leaf ? 1 : 0;
+}
+
 /* returns 0 when TRUE because this is a GCompareFunc */
 /* MT safe */
 static gint
@@ -1970,6 +2011,27 @@ sink_iterator_filter (const GValue * vchild, GValue * vbin)
   return (bin_element_is_sink (child, bin));
 }
 
+static GstIterator *
+gst_bin_iterate_filter (GstBin * bin, GCompareFunc filter)
+{
+  GstIterator *children;
+  GstIterator *result;
+  GValue vbin = { 0, };
+
+  g_return_val_if_fail (GST_IS_BIN (bin), NULL);
+
+  g_value_init (&vbin, GST_TYPE_BIN);
+  g_value_set_object (&vbin, bin);
+
+  children = gst_bin_iterate_elements (bin);
+  result = gst_iterator_filter (children, (GCompareFunc) filter, NULL);
+
+  g_value_unset (&vbin);
+
+  return result;
+}
+
+
 /**
  * gst_bin_iterate_sinks:
  * @bin: a #GstBin
@@ -1982,22 +2044,22 @@ sink_iterator_filter (const GValue * vchild, GValue * vbin)
 GstIterator *
 gst_bin_iterate_sinks (GstBin * bin)
 {
-  GstIterator *children;
-  GstIterator *result;
-  GValue vbin = { 0, };
+  return gst_bin_iterate_filter (bin, (GCompareFunc) sink_iterator_filter);
+}
 
-  g_return_val_if_fail (GST_IS_BIN (bin), NULL);
-
-  g_value_init (&vbin, GST_TYPE_BIN);
-  g_value_set_object (&vbin, bin);
-
-  children = gst_bin_iterate_elements (bin);
-  result = gst_iterator_filter (children,
-      (GCompareFunc) sink_iterator_filter, &vbin);
-
-  g_value_unset (&vbin);
-
-  return result;
+/**
+ * gst_bin_iterate_leaves:
+ * @bin: a #GstBin
+ *
+ * Gets an iterator for all elements in the bin that don't
+ * have a downstream peer
+ *
+ * Returns: (transfer full) (nullable): a #GstIterator of #GstElement
+ */
+static GstIterator *
+gst_bin_iterate_leaves (GstBin * bin)
+{
+  return gst_bin_iterate_filter (bin, (GCompareFunc) leaf_iterator_filter);
 }
 
 /* returns 0 when TRUE because this is a GCompareFunc */
@@ -2040,22 +2102,7 @@ src_iterator_filter (const GValue * vchild, GValue * vbin)
 GstIterator *
 gst_bin_iterate_sources (GstBin * bin)
 {
-  GstIterator *children;
-  GstIterator *result;
-  GValue vbin = { 0, };
-
-  g_return_val_if_fail (GST_IS_BIN (bin), NULL);
-
-  g_value_init (&vbin, GST_TYPE_BIN);
-  g_value_set_object (&vbin, bin);
-
-  children = gst_bin_iterate_elements (bin);
-  result = gst_iterator_filter (children,
-      (GCompareFunc) src_iterator_filter, &vbin);
-
-  g_value_unset (&vbin);
-
-  return result;
+  return gst_bin_iterate_filter (bin, (GCompareFunc) src_iterator_filter);
 }
 
 /*
@@ -3122,8 +3169,8 @@ gst_bin_send_event (GstElement * element, GstEvent * event)
     GST_DEBUG_OBJECT (bin, "Sending %s event to src children",
         GST_EVENT_TYPE_NAME (event));
   } else {
-    iter = gst_bin_iterate_sinks (bin);
-    GST_DEBUG_OBJECT (bin, "Sending %s event to sink children",
+    iter = gst_bin_iterate_leaves (bin);
+    GST_DEBUG_OBJECT (bin, "Sending %s event to all the leaves",
         GST_EVENT_TYPE_NAME (event));
   }
 
