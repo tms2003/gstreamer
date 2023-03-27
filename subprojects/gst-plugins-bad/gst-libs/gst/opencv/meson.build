@@ -16,6 +16,9 @@ endif
 
 opencv_dep = dependency('opencv', version : '>= 3.0.0', required : false)
 if not opencv_dep.found()
+  opencv_dep = dependency('opencv', version : '>= 4.0.0', required : false, modules: 'opencv_core')
+endif
+if not opencv_dep.found()
   opencv_dep = dependency('opencv4', version : '>= 4.0.0', required : false)
 endif
 if opencv_dep.found()
