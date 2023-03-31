@@ -61,7 +61,7 @@ gst_ffmpeg_avcodec_is_ffmpeg (void)
 }
 
 int
-gst_ffmpeg_avcodec_open (AVCodecContext * avctx, const AVCodec * codec)
+gst_ffmpeg_avcodec_open (AVCodecContext *avctx, const AVCodec *codec)
 {
   int ret;
 
@@ -73,7 +73,7 @@ gst_ffmpeg_avcodec_open (AVCodecContext * avctx, const AVCodec * codec)
 }
 
 int
-gst_ffmpeg_avcodec_close (AVCodecContext * avctx)
+gst_ffmpeg_avcodec_close (AVCodecContext *avctx)
 {
   int ret;
 
@@ -85,7 +85,7 @@ gst_ffmpeg_avcodec_close (AVCodecContext * avctx)
 }
 
 int
-gst_ffmpeg_av_find_stream_info (AVFormatContext * ic)
+gst_ffmpeg_av_find_stream_info (AVFormatContext *ic)
 {
   int ret;
 
@@ -136,7 +136,7 @@ gst_ffmpeg_log_callback (void *ptr, int level, const char *fmt, va_list vl)
 #endif
 
 static gboolean
-plugin_init (GstPlugin * plugin)
+plugin_init (GstPlugin *plugin)
 {
   GST_DEBUG_CATEGORY_INIT (ffmpeg_debug, "libav", 0, "libav elements");
 
@@ -159,6 +159,7 @@ plugin_init (GstPlugin * plugin)
   gst_ffmpegvidenc_register (plugin);
   gst_ffmpegauddec_register (plugin);
   gst_ffmpegviddec_register (plugin);
+  gst_ffmpeg_parser_register (plugin);
   gst_ffmpegdemux_register (plugin);
   gst_ffmpegmux_register (plugin);
   gst_ffmpegdeinterlace_register (plugin);

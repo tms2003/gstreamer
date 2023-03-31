@@ -66,7 +66,7 @@ static GstFlowReturn gst_ffmpegauddec_drain (GstFFMpegAudDec * ffmpegdec,
 static GstElementClass *parent_class = NULL;
 
 static void
-gst_ffmpegauddec_base_init (GstFFMpegAudDecClass * klass)
+gst_ffmpegauddec_base_init (GstFFMpegAudDecClass *klass)
 {
   GstElementClass *element_class = GST_ELEMENT_CLASS (klass);
   GstPadTemplate *sinktempl, *srctempl;
@@ -120,7 +120,7 @@ gst_ffmpegauddec_base_init (GstFFMpegAudDecClass * klass)
 }
 
 static void
-gst_ffmpegauddec_class_init (GstFFMpegAudDecClass * klass)
+gst_ffmpegauddec_class_init (GstFFMpegAudDecClass *klass)
 {
   GObjectClass *gobject_class = G_OBJECT_CLASS (klass);
   GstAudioDecoderClass *gstaudiodecoder_class = GST_AUDIO_DECODER_CLASS (klass);
@@ -143,7 +143,7 @@ gst_ffmpegauddec_class_init (GstFFMpegAudDecClass * klass)
 }
 
 static void
-gst_ffmpegauddec_init (GstFFMpegAudDec * ffmpegdec)
+gst_ffmpegauddec_init (GstFFMpegAudDec *ffmpegdec)
 {
   GstFFMpegAudDecClass *klass =
       (GstFFMpegAudDecClass *) G_OBJECT_GET_CLASS (ffmpegdec);
@@ -164,7 +164,7 @@ gst_ffmpegauddec_init (GstFFMpegAudDec * ffmpegdec)
 }
 
 static void
-gst_ffmpegauddec_finalize (GObject * object)
+gst_ffmpegauddec_finalize (GObject *object)
 {
   GstFFMpegAudDec *ffmpegdec = (GstFFMpegAudDec *) object;
 
@@ -176,7 +176,7 @@ gst_ffmpegauddec_finalize (GObject * object)
 
 /* With LOCK */
 static gboolean
-gst_ffmpegauddec_close (GstFFMpegAudDec * ffmpegdec, gboolean reset)
+gst_ffmpegauddec_close (GstFFMpegAudDec *ffmpegdec, gboolean reset)
 {
   GstFFMpegAudDecClass *oclass;
 
@@ -205,7 +205,7 @@ gst_ffmpegauddec_close (GstFFMpegAudDec * ffmpegdec, gboolean reset)
 }
 
 static gboolean
-gst_ffmpegauddec_start (GstAudioDecoder * decoder)
+gst_ffmpegauddec_start (GstAudioDecoder *decoder)
 {
   GstFFMpegAudDec *ffmpegdec = (GstFFMpegAudDec *) decoder;
   GstFFMpegAudDecClass *oclass;
@@ -235,7 +235,7 @@ gst_ffmpegauddec_start (GstAudioDecoder * decoder)
 }
 
 static gboolean
-gst_ffmpegauddec_stop (GstAudioDecoder * decoder)
+gst_ffmpegauddec_stop (GstAudioDecoder *decoder)
 {
   GstFFMpegAudDec *ffmpegdec = (GstFFMpegAudDec *) decoder;
 
@@ -253,7 +253,7 @@ gst_ffmpegauddec_stop (GstAudioDecoder * decoder)
 
 /* with LOCK */
 static gboolean
-gst_ffmpegauddec_open (GstFFMpegAudDec * ffmpegdec)
+gst_ffmpegauddec_open (GstFFMpegAudDec *ffmpegdec)
 {
   GstFFMpegAudDecClass *oclass;
 
@@ -282,8 +282,7 @@ could_not_open:
 }
 
 static gboolean
-gst_ffmpegauddec_propose_allocation (GstAudioDecoder * decoder,
-    GstQuery * query)
+gst_ffmpegauddec_propose_allocation (GstAudioDecoder *decoder, GstQuery *query)
 {
   GstAllocationParams params;
 
@@ -300,7 +299,7 @@ gst_ffmpegauddec_propose_allocation (GstAudioDecoder * decoder,
 }
 
 static gboolean
-gst_ffmpegauddec_set_format (GstAudioDecoder * decoder, GstCaps * caps)
+gst_ffmpegauddec_set_format (GstAudioDecoder *decoder, GstCaps *caps)
 {
   GstFFMpegAudDec *ffmpegdec = (GstFFMpegAudDec *) decoder;
   GstFFMpegAudDecClass *oclass;
@@ -360,7 +359,7 @@ open_failed:
 }
 
 static gboolean
-settings_changed (GstFFMpegAudDec * ffmpegdec, AVFrame * frame)
+settings_changed (GstFFMpegAudDec *ffmpegdec, AVFrame *frame)
 {
   GstAudioFormat format;
   GstAudioLayout layout;
@@ -380,8 +379,8 @@ settings_changed (GstFFMpegAudDec * ffmpegdec, AVFrame * frame)
 }
 
 static gboolean
-gst_ffmpegauddec_negotiate (GstFFMpegAudDec * ffmpegdec,
-    AVCodecContext * context, AVFrame * frame, gboolean force)
+gst_ffmpegauddec_negotiate (GstFFMpegAudDec *ffmpegdec,
+    AVCodecContext *context, AVFrame *frame, gboolean force)
 {
   GstFFMpegAudDecClass *oclass;
   GstAudioFormat format;
@@ -463,7 +462,7 @@ caps_failed:
 }
 
 static void
-gst_avpacket_init (AVPacket * packet, guint8 * data, guint size)
+gst_avpacket_init (AVPacket *packet, guint8 *data, guint size)
 {
   memset (packet, 0, sizeof (AVPacket));
   packet->data = data;
@@ -474,9 +473,9 @@ gst_avpacket_init (AVPacket * packet, guint8 * data, guint size)
  * Returns: whether a frame was decoded
  */
 static gboolean
-gst_ffmpegauddec_audio_frame (GstFFMpegAudDec * ffmpegdec,
-    AVCodec * in_plugin, GstBuffer ** outbuf, GstFlowReturn * ret,
-    gboolean * need_more_data)
+gst_ffmpegauddec_audio_frame (GstFFMpegAudDec *ffmpegdec,
+    AVCodec *in_plugin, GstBuffer **outbuf, GstFlowReturn *ret,
+    gboolean *need_more_data)
 {
   gboolean got_frame = FALSE;
   gint res;
@@ -567,8 +566,8 @@ beach:
  * Returns: whether a frame was decoded
  */
 static gboolean
-gst_ffmpegauddec_frame (GstFFMpegAudDec * ffmpegdec, GstFlowReturn * ret,
-    gboolean * need_more_data)
+gst_ffmpegauddec_frame (GstFFMpegAudDec *ffmpegdec, GstFlowReturn *ret,
+    gboolean *need_more_data)
 {
   GstFFMpegAudDecClass *oclass;
   GstBuffer *outbuf = NULL;
@@ -607,7 +606,7 @@ no_codec:
 }
 
 static GstFlowReturn
-gst_ffmpegauddec_drain (GstFFMpegAudDec * ffmpegdec, gboolean force)
+gst_ffmpegauddec_drain (GstFFMpegAudDec *ffmpegdec, gboolean force)
 {
   GstFlowReturn ret = GST_FLOW_OK;
   gboolean got_any_frames = FALSE;
@@ -652,7 +651,7 @@ send_packet_failed:
 }
 
 static void
-gst_ffmpegauddec_flush (GstAudioDecoder * decoder, gboolean hard)
+gst_ffmpegauddec_flush (GstAudioDecoder *decoder, gboolean hard)
 {
   GstFFMpegAudDec *ffmpegdec = (GstFFMpegAudDec *) decoder;
 
@@ -662,7 +661,7 @@ gst_ffmpegauddec_flush (GstAudioDecoder * decoder, gboolean hard)
 }
 
 static GstFlowReturn
-gst_ffmpegauddec_handle_frame (GstAudioDecoder * decoder, GstBuffer * inbuf)
+gst_ffmpegauddec_handle_frame (GstAudioDecoder *decoder, GstBuffer *inbuf)
 {
   GstFFMpegAudDec *ffmpegdec;
   GstFFMpegAudDecClass *oclass;
@@ -852,7 +851,7 @@ send_packet_failed:
 }
 
 gboolean
-gst_ffmpegauddec_register (GstPlugin * plugin)
+gst_ffmpegauddec_register (GstPlugin *plugin)
 {
   GTypeInfo typeinfo = {
     sizeof (GstFFMpegAudDecClass),
@@ -943,6 +942,7 @@ gst_ffmpegauddec_register (GstPlugin * plugin)
       case AV_CODEC_ID_RA_288:
       case AV_CODEC_ID_COOK:
       case AV_CODEC_ID_AAC:
+      case AV_CODEC_ID_G723_1:
         rank = GST_RANK_PRIMARY;
         break;
         /* SIPR: decoder should have a higher rank than realaudiodec.

@@ -280,8 +280,8 @@ gst_ffmpeg_avpicture_get_size (int pix_fmt, int width, int height)
 #define DIV_ROUND_UP_X(v,x) (((v) + GEN_MASK(x)) >> (x))
 
 int
-gst_ffmpeg_avpicture_fill (AVFrame * picture,
-    uint8_t * ptr, enum AVPixelFormat pix_fmt, int width, int height)
+gst_ffmpeg_avpicture_fill (AVFrame *picture,
+    uint8_t *ptr, enum AVPixelFormat pix_fmt, int width, int height)
 {
   int size, w2, h2, size2;
   int stride, stride2;
@@ -527,4 +527,11 @@ gst_av_codec_compliance_get_type (void)
   }
 
   return (GType) compliance_type;
+}
+
+void
+gst_ffmpeg_caps_set_framed (GstCaps *caps)
+{
+  g_assert (caps != NULL);
+  gst_caps_set_simple (caps, "framed", G_TYPE_BOOLEAN, TRUE, NULL);
 }
