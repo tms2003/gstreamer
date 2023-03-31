@@ -146,6 +146,8 @@ gst_v4l2_codec_allocator_release (GstMiniObject * mini_object)
 {
   GstMemory *mem = GST_MEMORY_CAST (mini_object);
   GstV4l2CodecAllocator *self = GST_V4L2_CODEC_ALLOCATOR (mem->allocator);
+  GstV4l2Decoder *decoder = self->decoder;
+  GstPadDirection direction = self->direction;
   GstV4l2CodecBuffer *buf;
 
   GST_OBJECT_LOCK (self);
@@ -154,9 +156,15 @@ gst_v4l2_codec_allocator_release (GstMiniObject * mini_object)
   gst_memory_ref (mem);
 
   if (gst_v4l2_codec_buffer_release_mem (buf)) {
-    GST_DEBUG_OBJECT (self, "Placing back buffer %i into pool", buf->index);
-    g_queue_push_tail (&self->pool, buf);
-    g_cond_signal (&self->buffer_cond);
+    if (self->detached) {
+      GST_DEBUG_OBJECT (self, "Detached pool freeing buffer %d", buf->index);
+      gst_v4l2_decoder_remove_buffer (decoder, direction, buf->index);
+      gst_v4l2_codec_buffer_free (buf);
+    } else {
+      GST_DEBUG_OBJECT (self, "Placing back buffer %i into pool", buf->index);
+      g_queue_push_tail (&self->pool, buf);
+      g_cond_signal (&self->buffer_cond);
+    }
   }
 
   GST_OBJECT_UNLOCK (self);
@@ -207,10 +215,14 @@ static void
 gst_v4l2_codec_allocator_dispose (GObject * object)
 {
   GstV4l2CodecAllocator *self = GST_V4L2_CODEC_ALLOCATOR (object);
+  GstV4l2Decoder *decoder = self->decoder;
+  GstPadDirection direction = self->direction;
   GstV4l2CodecBuffer *buf;
 
-  while ((buf = g_queue_pop_head (&self->pool)))
+  while ((buf = g_queue_pop_head (&self->pool))) {
+    gst_v4l2_decoder_remove_buffer (decoder, direction, buf->index);
     gst_v4l2_codec_buffer_free (buf);
+  }
 
   if (self->decoder) {
     gst_v4l2_codec_allocator_detach (self);

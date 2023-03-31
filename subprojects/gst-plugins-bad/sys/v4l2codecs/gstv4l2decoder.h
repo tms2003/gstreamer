@@ -85,6 +85,9 @@ GstVideoCodecState * gst_v4l2_decoder_set_output_state (GstVideoDecoder * decode
 gint              gst_v4l2_decoder_create_buffer (GstV4l2Decoder * self,
                                                   GstPadDirection direction);
 
+gint              gst_v4l2_decoder_remove_buffer (GstV4l2Decoder * self,
+		                                  GstPadDirection direction,
+                                                  guint index);
 
 gboolean          gst_v4l2_decoder_export_buffer (GstV4l2Decoder * self,
                                                   GstPadDirection directon,
