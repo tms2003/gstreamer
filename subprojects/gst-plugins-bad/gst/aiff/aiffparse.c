@@ -1737,6 +1737,51 @@ gst_aiff_parse_pad_query (GstPad * pad, GstObject * parent, GstQuery * query)
       }
       break;
     }
+    case GST_QUERY_POSITION:{
+      guint64 position;
+      GstFormat format;
+
+      GST_DEBUG_OBJECT (aiff, "position query");
+      gst_query_parse_position (query, &format, NULL);
+
+      if (G_UNLIKELY (aiff->offset < aiff->datastart)) {
+        position = 0;
+        GST_WARNING_OBJECT (aiff, "offset %" G_GUINT64_FORMAT " is before "
+            "the data start %" G_GUINT64_FORMAT, aiff->offset, aiff->datastart);
+      } else {
+        position = aiff->offset - aiff->datastart;
+        GST_DEBUG_OBJECT (aiff, "offset %" G_GUINT64_FORMAT ", data start %"
+            G_GUINT64_FORMAT " => position %" G_GUINT64_FORMAT, aiff->offset,
+            aiff->datastart, position);
+      }
+
+      switch (format) {
+        case GST_FORMAT_TIME:{
+          if (aiff->bps > 0) {
+            guint64 pos_ts = gst_util_uint64_scale_ceil (position, GST_SECOND,
+                (guint64) aiff->bps);
+            GST_DEBUG_OBJECT (aiff, "converted position from %" G_GUINT64_FORMAT
+                " bytes to %" GST_TIME_FORMAT, position,
+                GST_TIME_ARGS (pos_ts));
+            gst_query_set_position (query, format, pos_ts);
+            res = TRUE;
+          } else
+            GST_ERROR_OBJECT (aiff,
+                "cannot respond to position query because bps value is zero");
+          break;
+        }
+        case GST_FORMAT_BYTES:{
+          gst_query_set_position (query, format, position);
+          res = TRUE;
+          break;
+        }
+        default:
+          res = gst_pad_query_default (pad, parent, query);
+          break;
+      }
+
+      break;
+    }
     default:
       res = gst_pad_query_default (pad, parent, query);
       break;

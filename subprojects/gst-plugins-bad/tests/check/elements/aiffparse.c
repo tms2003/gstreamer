@@ -29,6 +29,11 @@
 #define DATA_SIZE 23254
 #define SSND_DATA_OFFSET 68
 #define SSND_DATA_SIZE 20480
+#define SSND_SAMPLE_RATE 44100
+#define SSND_NUM_CHANNELS 2
+#define SSND_SAMPLE_FORMAT "S16BE"
+#define SSND_NUM_BYTES_PER_SAMPLE 2
+#define SSND_NUM_BYTES_PER_FRAME (SSND_NUM_BYTES_PER_SAMPLE * SSND_NUM_CHANNELS)
 
 static GstPad *sinkpad;
 static GMainLoop *loop = NULL;
@@ -47,9 +52,9 @@ static void
 sink_check_caps (GstPad * pad, GstCaps * caps)
 {
   GstCaps *tcaps = gst_caps_new_simple ("audio/x-raw",
-      "rate", G_TYPE_INT, 44100,
-      "channels", G_TYPE_INT, 2,
-      "format", G_TYPE_STRING, "S16BE",
+      "rate", G_TYPE_INT, SSND_SAMPLE_RATE,
+      "channels", G_TYPE_INT, SSND_NUM_CHANNELS,
+      "format", G_TYPE_STRING, SSND_SAMPLE_FORMAT,
       "layout", G_TYPE_STRING, "interleaved",
       NULL);
 
@@ -162,6 +167,8 @@ run_check (gboolean push_mode)
   data_read = 0;
   data_size = 0;
   data_offset = SSND_DATA_OFFSET;
+  gint64 pos;
+  gint64 content_duration;
   loop = g_main_loop_new (NULL, FALSE);
 
   GST_INFO ("%s mode", push_mode ? "Pull" : "Push");
@@ -208,6 +215,17 @@ run_check (gboolean push_mode)
           GST_STATE_PLAYING) == GST_STATE_CHANGE_SUCCESS);
 
   g_main_loop_run (loop);
+
+  /* We read the entire content of the AIFF file, implying that the current
+   * position is at the very end now. The position query should consequently
+   * return a position value that equals the duration of said content. */
+  content_duration = gst_util_uint64_scale_int_ceil (SSND_DATA_SIZE /
+      SSND_NUM_BYTES_PER_FRAME, GST_SECOND, SSND_SAMPLE_RATE);
+  fail_unless (gst_element_query_position (aiffparse, GST_FORMAT_TIME, &pos));
+  fail_unless_equals_int64 (pos, content_duration);
+  fail_unless (gst_element_query_position (aiffparse, GST_FORMAT_BYTES, &pos));
+  fail_unless_equals_int64 (pos, SSND_DATA_SIZE);
+
   fail_unless (have_eos == TRUE);
   fail_unless (data_read == SSND_DATA_SIZE);
   fail_unless (push_mode || (have_tags == TRUE));
