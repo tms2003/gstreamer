@@ -163,8 +163,10 @@ gst_d3d11_window_capture_mode_get_type (void)
 
 static GstStaticCaps template_caps =
     GST_STATIC_CAPS (GST_VIDEO_CAPS_MAKE_WITH_FEATURES
-    (GST_CAPS_FEATURE_MEMORY_D3D11_MEMORY, "BGRA") ", pixel-aspect-ratio = 1/1;"
-    GST_VIDEO_CAPS_MAKE ("BGRA") ", pixel-aspect-ratio = 1/1");
+    (GST_CAPS_FEATURE_MEMORY_D3D11_MEMORY, "BGRA")
+    ", pixel-aspect-ratio = 1/1, interlace-mode = progressive;"
+    GST_VIDEO_CAPS_MAKE ("BGRA")
+    ", pixel-aspect-ratio = 1/1, interlace-mode = progressive");
 
 struct _GstD3D11ScreenCaptureSrc
 {

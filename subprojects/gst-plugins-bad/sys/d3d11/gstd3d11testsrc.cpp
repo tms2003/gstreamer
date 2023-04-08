@@ -52,8 +52,10 @@ GST_DEBUG_CATEGORY_STATIC (gst_d3d11_test_src_debug);
 
 static GstStaticCaps template_caps =
     GST_STATIC_CAPS (GST_VIDEO_CAPS_MAKE_WITH_FEATURES
-    (GST_CAPS_FEATURE_MEMORY_D3D11_MEMORY, GST_D3D11_SRC_FORMATS) ";"
-    GST_VIDEO_CAPS_MAKE (GST_D3D11_SRC_FORMATS));
+    (GST_CAPS_FEATURE_MEMORY_D3D11_MEMORY, GST_D3D11_SRC_FORMATS)
+    ", interlace-mode = progressive; "
+    GST_VIDEO_CAPS_MAKE (GST_D3D11_SRC_FORMATS)
+    ", interlace-mode = progressive");
 
 typedef enum
 {
