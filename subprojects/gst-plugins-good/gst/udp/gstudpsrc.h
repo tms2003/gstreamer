@@ -100,6 +100,8 @@ struct _GstUDPSrc {
 
   gchar     *uri;
   GPtrArray *source_list;
+
+  gboolean   ecn;
 };
 
 struct _GstUDPSrcClass {

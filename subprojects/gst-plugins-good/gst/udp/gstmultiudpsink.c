@@ -92,6 +92,7 @@ enum
 #define DEFAULT_BUFFER_SIZE        0
 #define DEFAULT_BIND_ADDRESS       NULL
 #define DEFAULT_BIND_PORT          0
+#define DEFAULT_ECN                GST_NET_ECN_META_NO_ECN
 
 enum
 {
@@ -114,7 +115,10 @@ enum
   PROP_SEND_DUPLICATES,
   PROP_BUFFER_SIZE,
   PROP_BIND_ADDRESS,
-  PROP_BIND_PORT
+  PROP_BIND_PORT,
+#if defined(IP_TOS) || defined(IPV6_TCLASS)
+  PROP_ECN
+#endif
 };
 
 static void gst_multiudpsink_finalize (GObject * object);
@@ -138,6 +142,8 @@ static void gst_multiudpsink_add_internal (GstMultiUDPSink * sink,
     const gchar * host, gint port, gboolean lock);
 static void gst_multiudpsink_clear_internal (GstMultiUDPSink * sink,
     gboolean lock);
+
+static void gst_multiudpsink_set_ecn (GstMultiUDPSink * sink);
 
 static guint gst_multiudpsink_signals[LAST_SIGNAL] = { 0 };
 
@@ -350,6 +356,21 @@ gst_multiudpsink_class_init (GstMultiUDPSinkClass * klass)
       g_param_spec_int ("bind-port", "Bind Port",
           "Port to bind the socket to", 0, G_MAXUINT16,
           DEFAULT_BIND_PORT, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+#if defined(IP_TOS) || defined(IPV6_TCLASS)
+  /**
+   * GstMultiUDPSink::ecn:
+   *
+   * Set the value of the ECN codepoint on packets sent
+   */
+  g_object_class_install_property (gobject_class, PROP_ECN,
+      g_param_spec_enum ("ecn",
+          "Set the ECN codepoint",
+          "Set the ECN codepoint on packets sent to indicate support for ECN"
+          " (or lack thereof)",
+          GST_NET_ECN_CP_TYPE, DEFAULT_ECN,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+#endif /* IP_TOS || IPV6_TCLASS */
 
   gst_element_class_add_static_pad_template (gstelement_class, &sink_template);
 
@@ -1094,6 +1115,12 @@ gst_multiudpsink_set_property (GObject * object, guint prop_id,
     case PROP_BIND_PORT:
       udpsink->bind_port = g_value_get_int (value);
       break;
+#ifdef IP_TOS
+    case PROP_ECN:
+      udpsink->ecn = g_value_get_enum (value);
+      gst_multiudpsink_set_ecn (udpsink);
+      break;
+#endif
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -1167,6 +1194,11 @@ gst_multiudpsink_get_property (GObject * object, guint prop_id, GValue * value,
     case PROP_BIND_PORT:
       g_value_set_int (value, udpsink->bind_port);
       break;
+#ifdef IP_TOS
+    case PROP_ECN:
+      g_value_set_enum (value, udpsink->ecn);
+      break;
+#endif
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -1428,6 +1460,8 @@ gst_multiudpsink_start (GstBaseSink * bsink)
     }
   }
 #endif
+
+  gst_multiudpsink_set_ecn (sink);
 
   if (sink->used_socket)
     g_socket_set_broadcast (sink->used_socket, TRUE);
@@ -1792,6 +1826,34 @@ not_found:
      * confuse/break python bindings */
     return gst_structure_new_empty ("multiudpsink-stats");
   }
+}
+
+static void
+gst_multiudpsink_set_ecn (GstMultiUDPSink * sink)
+{
+  GError *opt_err;
+#ifdef IP_TOS
+  if (sink->used_socket) {
+    if (!g_socket_set_option (sink->used_socket, IPPROTO_IP, IP_TOS, sink->ecn,
+            &opt_err)) {
+      GST_WARNING_OBJECT (sink, "Could not set IPv4 ECN flag to %s: %s",
+          g_enum_to_string (gst_net_ecn_cp_get_type (), sink->ecn),
+          opt_err->message);
+      g_clear_error (&opt_err);
+    }
+  }
+#endif /* IP_TOS */
+#ifdef IPV6_TCLASS
+  if (sink->used_socket_v6) {
+    if (!g_socket_set_option (sink->used_socket_v6, IPPROTO_IPV6, IPV6_TCLASS,
+            sink->ecn, &opt_err)) {
+      GST_WARNING_OBJECT (sink, "Could not set IPv6 ECN flag to %s: %s",
+          g_enum_to_string (gst_net_ecn_cp_get_type (), sink->ecn),
+          opt_err->message);
+      g_clear_error (&opt_err);
+    }
+  }
+#endif /* IPV6_TCLASS */
 }
 
 static gboolean
