@@ -122,7 +122,7 @@ gst_net_ecn_meta_get_info (void)
  *
  * Returns: (transfer none): a #GstNetEcnMeta connected to @buffer
  *
- * Since: 1.22
+ * Since: 1.24
  */
 GstNetEcnMeta *
 gst_buffer_add_net_ecn_meta (GstBuffer * buffer, GstNetEcnCp cp)
@@ -150,7 +150,7 @@ gst_buffer_add_net_ecn_meta (GstBuffer * buffer, GstNetEcnCp cp)
  * Returns: (transfer none): the #GstNetEcnMeta or %NULL when there
  * is no such metadata on @buffer.
  *
- * Since: 1.22
+ * Since: 1.24
  */
 GstNetEcnMeta *
 gst_buffer_get_net_ecn_meta (GstBuffer * buffer)

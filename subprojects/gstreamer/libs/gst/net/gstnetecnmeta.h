@@ -37,7 +37,7 @@ typedef struct _GstNetEcnMeta GstNetEcnMeta;
  *
  * ECN codepoints.
  *
- * Since: 1.22
+ * Since: 1.24
  */
 typedef enum _GstNetEcnCp {
   GST_NET_ECN_META_NO_ECN = 0x0,
@@ -57,7 +57,7 @@ GType gst_net_ecn_cp_get_type (void);
  *
  * Buffer metadata for Explicit Congestion Notification on received buffers
  *
- * Since: 1.22
+ * Since: 1.24
  */
 struct _GstNetEcnMeta {
   GstMeta meta;

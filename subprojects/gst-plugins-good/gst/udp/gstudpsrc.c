@@ -1015,7 +1015,7 @@ gst_udpsrc_class_init (GstUDPSrcClass * klass)
    *
    * Enable reception of ECN ancillary data on this socket.
    *
-   * Since: 1.22
+   * Since: 1.24
    */
   g_object_class_install_property (gobject_class, PROP_ECN,
       g_param_spec_boolean ("retrieve-ecn",

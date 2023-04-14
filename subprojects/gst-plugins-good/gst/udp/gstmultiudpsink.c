@@ -355,13 +355,12 @@ gst_multiudpsink_class_init (GstMultiUDPSinkClass * klass)
           "Port to bind the socket to", 0, G_MAXUINT16,
           DEFAULT_BIND_PORT, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
-#if defined(IP_TOS) || defined(IPV6_TCLASS)
   /**
    * GstMultiUDPSink::ecn:
    *
    * Set the value of the ECN codepoint on packets sent
    *
-   * Since: 1.22
+   * Since: 1.24
    */
   g_object_class_install_property (gobject_class, PROP_ECN,
       g_param_spec_enum ("set-ecn",
@@ -371,7 +370,6 @@ gst_multiudpsink_class_init (GstMultiUDPSinkClass * klass)
           GST_NET_ECN_CP_TYPE, DEFAULT_ECN,
           GST_PARAM_CONDITIONALLY_AVAILABLE | G_PARAM_READWRITE |
           G_PARAM_STATIC_STRINGS));
-#endif /* IP_TOS || IPV6_TCLASS */
 
   gst_element_class_add_static_pad_template (gstelement_class, &sink_template);
 
@@ -1193,11 +1191,9 @@ gst_multiudpsink_get_property (GObject * object, guint prop_id, GValue * value,
     case PROP_BIND_PORT:
       g_value_set_int (value, udpsink->bind_port);
       break;
-#ifdef IP_TOS
     case PROP_ECN:
       g_value_set_enum (value, udpsink->ecn);
       break;
-#endif
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
