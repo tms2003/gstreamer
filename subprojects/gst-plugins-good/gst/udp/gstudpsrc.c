@@ -801,9 +801,7 @@ enum
   PROP_MTU,
   PROP_SOCKET_TIMESTAMP,
   PROP_MULTICAST_SOURCE,
-#if defined(IP_RECVTOS) || defined(IPV6_RECVTCLASS)
   PROP_ECN,
-#endif
 };
 
 static void gst_udpsrc_uri_handler_init (gpointer g_iface, gpointer iface_data);
@@ -1012,7 +1010,6 @@ gst_udpsrc_class_init (GstUDPSrcClass * klass)
           UDP_DEFAULT_MULTICAST_SOURCE,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
-#if defined(IP_RECVTOS) || defined(IPV6_RECVTCLASS)
   /**
    * GstUDPsrc:ecn:
    *
@@ -1025,8 +1022,8 @@ gst_udpsrc_class_init (GstUDPSrcClass * klass)
           "Enable reception of ECN ancillary data on this socket",
           "Used for receiving ECN codepoints using IP_TOS/IPV6_TCLASS, "
           "and add it to buffers as meta.",
-          UDP_DEFAULT_ECN, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
-#endif
+          UDP_DEFAULT_ECN, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
+          GST_PARAM_CONDITIONALLY_AVAILABLE));
 
   gst_element_class_add_static_pad_template (gstelement_class, &src_template);
 
@@ -1692,11 +1689,9 @@ gst_udpsrc_set_property (GObject * object, guint prop_id, const GValue * value,
       }
       GST_OBJECT_UNLOCK (udpsrc);
       break;
-#if defined(IP_RECVTOS) || defined(IPV6_RECVTCLASS)
     case PROP_ECN:
       udpsrc->ecn = g_value_get_boolean (value);
       break;
-#endif /* IP_RECVTOS || IPV6_RECVTCLASS */
     default:
       break;
   }
@@ -1768,11 +1763,9 @@ gst_udpsrc_get_property (GObject * object, guint prop_id, GValue * value,
       g_value_set_string (value, udpsrc->multicast_source);
       GST_OBJECT_UNLOCK (udpsrc);
       break;
-#if defined(IP_RECVTOS) || defined(IP_RECVTCLASS)
     case PROP_ECN:
       g_value_set_boolean (value, udpsrc->ecn);
       break;
-#endif /* IP_RECVTOS || IP_RECVTCLASS */
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -1983,6 +1976,7 @@ gst_udpsrc_open (GstUDPSrc * src)
     if (src->ecn) {
       GError *opt_err = NULL;
       GST_DEBUG_OBJECT (src, "Enabling reception of ECN");
+      gboolean could_set = FALSE;
 #ifdef IP_RECVTOS
       if (g_inet_address_get_family (addr) == G_SOCKET_FAMILY_IPV4) {
         if (!g_socket_set_option (src->used_socket, IPPROTO_IP, IP_RECVTOS, 1,
@@ -1990,6 +1984,8 @@ gst_udpsrc_open (GstUDPSrc * src)
           GST_WARNING_OBJECT (src, "Couldn't set IP_RECVTOS to receive ECN: %s",
               opt_err->message);
           g_clear_error (&opt_err);
+        } else {
+          could_set = TRUE;
         }
       }
 #endif
@@ -2001,9 +1997,17 @@ gst_udpsrc_open (GstUDPSrc * src)
               "Couldn't set IPV6_RECVTCLASS to receive ECN: %s",
               opt_err->message);
           g_clear_error (&opt_err);
+        } else {
+          could_set = TRUE;
         }
       }
 #endif
+      if (!could_set) {
+        GST_WARNING_OBJECT (src,
+            "Failed to set ECN, it may not be available on this platform.");
+        src->ecn = FALSE;
+        g_object_notify (G_OBJECT (src), "retrieve-ecn");
+      }
     }
 
     val = gst_udpsrc_get_rcvbuf (src);

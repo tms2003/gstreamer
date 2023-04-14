@@ -116,9 +116,7 @@ enum
   PROP_BUFFER_SIZE,
   PROP_BIND_ADDRESS,
   PROP_BIND_PORT,
-#if defined(IP_TOS) || defined(IPV6_TCLASS)
   PROP_ECN
-#endif
 };
 
 static void gst_multiudpsink_finalize (GObject * object);
@@ -369,7 +367,8 @@ gst_multiudpsink_class_init (GstMultiUDPSinkClass * klass)
           "Set the ECN codepoint on packets sent to indicate support for ECN"
           " (or lack thereof)",
           GST_NET_ECN_CP_TYPE, DEFAULT_ECN,
-          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+          GST_PARAM_CONDITIONALLY_AVAILABLE | G_PARAM_READWRITE |
+          G_PARAM_STATIC_STRINGS));
 #endif /* IP_TOS || IPV6_TCLASS */
 
   gst_element_class_add_static_pad_template (gstelement_class, &sink_template);
@@ -1115,12 +1114,10 @@ gst_multiudpsink_set_property (GObject * object, guint prop_id,
     case PROP_BIND_PORT:
       udpsink->bind_port = g_value_get_int (value);
       break;
-#ifdef IP_TOS
     case PROP_ECN:
       udpsink->ecn = g_value_get_enum (value);
       gst_multiudpsink_set_ecn (udpsink);
       break;
-#endif
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -1832,6 +1829,7 @@ static void
 gst_multiudpsink_set_ecn (GstMultiUDPSink * sink)
 {
   GError *opt_err;
+  gboolean could_set = FALSE;
 #ifdef IP_TOS
   if (sink->used_socket) {
     if (!g_socket_set_option (sink->used_socket, IPPROTO_IP, IP_TOS, sink->ecn,
@@ -1842,6 +1840,7 @@ gst_multiudpsink_set_ecn (GstMultiUDPSink * sink)
       g_clear_error (&opt_err);
     }
   }
+  could_set = TRUE;
 #endif /* IP_TOS */
 #ifdef IPV6_TCLASS
   if (sink->used_socket_v6) {
@@ -1853,7 +1852,15 @@ gst_multiudpsink_set_ecn (GstMultiUDPSink * sink)
       g_clear_error (&opt_err);
     }
   }
+  could_set = TRUE;
 #endif /* IPV6_TCLASS */
+
+  if (!could_set) {
+    GST_WARNING_OBJECT (sink,
+        "Failed to set ECN, it may not be supported on this platform");
+    sink->ecn = GST_NET_ECN_META_NO_ECN;
+    g_object_notify (G_OBJECT (sink), "set-ecn");
+  }
 }
 
 static gboolean
