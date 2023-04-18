@@ -76,7 +76,7 @@ We will skip GStreamer initialization, since it is the same as the
 previous tutorial:
 
 {{ C+JS_FALLBACK.md }}
-  {{ tutorials/basic-tutorial-2.c[13:16] }}
+  {{ tutorials/basic-tutorial-2.c[17:20] }}
 {{ END_LANG.md }}
 
 {{ PY.md }}
@@ -118,7 +118,7 @@ platform-independent.
 ### Pipeline creation
 
 {{ C+JS_FALLBACK.md }}
-  {{ tutorials/basic-tutorial-2.c[17:19] }}
+  {{ tutorials/basic-tutorial-2.c[21:23] }}
 {{ END_LANG.md }}
 
 {{ PY.md }}
@@ -130,7 +130,7 @@ before they can be used, because it takes care of some clocking and
 messaging functions. We create the pipeline with [gst_pipeline_new]\().
 
 {{ C+JS_FALLBACK.md }}
-  {{ tutorials/basic-tutorial-2.c[25:32] }}
+  {{ tutorials/basic-tutorial-2.c[29:36] }}
 {{ END_LANG.md }}
 
 {{ PY.md }}
@@ -205,7 +205,7 @@ properties) or inquired to find out about the element's internal state
 
 Coming back to what's in the example above, 
 {{ C+JS_FALLBACK.md }}
-  {{ tutorials/basic-tutorial-2.c[33:35] }}
+  {{ tutorials/basic-tutorial-2.c[37:39] }}
 {{ END_LANG.md }}
 
 {{ PY.md }}
@@ -229,7 +229,7 @@ of the tutorial is very similar to the previous one, but we are going to
 add more error checking:
 
 {{ C+JS_FALLBACK.md }}
-  {{ tutorials/basic-tutorial-2.c[36:43] }}
+  {{ tutorials/basic-tutorial-2.c[40:47] }}
 {{ END_LANG.md }}
 
 {{ PY.md }}
@@ -242,7 +242,7 @@ details are given in [Basic tutorial 3: Dynamic
 pipelines].
 
 {{ C+JS_FALLBACK.md }}
-  {{ tutorials/basic-tutorial-2.c[44:75] }}
+  {{ tutorials/basic-tutorial-2.c[48:79] }}
 {{ END_LANG.md }}
 
 {{ PY.md }}
