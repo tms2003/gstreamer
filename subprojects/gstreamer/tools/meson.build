@@ -14,6 +14,9 @@ if gst_parse
       extra_launch_dep += [winmm_lib]
       extra_launch_arg += ['-DHAVE_WINMM']
     endif
+    if cc.has_header('shellscalingapi.h')
+      extra_launch_arg += ['-DHAVE_SHELLSCALINGAPI_H']
+    endif
   endif
 
   tools += ['gst-launch']
