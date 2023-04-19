@@ -62,6 +62,8 @@ GType gst_autoplug_select_result_get_type (void);
  *   set.
  * @GST_PLAY_FLAG_FORCE_SW_DECODERS: force to use only software-based
  *   decoders ignoring those with hardware class.
+ * @GST_PLAY_FLAG_AUDIO_PASSTHROUGH: Allow encoded audio to flow out of
+ *   decodebin3 (Since 1.23).
  *
  * Extra flags to configure the behaviour of the sinks.
  */
@@ -79,6 +81,14 @@ typedef enum {
   GST_PLAY_FLAG_SOFT_COLORBALANCE = (1 << 10),
   GST_PLAY_FLAG_FORCE_FILTERS = (1 << 11),
   GST_PLAY_FLAG_FORCE_SW_DECODERS = (1 << 12),
+  /**
+   * GST_PLAY_FLAG_AUDIO_PASSTHROUGH:
+   *
+   * Allow encoded audio to flow out of decodebin3
+   *
+   * Since: 1.23
+   */
+  GST_PLAY_FLAG_AUDIO_PASSTHROUGH = (1 << 13),
 } GstPlayFlags;
 
 #define GST_TYPE_PLAY_FLAGS (gst_play_flags_get_type())

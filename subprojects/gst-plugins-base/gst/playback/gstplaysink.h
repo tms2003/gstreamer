@@ -103,6 +103,8 @@ gboolean         gst_play_sink_reconfigure    (GstPlaySink * playsink);
 
 GstPlaySinkType  gst_play_sink_type_from_stream_type (GstStreamType stream_type);
 
+GstElement *     gst_play_sink_create_audio_sink (GstPlaySink * playsink);
+
 G_END_DECLS
 
 #endif /* __GST_PLAY_SINK_H__ */
