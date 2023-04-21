@@ -222,7 +222,6 @@ struct _GstURIDecodeBin3
   /* Properties */
   GstElement *source;
   guint64 connection_speed;     /* In bits/sec (0 = unknown) */
-  GstCaps *caps;
   guint64 buffer_duration;      /* When buffering, buffer duration (ns) */
   guint buffer_size;            /* When buffering, buffer size (bytes) */
   gboolean download;
@@ -891,7 +890,6 @@ gst_uri_decode_bin3_init (GstURIDecodeBin3 * dec)
   GstPlayItem *item;
 
   dec->connection_speed = DEFAULT_CONNECTION_SPEED;
-  dec->caps = DEFAULT_CAPS;
   dec->buffer_duration = DEFAULT_BUFFER_DURATION;
   dec->buffer_size = DEFAULT_BUFFER_SIZE;
   dec->download = DEFAULT_DOWNLOAD;
@@ -902,6 +900,7 @@ gst_uri_decode_bin3_init (GstURIDecodeBin3 * dec)
   g_cond_init (&dec->input_source_drained);
 
   dec->decodebin = gst_element_factory_make ("decodebin3", NULL);
+  g_object_set (dec->decodebin, "caps", DEFAULT_CAPS, NULL);
   gst_bin_add (GST_BIN_CAST (dec), dec->decodebin);
   dec->db_pad_added_id =
       g_signal_connect (dec->decodebin, "pad-added",
@@ -944,8 +943,6 @@ gst_uri_decode_bin3_dispose (GObject * obj)
   g_clear_pointer (&dec->download_dir, g_free);
 
   g_mutex_clear (&dec->play_items_lock);
-
-  gst_clear_caps (&dec->caps);
 
   G_OBJECT_CLASS (parent_class)->dispose (obj);
 }
@@ -1631,11 +1628,7 @@ gst_uri_decode_bin3_set_property (GObject * object, guint prop_id,
       dec->ring_buffer_max_size = g_value_get_uint64 (value);
       break;
     case PROP_CAPS:
-      GST_OBJECT_LOCK (dec);
-      if (dec->caps)
-        gst_caps_unref (dec->caps);
-      dec->caps = g_value_dup_boxed (value);
-      GST_OBJECT_UNLOCK (dec);
+      g_object_set_property (G_OBJECT (dec->decodebin), pspec->name, value);
       break;
     case PROP_INSTANT_URI:
       GST_OBJECT_LOCK (dec);
@@ -1728,9 +1721,7 @@ gst_uri_decode_bin3_get_property (GObject * object, guint prop_id,
       g_value_set_uint64 (value, dec->ring_buffer_max_size);
       break;
     case PROP_CAPS:
-      GST_OBJECT_LOCK (dec);
-      g_value_set_boxed (value, dec->caps);
-      GST_OBJECT_UNLOCK (dec);
+      g_object_get_property (G_OBJECT (dec->decodebin), pspec->name, value);
       break;
     case PROP_INSTANT_URI:
       GST_OBJECT_LOCK (dec);
@@ -2081,9 +2072,6 @@ gst_uri_decode_bin3_change_state (GstElement * element,
   GstURIDecodeBin3 *uridecodebin = (GstURIDecodeBin3 *) element;
 
   switch (transition) {
-    case GST_STATE_CHANGE_NULL_TO_READY:
-      g_object_set (uridecodebin->decodebin, "caps", uridecodebin->caps, NULL);
-      break;
     case GST_STATE_CHANGE_READY_TO_PAUSED:
       g_atomic_int_set (&uridecodebin->shutdown, 0);
       ret = activate_play_item (uridecodebin->input_item);
