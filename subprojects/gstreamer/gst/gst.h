@@ -68,6 +68,7 @@
 #include <gst/gstpreset.h>
 #include <gst/gstprotection.h>
 #include <gst/gstquery.h>
+#include <gst/gstrationaltimemeta.h>
 #include <gst/gstregistry.h>
 #include <gst/gstpromise.h>
 #include <gst/gstsample.h>

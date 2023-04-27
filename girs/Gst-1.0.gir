@@ -6093,12 +6093,30 @@ The difference is calculated as @e - @s.</doc>
         </parameter>
       </parameters>
     </function-macro>
+    <function-macro name="CLOCK_STIME_AS_RATIONAL_TIME" c:identifier="GST_CLOCK_STIME_AS_RATIONAL_TIME" version="1.24" introspectable="0">
+      <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h">Converts a #GstClockTimeDiff to #GstRationalTime, reduced to smallest terms.</doc>
+      <source-position filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h"/>
+      <parameters>
+        <parameter name="t">
+          <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h">the time</doc>
+        </parameter>
+      </parameters>
+    </function-macro>
     <function-macro name="CLOCK_STIME_IS_VALID" c:identifier="GST_CLOCK_STIME_IS_VALID" version="1.6" introspectable="0">
       <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstclock.h">Tests if a given #GstClockTimeDiff of #gint64 represents a valid defined time.</doc>
       <source-position filename="../subprojects/gstreamer/gst/gstclock.h"/>
       <parameters>
         <parameter name="time">
           <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstclock.h">signed clock time to validate</doc>
+        </parameter>
+      </parameters>
+    </function-macro>
+    <function-macro name="CLOCK_TIME_AS_RATIONAL_TIME" c:identifier="GST_CLOCK_TIME_AS_RATIONAL_TIME" version="1.24" introspectable="0">
+      <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h">Converts a #GstClockTime to #GstRationalTime, reduced to smallest terms.</doc>
+      <source-position filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h"/>
+      <parameters>
+        <parameter name="t">
+          <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h">the time</doc>
         </parameter>
       </parameters>
     </function-macro>
@@ -37285,6 +37303,189 @@ gst_query_type_get_flags() function.</doc>
                               flow.</doc>
       </member>
     </bitfield>
+    <function-macro name="RATIONAL_TIME" c:identifier="GST_RATIONAL_TIME" version="1.24" introspectable="0">
+      <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h">Creates a #GstRationalTime.</doc>
+      <source-position filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h"/>
+      <parameters>
+        <parameter name="n">
+          <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h">the numerator</doc>
+        </parameter>
+        <parameter name="d">
+          <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h">the denominator</doc>
+        </parameter>
+      </parameters>
+    </function-macro>
+    <constant name="RATIONAL_TIMEP_FORMAT" value="paR" c:type="GST_RATIONAL_TIMEP_FORMAT" version="1.24" introspectable="0">
+      <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstinfo.h">printf format type used to debug GStreamer rational time value pointers. You
+can use this in combination with GStreamer's debug logging system as well as
+the functions gst_info_vasprintf(), gst_info_strdup_vprintf() and
+gst_info_strdup_printf() to pretty-print rational time (pointers to
+#GstRationalTime).</doc>
+      <source-position filename="../subprojects/gstreamer/gst/gstinfo.h"/>
+      <type name="utf8" c:type="gchar*"/>
+    </constant>
+    <function-macro name="RATIONAL_TIME_ABS" c:identifier="GST_RATIONAL_TIME_ABS" version="1.24" introspectable="0">
+      <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h">Evaluates to the absolute value of @t. @t must be valid..</doc>
+      <source-position filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h"/>
+      <parameters>
+        <parameter name="t">
+          <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h">the time</doc>
+        </parameter>
+      </parameters>
+    </function-macro>
+    <function-macro name="RATIONAL_TIME_ARGS" c:identifier="GST_RATIONAL_TIME_ARGS" version="1.24" introspectable="0">
+      <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h">Formats @t for the #GST_RATIONAL_TIME_FORMAT format string. Note: @t will be
+evaluated more than once.</doc>
+      <source-position filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h"/>
+      <parameters>
+        <parameter name="t">
+          <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h">a rational timestamp</doc>
+        </parameter>
+      </parameters>
+    </function-macro>
+    <function-macro name="RATIONAL_TIME_ARGS_SHORT" c:identifier="GST_RATIONAL_TIME_ARGS_SHORT" version="1.24" introspectable="0">
+      <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h">Formats @t for the #GST_RATIONAL_TIME_FORMAT format string. Note: @t will be
+evaluated more than once.</doc>
+      <source-position filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h"/>
+      <parameters>
+        <parameter name="t">
+          <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h">a rational timestamp</doc>
+        </parameter>
+      </parameters>
+    </function-macro>
+    <function-macro name="RATIONAL_TIME_AS_CLOCK_STIME" c:identifier="GST_RATIONAL_TIME_AS_CLOCK_STIME" version="1.24" introspectable="0">
+      <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h">Converts a #GstRationalTime to #GstClockTimeDiff.</doc>
+      <source-position filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h"/>
+      <parameters>
+        <parameter name="t">
+          <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h">a rational timestamp</doc>
+        </parameter>
+      </parameters>
+    </function-macro>
+    <function-macro name="RATIONAL_TIME_AS_CLOCK_TIME" c:identifier="GST_RATIONAL_TIME_AS_CLOCK_TIME" version="1.24" introspectable="0">
+      <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h">Converts a #GstRationalTime to #GstClockTime.</doc>
+      <source-position filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h"/>
+      <parameters>
+        <parameter name="t">
+          <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h">a rational timestamp</doc>
+        </parameter>
+      </parameters>
+    </function-macro>
+    <function-macro name="RATIONAL_TIME_AS_MSECONDS" c:identifier="GST_RATIONAL_TIME_AS_MSECONDS" version="1.24" introspectable="0">
+      <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h">Converts a #GstRationalTime to milliseconds (1/1000 of a second).
+@t must be valid and non-negative.</doc>
+      <source-position filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h"/>
+      <parameters>
+        <parameter name="t">
+          <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h">a rational timestamp</doc>
+        </parameter>
+      </parameters>
+    </function-macro>
+    <function-macro name="RATIONAL_TIME_AS_NSECONDS" c:identifier="GST_RATIONAL_TIME_AS_NSECONDS" version="1.24" introspectable="0">
+      <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h">Converts a #GstRationalTime to nanoseconds (1/1000000000 of a second).
+@t must be valid and non-negative.</doc>
+      <source-position filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h"/>
+      <parameters>
+        <parameter name="t">
+          <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h">a rational timestamp</doc>
+        </parameter>
+      </parameters>
+    </function-macro>
+    <function-macro name="RATIONAL_TIME_AS_SECONDS" c:identifier="GST_RATIONAL_TIME_AS_SECONDS" version="1.24" introspectable="0">
+      <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h">Converts a #GstRationalTime to seconds. @t must be valid and non-negative.</doc>
+      <source-position filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h"/>
+      <parameters>
+        <parameter name="t">
+          <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h">a rational timestamp</doc>
+        </parameter>
+      </parameters>
+    </function-macro>
+    <function-macro name="RATIONAL_TIME_AS_USECONDS" c:identifier="GST_RATIONAL_TIME_AS_USECONDS" version="1.24" introspectable="0">
+      <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h">Converts a #GstRationalTime to microseconds (1/1000000 of a second).
+@t must be valid and non-negative.</doc>
+      <source-position filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h"/>
+      <parameters>
+        <parameter name="t">
+          <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h">a rational timestamp</doc>
+        </parameter>
+      </parameters>
+    </function-macro>
+    <function-macro name="RATIONAL_TIME_CLAMP" c:identifier="GST_RATIONAL_TIME_CLAMP" version="1.24" introspectable="0">
+      <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h">Evaluates to @t clamped to the range defined by @low and @high.
+@t. @low and @high must be valid.</doc>
+      <source-position filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h"/>
+      <parameters>
+        <parameter name="t">
+          <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h">a #GstRationalTime value to be clamped</doc>
+        </parameter>
+        <parameter name="low">
+          <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h">a lower bound #GstRationalTime</doc>
+        </parameter>
+        <parameter name="high">
+          <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h">an upper bound #GstRationalTime</doc>
+        </parameter>
+      </parameters>
+    </function-macro>
+    <constant name="RATIONAL_TIME_FORMAT" value="ld/%u (%s%u:%02u:%02u.%09u)" c:type="GST_RATIONAL_TIME_FORMAT" version="1.24">
+      <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h">A string that can be used in printf-like format strings to display a
+#GstRationalTime value. Use GST_RATIONAL_TIME_ARGS() to construct the
+matching arguments. Prints the time as a fraction, and additionally prints
+the equivalent #GstClockTime.
+
+Example:
+
+``` C
+printf("%" GST_RATIONAL_TIME_FORMAT "\n", GST_RATIONAL_TIME_ARGS(time));
+```</doc>
+      <source-position filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h"/>
+      <type name="utf8" c:type="gchar*"/>
+    </constant>
+    <constant name="RATIONAL_TIME_FORMAT_SHORT" value="ld/%u" c:type="GST_RATIONAL_TIME_FORMAT_SHORT" version="1.24">
+      <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h">A strint that can be used in printf-like format strings ti display a
+#GstRationalTime value. Use GST_RATIONAL_TIME_ARGS_SHORT() to construct the
+matching arguments. Prints the time as a fraction.
+
+Example:
+
+```C
+printf("%" GST_RATIONAL_TIME_FORMAT_SHORT "\n", GST_RATIONAL_TIME_ARGS_SHORT(time))
+```</doc>
+      <source-position filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h"/>
+      <type name="utf8" c:type="gchar*"/>
+    </constant>
+    <function-macro name="RATIONAL_TIME_IS_VALID" c:identifier="GST_RATIONAL_TIME_IS_VALID" version="1.24" introspectable="0">
+      <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h">Tests if a given #GstRationalTime represents a valid defined time.</doc>
+      <source-position filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h"/>
+      <parameters>
+        <parameter name="t">
+          <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h">a rational timestamp to validate</doc>
+        </parameter>
+      </parameters>
+    </function-macro>
+    <function-macro name="RATIONAL_TIME_MAX" c:identifier="GST_RATIONAL_TIME_MAX" version="1.24" introspectable="0">
+      <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h">Evaluates to the maximum of @a and @b. @a and @b must be valid.</doc>
+      <source-position filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h"/>
+      <parameters>
+        <parameter name="a">
+          <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h">a #GstRationalTime</doc>
+        </parameter>
+        <parameter name="b">
+          <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h">a #GstRationalTime</doc>
+        </parameter>
+      </parameters>
+    </function-macro>
+    <function-macro name="RATIONAL_TIME_MIN" c:identifier="GST_RATIONAL_TIME_MIN" version="1.24" introspectable="0">
+      <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h">Evaluates to the minimum of @a and @b. @a and @b must be valid.</doc>
+      <source-position filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h"/>
+      <parameters>
+        <parameter name="a">
+          <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h">a #GstRationalTime</doc>
+        </parameter>
+        <parameter name="b">
+          <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h">a #GstRationalTime</doc>
+        </parameter>
+      </parameters>
+    </function-macro>
     <function-macro name="READ_UINT16_BE" c:identifier="GST_READ_UINT16_BE" introspectable="0">
       <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstutils.h">Read a 16 bit unsigned integer value in big endian format from the memory buffer.</doc>
       <source-position filename="../subprojects/gstreamer/gst/gstutils.h"/>
@@ -37560,6 +37761,165 @@ These constants serve as a rough guidance for defining the rank of a
         <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstpluginfeature.h">will be chosen first</doc>
       </member>
     </enumeration>
+    <record name="RationalTime" c:type="GstRationalTime" version="1.24">
+      <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h">A structure representing rational timestamps with a numerator and a
+denominator. A timestamp with a numerator of G_MININT64 or a denominator of 0
+is considered undefined, similar to #GST_CLOCK_TIME_NONE.</doc>
+      <source-position filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h"/>
+      <field name="num" writable="1">
+        <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h">the numerator</doc>
+        <type name="gint64" c:type="gint64"/>
+      </field>
+      <field name="denom" writable="1">
+        <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h">the denominator</doc>
+        <type name="guint32" c:type="guint32"/>
+      </field>
+      <method name="add" c:identifier="gst_rational_time_add" version="1.24" introspectable="0">
+        <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstrationaltimemeta.c">Adds two #GstRationalTime (@lhs + @rhs).</doc>
+        <source-position filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h"/>
+        <return-value>
+          <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstrationaltimemeta.c">the sum of @lhs and @rhs</doc>
+          <type name="RationalTime" c:type="GstRationalTime"/>
+        </return-value>
+        <parameters>
+          <instance-parameter name="lhs" transfer-ownership="none">
+            <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstrationaltimemeta.c">first addend</doc>
+            <type name="RationalTime" c:type="GstRationalTime"/>
+          </instance-parameter>
+          <parameter name="rhs" transfer-ownership="none">
+            <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstrationaltimemeta.c">second addend</doc>
+            <type name="RationalTime" c:type="GstRationalTime"/>
+          </parameter>
+        </parameters>
+      </method>
+      <method name="cmp" c:identifier="gst_rational_time_cmp" version="1.24">
+        <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstrationaltimemeta.c">Compares two #GstRationalTime.</doc>
+        <source-position filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h"/>
+        <return-value transfer-ownership="none">
+          <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstrationaltimemeta.c">0 if @lhs == @rhs, &lt; 0 if @lhs &lt; @rhs, &gt; 0 if @lhs &gt; @rhs</doc>
+          <type name="gint64" c:type="gint64"/>
+        </return-value>
+        <parameters>
+          <instance-parameter name="lhs" transfer-ownership="none">
+            <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstrationaltimemeta.c">the first #GstRationalTime</doc>
+            <type name="RationalTime" c:type="GstRationalTime"/>
+          </instance-parameter>
+          <parameter name="rhs" transfer-ownership="none">
+            <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstrationaltimemeta.c">the second #GstRationalTime</doc>
+            <type name="RationalTime" c:type="GstRationalTime"/>
+          </parameter>
+        </parameters>
+      </method>
+      <method name="reduce" c:identifier="gst_rational_time_reduce" version="1.24" introspectable="0">
+        <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstrationaltimemeta.c">Reduces @time to lowest terms.</doc>
+        <source-position filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h"/>
+        <return-value>
+          <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstrationaltimemeta.c">a reduced #GstRationalTime equal to @time in value.</doc>
+          <type name="RationalTime" c:type="GstRationalTime"/>
+        </return-value>
+        <parameters>
+          <instance-parameter name="time" transfer-ownership="none">
+            <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstrationaltimemeta.c">a #GstRationalTime</doc>
+            <type name="RationalTime" c:type="GstRationalTime"/>
+          </instance-parameter>
+        </parameters>
+      </method>
+      <method name="subtract" c:identifier="gst_rational_time_subtract" version="1.24" introspectable="0">
+        <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstrationaltimemeta.c">Subtracts two #GstRationalTime (@lhs - @rhs).</doc>
+        <source-position filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h"/>
+        <return-value>
+          <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstrationaltimemeta.c">the difference of @lhs and @rhs</doc>
+          <type name="RationalTime" c:type="GstRationalTime"/>
+        </return-value>
+        <parameters>
+          <instance-parameter name="lhs" transfer-ownership="none">
+            <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstrationaltimemeta.c">the minuend</doc>
+            <type name="RationalTime" c:type="GstRationalTime"/>
+          </instance-parameter>
+          <parameter name="rhs" transfer-ownership="none">
+            <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstrationaltimemeta.c">the subtrahend</doc>
+            <type name="RationalTime" c:type="GstRationalTime"/>
+          </parameter>
+        </parameters>
+      </method>
+      <method name="to_lowest_common_denom" c:identifier="gst_rational_time_to_lowest_common_denom" version="1.24">
+        <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstrationaltimemeta.c">Extends or reduces both fractions to the lowest common denominator.</doc>
+        <source-position filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h"/>
+        <return-value transfer-ownership="none">
+          <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstrationaltimemeta.c">%TRUE if successful, %FALSE otherwise.</doc>
+          <type name="gboolean" c:type="gboolean"/>
+        </return-value>
+        <parameters>
+          <instance-parameter name="lhs" transfer-ownership="none">
+            <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstrationaltimemeta.c">the first #GstRationalTime</doc>
+            <type name="RationalTime" c:type="GstRationalTime*"/>
+          </instance-parameter>
+          <parameter name="rhs" transfer-ownership="none">
+            <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstrationaltimemeta.c">the second #GstRationalTime</doc>
+            <type name="RationalTime" c:type="GstRationalTime*"/>
+          </parameter>
+        </parameters>
+      </method>
+    </record>
+    <record name="RationalTimeMeta" c:type="GstRationalTimeMeta" version="1.24">
+      <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h">A meta that can be used to communicate in a lossless way the rational
+timestamps and durations found in the media data of various formats.</doc>
+      <source-position filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h"/>
+      <field name="meta" writable="1">
+        <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h">parent #GstMeta</doc>
+        <type name="Meta" c:type="GstMeta"/>
+      </field>
+      <field name="get_buffer_time">
+        <callback name="get_buffer_time">
+          <source-position filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h"/>
+          <return-value transfer-ownership="none">
+            <type name="none" c:type="void"/>
+          </return-value>
+          <parameters>
+            <parameter name="meta" transfer-ownership="none">
+              <type name="RationalTimeMeta" c:type="GstRationalTimeMeta*"/>
+            </parameter>
+            <parameter name="dts" transfer-ownership="none">
+              <type name="RationalTime" c:type="GstRationalTime*"/>
+            </parameter>
+            <parameter name="dts_duration" transfer-ownership="none">
+              <type name="RationalTime" c:type="GstRationalTime*"/>
+            </parameter>
+            <parameter name="pts" transfer-ownership="none">
+              <type name="RationalTime" c:type="GstRationalTime*"/>
+            </parameter>
+            <parameter name="pts_duration" transfer-ownership="none">
+              <type name="RationalTime" c:type="GstRationalTime*"/>
+            </parameter>
+          </parameters>
+        </callback>
+      </field>
+      <field name="get_stream_time">
+        <callback name="get_stream_time">
+          <source-position filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h"/>
+          <return-value transfer-ownership="none">
+            <type name="none" c:type="void"/>
+          </return-value>
+          <parameters>
+            <parameter name="meta" transfer-ownership="none">
+              <type name="RationalTimeMeta" c:type="GstRationalTimeMeta*"/>
+            </parameter>
+            <parameter name="dts" transfer-ownership="none">
+              <type name="RationalTime" c:type="GstRationalTime*"/>
+            </parameter>
+            <parameter name="dts_duration" transfer-ownership="none">
+              <type name="RationalTime" c:type="GstRationalTime*"/>
+            </parameter>
+            <parameter name="pts" transfer-ownership="none">
+              <type name="RationalTime" c:type="GstRationalTime*"/>
+            </parameter>
+            <parameter name="pts_duration" transfer-ownership="none">
+              <type name="RationalTime" c:type="GstRationalTime*"/>
+            </parameter>
+          </parameters>
+        </callback>
+      </field>
+    </record>
     <record name="ReferenceTimestampMeta" c:type="GstReferenceTimestampMeta" version="1.14">
       <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstbuffer.h">#GstReferenceTimestampMeta can be used to attach alternative timestamps and
 possibly durations to a #GstBuffer. These are generally not according to
@@ -49329,6 +49689,15 @@ buffer</doc>
         </parameter>
       </parameters>
     </function-macro>
+    <function-macro name="buffer_get_rational_time_meta" c:identifier="gst_buffer_get_rational_time_meta" version="1.24" introspectable="0">
+      <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h">Gets the #GstRationalTimeMeta that might be present on @b.</doc>
+      <source-position filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h"/>
+      <parameters>
+        <parameter name="b">
+          <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h">a #GstBuffer</doc>
+        </parameter>
+      </parameters>
+    </function-macro>
     <function-macro name="buffer_is_writable" c:identifier="gst_buffer_is_writable" introspectable="0">
       <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstbuffer.h">Tests if you can safely write to a buffer's metadata or its memory array.
 It is only safe to change buffer metadata when the current reference is
@@ -52562,6 +52931,12 @@ Either @new_query or the #GstQuery pointed to by @old_query may be %NULL.</doc>
           <type name="QueryType" c:type="GstQueryType"/>
         </parameter>
       </parameters>
+    </function>
+    <function name="rational_time_meta_api_get_type" c:identifier="gst_rational_time_meta_api_get_type">
+      <source-position filename="../subprojects/gstreamer/gst/gstrationaltimemeta.h"/>
+      <return-value transfer-ownership="none">
+        <type name="GType" c:type="GType"/>
+      </return-value>
     </function>
     <function name="reference_timestamp_meta_api_get_type" c:identifier="gst_reference_timestamp_meta_api_get_type">
       <attribute name="doc.skip" value="true"/>

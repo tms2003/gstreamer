@@ -105,6 +105,7 @@
 #include "gstsegment.h"
 #include "gstvalue.h"
 #include "gstcapsfeatures.h"
+#include "gstrationaltimemeta.h"
 
 #ifdef HAVE_VALGRIND_VALGRIND_H
 #  include <valgrind/valgrind.h>
@@ -1229,6 +1230,11 @@ gst_info_printf_pointer_extension_func (const char *format, void *ptr)
         break;
       case 'a':                /* GST_WRAPPED_PTR_FORMAT */
         s = priv_gst_string_take_and_wrap (gst_debug_print_object (ptr));
+        break;
+      case 'R':                /* GST_RATIONAL_TIMEP_FORMAT */
+        if (ptr)
+          s = g_strdup_printf ("%" GST_RATIONAL_TIME_FORMAT,
+              GST_RATIONAL_TIME_ARGS (*(GstRationalTime *) ptr));
         break;
       default:
         /* must have been compiled against a newer version with an extension

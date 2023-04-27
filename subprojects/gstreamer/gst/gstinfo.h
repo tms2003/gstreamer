@@ -328,6 +328,19 @@ struct _GstDebugCategory {
  */
 #define GST_STIMEP_FORMAT "p\aS"
 
+/**
+ * GST_RATIONAL_TIMEP_FORMAT: (skip):
+ *
+ * printf format type used to debug GStreamer rational time value pointers. You
+ * can use this in combination with GStreamer's debug logging system as well as
+ * the functions gst_info_vasprintf(), gst_info_strdup_vprintf() and
+ * gst_info_strdup_printf() to pretty-print rational time (pointers to
+ * #GstRationalTime).
+ *
+ * Since: 1.24
+ */
+#define GST_RATIONAL_TIMEP_FORMAT "p\aR"
+
 typedef struct _GstDebugMessage GstDebugMessage;
 
 /**
