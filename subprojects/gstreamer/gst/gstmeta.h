@@ -289,6 +289,10 @@ GST_API
 gint                 gst_meta_compare_seqnum    (const GstMeta * meta1,
                                                  const GstMeta * meta2);
 
+GST_API
+gchar *              gst_meta_serialize         (const GstMeta * meta);
+
+
 /* some default tags */
 
 GST_API GQuark _gst_meta_tag_memory;

@@ -654,6 +654,10 @@ GST_API
 GstCustomMeta * gst_buffer_get_custom_meta      (GstBuffer *buffer,
                                                  const gchar *name);
 
+GST_API
+GstMeta *       gst_buffer_add_meta_from_string (GstBuffer * buffer,
+                                                 const gchar * string);
+
 /**
  * gst_value_set_buffer:
  * @v: a #GValue to receive the data

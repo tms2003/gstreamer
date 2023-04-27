@@ -486,3 +486,46 @@ gst_meta_compare_seqnum (const GstMeta * meta1, const GstMeta * meta2)
 
   return (seqnum1 < seqnum2) ? -1 : 1;
 }
+
+/**
+ * gst_meta_serialize:
+ * @meta: a #GstMeta
+ *
+ * Tries conversion of @meta to a string representation. Depending on
+ * #GstMeta implementation, it may not be serializable and %NULL will be
+ * returned in that case.
+ *
+ * Returns: (transfer full) (nullable): a newly allocated string if successful,
+ * or %NULL otherwise
+ *
+ * Since: 1.24
+ */
+gchar *
+gst_meta_serialize (const GstMeta * meta)
+{
+  GstStructure *s;
+  GstStructure *d;
+  gchar *ret;
+
+  g_return_val_if_fail (meta != NULL, NULL);
+
+  /* Only GstCustomMeta is supported for now */
+  if (!gst_meta_info_is_custom (meta->info))
+    return NULL;
+
+  s = gst_custom_meta_get_structure ((GstCustomMeta *) meta);
+  ret = gst_structure_serialize (s, GST_SERIALIZE_FLAG_NONE);
+  if (!ret)
+    return NULL;
+
+  /* Allows only deserializable ones */
+  d = gst_structure_new_from_string (ret);
+  if (!d) {
+    g_free (ret);
+    return NULL;
+  }
+
+  gst_structure_free (d);
+
+  return ret;
+}
