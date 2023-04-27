@@ -115,6 +115,7 @@ typedef struct
   GstPad *srcpad;
   guint expected_size;
   GstClockTime expected_time;
+  GstRationalTime expected_rational_time;
 } CommonTestData;
 
 static GstPadProbeReturn
@@ -143,9 +144,17 @@ qtdemux_probe (GstPad * pad, GstPadProbeInfo * info, CommonTestData * data)
     return GST_PAD_PROBE_OK;
   } else if (GST_IS_BUFFER (GST_PAD_PROBE_INFO_DATA (info))) {
     GstBuffer *buf = GST_PAD_PROBE_INFO_BUFFER (info);
+    GstRationalTimeMeta *meta = gst_buffer_get_rational_time_meta (buf);
+    GstRationalTime pts = GST_RATIONAL_TIME_NONE;
 
     fail_unless_equals_int (gst_buffer_get_size (buf), data->expected_size);
     fail_unless_equals_uint64 (GST_BUFFER_PTS (buf), data->expected_time);
+
+    fail_unless (meta != NULL);
+    fail_unless (meta->get_buffer_time != NULL);
+
+    meta->get_buffer_time (meta, NULL, NULL, &pts, NULL);
+    fail_unless_equals_rationaltime (pts, data->expected_rational_time);
   }
 
   return GST_PAD_PROBE_DROP;
@@ -337,6 +346,7 @@ GST_START_TEST (test_qtdemux_input_gap)
       GST_BUFFER_FLAG_SET (inbuf, GST_BUFFER_FLAG_DISCONT);
       data.expected_time =
           gst_util_uint64_scale (pts, GST_SECOND, seg_1_timescale);
+      data.expected_rational_time = GST_RATIONAL_TIME (pts, seg_1_timescale);
       data.expected_size = seg_1_sample_sizes[i];
       fail_unless (gst_pad_chain (sinkpad, inbuf) == GST_FLOW_OK);
     }
