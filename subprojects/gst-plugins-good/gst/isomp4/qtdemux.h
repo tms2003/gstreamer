@@ -55,6 +55,7 @@ typedef struct _QtDemuxSegment QtDemuxSegment;
 typedef struct _QtDemuxRandomAccessEntry QtDemuxRandomAccessEntry;
 typedef struct _QtDemuxStreamStsdEntry QtDemuxStreamStsdEntry;
 typedef struct _QtDemuxGaplessAudioInfo QtDemuxGaplessAudioInfo;
+typedef struct _QtDemuxRationalSegment QtDemuxRationalSegment;
 
 typedef GstBuffer * (*QtDemuxProcessFunc)(GstQTDemux * qtdemux, QtDemuxStream * stream, GstBuffer * buf);
 
@@ -103,10 +104,30 @@ struct _QtDemuxGaplessAudioInfo {
   guint64 num_end_padding_pcm_frames;
   guint64 num_valid_pcm_frames;
 
-  /* PCM frame amounts converted to nanoseconds. */
-  GstClockTime start_padding_duration;
-  GstClockTime end_padding_duration;
-  GstClockTime valid_duration;
+  /* PCM frame amounts converted to seconds. */
+  GstRationalTime start_padding_duration;
+  GstRationalTime end_padding_duration;
+  GstRationalTime valid_duration;
+};
+
+/*
+ * A replacement for GstSegment that uses rational time.
+ */
+struct _QtDemuxRationalSegment
+{
+  GstSegmentFlags flags;
+
+  gdouble rate;
+  gdouble applied_rate;
+
+  GstRationalTime base;
+  GstRationalTime offset;
+  GstRationalTime start;
+  GstRationalTime stop;
+  GstRationalTime time;
+
+  GstRationalTime position;
+  GstRationalTime duration;
 };
 
 struct _GstQTDemux {
@@ -173,7 +194,7 @@ struct _GstQTDemux {
   GstTagList *tag_list;
 
   /* configured playback region */
-  GstSegment segment;
+  QtDemuxRationalSegment segment;
 
   /* State for key_units trickmode */
   GstClockTime trickmode_interval;
@@ -274,8 +295,8 @@ struct _GstQTDemux {
    * downstream.
    * Used to set on the downstream segment once the corresponding upstream
    * BYTE SEEK has succeeded */
-  gint64 push_seek_start;
-  gint64 push_seek_stop;
+  GstRationalTime push_seek_start;
+  GstRationalTime push_seek_stop;
 
 #if 0
   /* gst index support */
@@ -359,8 +380,8 @@ struct _QtDemuxSample
   guint32 size;
   gint32 pts_offset;            /* Add this value to timestamp to get the pts */
   guint64 offset;
-  guint64 timestamp;            /* DTS In mov time */
-  guint32 duration;             /* In mov time */
+  guint64 timestamp;            /* DTS In trak time */
+  guint32 duration;             /* In trak time */
   gboolean keyframe;            /* TRUE when this packet is a keyframe */
 };
 
@@ -451,11 +472,11 @@ struct _QtDemuxStream
   /* current position */
   guint32 segment_index;
   guint32 sample_index;
-  GstClockTime time_position;   /* in gst time */
-  guint64 accumulated_base;
+  GstRationalTime time_position;
+  GstRationalTime accumulated_base;
 
   /* the Gst segment we are processing out, used for clipping */
-  GstSegment segment;
+  QtDemuxRationalSegment segment;
 
   /* quicktime segments */
   guint32 n_segments;
