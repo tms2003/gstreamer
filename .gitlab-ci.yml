@@ -241,6 +241,7 @@ check commits:
   stage: 'preparation'
   script:
     - ci-fairy check-commits $CI_MERGE_REQUEST_DIFF_BASE_SHA..HEAD --textwidth 0 --no-signed-off-by
+    - ci-fairy check-merge-request --require-allow-collaboration
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
 
