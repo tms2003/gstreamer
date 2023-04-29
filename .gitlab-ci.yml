@@ -233,12 +233,15 @@ commitlint:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
 
 #
-# Check commit messages with ci-fairy
+# Check Merge requests with ci-fairy
 #
-check commits:
+check mr with ci-fairy:
   extends: '.fdo.ci-fairy'
   needs: []
   stage: 'preparation'
+  variables:
+    GIT_STRATEGY: fetch
+    GIT_DEPTH: 100
   script:
     - >-
       ci-fairy check-commits $CI_MERGE_REQUEST_DIFF_BASE_SHA..HEAD
