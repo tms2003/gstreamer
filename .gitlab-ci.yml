@@ -240,10 +240,23 @@ check commits:
   needs: []
   stage: 'preparation'
   script:
-    - ci-fairy check-commits $CI_MERGE_REQUEST_DIFF_BASE_SHA..HEAD --textwidth 0 --no-signed-off-by
-    - ci-fairy check-merge-request --require-allow-collaboration
+    - >-
+      ci-fairy check-commits $CI_MERGE_REQUEST_DIFF_BASE_SHA..HEAD
+      --textwidth 0
+      --no-signed-off-by
+      --junit-xml=check-commits.xml
+    - >-
+      ci-fairy check-merge-request
+      --require-allow-collaboration
+      --junit-xml=check-allow-collaboration.xml
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+  artifacts:
+    when: on_failure
+    reports:
+        junit:
+          - "check-commits.xml"
+          - "check-allow-collaboration.xml"
 
 #
 # build setup templates
