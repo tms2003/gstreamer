@@ -1626,6 +1626,31 @@ priv_gst_get_relocated_libgstreamer (void)
   return dir;
 }
 
+/*
+ * Fetch, f.ex., GST_REGISTRY and GST_REGISTRY_1_0 while preferring the _1_0
+ * suffix one. If both are set, emit a g_warning.
+ */
+const char *
+priv_gst_get_gstenv (const char *name)
+{
+  char *name_1_0;
+  const char *value, *value_1_0;
+
+  name_1_0 = g_strdup_printf ("%s_1_0", name);
+  value = g_getenv (name);
+  value_1_0 = g_getenv (name_1_0);
+
+  if (value && value_1_0)
+    g_warning ("Env vars %s and %s are both set, so %s is being picked", name,
+        name_1_0, name_1_0);
+
+  g_free (name_1_0);
+
+  if (value_1_0)
+    return value_1_0;
+  return value;
+}
+
 #ifndef GST_DISABLE_REGISTRY
 /* Unref all plugins marked 'cached', to clear old plugins that no
  * longer exist. Returns %TRUE if any plugins were removed */
@@ -1713,9 +1738,7 @@ scan_and_update_registry (GstRegistry * default_registry,
 
   /* GST_PLUGIN_PATH specifies a list of directories to scan for
    * additional plugins.  These take precedence over the system plugins */
-  plugin_path = g_getenv ("GST_PLUGIN_PATH_1_0");
-  if (plugin_path == NULL)
-    plugin_path = g_getenv ("GST_PLUGIN_PATH");
+  plugin_path = priv_gst_get_gstenv ("GST_PLUGIN_PATH");
   if (plugin_path) {
     char **list;
     int i;
@@ -1733,9 +1756,7 @@ scan_and_update_registry (GstRegistry * default_registry,
   /* GST_PLUGIN_SYSTEM_PATH specifies a list of plugins that are always
    * loaded by default.  If not set, this defaults to the system-installed
    * path, and the plugins installed in the user's home directory */
-  plugin_path = g_getenv ("GST_PLUGIN_SYSTEM_PATH_1_0");
-  if (plugin_path == NULL)
-    plugin_path = g_getenv ("GST_PLUGIN_SYSTEM_PATH");
+  plugin_path = priv_gst_get_gstenv ("GST_PLUGIN_SYSTEM_PATH");
   if (plugin_path == NULL) {
     char *home_plugins, *relocated_libgstreamer, *system_plugindir;
 
@@ -1818,9 +1839,7 @@ ensure_current_registry (GError ** error)
 
   default_registry = gst_registry_get ();
 
-  registry_file = g_strdup (g_getenv ("GST_REGISTRY_1_0"));
-  if (registry_file == NULL)
-    registry_file = g_strdup (g_getenv ("GST_REGISTRY"));
+  registry_file = g_strdup (priv_gst_get_gstenv ("GST_REGISTRY"));
   if (registry_file == NULL) {
     registry_file = g_build_filename (g_get_user_cache_dir (),
         "gstreamer-" GST_API_VERSION, GST_REGISTRY_FILE_NAME, NULL);

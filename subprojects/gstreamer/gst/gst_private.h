@@ -519,7 +519,9 @@ struct _GstClockEntryImpl
                                          * virtual functions on the clock */
 };
 
-char * priv_gst_get_relocated_libgstreamer (void);
+G_GNUC_INTERNAL char * priv_gst_get_relocated_libgstreamer (void);
+
+G_GNUC_INTERNAL const char * priv_gst_get_gstenv (const char * name);
 
 G_END_DECLS
 #endif /* __GST_PRIVATE_H__ */
