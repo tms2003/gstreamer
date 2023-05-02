@@ -49,6 +49,10 @@ function onConnectClicked() {
     setConnectButtonState("Disconnect");
 }
 
+function onConnectIceRestartClicked() {
+    generateOfferOptions({iceRestart: true});
+}
+
 function getOurId() {
     return Math.floor(Math.random() * (9000 - 10) + 10).toString();
 }
@@ -126,8 +130,12 @@ function onLocalDescription(desc) {
     });
 }
 
+function generateOfferOptions(options) {
+    peer_connection.createOffer(options).then(onLocalDescription).catch(setError);
+}
+
 function generateOffer() {
-    peer_connection.createOffer().then(onLocalDescription).catch(setError);
+    generateOfferOptions({})
 }
 
 // ICE candidate received from peer, add it to the peer connection

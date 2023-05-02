@@ -479,6 +479,25 @@ bus_watch_cb (GstBus * bus, GstMessage * message, gpointer user_data)
   return G_SOURCE_CONTINUE;
 }
 
+static gboolean
+reconnect (void)
+{
+  GstStructure *options;
+  GstPromise *promise;
+
+  options = gst_structure_new ("application/webrtcbin-offer-options",
+      "ice-restart", G_TYPE_BOOLEAN, TRUE, NULL);
+
+  app_state = PEER_CALL_NEGOTIATING;
+  gst_println ("reconnecting with an ice restart");
+
+  promise = gst_promise_new_with_change_func (on_offer_created, NULL, NULL);
+  g_signal_emit_by_name (webrtc1, "create-offer", options, promise);
+  gst_clear_structure (&options);
+
+  return G_SOURCE_REMOVE;
+}
+
 #define STUN_SERVER "stun://stun.l.google.com:19302"
 #define RTP_TWCC_URI "http://www.ietf.org/id/draft-holmer-rmcat-transport-wide-cc-extensions-01"
 #define RTP_OPUS_DEFAULT_PT 97
@@ -548,7 +567,7 @@ start_pipeline (gboolean create_offer, guint opus_pt, guint vp8_pt)
   if (!gst_element_link (video_bin, webrtc1)) {
     gst_printerr ("Failed to link video_bin \n");
   }
-
+#if 0
   if (!create_offer) {
     /* XXX: this will fail when the remote offers twcc as the extension id
      * cannot currently be negotiated when receiving an offer.
@@ -577,7 +596,7 @@ start_pipeline (gboolean create_offer, guint opus_pt, guint vp8_pt)
     g_clear_object (&audio_twcc);
     g_clear_object (&audiopay);
   }
-
+#endif
   /* This is the gstwebrtc entry point where we create the offer and so on. It
    * will be called when the pipeline goes to PLAYING. */
   g_signal_connect (webrtc1, "on-negotiation-needed",
@@ -611,7 +630,9 @@ start_pipeline (gboolean create_offer, guint opus_pt, guint vp8_pt)
   g_signal_connect (webrtc1, "pad-added", G_CALLBACK (on_incoming_stream),
       pipe1);
 
-  g_timeout_add (100, (GSourceFunc) webrtcbin_get_stats, webrtc1);
+  //g_timeout_add (100, (GSourceFunc) webrtcbin_get_stats, webrtc1);
+
+  g_timeout_add_seconds (20, (GSourceFunc) reconnect, NULL);
 
   gst_print ("Starting pipeline\n");
   ret = gst_element_set_state (GST_ELEMENT (pipe1), GST_STATE_PLAYING);
