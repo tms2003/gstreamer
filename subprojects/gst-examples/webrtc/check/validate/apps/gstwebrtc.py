@@ -35,6 +35,7 @@ DEFAULT_SCENARIOS = [
         "vp8_send_stream",
         "open_data_channel",
         "send_data_channel_string",
+        "ice_restart",
     ]
 
 # various configuration changes that are included from other scenarios.
@@ -81,6 +82,7 @@ SCENARIO_OVERRIDES_SUPPORTED = {
     "vp8_send_stream" : ['initiator', 'bundle'],
     "open_data_channel" : ['initiator', 'bundle'],
     "send_data_channel_string" : ['initiator', 'bundle'],
+    "ice_restart" : ['initiator', 'bundle'],
 }
 
 # Things that don't work for some reason or another.

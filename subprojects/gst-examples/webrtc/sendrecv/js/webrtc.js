@@ -174,6 +174,13 @@ function onServerMessage(event) {
                 return;
             }
 
+            if (msg.OFFER_REQUEST != null) {
+                // The peer wants us to set up and then send an offer
+                if (!peer_connection)
+                    createCall(msg).then (generateOffer);
+                return;
+            }
+
             // Incoming JSON signals the beginning of a call
             if (!peer_connection)
                 createCall(msg);
@@ -333,7 +340,7 @@ function createCall(msg) {
         return stream;
     }).catch(setError);
 
-    if (msg != null && !msg.sdp) {
+    if (!(msg == null || (msg.sdp || msg.CREATE_OFFER))) {
         console.log("WARNING: First message wasn't an SDP message!?");
     }
 

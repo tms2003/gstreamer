@@ -120,9 +120,15 @@ function onIncomingICE(ice) {
 }
 
 function createOffer(offer) {
+    options = {}
+    if (offer.ice_restart != null) {
+        console.log("createOffer: ice-restart is: " + offer.ice_restart)
+        options.iceRestart = offer.ice_restart
+    }
+
     local_stream_promise.then((stream) => {
         setStatus("Got local stream, creating offer");
-        peer_connection.createOffer()
+        peer_connection.createOffer(options)
             .then(onLocalDescription).catch(setError);
     }).catch(setError)
 }

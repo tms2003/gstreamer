@@ -226,8 +226,8 @@ class RemoteWebRTCObserver(WebRTCObserver):
         msg = json.dumps({'DATA_CREATE': {'id': ident}})
         self.signalling.send (msg)
 
-    def create_offer (self):
-        msg = json.dumps({'CREATE_OFFER': ""})
+    def create_offer (self, ice_restart=False):
+        msg = json.dumps({'CREATE_OFFER': {"ice_restart" : True}})
         self.signalling.send (msg)
 
     def create_answer (self):

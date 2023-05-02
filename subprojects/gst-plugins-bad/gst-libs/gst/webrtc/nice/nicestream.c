@@ -231,7 +231,8 @@ gst_webrtc_nice_stream_gather_candidates (GstWebRTCICEStream * stream)
   gboolean ret = TRUE;
   GstWebRTCNiceStream *nice_stream = GST_WEBRTC_NICE_STREAM (stream);
 
-  GST_DEBUG_OBJECT (nice_stream, "start gathering candidates");
+  GST_DEBUG_OBJECT (nice_stream, "ICE streamer %u start gathering candidates",
+      stream->stream_id);
 
   if (nice_stream->priv->gathered)
     return TRUE;
@@ -297,6 +298,32 @@ cleanup:
   return ret;
 }
 
+static gboolean
+gst_webrtc_nice_stream_restart (GstWebRTCICEStream * stream)
+{
+  GstWebRTCNiceStream *nice_stream = GST_WEBRTC_NICE_STREAM (stream);
+  GstWebRTCICE *ice;
+  NiceAgent *agent;
+  gboolean ret = FALSE;
+
+  GST_DEBUG_OBJECT (stream, "ICE stream %u restart", stream->stream_id);
+
+  ice = GST_WEBRTC_ICE (g_weak_ref_get (&nice_stream->priv->ice_weak));
+  g_assert (ice != NULL);
+
+  g_object_get (ice, "agent", &agent, NULL);
+
+  nice_stream->priv->gathered = FALSE;
+  nice_stream->priv->gathering_started = FALSE;
+
+  ret = nice_agent_restart_stream2 (agent, stream->stream_id);
+
+  g_clear_object (&agent);
+  g_clear_object (&ice);
+
+  return ret;
+}
+
 static void
 gst_webrtc_nice_stream_class_init (GstWebRTCNiceStreamClass * klass)
 {
@@ -308,6 +335,7 @@ gst_webrtc_nice_stream_class_init (GstWebRTCNiceStreamClass * klass)
       gst_webrtc_nice_stream_find_transport;
   gst_webrtc_ice_stream_class->gather_candidates =
       gst_webrtc_nice_stream_gather_candidates;
+  gst_webrtc_ice_stream_class->restart = gst_webrtc_nice_stream_restart;
 
   gobject_class->constructed = gst_webrtc_nice_stream_constructed;
   gobject_class->get_property = gst_webrtc_nice_stream_get_property;

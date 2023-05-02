@@ -44,7 +44,10 @@ struct _GstWebRTCICEStreamClass
   GstObjectClass            parent_class;
   GstWebRTCICETransport * (*find_transport)      (GstWebRTCICEStream * stream,
                                                  GstWebRTCICEComponent component);
-  gboolean                (*gather_candidates)   (GstWebRTCICEStream * ice);
+  gboolean                (*gather_candidates)   (GstWebRTCICEStream * stream);
+  gboolean                (*restart)             (GstWebRTCICEStream * stream);
+
+  gpointer _gst_reserved[GST_PADDING];
 };
 
 
@@ -52,7 +55,9 @@ GST_WEBRTC_API
 GstWebRTCICETransport *     gst_webrtc_ice_stream_find_transport        (GstWebRTCICEStream * stream,
                                                                          GstWebRTCICEComponent component);
 GST_WEBRTC_API
-gboolean                    gst_webrtc_ice_stream_gather_candidates     (GstWebRTCICEStream * ice);
+gboolean                    gst_webrtc_ice_stream_gather_candidates     (GstWebRTCICEStream * stream);
+GST_WEBRTC_API
+gboolean                    gst_webrtc_ice_stream_restart               (GstWebRTCICEStream * stream);
 
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(GstWebRTCICEStream, gst_object_unref)
 

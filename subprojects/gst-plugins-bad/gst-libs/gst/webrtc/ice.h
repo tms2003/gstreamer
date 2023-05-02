@@ -149,6 +149,17 @@ struct _GstWebRTCICEClass {
                                                        GstWebRTCICEStream * stream,
                                                        GstWebRTCICECandidateStats ** local_stats,
                                                        GstWebRTCICECandidateStats ** remote_stats);
+  /**
+   * GstWebRTCICEClass::restart_stream:
+   * @ice: a #GstWebRTCICE
+   * @stream: the #GstWebRTCICEStream to restart
+   *
+   * Returns: whether the stream restart was successful
+   *
+   * Since: 1.24
+   */
+  gboolean (*restart_stream)                           (GstWebRTCICE * ice,
+                                                        GstWebRTCICEStream * stream);
   gpointer _gst_reserved[GST_PADDING];
 };
 
@@ -246,6 +257,9 @@ gboolean                    gst_webrtc_ice_get_selected_pair        (GstWebRTCIC
                                                                      GstWebRTCICEStream * stream,
                                                                      GstWebRTCICECandidateStats ** local_stats,
                                                                      GstWebRTCICECandidateStats ** remote_stats);
+GST_WEBRTC_API
+gboolean                    gst_webrtc_ice_restart_stream           (GstWebRTCICE * ice,
+                                                                     GstWebRTCICEStream * stream);
 
 GST_WEBRTC_API
 void                        gst_webrtc_ice_candidate_stats_free     (GstWebRTCICECandidateStats * stats);

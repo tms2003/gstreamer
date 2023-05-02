@@ -294,12 +294,21 @@ on_offer_created (GstPromise * promise, gpointer user_data)
 static void
 on_negotiation_needed (GstElement * element, gpointer user_data)
 {
-  gboolean create_offer = GPOINTER_TO_INT (user_data);
   app_state = PEER_CALL_NEGOTIATING;
 
   if (remote_is_offerer) {
-    soup_websocket_connection_send_text (ws_conn, "OFFER_REQUEST");
-  } else if (create_offer) {
+    JsonObject *msg, *options;
+    char *text;
+
+    options = json_object_new ();
+    msg = json_object_new ();
+    json_object_set_object_member (msg, "OFFER_REQUEST", options);
+    text = get_string_from_json_object (msg);
+    json_object_unref (msg);
+
+    soup_websocket_connection_send_text (ws_conn, text);
+    g_free (text);
+  } else {
     GstPromise *promise =
         gst_promise_new_with_change_func (on_offer_created, NULL, NULL);
     g_signal_emit_by_name (webrtc1, "create-offer", NULL, promise);

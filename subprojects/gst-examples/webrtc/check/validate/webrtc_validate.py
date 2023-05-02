@@ -79,7 +79,8 @@ class WebRTCApplication(object):
             if atype == Actions.CREATE_OFFER:
                 assert action.structure["which"] in ("local", "remote")
                 c = self.client if action.structure["which"] == "local" else self.remote_client
-                c.create_offer()
+                ice_restart = True if action.structure["ice-restart"] else False
+                c.create_offer(ice_restart=ice_restart)
                 return GstValidate.ActionReturn.OK
             elif atype == Actions.CREATE_ANSWER:
                 assert action.structure["which"] in ("local", "remote")

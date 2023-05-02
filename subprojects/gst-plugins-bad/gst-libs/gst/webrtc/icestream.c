@@ -99,7 +99,7 @@ gst_webrtc_ice_stream_find_transport (GstWebRTCICEStream * stream,
 
 /**
  * gst_webrtc_ice_stream_gather_candidates:
- * @ice: the #GstWebRTCICEStream
+ * @stream: the #GstWebRTCICEStream
  * Returns: FALSE on error, TRUE otherwise
  * Since: 1.22
  */
@@ -110,6 +110,23 @@ gst_webrtc_ice_stream_gather_candidates (GstWebRTCICEStream * stream)
   g_assert (GST_WEBRTC_ICE_STREAM_GET_CLASS (stream)->gather_candidates);
 
   return GST_WEBRTC_ICE_STREAM_GET_CLASS (stream)->gather_candidates (stream);
+}
+
+/**
+ * gst_webrtc_ice_stream_restart:
+ * @stream: the #GstWebRTCICEStream
+ * Returns: FALSE on error, TRUE otherwise
+ * Since: 1.24
+ */
+gboolean
+gst_webrtc_ice_stream_restart(GstWebRTCICEStream * stream)
+{
+  GstWebRTCICEStreamClass *klass;
+  g_return_val_if_fail (GST_IS_WEBRTC_ICE_STREAM (stream), FALSE);
+  klass = GST_WEBRTC_ICE_STREAM_GET_CLASS (stream);
+  if (!klass->restart)
+    return FALSE;
+  return klass->restart (stream);
 }
 
 static void

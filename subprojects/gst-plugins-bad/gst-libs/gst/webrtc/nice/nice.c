@@ -1519,6 +1519,20 @@ gst_webrtc_nice_get_http_proxy (GstWebRTCICE * ice)
     return NULL;
 }
 
+static gboolean
+gst_webrtc_nice_restart_stream (GstWebRTCICE * ice, GstWebRTCICEStream * stream)
+{
+  struct NiceStreamItem *item;
+  GstWebRTCNice *nice = GST_WEBRTC_NICE (ice);
+
+  item = _find_item (nice, -1, -1, stream);
+  g_return_val_if_fail (item != NULL, FALSE);
+
+  GST_DEBUG_OBJECT (stream, "ICE stream %u restart", stream->stream_id);
+
+  return gst_webrtc_ice_stream_restart (stream);
+}
+
 static void
 gst_webrtc_nice_set_property (GObject * object, guint prop_id,
     const GValue * value, GParamSpec * pspec)
@@ -1669,6 +1683,7 @@ gst_webrtc_nice_class_init (GstWebRTCNiceClass * klass)
   gst_webrtc_ice_class->get_remote_candidates =
       gst_webrtc_nice_get_remote_candidates;
   gst_webrtc_ice_class->get_selected_pair = gst_webrtc_nice_get_selected_pair;
+  gst_webrtc_ice_class->restart_stream = gst_webrtc_nice_restart_stream;
 
   gobject_class->constructed = gst_webrtc_nice_constructed;
   gobject_class->get_property = gst_webrtc_nice_get_property;

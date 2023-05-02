@@ -493,6 +493,28 @@ gst_webrtc_ice_get_http_proxy (GstWebRTCICE * ice)
   return GST_WEBRTC_ICE_GET_CLASS (ice)->get_http_proxy (ice);
 }
 
+/**
+ * gst_webrtc_ice_restart_stream:
+ * @ice: The #GstWebRTCICE
+ * @stream: The #GstWebRTCICEStream to restart
+ *
+ * Returns: whether the restart was successful
+ *
+ * Since: 1.24
+ */
+gboolean
+gst_webrtc_ice_restart_stream (GstWebRTCICE * ice,
+    GstWebRTCICEStream * stream)
+{
+  GstWebRTCICEClass *klass;
+  g_return_val_if_fail (GST_IS_WEBRTC_ICE (ice), FALSE);
+  klass = GST_WEBRTC_ICE_GET_CLASS(ice);
+
+  if (!klass->restart_stream)
+    return FALSE;
+
+  return klass->restart_stream (ice, stream);
+}
 
 static void
 gst_webrtc_ice_set_property (GObject * object, guint prop_id,

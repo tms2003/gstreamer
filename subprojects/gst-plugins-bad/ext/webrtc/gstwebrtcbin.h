@@ -153,6 +153,10 @@ struct _GstWebRTCBinPrivate
   GstWebRTCSessionDescription *last_generated_answer;
 
   gboolean tos_attached;
+
+  /* set when during negotiation, an ice restart is detected from the peer.
+   * Specified in rtcweb-jsep-25 Section 3.5.1. */
+  gboolean needs_ice_restart;
 };
 
 typedef GstStructure *(*GstWebRTCBinFunc) (GstWebRTCBin * webrtc, gpointer data);

@@ -3330,7 +3330,8 @@ sdp_media_from_transceiver (GstWebRTCBin * webrtc, GstSDPMedia * media,
     const GstSDPMedia * last_media, GstWebRTCRTPTransceiver * trans,
     guint media_idx, GString * bundled_mids, guint bundle_idx,
     gchar * bundle_ufrag, gchar * bundle_pwd, GArray * media_mapping,
-    GHashTable * all_mids, gboolean * no_more_mlines, GError ** error)
+    GHashTable * all_mids, gboolean needs_ice_restart,
+    gboolean * no_more_mlines, GError ** error)
 {
   /* TODO:
    * rtp header extensions
@@ -3418,17 +3419,20 @@ sdp_media_from_transceiver (GstWebRTCBin * webrtc, GstSDPMedia * media,
   }
 
   /* FIXME: deal with ICE restarts */
-  if (last_offer && trans->mline != -1 && trans->mid) {
+  if (!needs_ice_restart && last_offer && trans->mline != -1 && trans->mid) {
     ufrag = g_strdup (_media_get_ice_ufrag (last_offer, trans->mline));
     pwd = g_strdup (_media_get_ice_pwd (last_offer, trans->mline));
     GST_DEBUG_OBJECT (trans, "%u Using previous ice parameters", media_idx);
   } else {
-    GST_DEBUG_OBJECT (trans,
-        "%u Generating new ice parameters mline %i, mid %s", media_idx,
-        trans->mline, trans->mid);
     if (webrtc->bundle_policy == GST_WEBRTC_BUNDLE_POLICY_NONE) {
+      GST_DEBUG_OBJECT (trans,
+          "%u Generating new ice parameters mline %i, mid %s", media_idx,
+          trans->mline, trans->mid);
       _generate_ice_credentials (&ufrag, &pwd);
     } else {
+      GST_DEBUG_OBJECT (trans,
+          "%u using bundle ice parameters mline %i, mid %s ufrag %s pwd %s",
+          media_idx, trans->mline, trans->mid, bundle_ufrag, bundle_pwd);
       g_assert (bundle_ufrag && bundle_pwd);
       ufrag = g_strdup (bundle_ufrag);
       pwd = g_strdup (bundle_pwd);
@@ -3694,7 +3698,8 @@ gather_media_mapping (GstWebRTCBin * webrtc)
 static gboolean
 _add_data_channel_offer (GstWebRTCBin * webrtc, GstSDPMessage * msg,
     GstSDPMedia * media, GString * bundled_mids, guint bundle_idx,
-    gchar * bundle_ufrag, gchar * bundle_pwd, GHashTable * all_mids)
+    gchar * bundle_ufrag, gchar * bundle_pwd, GHashTable * all_mids,
+    gboolean needs_ice_restart)
 {
   GstSDPMessage *last_offer = _get_latest_self_generated_sdp (webrtc);
   gchar *ufrag, *pwd, *sdp_mid;
@@ -3721,7 +3726,7 @@ _add_data_channel_offer (GstWebRTCBin * webrtc, GstSDPMessage * msg,
   gst_sdp_media_add_attribute (media, "setup", "actpass");
 
   /* FIXME: only needed when restarting ICE */
-  if (last_offer && last_data_index < G_MAXUINT) {
+  if (!needs_ice_restart && last_offer && last_data_index < G_MAXUINT) {
     ufrag = g_strdup (_media_get_ice_ufrag (last_offer, last_data_index));
     pwd = g_strdup (_media_get_ice_pwd (last_offer, last_data_index));
   } else {
@@ -3802,8 +3807,14 @@ _create_offer_task (GstWebRTCBin * webrtc, const GstStructure * options,
   GstSDPMessage *last_offer = _get_latest_self_generated_sdp (webrtc);
   GList *seen_transceivers = NULL;
   guint media_idx = 0;
+  gboolean needs_ice_restart = FALSE;
   int i;
   gboolean no_more_mlines = FALSE;
+
+  if (options) {
+    gst_structure_get (options, "ice-restart", G_TYPE_BOOLEAN,
+        &needs_ice_restart, NULL);
+  }
 
   gst_sdp_message_new (&ret);
 
@@ -3836,15 +3847,20 @@ _create_offer_task (GstWebRTCBin * webrtc, const GstStructure * options,
     guint bundle_media_index;
 
     media_mapping = gather_media_mapping (webrtc);
-    if (last_offer && _parse_bundle (last_offer, &last_bundle, NULL)
+    if (!needs_ice_restart && last_offer
+        && _parse_bundle (last_offer, &last_bundle, NULL)
         && last_bundle && last_bundle[0]
         && _get_bundle_index (last_offer, last_bundle, &bundle_media_index)) {
       bundle_ufrag =
           g_strdup (_media_get_ice_ufrag (last_offer, bundle_media_index));
       bundle_pwd =
           g_strdup (_media_get_ice_pwd (last_offer, bundle_media_index));
+      GST_DEBUG_OBJECT (webrtc, "Reusing existing bundle ice parameters "
+          "ufrag %s pwd %s", bundle_ufrag, bundle_pwd);
     } else {
       _generate_ice_credentials (&bundle_ufrag, &bundle_pwd);
+      GST_DEBUG_OBJECT (webrtc, "Generated new bundle ice parameters "
+          "ufrag %s pwd %s", bundle_ufrag, bundle_pwd);
     }
 
     g_strfreev (last_bundle);
@@ -3908,7 +3924,8 @@ _create_offer_task (GstWebRTCBin * webrtc, const GstStructure * options,
             gst_sdp_media_init (&media);
             if (!sdp_media_from_transceiver (webrtc, &media, last_media, trans,
                     media_idx, bundled_mids, 0, bundle_ufrag, bundle_pwd,
-                    media_mapping, all_mids, &no_more_mlines, error)) {
+                    media_mapping, all_mids, needs_ice_restart, &no_more_mlines,
+                    error)) {
               gst_sdp_media_uninit (&media);
               if (!*error)
                 g_set_error_literal (error, GST_WEBRTC_ERROR,
@@ -3939,7 +3956,7 @@ _create_offer_task (GstWebRTCBin * webrtc, const GstStructure * options,
         GstSDPMedia media = { 0, };
         gst_sdp_media_init (&media);
         if (_add_data_channel_offer (webrtc, ret, &media, bundled_mids, 0,
-                bundle_ufrag, bundle_pwd, all_mids)) {
+                bundle_ufrag, bundle_pwd, all_mids, needs_ice_restart)) {
           gst_sdp_message_add_media (ret, &media);
           media_idx++;
         } else {
@@ -4027,7 +4044,7 @@ _create_offer_task (GstWebRTCBin * webrtc, const GstStructure * options,
           GstSDPMedia media = { 0, };
           gst_sdp_media_init (&media);
           if (_add_data_channel_offer (webrtc, ret, &media, bundled_mids, 0,
-                  bundle_ufrag, bundle_pwd, all_mids)) {
+                  bundle_ufrag, bundle_pwd, all_mids, needs_ice_restart)) {
             if (no_more_mlines) {
               g_set_error (error, GST_WEBRTC_ERROR,
                   GST_WEBRTC_ERROR_INTERNAL_FAILURE,
@@ -4088,7 +4105,7 @@ _create_offer_task (GstWebRTCBin * webrtc, const GstStructure * options,
 
     if (sdp_media_from_transceiver (webrtc, &media, NULL, trans, media_idx,
             bundled_mids, 0, bundle_ufrag, bundle_pwd, media_mapping, all_mids,
-            &no_more_mlines, error)) {
+            needs_ice_restart, &no_more_mlines, error)) {
       /* as per JSEP, a=rtcp-mux-only is only added for new streams */
       gst_sdp_media_add_attribute (&media, "rtcp-mux-only", "");
       gst_sdp_message_add_media (ret, &media);
@@ -4330,15 +4347,20 @@ _create_answer_task (GstWebRTCBin * webrtc, const GstStructure * options,
       bundled_mids = g_string_new ("BUNDLE");
     }
 
-    if (last_answer && _parse_bundle (last_answer, &last_bundle, NULL)
+    if (!webrtc->priv->needs_ice_restart && last_answer
+        && _parse_bundle (last_answer, &last_bundle, NULL)
         && last_bundle && last_bundle[0]
         && _get_bundle_index (last_answer, last_bundle, &bundle_media_index)) {
       bundle_ufrag =
           g_strdup (_media_get_ice_ufrag (last_answer, bundle_media_index));
       bundle_pwd =
           g_strdup (_media_get_ice_pwd (last_answer, bundle_media_index));
+      GST_DEBUG_OBJECT (webrtc, "Reusing existing bundle ice parameters "
+          "ufrag %s pwd %s", bundle_ufrag, bundle_pwd);
     } else {
       _generate_ice_credentials (&bundle_ufrag, &bundle_pwd);
+      GST_DEBUG_OBJECT (webrtc, "Generated new bundle ice parameters "
+          "ufrag %s pwd %s", bundle_ufrag, bundle_pwd);
     }
 
     g_strfreev (last_bundle);
@@ -4386,13 +4408,17 @@ _create_answer_task (GstWebRTCBin * webrtc, const GstStructure * options,
     {
       gchar *ufrag, *pwd;
 
-      /* FIXME: deal with ICE restarts */
-      if (last_answer && i < gst_sdp_message_medias_len (last_answer)) {
+      if (!webrtc->priv->needs_ice_restart && last_answer
+          && i < gst_sdp_message_medias_len (last_answer)) {
         ufrag = g_strdup (_media_get_ice_ufrag (last_answer, i));
         pwd = g_strdup (_media_get_ice_pwd (last_answer, i));
+        GST_DEBUG_OBJECT (webrtc, "%u Reusing existing ice parameters "
+            "ufrag %s pwd %s", i, ufrag, pwd);
       } else {
         if (!bundled) {
           _generate_ice_credentials (&ufrag, &pwd);
+          GST_DEBUG_OBJECT (webrtc, "%u Generated new ice parameters "
+              "ufrag %s pwd %s", i, ufrag, pwd);
         } else {
           ufrag = g_strdup (bundle_ufrag);
           pwd = g_strdup (bundle_pwd);
@@ -6302,6 +6328,7 @@ _set_description_task (GstWebRTCBin * webrtc, struct set_description *sd)
 {
   GstWebRTCSignalingState old_signaling_state = webrtc->signaling_state;
   GstWebRTCSignalingState new_signaling_state = webrtc->signaling_state;
+  GstWebRTCSessionDescription *previous = NULL;
   gboolean signalling_state_changed = FALSE;
   GError *error = NULL;
   GStrv bundled = NULL;
@@ -6358,6 +6385,10 @@ _set_description_task (GstWebRTCBin * webrtc, struct set_description *sd)
 
   if (!check_locked_mlines (webrtc, sd->sdp, &error))
     goto out;
+
+  previous = get_previous_description (webrtc, sd->source, sd->sdp->type);
+  if (previous)
+    previous = gst_webrtc_session_description_copy (previous);
 
   switch (sd->sdp->type) {
     case GST_WEBRTC_SDP_TYPE_OFFER:{
@@ -6569,6 +6600,7 @@ _set_description_task (GstWebRTCBin * webrtc, struct set_description *sd)
     gchar *ufrag, *pwd;
     TransportStream *item;
     guint rtp_session_id = bundled ? bundle_idx : i;
+    gboolean signals_ice_restart = FALSE;
 
     item =
         _get_or_create_transport_stream (webrtc, rtp_session_id,
@@ -6597,29 +6629,61 @@ _set_description_task (GstWebRTCBin * webrtc, struct set_description *sd)
       }
     }
 
+    signals_ice_restart = previous
+        && _media_signals_ice_restart (previous->sdp, sd->sdp->sdp, i);
+
     if (sd->source == SDP_LOCAL && (!bundled || bundle_idx == i)) {
+      gboolean should_gather = TRUE;
+      /* Or, if the ICE ufrag and password values have changed, trigger the
+       * ICE agent to start an ICE restart as described in [RFC8445],
+       * Section 9, and begin gathering new candidates for the m= section.
+       * If this description is an answer, also start checks on that media
+       * section.
+       */
+      if (signals_ice_restart) {
+        gst_webrtc_ice_restart_stream (webrtc->priv->ice, item->stream);
+
+        webrtc->priv->needs_ice_restart = FALSE;
+      }
+
       _get_ice_credentials_from_sdp_media (sd->sdp->sdp, i, &ufrag, &pwd);
 
       gst_webrtc_ice_set_local_credentials (webrtc->priv->ice,
           item->stream, ufrag, pwd);
       g_free (ufrag);
       g_free (pwd);
+
+      if (should_gather) {
+        gst_webrtc_ice_gather_candidates (webrtc->priv->ice, item->stream);
+      }
     } else if (sd->source == SDP_REMOTE && !_media_is_bundle_only (media)) {
+      gboolean should_gather = FALSE;
+
+      if (signals_ice_restart) {
+        if (sd->sdp->type == GST_WEBRTC_SDP_TYPE_OFFER) {
+          webrtc->priv->needs_ice_restart = TRUE;
+        } else {
+          /* TODO: If the description is of type "answer" or "pranswer", then
+           * check to see if the current local description is an ICE
+           * restart, and if not, generate an error.  If the PeerConnection
+           * state is "have-remote-pranswer", and the ICE ufrag or password
+           * changed from the previous provisional answer, then signal the
+           * ICE agent to discard any previous ICE check list state for the
+           * m= section.
+           */
+        }
+      }
+
       _get_ice_credentials_from_sdp_media (sd->sdp->sdp, i, &ufrag, &pwd);
 
       gst_webrtc_ice_set_remote_credentials (webrtc->priv->ice,
           item->stream, ufrag, pwd);
       g_free (ufrag);
       g_free (pwd);
-    }
-  }
 
-  if (sd->source == SDP_LOCAL) {
-    for (i = 0; i < webrtc->priv->ice_stream_map->len; i++) {
-      IceStreamItem *item =
-          &g_array_index (webrtc->priv->ice_stream_map, IceStreamItem, i);
-
-      gst_webrtc_ice_gather_candidates (webrtc->priv->ice, item->stream);
+      if (should_gather) {
+        gst_webrtc_ice_gather_candidates (webrtc->priv->ice, item->stream);
+      }
     }
   }
 
@@ -6681,6 +6745,9 @@ _set_description_task (GstWebRTCBin * webrtc, struct set_description *sd)
 
 out:
   g_strfreev (bundled);
+
+  if (previous)
+    gst_webrtc_session_description_free (previous);
 
   if (error) {
     GstStructure *s = gst_structure_new ("application/x-gst-promise",

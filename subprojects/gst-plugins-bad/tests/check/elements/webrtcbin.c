@@ -766,13 +766,20 @@ test_webrtc_free (struct test_webrtc *t)
 }
 
 static void
-test_webrtc_create_offer (struct test_webrtc *t)
+test_webrtc_create_offer_with_options (struct test_webrtc *t,
+    GstStructure * options)
 {
   GstPromise *promise;
   GstElement *offeror = TEST_GET_OFFEROR (t);
 
   promise = gst_promise_new_with_change_func (_on_offer_received, t, NULL);
-  g_signal_emit_by_name (offeror, "create-offer", NULL, promise);
+  g_signal_emit_by_name (offeror, "create-offer", options, promise);
+}
+
+static void
+test_webrtc_create_offer (struct test_webrtc *t)
+{
+  test_webrtc_create_offer_with_options (t, NULL);
 }
 
 static TestState
@@ -3117,15 +3124,15 @@ sdp_media_equal_attribute (struct test_webrtc *t, GstElement * element,
 
   for (i = 0; i < n; i++) {
     const GstSDPMedia *our_media, *other_media;
-    const gchar *our_mid, *other_mid;
+    const gchar *our_val, *other_val;
 
     our_media = gst_sdp_message_get_media (desc->sdp, i);
     other_media = gst_sdp_message_get_media (previous->sdp, i);
 
-    our_mid = gst_sdp_media_get_attribute_val (our_media, attr);
-    other_mid = gst_sdp_media_get_attribute_val (other_media, attr);
+    our_val = gst_sdp_media_get_attribute_val (our_media, attr);
+    other_val = gst_sdp_media_get_attribute_val (other_media, attr);
 
-    fail_unless_equals_string (our_mid, other_mid);
+    fail_unless_equals_string (our_val, other_val);
   }
 }
 
@@ -5708,6 +5715,56 @@ GST_START_TEST (test_msid)
 
 GST_END_TEST;
 
+static void
+_ensure_ice_credentials_changed (struct test_webrtc *t, GstElement * element,
+    GstWebRTCSessionDescription * desc, gpointer user_data)
+{
+  GstWebRTCSessionDescription *previous = user_data;
+  guint i;
+
+  for (i = 0; i < gst_sdp_message_medias_len (desc->sdp); i++) {
+    fail_unless (_media_signals_ice_restart (previous->sdp, desc->sdp, i));
+  }
+}
+
+GST_START_TEST (test_renego_ice_restart)
+{
+  GstStructure *ice_restart_options =
+      gst_structure_new ("webrtcbin-offer-options", "ice-restart",
+      G_TYPE_BOOLEAN, TRUE, NULL);
+  struct test_webrtc *t = create_audio_test ();
+  VAL_SDP_INIT (offer, _count_num_sdp_media, GUINT_TO_POINTER (1), NULL);
+  VAL_SDP_INIT (answer, _count_num_sdp_media, GUINT_TO_POINTER (1), NULL);
+  VAL_SDP_INIT (offer_ice_changed, _ensure_ice_credentials_changed, NULL, NULL);
+  VAL_SDP_INIT (answer_ice_changed, _ensure_ice_credentials_changed, NULL,
+      NULL);
+  GstWebRTCSessionDescription *previous_offer, *previous_answer;
+
+  /* check that signalling an ice-restart changes ice credentials */
+
+  test_validate_sdp (t, &offer, &answer);
+
+  previous_offer = gst_webrtc_session_description_copy (t->offer_desc);
+  previous_answer = gst_webrtc_session_description_copy (t->answer_desc);
+  test_webrtc_reset_negotiation (t);
+
+  offer_ice_changed.user_data = previous_offer;
+  answer_ice_changed.user_data = previous_answer;
+  offer.next = &offer_ice_changed;
+  answer.next = &answer_ice_changed;
+
+  test_webrtc_create_offer_with_options (t, ice_restart_options);
+  test_webrtc_wait_for_answer_error_eos (t);
+
+  test_webrtc_free (t);
+
+  gst_structure_free (ice_restart_options);
+  gst_webrtc_session_description_free (previous_offer);
+  gst_webrtc_session_description_free (previous_answer);
+}
+
+GST_END_TEST;
+
 static Suite *
 webrtcbin_suite (void)
 {
@@ -5773,6 +5830,7 @@ webrtcbin_suite (void)
     tcase_add_test (tc, test_invalid_add_media_in_answer);
     tcase_add_test (tc, test_add_turn_server);
     tcase_add_test (tc, test_msid);
+    tcase_add_test (tc, test_renego_ice_restart);
     if (sctpenc && sctpdec) {
       tcase_add_test (tc, test_data_channel_create);
       tcase_add_test (tc, test_data_channel_remote_notify);

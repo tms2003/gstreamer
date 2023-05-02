@@ -115,8 +115,10 @@ class WebRTCBinObserver(WebRTCObserver):
         self.element.emit('set-local-description', new_offer, promise)
         self.on_answer_created.fire(offer)
 
-    def create_offer(self, options=None):
+    def create_offer(self, ice_restart=False):
         promise = Gst.Promise.new_with_change_func(self._on_offer_created, self.element)
+        options = Gst.Structure("application/x-webrtc-offer-options")
+        options["ice-restart"] = ice_restart
         self.element.emit('create-offer', options, promise)
 
     def create_answer(self, options=None):

@@ -17,6 +17,7 @@
  * Boston, MA 02110-1301, USA.
  */
 
+#include "gst/sdp/gstsdpmessage.h"
 #ifdef HAVE_CONFIG_H
 # include "config.h"
 #endif
@@ -929,4 +930,74 @@ _media_is_bundle_only (const GstSDPMedia * media)
   }
 
   return FALSE;
+}
+
+gboolean
+_media_signals_ice_restart (const GstSDPMessage * previous,
+    const GstSDPMessage * next, guint media_idx)
+{
+  gchar *old_ufrag, *old_pass, *new_ufrag, *new_pass;
+  gboolean ret;
+
+  if (!previous)
+    return FALSE;
+
+  if (media_idx >= gst_sdp_message_medias_len (previous)
+      || media_idx >= gst_sdp_message_medias_len (next))
+    return FALSE;
+
+  _get_ice_credentials_from_sdp_media (previous, media_idx, &old_ufrag,
+      &old_pass);
+  _get_ice_credentials_from_sdp_media (next, media_idx, &new_ufrag, &new_pass);
+
+  ret = old_ufrag != NULL && old_pass != NULL
+      && (g_strcmp0 (old_ufrag, new_ufrag) != 0
+      || g_strcmp0 (old_pass, new_pass) != 0);
+
+  g_free (old_ufrag);
+  g_free (old_pass);
+  g_free (new_ufrag);
+  g_free (new_pass);
+
+  return ret;
+}
+
+void
+_media_replace_ice_credentials (GstSDPMedia * media, const gchar * new_ufrag,
+    const gchar * new_pwd)
+{
+  gboolean replaced_ufrag = FALSE, replaced_pwd = FALSE;
+  int i;
+
+  for (i = 0; i < gst_sdp_media_attributes_len (media); i++) {
+    const GstSDPAttribute *attr = gst_sdp_media_get_attribute (media, i);
+
+    if (g_strcmp0 (attr->key, "ice-ufrag") == 0) {
+      GstSDPAttribute new_attr = { 0, };
+      GST_TRACE ("replace ice-ufrag:%s with ice-ufrag:%s", attr->value,
+          new_ufrag);
+      gst_sdp_attribute_set (&new_attr, "ice-ufrag", new_ufrag);
+      gst_sdp_media_replace_attribute (media, i, &new_attr);
+      replaced_ufrag = TRUE;
+      if (replaced_pwd)
+        return;
+    } else if (g_strcmp0 (attr->key, "ice-pwd") == 0) {
+      GstSDPAttribute new_attr = { 0, };
+      GST_TRACE ("replace ice-pwd:%s with ice-pwd:%s", attr->value, new_pwd);
+      gst_sdp_attribute_set (&new_attr, "ice-pwd", new_pwd);
+      gst_sdp_media_replace_attribute (media, i, &new_attr);
+      replaced_pwd = TRUE;
+      if (replaced_ufrag)
+        return;
+    }
+  }
+
+  if (!replaced_ufrag) {
+    GST_TRACE ("add ice-ufrag:%s", new_ufrag);
+    gst_sdp_media_add_attribute (media, "ice-ufrag", new_ufrag);
+  }
+  if (!replaced_pwd) {
+    GST_TRACE ("add ice-pwd:%s", new_pwd);
+    gst_sdp_media_add_attribute (media, "ice-pwd", new_pwd);
+  }
 }
