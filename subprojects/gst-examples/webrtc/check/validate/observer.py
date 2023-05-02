@@ -81,7 +81,7 @@ class StateObserver(object):
                         l.debug(str(self.target) + " \'" + self.attr_name +
                                 "\' " + str(s) + " found at position " +
                                 str(i) + " of " + str(self.previous_states))
-                        self.previous_states = self.previous_states[i:]
+                        self.previous_states = self.previous_states[i+1:]
                         return s
                 self.cond.wait()
 
