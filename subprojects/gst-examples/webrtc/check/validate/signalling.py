@@ -73,7 +73,9 @@ class SignallingClientThread(object):
     async def _a_connect(self):
         # connect to the signalling server
         assert not self.conn
-        sslctx = ssl.create_default_context(purpose=ssl.Purpose.CLIENT_AUTH)
+        sslctx = ssl.create_default_context(purpose=ssl.Purpose.SERVER_AUTH)
+        sslctx.check_hostname = False
+        sslctx.verify_mode = ssl.CERT_NONE
         self.conn = await websockets.connect(self.server, ssl=sslctx)
 
     async def _a_loop(self):
