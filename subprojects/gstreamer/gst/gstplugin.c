@@ -54,6 +54,7 @@
 #include "gst_private.h"
 
 #include <glib/gstdio.h>
+#include <gmodule.h>
 #include <sys/types.h>
 #ifdef HAVE_DIRENT_H
 #include <dirent.h>
@@ -1881,6 +1882,7 @@ gst_plugin_ext_dep_free (GstPluginDep * dep)
   g_strfreev (dep->env_vars);
   g_strfreev (dep->paths);
   g_strfreev (dep->names);
+  g_strfreev (dep->libs);
   g_free (dep);
 }
 
@@ -1965,10 +1967,12 @@ gst_plugin_add_dependency (GstPlugin * plugin, const gchar ** env_vars,
   dep->env_vars = g_strdupv ((gchar **) env_vars);
   dep->paths = g_strdupv ((gchar **) paths);
   dep->names = g_strdupv ((gchar **) names);
+  dep->libs = NULL;
   dep->flags = flags;
 
   dep->env_hash = gst_plugin_ext_dep_get_env_vars_hash (plugin, dep);
   dep->stat_hash = gst_plugin_ext_dep_get_stat_hash (plugin, dep);
+  dep->libs_hash = 0;
 
   plugin->priv->deps = g_list_append (plugin->priv->deps, dep);
 
@@ -2033,4 +2037,101 @@ gst_plugin_add_dependency_simple (GstPlugin * plugin,
     g_strfreev (a_paths);
   if (a_names)
     g_strfreev (a_names);
+}
+
+static gboolean
+gst_plugin_ext_dep_libs_equals (GstPluginDep * dep, const gchar ** libs)
+{
+  if (!dep->libs)
+    return FALSE;
+
+  return g_strv_equal ((const gchar **) dep->libs, libs);
+}
+
+static guint
+gst_plugin_ext_dep_get_libs_hash (GstPlugin * plugin, GstPluginDep * dep)
+{
+  guint libs_hash = 0;
+  guint i;
+  gchar **l;
+
+  if (!dep->libs || !dep->libs[0])
+    return 0;
+
+  for (l = dep->libs, i = 0; l && *l && i < 32; l++, i++) {
+    GModule *module;
+    const gchar *lib = *l;
+
+    module = g_module_open (lib, G_MODULE_BIND_LAZY);
+    if (!module) {
+      GST_INFO_OBJECT (plugin, "Library \"%s\" is unavailable", lib);
+      continue;
+    }
+
+    GST_DEBUG_OBJECT (plugin, "Library \"%s\" is available", lib);
+
+    libs_hash |= (1 << i);
+    g_module_close (module);
+  }
+
+  GST_DEBUG_OBJECT (plugin, "Library hash: 0x%x", libs_hash);
+
+  return libs_hash;
+}
+
+gboolean
+_priv_plugin_deps_libs_changed (GstPlugin * plugin)
+{
+  GList *l;
+
+  for (l = plugin->priv->deps; l != NULL; l = l->next) {
+    GstPluginDep *dep = l->data;
+
+    if (dep->libs_hash != gst_plugin_ext_dep_get_libs_hash (plugin, dep))
+      return TRUE;
+  }
+
+  return FALSE;
+}
+
+/**
+ * gst_plugin_add_library_dependency:
+ * @plugin: a #GstPlugin
+ * @libs: (array zero-terminated=1): %NULL-terminated array of library file names
+ *
+ * Make GStreamer aware of external dependencies which affect the feature
+ * set of this plugin (ie. the elements or typefinders associated with it).
+ *
+ * GStreamer will re-inspect plugins with external dependencies whenever any
+ * of the external dependencies change. This is useful for plugins which
+ * load external libraries at runtime instead of linking them at compile time,
+ * and also the absolute path of each dependent library is unknown at compile time.
+ *
+ * Since: 1.24
+ */
+void
+gst_plugin_add_library_dependency (GstPlugin * plugin, const gchar ** libs)
+{
+  GstPluginDep *dep;
+  GList *iter;
+
+  g_return_if_fail (GST_IS_PLUGIN (plugin));
+  g_return_if_fail (libs);
+
+  for (iter = plugin->priv->deps; iter; iter = g_list_next (iter)) {
+    if (gst_plugin_ext_dep_libs_equals (iter->data, libs)) {
+      GST_LOG_OBJECT (plugin, "dependency already registered");
+      return;
+    }
+  }
+
+  dep = g_new0 (GstPluginDep, 1);
+  dep->libs = g_strdupv ((gchar **) libs);
+  dep->libs_hash = gst_plugin_ext_dep_get_libs_hash (plugin, dep);
+
+  plugin->priv->deps = g_list_append (plugin->priv->deps, dep);
+
+  GST_DEBUG_OBJECT (plugin, "added dependency:");
+  for (; libs && *libs; libs++)
+    GST_DEBUG_OBJECT (plugin, " library %s", *libs);
 }

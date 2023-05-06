@@ -1356,6 +1356,9 @@ gst_registry_scan_path_level (GstRegistryScanContext * context,
       }
 
       env_vars_changed = _priv_plugin_deps_env_vars_changed (plugin);
+      deps_changed = _priv_plugin_deps_files_changed (plugin);
+      if (!deps_changed)
+        deps_changed = _priv_plugin_deps_libs_changed (plugin);
 
       /* If a file with a certain basename is seen on a different path,
        * update the plugin to ensure the registry cache will reflect up
@@ -1363,8 +1366,7 @@ gst_registry_scan_path_level (GstRegistryScanContext * context,
 
       if (plugin->file_mtime == file_status.st_mtime &&
           plugin->file_size == file_status.st_size && !env_vars_changed &&
-          !(deps_changed = _priv_plugin_deps_files_changed (plugin)) &&
-          !strcmp (plugin->filename, filename)) {
+          !deps_changed && !strcmp (plugin->filename, filename)) {
         GST_LOG_OBJECT (context->registry, "file %s cached", filename);
         GST_OBJECT_FLAG_UNSET (plugin, GST_PLUGIN_FLAG_CACHED);
         GST_LOG_OBJECT (context->registry,

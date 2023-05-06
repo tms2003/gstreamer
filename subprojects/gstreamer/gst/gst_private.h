@@ -77,10 +77,12 @@ typedef struct {
   gchar **env_vars;
   gchar **paths;
   gchar **names;
+  gchar **libs;
 
   /* information saved from the last time the plugin was loaded (-1 = unset) */
   guint   env_hash;  /* hash of content of environment variables in env_vars */
   guint   stat_hash; /* hash of stat() on all relevant files and directories */
+  guint   libs_hash; /* set of result of each lib's dlopen */
 } GstPluginDep;
 
 struct _GstPluginPrivate {
@@ -111,6 +113,8 @@ G_GNUC_INTERNAL  gboolean priv_gst_plugin_desc_is_whitelisted (const GstPluginDe
 G_GNUC_INTERNAL  gboolean _priv_plugin_deps_env_vars_changed (GstPlugin * plugin);
 
 G_GNUC_INTERNAL  gboolean _priv_plugin_deps_files_changed (GstPlugin * plugin);
+
+G_GNUC_INTERNAL  gboolean _priv_plugin_deps_libs_changed (GstPlugin * plugin);
 
 /* init functions called from gst_init(). */
 G_GNUC_INTERNAL  void  _priv_gst_quarks_initialize (void);
