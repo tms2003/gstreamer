@@ -61,6 +61,12 @@ GST_DEBUG_CATEGORY (gst_cuda_nvmm_debug);
 
 #define GST_CAT_DEFAULT gst_nvcodec_debug
 
+#ifdef G_OS_WIN32
+#define CUDA_LIBNAME "nvcuda.dll"
+#else
+#define CUDA_LIBNAME "libcuda.so.1"
+#endif
+
 static gboolean
 plugin_init (GstPlugin * plugin)
 {
@@ -75,6 +81,15 @@ plugin_init (GstPlugin * plugin)
   guint api_minor_ver = 1;
   GList *h264_enc_cdata = NULL;
   GList *h265_enc_cdata = NULL;
+  const gchar *lib_deps[] = { CUDA_LIBNAME, NVENC_LIBRARY_NAME, NVCUVID_LIBNAME,
+#ifndef G_OS_WIN32
+    /* runtime compiler library name is cuda version dependent on Windows */
+    "libnvrtc.so",
+#endif
+    NULL
+  };
+
+  gst_plugin_add_library_dependency (plugin, lib_deps);
 
   GST_DEBUG_CATEGORY_INIT (gst_nvcodec_debug, "nvcodec", 0, "nvcodec");
   GST_DEBUG_CATEGORY_INIT (gst_nvdec_debug, "nvdec", 0, "nvdec");
