@@ -1,0 +1,29 @@
+#include <winver.h>
+
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION @GST_VERSION_MAJOR@,@GST_VERSION_MINOR@,@GST_VERSION_MICRO@,@GST_VERSION_NANO@
+PRODUCTVERSION @GST_VERSION_MAJOR@,@GST_VERSION_MINOR@,@GST_VERSION_MICRO@,@GST_VERSION_NANO@
+FILEFLAGSMASK 0
+FILEFLAGS 0
+FILEOS VOS_NT
+FILETYPE @GST_FILE_TYPE@
+FILESUBTYPE VFT2_UNKNOWN
+BEGIN
+  BLOCK "StringFileInfo"
+  BEGIN
+    BLOCK "040904B0"
+    BEGIN
+      VALUE "CompanyName", "The GStreamer developer community"
+      VALUE "FileDescription", "@GST_BIN_DESC@"
+      VALUE "FileVersion", "@GST_VERSION@"
+      VALUE "InternalName", "@GST_BIN_NAME@"
+      VALUE "OriginalFilename", "@GST_BIN_NAME@"
+      VALUE "ProductName", "GStreamer"
+      VALUE "ProductVersion", "@GST_VERSION@"
+    END
+  END
+  BLOCK "VarFileInfo"
+  BEGIN
+    VALUE "Translation", 0x409, 1200
+  END
+END

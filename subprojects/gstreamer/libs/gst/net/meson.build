@@ -24,8 +24,28 @@ gst_net_headers = files(
 install_headers(gst_net_headers, subdir : 'gstreamer-1.0/gst/net/')
 
 gst_net_gen_sources = []
+
+libgst_net_sources = gst_net_sources
+if host_system == 'windows'
+  libgst_net_rc_cdata = gst_version_cdata
+  libgst_net_rc_cdata.set('GST_FILE_TYPE', 'VFT_DLL')
+  libgst_net_rc_cdata.set('GST_BIN_DESC', 'GStreamer network library')
+  if cc.get_argument_syntax() == 'msvc'
+    libgst_net_rc_cdata.set('GST_BIN_NAME', 'gstnet-@0@-@1@'.format(apiversion, soversion))
+  else
+    libgst_net_rc_cdata.set('GST_BIN_NAME', 'libgstnet-@0@-@1@'.format(apiversion, soversion))
+  endif
+  libgst_net_rc = configure_file(
+    input: join_paths(meson.project_source_root(), 'gstreamer.rc.in'),
+    output: 'gstnet-@0@.rc'.format(apiversion),
+    configuration: libgst_net_rc_cdata,
+  )
+  libgst_net_res = windows.compile_resources(libgst_net_rc)
+  libgst_net_sources += [libgst_net_res]
+endif
+
 gst_net = library('gstnet-@0@'.format(apiversion),
-  gst_net_sources,
+  libgst_net_sources,
   c_args : gst_c_args + ['-DBUILDING_GST_NET', '-DG_LOG_DOMAIN="GStreamer-Net"'],
   include_directories : [configinc, libsinc],
   version : libversion,

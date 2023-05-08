@@ -212,12 +212,7 @@ configure_file(input : 'gstconfig.h.in',
   install_dir : join_paths(get_option('includedir'), 'gstreamer-1.0/gst'),
   configuration : gst_cdata)
 
-version_cdata = configuration_data()
-version_cdata.set('GST_VERSION_MAJOR', gst_version_major)
-version_cdata.set('GST_VERSION_MINOR', gst_version_minor)
-version_cdata.set('GST_VERSION_MICRO', gst_version_micro)
-version_cdata.set('GST_VERSION_NANO', gst_version_nano)
-
+version_cdata = gst_version_cdata
 gst_version_h = configure_file(input : 'gstversion.h.in',
   output : 'gstversion.h',
   install_dir : join_paths(get_option('includedir'), 'gstreamer-1.0/gst'),
@@ -255,7 +250,27 @@ endif
 # Make sure that subproject building gir files work
 gst_incdirs = [configinc]
 gst_gen_sources = [gstenum_h]
-libgst = library('gstreamer-1.0', gst_sources,
+libgst_sources = gst_sources
+if host_system == 'windows'
+  libgst_rc_cdata = gst_version_cdata
+  libgst_rc_cdata.set('GST_FILE_TYPE', 'VFT_DLL')
+  libgst_rc_cdata.set('GST_BIN_DESC', 'GStreamer core library')
+  if cc.get_argument_syntax() == 'msvc'
+    libgst_rc_cdata.set('GST_BIN_NAME', 'gstreamer-1.0-@0@'.format(soversion))
+  else
+    libgst_rc_cdata.set('GST_BIN_NAME', 'libgstreamer-1.0-@0@'.format(soversion))
+  endif
+  libgst_rc = configure_file(
+    input: join_paths(meson.project_source_root(), 'gstreamer.rc.in'),
+    output: 'gstreamer-1.0.rc',
+    configuration: libgst_rc_cdata,
+  )
+  libgst_res = windows.compile_resources(libgst_rc)
+  libgst_sources += [libgst_res]
+endif
+
+libgst = library('gstreamer-1.0',
+  libgst_sources,
   gstenum_h, gstenum_c, gst_parse_sources, gst_registry_sources,
   version : libversion,
   soversion : soversion,

@@ -1,7 +1,23 @@
 subdir('ptp')
 
+scanner_sources = ['gst-plugin-scanner.c']
+
+if host_system == 'windows'
+  scanner_rc_cdata = gst_version_cdata
+  scanner_rc_cdata.set('GST_FILE_TYPE', 'VFT_APP')
+  scanner_rc_cdata.set('GST_BIN_DESC', 'GStreamer plugin scanner')
+  scanner_rc_cdata.set('GST_BIN_NAME', 'gst-plugin-scanner')
+  scanner_rc = configure_file(
+    input: join_paths(meson.project_source_root(), 'gstreamer.rc.in'),
+    output: 'gst-plugin-scanner.rc',
+    configuration: scanner_rc_cdata,
+  )
+  scanner_res = windows.compile_resources(scanner_rc)
+  scanner_sources += [scanner_res]
+endif
+
 exe = executable('gst-plugin-scanner',
-  'gst-plugin-scanner.c',
+  scanner_sources,
   c_args : gst_c_args,
   include_directories : [configinc],
   dependencies : [gst_dep, mathlib, gmodule_dep,],

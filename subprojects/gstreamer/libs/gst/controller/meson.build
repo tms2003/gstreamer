@@ -37,8 +37,28 @@ gstcontroller_c = controller_enums[0]
 gstcontroller_h = controller_enums[1]
 
 gst_controller_gen_sources = [gstcontroller_h]
+
+libgst_controller_sources = gst_controller_sources
+if host_system == 'windows'
+  libgst_controller_rc_cdata = gst_version_cdata
+  libgst_controller_rc_cdata.set('GST_FILE_TYPE', 'VFT_DLL')
+  libgst_controller_rc_cdata.set('GST_BIN_DESC', 'GStreamer dynamic parameter control library')
+  if cc.get_argument_syntax() == 'msvc'
+    libgst_controller_rc_cdata.set('GST_BIN_NAME', 'gstcontroller-@0@-@1@'.format(apiversion, soversion))
+  else
+    libgst_controller_rc_cdata.set('GST_BIN_NAME', 'libgstcontroller-@0@-@1@'.format(apiversion, soversion))
+  endif
+  libgst_controller_rc = configure_file(
+    input: join_paths(meson.project_source_root(), 'gstreamer.rc.in'),
+    output: 'gstcontroller-@0@.rc'.format(apiversion),
+    configuration: libgst_controller_rc_cdata,
+  )
+  libgst_controller_res = windows.compile_resources(libgst_controller_rc)
+  libgst_controller_sources += [libgst_controller_res]
+endif
+
 gst_controller = library('gstcontroller-@0@'.format(apiversion),
-  gst_controller_sources, gstcontroller_h, gstcontroller_c,
+  libgst_controller_sources, gstcontroller_h, gstcontroller_c,
   c_args : gst_c_args + ['-DBUILDING_GST_CONTROLLER', '-DG_LOG_DOMAIN="GStreamer-Controller"'],
   install : true,
   version : libversion,

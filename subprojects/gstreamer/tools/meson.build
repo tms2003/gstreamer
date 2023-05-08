@@ -32,8 +32,23 @@ foreach tool : tools
 
   man_page = files('@0@-1.0.1'.format(tool))
   if not get_option('tools').disabled()
+    tool_srcfile = [src_file]
+    if host_system == 'windows'
+      tool_rc_cdata = gst_version_cdata
+      tool_rc_cdata.set('GST_FILE_TYPE', 'VFT_APP')
+      tool_rc_cdata.set('GST_BIN_DESC', 'GStreamer core tool')
+      tool_rc_cdata.set('GST_BIN_NAME', exe_name)
+      tool_rc = configure_file(
+        input: join_paths(meson.project_source_root(), 'gstreamer.rc.in'),
+        output: '@0@.rc'.format(exe_name),
+        configuration: tool_rc_cdata,
+      )
+      tool_res = windows.compile_resources(tool_rc)
+      tool_srcfile += [tool_res]
+    endif
+
     executable(exe_name,
-      src_file,
+      tool_srcfile,
       install: true,
       install_tag: 'bin',
       include_directories : [configinc],
