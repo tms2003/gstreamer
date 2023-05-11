@@ -12,6 +12,7 @@ RUN Install-WindowsFeature -Name Server-Media-Foundation
 RUN iex ((New-Object System.Net.WebClient).DownloadString('https://chocolatey.org/install.ps1'))
 # Install required packages
 RUN choco install -y vcredist140
+RUN choco install -y openssl
 RUN choco install -y cmake --installargs 'ADD_CMAKE_TO_PATH=System'
 RUN choco install -y git --params '/NoAutoCrlf /NoCredentialManager /NoShellHereIntegration /NoGuiHereIntegration /NoShellIntegration'
 RUN choco install -y git-lfs
