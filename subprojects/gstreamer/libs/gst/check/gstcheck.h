@@ -532,6 +532,27 @@ G_STMT_START {                                                          \
       GST_TIME_ARGS (first), GST_TIME_ARGS (second));       \
 } G_STMT_END;
 
+/**
+ * fail_unless_equals_rationaltime:
+ * @a: a #GstRationalTime value or expression
+ * @b: a #GstRationalTime value or expression
+ *
+ * This macro checks that @a and @b are equal and aborts if this is not the
+ * case, printing both expressions and the values they evaluated to. This
+ * macro is for use in unit tests.
+ *
+ * Since: 1.24
+ */
+#define fail_unless_equals_rationaltime(a, b)                           \
+G_STMT_START {                                                          \
+  GstRationalTime first = a;                                            \
+  GstRationalTime second = b;                                           \
+  fail_unless(gst_rational_time_cmp(first, second) == 0,                \
+    "'" #a "' (%" GST_RATIONAL_TIME_FORMAT") is not equal to '" #b      \
+    "' (%" GST_RATIONAL_TIME_FORMAT")", GST_RATIONAL_TIME_ARGS (first), \
+    GST_RATIONAL_TIME_ARGS (second));                                   \
+} G_STMT_END;
+
 /***
  * thread test macros and variables
  */

@@ -270,6 +270,34 @@ buffer_get_meta_string (GstBuffer * buffer)
           "GstVideoRegionOfInterestMeta[x=%" G_GUINT32_FORMAT ", y=%"
           G_GUINT32_FORMAT ", width=%" G_GUINT32_FORMAT ", height=%"
           G_GUINT32_FORMAT "]", roi->x, roi->y, roi->w, roi->h);
+    } else if (meta->info->api == GST_RATIONAL_TIME_META_API_TYPE) {
+      GstRationalTimeMeta *rtime = (GstRationalTimeMeta *) meta;
+      GstRationalTime buffer_dts, buffer_dts_duration,
+          buffer_pts, buffer_pts_duration, stream_dts, stream_dts_duration,
+          stream_pts, stream_pts_duration;
+
+      rtime->get_buffer_time (rtime, &buffer_dts, &buffer_dts_duration,
+          &buffer_pts, &buffer_pts_duration);
+      rtime->get_stream_time (rtime, &stream_dts, &stream_dts_duration,
+          &stream_pts, &stream_pts_duration);
+
+      g_string_append_printf (s,
+          "GstRationalTimeMeta[buffer_dts=%" GST_RATIONAL_TIME_FORMAT_SHORT
+          ", buffer_dts_dur=%" GST_RATIONAL_TIME_FORMAT_SHORT
+          ", buffer_pts=%" GST_RATIONAL_TIME_FORMAT_SHORT
+          ", buffer_pts_dur=%" GST_RATIONAL_TIME_FORMAT_SHORT
+          ", stream_dts=%" GST_RATIONAL_TIME_FORMAT_SHORT
+          ", stream_dts_dur=%" GST_RATIONAL_TIME_FORMAT_SHORT
+          ", stream_pts=%" GST_RATIONAL_TIME_FORMAT_SHORT
+          ", stream_pts_dur=%" GST_RATIONAL_TIME_FORMAT_SHORT "]",
+          GST_RATIONAL_TIME_ARGS_SHORT (buffer_dts),
+          GST_RATIONAL_TIME_ARGS_SHORT (buffer_dts_duration),
+          GST_RATIONAL_TIME_ARGS_SHORT (buffer_pts),
+          GST_RATIONAL_TIME_ARGS_SHORT (buffer_pts_duration),
+          GST_RATIONAL_TIME_ARGS_SHORT (stream_dts),
+          GST_RATIONAL_TIME_ARGS_SHORT (stream_dts_duration),
+          GST_RATIONAL_TIME_ARGS_SHORT (stream_pts),
+          GST_RATIONAL_TIME_ARGS_SHORT (stream_pts_duration));
     } else {
       g_string_append (s, desc);
     }
