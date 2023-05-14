@@ -372,10 +372,15 @@ gst_avdtp_util_parse_sbc_raw (void *config)
   g_value_reset (list);
 
   /* bitpool */
-  value = g_value_init (value, GST_TYPE_INT_RANGE);
-  gst_value_set_int_range (value,
-      MIN (sbc->min_bitpool, TEMPLATE_MAX_BITPOOL),
-      MIN (sbc->max_bitpool, TEMPLATE_MAX_BITPOOL));
+  if (sbc->min_bitpool == sbc->max_bitpool) {
+    g_value_init (value, G_TYPE_INT);
+    g_value_set_int (value, sbc->min_bitpool);
+  } else {
+    value = g_value_init (value, GST_TYPE_INT_RANGE);
+    gst_value_set_int_range (value,
+        MIN (sbc->min_bitpool, TEMPLATE_MAX_BITPOOL),
+        MIN (sbc->max_bitpool, TEMPLATE_MAX_BITPOOL));
+  }
   gst_structure_set_value (structure, "bitpool", value);
   g_value_unset (value);
 
