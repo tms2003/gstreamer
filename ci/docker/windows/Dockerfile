@@ -12,7 +12,11 @@ RUN Install-WindowsFeature -Name Server-Media-Foundation
 RUN iex ((New-Object System.Net.WebClient).DownloadString('https://chocolatey.org/install.ps1'))
 # Install required packages
 RUN choco install -y vcredist140
-RUN choco install -y openssl
+# Install the x86 version first cause choco doesn't want to install both
+# then override the choco install with the x64 one, but that leaves the files
+# in C:\Program Files (x86)\OpenSSL-Win32 and we can find the headers
+RUN choco install -y --forcex86 openssl
+RUN choco install -y --force openssl
 RUN choco install -y cmake --installargs 'ADD_CMAKE_TO_PATH=System'
 RUN choco install -y git --params '/NoAutoCrlf /NoCredentialManager /NoShellHereIntegration /NoGuiHereIntegration /NoShellIntegration'
 RUN choco install -y git-lfs
