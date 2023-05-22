@@ -57,7 +57,6 @@
 
 #include <gst/video/video.h>
 
-
 GST_DEBUG_CATEGORY_STATIC (zbar_debug);
 #define GST_CAT_DEFAULT zbar_debug
 
@@ -79,6 +78,7 @@ enum
 #define DEFAULT_CACHE    FALSE
 #define DEFAULT_MESSAGE  TRUE
 #define DEFAULT_ATTACH_FRAME FALSE
+#define DEFAULT_BINARY FALSE
 
 #define ZBAR_YUV_CAPS \
     "{ Y800, I420, YV12, NV12, NV21, Y41B, Y42B, YUV9, YVU9 }"
@@ -102,6 +102,9 @@ static void gst_zbar_set_property (GObject * object, guint prop_id,
     const GValue * value, GParamSpec * pspec);
 static void gst_zbar_get_property (GObject * object, guint prop_id,
     GValue * value, GParamSpec * pspec);
+
+static void gst_zbar_set_binary_internal (GstZBar * self, gboolean binary);
+static gboolean gst_zbar_is_binary_internal (GstZBar * self);
 
 static gboolean gst_zbar_start (GstBaseTransform * base);
 static gboolean gst_zbar_stop (GstBaseTransform * base);
@@ -155,6 +158,18 @@ gst_zbar_class_init (GstZBarClass * g_class)
           DEFAULT_CACHE,
           G_PARAM_READWRITE | GST_PARAM_MUTABLE_READY |
           G_PARAM_STATIC_STRINGS));
+
+  /**
+   * GstZBar::binary:
+   *
+   * Do not convert binary QR code data to text.
+   *
+   * Since: 1.24
+   */
+  g_object_class_install_property (gobject_class, PROP_BINARY,
+      g_param_spec_boolean ("binary", "binary",
+          "Enable or disable binary QR codes, where binary data is not converted to text",
+          DEFAULT_BINARY, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   gst_element_class_set_static_metadata (gstelement_class, "Barcode detector",
       "Filter/Analyzer/Video",
@@ -212,6 +227,9 @@ gst_zbar_set_property (GObject * object, guint prop_id, const GValue * value,
     case PROP_ATTACH_FRAME:
       zbar->attach_frame = g_value_get_boolean (value);
       break;
+    case PROP_BINARY:
+      gst_zbar_set_binary_internal (zbar, g_value_get_boolean (value));
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -237,10 +255,29 @@ gst_zbar_get_property (GObject * object, guint prop_id, GValue * value,
     case PROP_ATTACH_FRAME:
       g_value_set_boolean (value, zbar->attach_frame);
       break;
+    case PROP_BINARY:
+      g_value_set_boolean (value, gst_zbar_is_binary_internal (zbar));
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
   }
+}
+
+static void
+gst_zbar_set_binary_internal (GstZBar * self, gboolean binary)
+{
+  zbar_image_scanner_set_config (self->scanner, 0, ZBAR_CFG_BINARY, binary);
+}
+
+static gboolean
+gst_zbar_is_binary_internal (GstZBar * self)
+{
+  gboolean binary;
+
+  zbar_image_scanner_get_config (self->scanner, 0, ZBAR_CFG_BINARY, &binary);
+
+  return binary;
 }
 
 static GstFlowReturn
