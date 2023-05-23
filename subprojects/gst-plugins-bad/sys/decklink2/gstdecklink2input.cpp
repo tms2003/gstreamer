@@ -332,9 +332,25 @@ struct GstDeckLink2InputPrivate
     signal = false;
   }
 
+   ~GstDeckLink2InputPrivate ()
+  {
+    while (!queue.empty ()) {
+      auto sample = queue.front ();
+      gst_sample_unref (sample);
+      queue.pop ();
+    }
+
+    while (!audio_queue.empty ()) {
+      auto buf = audio_queue.front ();
+      gst_buffer_unref (buf);
+      audio_queue.pop ();
+    }
+  }
+
   std::mutex lock;
   std::condition_variable cond;
   std::queue < GstSample * >queue;
+  std::queue < GstBuffer * >audio_queue;
   std::atomic < bool >signal;
 };
 
@@ -369,9 +385,7 @@ struct _GstDeckLink2Input
   GstCaps *selected_audio_caps;
   gboolean auto_detect;
 
-  guint64 next_audio_offset;
   guint64 audio_offset;
-  GstAdapter *audio_buf;
 
   GstDeckLink2DisplayMode selected_mode;
   BMDPixelFormat pixel_format;
@@ -393,6 +407,11 @@ struct _GstDeckLink2Input
   TimeMapping current_time_mapping;
   TimeMapping next_time_mapping;
   gboolean next_time_mapping_pending;
+
+  /* Audio discont handling */
+  GstClockTime alignment_threshold;
+  GstClockTime discont_wait;
+  GstClockTime discont_time;
 
   GstClockTime times[256];
 
@@ -431,7 +450,6 @@ gst_decklink2_input_init (GstDeckLink2Input * self)
 {
   self->format_table = g_array_new (FALSE,
       FALSE, sizeof (GstDeckLink2DisplayMode));
-  self->audio_buf = gst_adapter_new ();
   self->allocator = new IGstDeckLinkMemoryAllocator ();
   self->priv = new GstDeckLink2InputPrivate ();
 }
@@ -445,7 +463,6 @@ gst_decklink2_input_dispose (GObject * object)
   gst_clear_caps (&self->selected_video_caps);
   gst_clear_caps (&self->selected_audio_caps);
   g_clear_pointer (&self->vbi_parser, gst_video_vbi_parser_free);
-  g_clear_object (&self->audio_buf);
 
   G_OBJECT_CLASS (parent_class)->dispose (object);
 }
@@ -1100,9 +1117,7 @@ gst_decklink2_input_on_format_changed (GstDeckLink2Input * self,
   self->selected_video_caps = caps;
   self->aspect_ratio_flag = -1;
   self->discont = TRUE;
-  gst_adapter_clear (self->audio_buf);
   self->audio_offset = INVALID_AUDIO_OFFSET;
-  self->next_audio_offset = INVALID_AUDIO_OFFSET;
 
   gst_decklink2_input_reset_time_mapping (self);
   gst_decklink2_input_start_streams (self);
@@ -1483,6 +1498,8 @@ gst_decklink2_input_on_frame_arrived (GstDeckLink2Input * self,
   BMDTimeValue hw_now, dummy, dummy2;
   BMDTimeValue stream_time = GST_CLOCK_TIME_NONE;
   BMDTimeValue stream_dur;
+  GstClockTime video_pts = GST_CLOCK_TIME_NONE;
+  GstClockTime video_dur = GST_CLOCK_TIME_NONE;
 
   std::unique_lock < std::mutex > lk (priv->lock);
   hr = gst_decklink2_input_get_reference_clock (self, GST_SECOND,
@@ -1504,6 +1521,8 @@ gst_decklink2_input_on_frame_arrived (GstDeckLink2Input * self,
     gst_object_unref (clock);
     if (capture_time >= base_time)
       capture_time -= base_time;
+    else
+      capture_time = 0;
   }
 
   if (frame) {
@@ -1512,7 +1531,6 @@ gst_decklink2_input_on_frame_arrived (GstDeckLink2Input * self,
     BMDFrameFlags flags;
     BMDTimeValue frame_time, frame_dur;
     IDeckLinkTimecode *timecode = NULL;
-    GstClockTime pts, dur;
 
     hr = frame->GetBytes (&frame_data);
     if (!gst_decklink2_result (hr)) {
@@ -1546,14 +1564,14 @@ gst_decklink2_input_on_frame_arrived (GstDeckLink2Input * self,
           stream_dur);
 
       gst_decklink2_input_update_time_mapping (self, capture_time, stream_time);
-      pts = gst_clock_adjust_with_calibration (NULL, stream_time,
+      video_pts = gst_clock_adjust_with_calibration (NULL, stream_time,
           self->current_time_mapping.xbase, self->current_time_mapping.b,
           self->current_time_mapping.num, self->current_time_mapping.den);
-      dur = gst_util_uint64_scale (stream_dur,
+      video_dur = gst_util_uint64_scale (stream_dur,
           self->current_time_mapping.num, self->current_time_mapping.den);
     } else {
-      pts = capture_time;
-      dur = GST_CLOCK_TIME_NONE;
+      video_pts = capture_time;
+      video_dur = GST_CLOCK_TIME_NONE;
     }
 
     flags = frame->GetFlags ();
@@ -1654,17 +1672,20 @@ gst_decklink2_input_on_frame_arrived (GstDeckLink2Input * self,
     }
 
     GST_BUFFER_DTS (buffer) = GST_CLOCK_TIME_NONE;
-    GST_BUFFER_PTS (buffer) = pts;
-    GST_BUFFER_DURATION (buffer) = dur;
+    GST_BUFFER_PTS (buffer) = video_pts;
+    GST_BUFFER_DURATION (buffer) = video_dur;
   }
 
   if (packet) {
     GstBuffer *audio_buf = NULL;
     void *packet_data;
-    BMDTimeValue packet_time;
     guint64 audio_offset, audio_offset_end;
     gsize audio_buf_size;
     GstMapInfo map;
+    GstClockTime audio_start_time;
+    GstClockTime audio_end_time;
+    GstClockTime audio_duration;
+    gboolean discont = FALSE;
 
     if (self->audio_offset == INVALID_AUDIO_OFFSET && !frame) {
       GST_DEBUG_OBJECT (self, "Drop audio without video frame");
@@ -1677,96 +1698,103 @@ gst_decklink2_input_on_frame_arrived (GstDeckLink2Input * self,
       goto out;
     }
 
-    hr = packet->GetPacketTime (&packet_time, self->audio_info.rate);
-    if (!gst_decklink2_result (hr)) {
-      GST_WARNING_OBJECT (self, "Unknown audio packet time");
-      goto out;
-    }
-
     hr = packet->GetBytes (&packet_data);
     if (!gst_decklink2_result (hr)) {
       GST_WARNING_OBJECT (self, "Couldn't get audio packet data");
       goto out;
     }
 
-    audio_offset = packet_time;
-    audio_offset_end = audio_offset + sample_count;
     audio_buf_size = self->audio_info.bpf * sample_count;
     audio_buf = gst_buffer_new_and_alloc (audio_buf_size);
+
+    if (GST_CLOCK_TIME_IS_VALID (video_pts))
+      audio_start_time = video_pts;
+    else
+      audio_start_time = capture_time;
+
+    /* Convert to the sample numbers */
+    audio_offset = gst_util_uint64_scale (audio_start_time,
+        self->audio_info.rate, GST_SECOND);
+    /* Convert back to round down to a sample multiple and get rid of rounding
+     * errors */
+    audio_start_time = gst_util_uint64_scale (audio_offset,
+        GST_SECOND, self->audio_info.rate);
+    audio_offset_end = audio_offset + sample_count;
+    audio_end_time = gst_util_uint64_scale_int (audio_offset_end, GST_SECOND,
+        self->audio_info.rate);
+    audio_duration = audio_end_time - audio_start_time;
+
+    if (self->audio_offset == INVALID_AUDIO_OFFSET) {
+      discont = TRUE;
+      GST_DEBUG_OBJECT (self, "First audio packet timestamp %" GST_TIME_FORMAT,
+          GST_TIME_ARGS (audio_start_time));
+    } else {
+      guint64 diff, max_sample_diff;
+
+      if (audio_offset <= self->audio_offset)
+        diff = self->audio_offset - audio_offset;
+      else
+        diff = audio_offset - self->audio_offset;
+
+      max_sample_diff = gst_util_uint64_scale_int (self->alignment_threshold,
+          self->audio_info.rate, GST_SECOND);
+
+      if (self->alignment_threshold > 0 &&
+          GST_CLOCK_TIME_IS_VALID (self->alignment_threshold) &&
+          diff >= max_sample_diff) {
+        if (self->discont_wait > 0 &&
+            GST_CLOCK_TIME_IS_VALID (self->discont_wait)) {
+          if (self->discont_time == GST_CLOCK_TIME_NONE) {
+            self->discont_time = audio_start_time;
+          } else if (audio_start_time - self->discont_time >=
+              self->discont_wait) {
+            discont = TRUE;
+            self->discont_time = GST_CLOCK_TIME_NONE;
+          }
+        } else {
+          discont = TRUE;
+        }
+      } else if (GST_CLOCK_TIME_IS_VALID (self->discont_time)) {
+        self->discont_time = GST_CLOCK_TIME_NONE;
+      }
+    }
+
+    if (discont) {
+      if (self->audio_offset != INVALID_AUDIO_OFFSET) {
+        GST_INFO_OBJECT (self, "Have discont. Expected %" G_GUINT64_FORMAT
+            " got %" G_GUINT64_FORMAT, self->audio_offset, audio_offset);
+      }
+      GST_BUFFER_FLAG_SET (audio_buf, GST_BUFFER_FLAG_DISCONT);
+      self->audio_offset = audio_offset_end;
+      self->discont_time = GST_CLOCK_TIME_NONE;
+    } else if (self->alignment_threshold == 0 ||
+        !GST_CLOCK_TIME_IS_VALID (self->alignment_threshold)) {
+      /* Don't align */
+    } else {
+      audio_start_time = gst_util_uint64_scale (self->audio_offset,
+          GST_SECOND, self->audio_info.rate);
+      self->audio_offset += sample_count;
+    }
+
     gst_buffer_map (audio_buf, &map, GST_MAP_WRITE);
     memcpy (map.data, packet_data, map.size);
     gst_buffer_unmap (audio_buf, &map);
 
-    if (self->audio_offset == INVALID_AUDIO_OFFSET) {
-      GstClockTime audio_pts;
-      GstClockTime packet_time_in_gst;
+    if (!priv->signal)
+      GST_BUFFER_FLAG_SET (audio_buf, GST_BUFFER_FLAG_GAP);
+    GST_BUFFER_PTS (audio_buf) = audio_start_time;
+    GST_BUFFER_DTS (audio_buf) = GST_CLOCK_TIME_NONE;
+    GST_BUFFER_DURATION (audio_buf) = audio_duration;
 
-      packet_time_in_gst = gst_util_uint64_scale (GST_SECOND, packet_time,
-          self->audio_info.rate);
-
-      audio_pts = gst_clock_adjust_with_calibration (NULL,
-          packet_time_in_gst,
-          self->current_time_mapping.xbase, self->current_time_mapping.b,
-          self->current_time_mapping.num, self->current_time_mapping.den);
-
-      /* Back to sample offset */
-      self->audio_offset = gst_util_uint64_scale (audio_pts,
-          self->audio_info.rate, GST_SECOND);
-
-      GST_DEBUG_OBJECT (self, "Initial audio offset at %" G_GUINT64_FORMAT
-          " for pts %" GST_TIME_FORMAT ", packet time %" GST_TIME_FORMAT,
-          self->audio_offset, GST_TIME_ARGS (audio_pts),
-          GST_TIME_ARGS (packet_time_in_gst));
-    }
-
-    if (self->next_audio_offset == INVALID_AUDIO_OFFSET) {
-      self->next_audio_offset = audio_offset_end;
-    } else if (self->next_audio_offset != audio_offset) {
-      GST_WARNING_OBJECT (self, "Expected offset %" G_GUINT64_FORMAT
-          ", received %" G_GUINT64_FORMAT, self->next_audio_offset,
-          audio_offset);
-      self->audio_discont = TRUE;
-
-      if (self->next_audio_offset > audio_offset) {
-        gsize trim = self->next_audio_offset - audio_offset;
-        gsize count;
-
-        if (trim >= (gsize) sample_count) {
-          GST_WARNING_OBJECT (self, "Complately backward audio pts");
-          gst_buffer_unref (audio_buf);
-          goto out;
-        }
-
-        count = sample_count - trim;
-        audio_buf = gst_audio_buffer_truncate (audio_buf, self->audio_info.bpf,
-            trim, count);
-        self->next_audio_offset += count;
-      } else {
-        GstBuffer *silence;
-        gsize diff = audio_offset - self->next_audio_offset;
-
-        silence = gst_buffer_new_and_alloc (diff * self->audio_info.bpf);
-        gst_buffer_map (silence, &map, GST_MAP_WRITE);
-        gst_audio_format_info_fill_silence (self->audio_info.finfo,
-            map.data, map.size);
-        gst_buffer_unmap (silence, &map);
-        gst_adapter_push (self->audio_buf, silence);
-        self->next_audio_offset += sample_count + diff;
-      }
-    } else {
-      GST_LOG_OBJECT (self, "Got expected audio samples");
-      self->next_audio_offset += sample_count;
-    }
-
-    if (audio_buf)
-      gst_adapter_push (self->audio_buf, audio_buf);
+    priv->audio_queue.push (audio_buf);
   }
 
 out:
   if (buffer) {
     GstSample *sample;
-    gsize audio_size;
-    while (priv->queue.size () > self->buffer_size) {
+    gsize video_queue_size = self->buffer_size + 1;
+    gsize audio_queue_size = video_queue_size * 2;
+    while (priv->queue.size () > video_queue_size) {
       GstBuffer *old_buf;
 
       sample = priv->queue.front ();
@@ -1777,57 +1805,42 @@ out:
       priv->queue.pop ();
     }
 
-    audio_size = gst_adapter_available (self->audio_buf);
-    if (audio_size > 0) {
-      GstBuffer *audio_buf = gst_adapter_take_buffer (self->audio_buf,
-          audio_size);
-      guint64 sample_count = audio_size / self->audio_info.bpf;
+    while (priv->audio_queue.size () > audio_queue_size) {
+      GstBuffer *old_buf;
 
-      GST_BUFFER_DTS (audio_buf) = GST_CLOCK_TIME_NONE;
-      GST_BUFFER_PTS (audio_buf) =
-          gst_util_uint64_scale (self->audio_offset, GST_SECOND,
-          self->audio_info.rate);
-      GST_BUFFER_DURATION (audio_buf) =
-          gst_util_uint64_scale (sample_count, GST_SECOND,
-          self->audio_info.rate);
-      if (self->audio_discont) {
-        GST_BUFFER_FLAG_SET (audio_buf, GST_BUFFER_FLAG_DISCONT);
-        self->audio_discont = FALSE;
+      old_buf = priv->audio_queue.front ();
+
+      GST_DEBUG_OBJECT (self,
+          "Dropping old audio buffer %" GST_PTR_FORMAT, old_buf);
+      gst_buffer_unref (old_buf);
+      priv->audio_queue.pop ();
+    }
+
+    if (!priv->audio_queue.empty ()) {
+      guint audio_queue_size = (guint) priv->audio_queue.size ();
+
+      GST_LOG_OBJECT (self, "Have %u audio buffers", audio_queue_size);
+      sample = gst_sample_new (NULL, self->selected_audio_caps, NULL, NULL);
+
+      if (priv->audio_queue.size () == 1) {
+        auto audio_buf = priv->audio_queue.front ();
+        gst_sample_set_buffer (sample, audio_buf);
+        priv->audio_queue.pop ();
+        gst_buffer_unref (audio_buf);
+      } else {
+        GstBufferList *buf_list;
+        buf_list = gst_buffer_list_new_sized (audio_queue_size);
+        while (!priv->audio_queue.empty ()) {
+          auto audio_buf = priv->audio_queue.front ();
+          gst_buffer_list_add (buf_list, audio_buf);
+          priv->audio_queue.pop ();
+        }
+        gst_sample_set_buffer_list (sample, buf_list);
+        gst_buffer_list_unref (buf_list);
       }
 
-      self->audio_offset += sample_count;
-
-      GST_LOG_OBJECT (self, "Adding audio buffer %" GST_PTR_FORMAT, audio_buf);
-
-      sample = gst_sample_new (audio_buf, self->selected_audio_caps, NULL,
-          NULL);
       gst_buffer_add_decklink2_audio_meta (buffer, sample);
       gst_sample_unref (sample);
-
-      /* FIXME: make configurable? */
-      if (frame && packet) {
-        GstClockTime diff = 0;
-        /* Video PTS are calibrated but not for audio to make audio pts
-         * and duration perfect. Then audio/video may be out of sync.
-         * Determine resync if large gap is detected */
-        if (GST_BUFFER_PTS (buffer) >= GST_BUFFER_PTS (audio_buf))
-          diff = GST_BUFFER_PTS (buffer) - GST_BUFFER_PTS (audio_buf);
-        else
-          diff = GST_BUFFER_PTS (audio_buf) - GST_BUFFER_PTS (buffer);
-
-        if (diff > 250 * GST_MSECOND) {
-          GST_WARNING_OBJECT (self, "Large gap detected %" GST_TIME_FORMAT
-              ", video pts %" GST_TIME_FORMAT ", audio pts %" GST_TIME_FORMAT
-              ", do resync", GST_TIME_ARGS (diff),
-              GST_TIME_ARGS (GST_BUFFER_PTS (buffer)),
-              GST_TIME_ARGS (GST_BUFFER_PTS (audio_buf)));
-          self->audio_offset = INVALID_AUDIO_OFFSET;
-          self->next_audio_offset = INVALID_AUDIO_OFFSET;
-          self->audio_discont = TRUE;
-        }
-      }
-
-      gst_buffer_unref (audio_buf);
     }
 
     sample = gst_sample_new (buffer, self->selected_video_caps, NULL, NULL);
@@ -1853,6 +1866,12 @@ gst_decklink2_input_stop_unlocked (GstDeckLink2Input * self)
     gst_sample_unref (sample);
     priv->queue.pop ();
   }
+  while (!priv->audio_queue.empty ()) {
+    GstBuffer *buf = priv->audio_queue.front ();
+    gst_buffer_unref (buf);
+    priv->audio_queue.pop ();
+  }
+
   gst_clear_caps (&self->selected_video_caps);
   gst_clear_caps (&self->selected_audio_caps);
   priv->signal = false;
@@ -1965,8 +1984,10 @@ gst_decklink2_input_start (GstDeckLink2Input * input, GstElement * client,
   input->auto_detect = video_config->auto_detect;
   input->aspect_ratio_flag = -1;
   input->audio_offset = INVALID_AUDIO_OFFSET;
-  input->next_audio_offset = INVALID_AUDIO_OFFSET;
   input->audio_discont = FALSE;
+  input->alignment_threshold = audio_config->alignment_threshold;
+  input->discont_wait = audio_config->discont_wait;
+  input->discont_time = GST_CLOCK_TIME_NONE;
 
   if (input->callback)
     hr = gst_decklink2_input_set_callback (input, input->callback);

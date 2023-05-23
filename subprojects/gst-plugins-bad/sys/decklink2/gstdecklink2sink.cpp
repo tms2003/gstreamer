@@ -28,6 +28,7 @@
 #include "gstdecklink2object.h"
 #include <string.h>
 #include <mutex>
+#include <vector>
 
 GST_DEBUG_CATEGORY_STATIC (gst_decklink2_sink_debug);
 #define GST_CAT_DEFAULT gst_decklink2_sink_debug
@@ -69,6 +70,7 @@ enum
 struct GstDeckLink2SinkPrivate
 {
   std::mutex lock;
+  std::vector < guint8 > audio_buf;
 };
 
 struct _GstDeckLink2Sink
@@ -853,6 +855,7 @@ static GstFlowReturn
 gst_decklink2_sink_render (GstBaseSink * sink, GstBuffer * buffer)
 {
   GstDeckLink2Sink *self = GST_DECKLINK2_SINK (sink);
+  GstDeckLink2SinkPrivate *priv = self->priv;
   HRESULT hr;
   GstBuffer *audio_buf = NULL;
   GstMapInfo info;
@@ -866,17 +869,43 @@ gst_decklink2_sink_render (GstBaseSink * sink, GstBuffer * buffer)
 
   if (self->audio_channels > 0) {
     GstDeckLink2AudioMeta *meta = gst_buffer_get_decklink2_audio_meta (buffer);
-    if (meta)
+    if (meta) {
       audio_buf = gst_sample_get_buffer (meta->sample);
 
-    if (audio_buf) {
-      if (!gst_buffer_map (audio_buf, &info, GST_MAP_READ)) {
-        GST_ERROR_OBJECT (self, "Couldn't map audio buffer");
-        return GST_FLOW_ERROR;
-      }
+      if (audio_buf) {
+        if (!gst_buffer_map (audio_buf, &info, GST_MAP_READ)) {
+          GST_ERROR_OBJECT (self, "Couldn't map audio buffer");
+          return GST_FLOW_ERROR;
+        }
 
-      audio_data = info.data;
-      audio_data_size = info.size;
+        audio_data = info.data;
+        audio_data_size = info.size;
+      } else {
+        GstBufferList *audio_list;
+        audio_list = gst_sample_get_buffer_list (meta->sample);
+        if (audio_list) {
+          guint len = gst_buffer_list_length (audio_list);
+          gsize offset = 0;
+
+          priv->audio_buf.resize (0);
+          for (guint i = 0; i < len; i++) {
+            auto tmp = gst_buffer_list_get (audio_list, i);
+
+            if (!gst_buffer_map (tmp, &info, GST_MAP_READ)) {
+              GST_ERROR_OBJECT (self, "Couldn't map audio buffer %d", i);
+              return GST_FLOW_ERROR;
+            }
+
+            priv->audio_buf.resize (priv->audio_buf.size () + info.size);
+            memcpy (&priv->audio_buf[0] + offset, info.data, info.size);
+            offset += info.size;
+            gst_buffer_unmap (tmp, &info);
+          }
+
+          audio_data = &priv->audio_buf[0];
+          audio_data_size = priv->audio_buf.size ();
+        }
+      }
     } else {
       GST_DEBUG_OBJECT (self, "Received buffer without audio meta");
     }

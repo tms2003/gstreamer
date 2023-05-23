@@ -48,6 +48,8 @@ enum
   PROP_OUTPUT_AFD_BAR,
   PROP_BUFFER_SIZE,
   PROP_SIGNAL,
+  PROP_ALIGNMENT_THRESHOLD,
+  PROP_DISCONT_WAIT,
 };
 
 #define DEFAULT_MODE                bmdModeUnknown
@@ -62,6 +64,8 @@ enum
 #define DEFAULT_OUTPUT_AFD_BAR      FALSE
 #define DEFAULT_BUFFER_SIZE         5
 #define DEFAULT_AUDIO_CHANNELS      GST_DECKLINK2_AUDIO_CHANNELS_2
+#define DEFAULT_ALIGNMENT_THRESHOLD (40 * GST_MSECOND)
+#define DEFAULT_DISCONT_WAIT        GST_SECOND
 
 struct GstDeckLink2SrcPrivate
 {
@@ -96,6 +100,8 @@ struct _GstDeckLink2Src
   gboolean output_cc;
   gboolean output_afd_bar;
   guint buffer_size;
+  GstClockTime alignment_threshold;
+  GstClockTime discont_wait;
 };
 
 static void gst_decklink2_src_finalize (GObject * object);
@@ -188,6 +194,8 @@ gst_decklink2_src_init (GstDeckLink2Src * self)
   self->output_afd_bar = DEFAULT_OUTPUT_AFD_BAR;
   self->buffer_size = DEFAULT_BUFFER_SIZE;
   self->is_gap_buf = FALSE;
+  self->alignment_threshold = DEFAULT_ALIGNMENT_THRESHOLD;
+  self->discont_wait = DEFAULT_DISCONT_WAIT;
 
   self->priv = new GstDeckLink2SrcPrivate ();
 
@@ -251,6 +259,12 @@ gst_decklink2_src_set_property (GObject * object, guint prop_id,
     case PROP_BUFFER_SIZE:
       self->buffer_size = g_value_get_uint (value);
       break;
+    case PROP_ALIGNMENT_THRESHOLD:
+      self->alignment_threshold = g_value_get_uint64 (value);
+      break;
+    case PROP_DISCONT_WAIT:
+      self->discont_wait = g_value_get_uint64 (value);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -311,6 +325,12 @@ gst_decklink2_src_get_property (GObject * object, guint prop_id, GValue * value,
       g_value_set_boolean (value, has_signal);
       break;
     }
+    case PROP_ALIGNMENT_THRESHOLD:
+      g_value_set_uint64 (value, self->alignment_threshold);
+      break;
+    case PROP_DISCONT_WAIT:
+      g_value_set_uint64 (value, self->discont_wait);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -421,6 +441,9 @@ gst_decklink2_src_query (GstBaseSrc * src, GstQuery * query)
 
       min = gst_util_uint64_scale (GST_SECOND, fps_d, fps_n);
       max = self->buffer_size * min;
+
+      GST_DEBUG_OBJECT (self, "Reporting latency min: %" GST_TIME_FORMAT
+          ", max: %" GST_TIME_FORMAT, GST_TIME_ARGS (min), GST_TIME_ARGS (max));
       gst_query_set_latency (query, TRUE, min, max);
       return TRUE;
     }
@@ -527,6 +550,8 @@ gst_decklink2_src_run (GstDeckLink2Src * self)
   audio_config.connection = self->audio_conn;
   audio_config.sample_type = bmdAudioSampleType32bitInteger;
   audio_config.channels = self->audio_channels;
+  audio_config.alignment_threshold = self->alignment_threshold;
+  audio_config.discont_wait = self->discont_wait;
 
   hr = gst_decklink2_input_start (self->input, GST_ELEMENT (self),
       self->profile_id, self->buffer_size, &video_config, &audio_config);
@@ -671,4 +696,17 @@ gst_decklink2_src_install_properties (GObjectClass * object_class)
       g_param_spec_boolean ("signal", "Signal",
           "True if there is a valid input signal available",
           FALSE, (GParamFlags) (G_PARAM_READABLE | G_PARAM_STATIC_STRINGS)));
+
+  g_object_class_install_property (object_class, PROP_ALIGNMENT_THRESHOLD,
+      g_param_spec_uint64 ("alignment-threshold", "Alignment Threshold",
+          "Audio timestamp alignment threshold in nanoseconds", 0,
+          G_MAXUINT64 - 1, DEFAULT_ALIGNMENT_THRESHOLD,
+          (GParamFlags) (G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS)));
+
+  g_object_class_install_property (object_class, PROP_DISCONT_WAIT,
+      g_param_spec_uint64 ("discont-wait", "Discont Wait",
+          "Window of time in nanoseconds to wait before "
+          "creating an audio discontinuity", 0,
+          G_MAXUINT64 - 1, DEFAULT_DISCONT_WAIT,
+          (GParamFlags) (G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS)));
 }
