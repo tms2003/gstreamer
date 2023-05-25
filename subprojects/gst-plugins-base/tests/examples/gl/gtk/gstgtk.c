@@ -54,7 +54,7 @@ gst_gtk_handle_need_context (GstBus * bus, GstMessage * msg, gpointer data)
       gst_message_parse_context_type (msg, &context_type);
       g_print ("got need context %s\n", context_type);
 
-      if (g_strcmp0 (context_type, "GstWaylandDisplayHandleContextType") == 0) {
+      if (g_strcmp0 (context_type, "GstWlDisplayHandleContextType") == 0) {
 #if GST_GL_HAVE_WINDOW_WAYLAND && defined(GDK_WINDOWING_WAYLAND)
         GstContext *context = NULL;
         GdkDisplay *gdk_display = gdk_display_get_default ();
@@ -65,7 +65,7 @@ gst_gtk_handle_need_context (GstBus * bus, GstMessage * msg, gpointer data)
             GstStructure *s;
 
             context =
-                gst_context_new ("GstWaylandDisplayHandleContextType", TRUE);
+                gst_context_new ("GstWlDisplayHandleContextType", TRUE);
 
             s = gst_context_writable_structure (context);
             gst_structure_set (s, "display", G_TYPE_POINTER, wayland_display,
