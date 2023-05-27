@@ -46,6 +46,13 @@ if host_system == 'darwin'
 endif
 
 cdata = configuration_data()
+gst_version_cdata = configuration_data()
+gst_version_cdata.set('GST_VERSION_MAJOR', gst_version_major)
+gst_version_cdata.set('GST_VERSION_MINOR', gst_version_minor)
+gst_version_cdata.set('GST_VERSION_MICRO', gst_version_micro)
+gst_version_cdata.set('GST_VERSION_NANO', gst_version_nano)
+gst_version_cdata.set('GST_VERSION',
+    '@0@.@1@.@2@.@3@'.format(gst_version_major,gst_version_minor,gst_version_micro,gst_version_nano))
 
 if cc.get_id() == 'msvc'
   msvc_args = [
@@ -636,6 +643,7 @@ endif
 
 static_build = get_option('default_library') == 'static'
 gst_libraries = []
+windows = import('windows')
 subdir('gst')
 subdir('libs')
 subdir('plugins')

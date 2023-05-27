@@ -38,8 +38,27 @@ gst_base_headers = files(
   'gsttypefindhelper.h',
 )
 
+libgst_base_sources = gst_base_sources
+if host_system == 'windows'
+  libgstbase_rc_cdata = gst_version_cdata
+  libgstbase_rc_cdata.set('GST_FILE_TYPE', 'VFT_DLL')
+  libgstbase_rc_cdata.set('GST_BIN_DESC', 'GStreamer base class library')
+  if cc.get_argument_syntax() == 'msvc'
+    libgstbase_rc_cdata.set('GST_BIN_NAME', 'gstbase-@0@-@1@'.format(apiversion, soversion))
+  else
+    libgstbase_rc_cdata.set('GST_BIN_NAME', 'libgstbase-@0@-@1@'.format(apiversion, soversion))
+  endif
+  libgstbase_rc = configure_file(
+    input: join_paths(meson.project_source_root(), 'gstreamer.rc.in'),
+    output: 'gstbase-@0@.rc'.format(apiversion),
+    configuration: libgstbase_rc_cdata,
+  )
+  libgstbase_res = windows.compile_resources(libgstbase_rc)
+  libgst_base_sources += [libgstbase_res]
+endif
+
 gst_base = library('gstbase-@0@'.format(apiversion),
-  gst_base_sources,
+  libgst_base_sources,
   c_args : gst_c_args + ['-DBUILDING_GST_BASE', '-DG_LOG_DOMAIN="GStreamer-Base"'],
   version : libversion,
   soversion : soversion,

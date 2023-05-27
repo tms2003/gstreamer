@@ -36,8 +36,27 @@ configure_file(input : 'libcheck/check.h.in',
   install_dir : join_paths(get_option('includedir'), 'gstreamer-1.0/gst/check'),
   configuration : check_cdata)
 
+libgst_check_sources = gst_check_sources
+if host_system == 'windows'
+  libgst_check_rc_cdata = gst_version_cdata
+  libgst_check_rc_cdata.set('GST_FILE_TYPE', 'VFT_DLL')
+  libgst_check_rc_cdata.set('GST_BIN_DESC', 'GStreamer unit test helper library')
+  if cc.get_argument_syntax() == 'msvc'
+    libgst_check_rc_cdata.set('GST_BIN_NAME', 'gstcheck-@0@-@1@'.format(apiversion, soversion))
+  else
+    libgst_check_rc_cdata.set('GST_BIN_NAME', 'libgstcheck-@0@-@1@'.format(apiversion, soversion))
+  endif
+  libgst_check_rc = configure_file(
+    input: join_paths(meson.project_source_root(), 'gstreamer.rc.in'),
+    output: 'gstcheck-@0@.rc'.format(apiversion),
+    configuration: libgst_check_rc_cdata,
+  )
+  libgst_check_res = windows.compile_resources(libgst_check_rc)
+  libgst_check_sources += [libgst_check_res]
+endif
+
 gst_check = library('gstcheck-@0@'.format(apiversion),
-  gst_check_sources,
+  libgst_check_sources,
   c_args : gst_c_args + ['-UG_DISABLE_ASSERT', '-DBUILDING_GST_CHECK', '-DG_LOG_DOMAIN="GStreamer-Check"'],
   version : libversion,
   soversion : soversion,
