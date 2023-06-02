@@ -148,6 +148,7 @@ struct _GstV4l2Object {
   GstVideoInfo info;
   GstVideoAlignment align;
   GstVideoTransferFunction transfer;
+  GstVideoColorMatrix matrix;
 
   /* Features */
   gboolean need_video_meta;
