@@ -12,6 +12,11 @@ RUN Install-WindowsFeature -Name Server-Media-Foundation
 RUN iex ((New-Object System.Net.WebClient).DownloadString('https://chocolatey.org/install.ps1'))
 # Install required packages
 RUN choco install -y vcredist140
+# Install the x86 version first cause choco doesn't want to install both
+# then override the choco install with the x64 one, but that leaves the files
+# in C:\Program Files (x86)\OpenSSL-Win32 and we can find the headers
+RUN choco install -y --forcex86 openssl
+RUN choco install -y --force openssl
 RUN choco install -y cmake --installargs 'ADD_CMAKE_TO_PATH=System'
 RUN choco install -y git --params '/NoAutoCrlf /NoCredentialManager /NoShellHereIntegration /NoGuiHereIntegration /NoShellIntegration'
 RUN choco install -y git-lfs
@@ -20,6 +25,7 @@ RUN choco install -y 7zip
 RUN choco install -y python3 --version=3.11.2 --installargs 'AssociateFiles=1 PrependPath=1 Include_pip=1 Include_dev=1'
 RUN choco install -y msys2 --params '/NoPath /NoUpdate /InstallDir:C:\\msys64'
 RUN choco install -y wixtoolset
+RUN choco list -a -l > /choco_versions.txt
 
 # Remove MAX_PATH limit of 260 characters
 RUN New-ItemProperty -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\FileSystem' `
