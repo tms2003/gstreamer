@@ -174,7 +174,6 @@ gst_decklink2_demux_chain (GstPad * sinkpad, GstObject * parent,
   if (audio_sample) {
     GstCaps *audio_caps = gst_sample_get_caps (audio_sample);
     GstBuffer *audio_buf = gst_sample_get_buffer (audio_sample);
-    GstBufferList *audio_buf_list = gst_sample_get_buffer_list (audio_sample);
 
     if (!audio_caps) {
       GST_WARNING_OBJECT (self, "Audio sample without caps");
@@ -183,7 +182,7 @@ gst_decklink2_demux_chain (GstPad * sinkpad, GstObject * parent,
       goto out;
     }
 
-    if (!audio_buf && !audio_buf_list) {
+    if (!audio_buf) {
       GST_WARNING_OBJECT (self, "Audio sample without buffer");
       gst_sample_unref (audio_sample);
       audio_sample = NULL;
@@ -237,37 +236,14 @@ out:
       self->video_pad, ret);
 
   if (audio_sample) {
-    GstBuffer *audio_buf = NULL;
-    GstBufferList *audio_buf_list = NULL;
-
-    audio_buf = gst_sample_get_buffer (audio_sample);
-    if (audio_buf) {
-      gst_buffer_ref (audio_buf);
-    } else {
-      audio_buf_list = gst_sample_get_buffer_list (audio_sample);
-      gst_buffer_list_ref (audio_buf_list);
-    }
-
-    if (audio_buf) {
-      GST_LOG_OBJECT (self, "Pushing audio buffer %" GST_PTR_FORMAT, audio_buf);
-      ret = gst_pad_push (self->audio_pad, audio_buf);
-      ret = gst_flow_combiner_update_pad_flow (self->flow_combiner,
-          self->audio_pad, ret);
-    } else {
-      guint len = gst_buffer_list_length (audio_buf_list);
-      GST_LOG_OBJECT (self, "Have audio buffer list with length %d", len);
-      while (gst_buffer_list_length (audio_buf_list) > 0) {
-        audio_buf = gst_buffer_ref (gst_buffer_list_get (audio_buf_list, 0));
-        gst_buffer_list_remove (audio_buf_list, 0, 1);
-        ret = gst_pad_push (self->audio_pad, audio_buf);
-        ret = gst_flow_combiner_update_pad_flow (self->flow_combiner,
-            self->audio_pad, ret);
-      }
-
-      gst_buffer_list_unref (audio_buf_list);
-    }
-
+    GstBuffer *audio_buf = gst_sample_get_buffer (audio_sample);
+    gst_buffer_ref (audio_buf);
     gst_sample_unref (audio_sample);
+
+    GST_LOG_OBJECT (self, "Pushing audio buffer %" GST_PTR_FORMAT, audio_buf);
+    ret = gst_pad_push (self->audio_pad, audio_buf);
+    ret = gst_flow_combiner_update_pad_flow (self->flow_combiner,
+        self->audio_pad, ret);
   }
 
   return ret;

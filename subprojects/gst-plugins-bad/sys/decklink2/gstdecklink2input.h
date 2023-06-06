@@ -44,8 +44,6 @@ typedef struct _GstDeckLink2InputAudioConfig
   BMDAudioConnection connection;
   BMDAudioSampleType sample_type;
   GstDeckLink2AudioChannels channels;
-  GstClockTime alignment_threshold;
-  GstClockTime discont_wait;
 } GstDeckLink2InputAudioConfig;
 
 GstDeckLink2Input * gst_decklink2_input_new (IDeckLink * device,
