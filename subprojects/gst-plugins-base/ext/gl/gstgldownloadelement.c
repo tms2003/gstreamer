@@ -25,6 +25,7 @@
 #include <gst/gl/gl.h>
 #if GST_GL_HAVE_PLATFORM_EGL && GST_GL_HAVE_DMABUF
 #include <gst/gl/egl/gsteglimage.h>
+#include <gst/gl/gstglfuncs.h>
 #include <gst/allocators/gstdmabuf.h>
 #endif
 
@@ -1222,6 +1223,15 @@ export_complete:
 }
 #endif /* GST_GL_HAVE_PLATFORM_EGL && GST_GL_HAVE_DMABUF */
 
+static void
+_flush (GstGLContext * context, gpointer data)
+{
+  const GstGLFuncs *gl = context->gl_vtable;
+
+  gl->Flush ();
+}
+
+
 static GstFlowReturn
 gst_gl_download_element_prepare_output_buffer (GstBaseTransform * bt,
     GstBuffer * inbuf, GstBuffer ** outbuf)
@@ -1236,9 +1246,17 @@ gst_gl_download_element_prepare_output_buffer (GstBaseTransform * bt,
 
   (void) bclass;
 
-  in_sync_meta = gst_buffer_get_gl_sync_meta (inbuf);
-  if (in_sync_meta)
-    gst_gl_sync_meta_wait (in_sync_meta, context);
+#if GST_GL_HAVE_PLATFORM_EGL && GST_GL_HAVE_DMABUF
+  if (dl->mode == GST_GL_DOWNLOAD_MODE_DMABUF_EXPORTS
+      && !gst_gl_context_is_shared (context)) {
+    gst_gl_context_thread_add (context, (GstGLContextThreadFunc) _flush, NULL);
+  } else
+#endif
+  {
+    in_sync_meta = gst_buffer_get_gl_sync_meta (inbuf);
+    if (in_sync_meta)
+      gst_gl_sync_meta_wait (in_sync_meta, context);
+  }
 
 #if GST_GL_HAVE_PLATFORM_EGL && defined(HAVE_NVMM)
   if (dl->mode == GST_GL_DOWNLOAD_MODE_NVMM) {
