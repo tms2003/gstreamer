@@ -167,7 +167,8 @@ gst_rgb2bayer_get_unit_size (GstBaseTransform * trans, GstCaps * caps,
   GstStructure *structure;
   int width;
   int height;
-  const char *name;
+  const gchar *name;
+  GstVideoInfo vinfo;
 
   structure = gst_caps_get_structure (caps, 0);
 
@@ -177,15 +178,14 @@ gst_rgb2bayer_get_unit_size (GstBaseTransform * trans, GstCaps * caps,
     /* Our name must be either video/x-bayer video/x-raw */
     if (g_str_equal (name, "video/x-bayer")) {
       *size = GST_ROUND_UP_4 (width) * height;
-      return TRUE;
     } else {
-      /* For output, calculate according to format */
-      *size = width * height * 4;
-      return TRUE;
+      gst_video_info_from_caps (&vinfo, caps);
+      *size = vinfo.size;
     }
-
+    return TRUE;
   }
-
+  GST_ELEMENT_ERROR (trans, CORE, NEGOTIATION, (NULL),
+      ("Incomplete caps, some required field missing"));
   return FALSE;
 }
 
