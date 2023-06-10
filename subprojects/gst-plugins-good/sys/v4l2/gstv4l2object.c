@@ -192,6 +192,7 @@ static const GstV4L2FormatDesc gst_v4l2_formats[] = {
   {V4L2_PIX_FMT_VC1_ANNEX_L, FALSE, GST_V4L2_CODEC},
   {V4L2_PIX_FMT_VP8, FALSE, GST_V4L2_CODEC | GST_V4L2_NO_PARSE},
   {V4L2_PIX_FMT_VP9, FALSE, GST_V4L2_CODEC | GST_V4L2_NO_PARSE},
+  {V4L2_PIX_FMT_AV1, FALSE, GST_V4L2_CODEC},
 
   /*  Vendor-specific formats   */
   {V4L2_PIX_FMT_WNVA, TRUE, GST_V4L2_CODEC},
@@ -1530,6 +1531,11 @@ gst_v4l2_object_v4l2fourcc_to_bare_struct (guint32 fourcc)
     case V4L2_PIX_FMT_VP9:
       structure = gst_structure_new_empty ("video/x-vp9");
       break;
+    case V4L2_PIX_FMT_AV1:
+      structure = gst_structure_new ("video/x-av1",
+          "stream-format", G_TYPE_STRING, "obu-stream", "alignment",
+          G_TYPE_STRING, "frame", NULL);
+      break;
     case V4L2_PIX_FMT_GREY:    /*  8  Greyscale     */
     case V4L2_PIX_FMT_Y16:
     case V4L2_PIX_FMT_Y16_BE:
@@ -1964,6 +1970,8 @@ gst_v4l2_object_get_caps_info (GstV4l2Object * v4l2object, GstCaps * caps,
       fourcc = V4L2_PIX_FMT_VP8;
     } else if (g_str_equal (mimetype, "video/x-vp9")) {
       fourcc = V4L2_PIX_FMT_VP9;
+    } else if (g_str_equal (mimetype, "video/x-av1")) {
+      fourcc = V4L2_PIX_FMT_AV1;
     } else if (g_str_equal (mimetype, "video/x-bayer")) {
       const gchar *format = gst_structure_get_string (structure, "format");
       if (format) {

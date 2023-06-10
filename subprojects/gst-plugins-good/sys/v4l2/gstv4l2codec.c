@@ -85,6 +85,9 @@ gst_v4l2_codec_probe_levels (const GstV4l2Codec * codec, gint video_fd,
   struct v4l2_queryctrl query_ctrl;
   gboolean ret = FALSE;
 
+  if (!codec->level_cid)
+    return FALSE;
+
   memset (&query_ctrl, 0, sizeof (query_ctrl));
   query_ctrl.id = codec->level_cid;
 
