@@ -25,18 +25,16 @@ docker pull registry.freedesktop.org/ocrete/gstreamer/amd64/fedora:2022-12-10.0-
 
 Run it:
 
-```
-docker run -it fedora:2022-12-10.0-main
-```
-
-At this point, you want to clone the relevant branch, eg if the issue occurs with main:
+This will bind-mount the current directory into the container so you can use your locale repository inside the container.
 
 ```
-git clone https://gitlab.freedesktop.org/gstreamer/gstreamer.git
-cd gstreamer
+docker run -it --volume "$(pwd):/app/gstreamer" --workdir "/app/gstreamer" fedora:2022-12-10.0-main
 ```
+
+  > If you are using SELinux, you should to add `:z` at the end of the volume path to set the label `--volume "$(pwd):/app/gstreamer:z"`. See the docker [documentation](https://docs.docker.com/storage/bind-mounts/#configure-the-selinux-label) for more.
+
 
 Adapt the above to your situation.
 
 Now, export the relevant variables by observing the job logs and `.gitlab-ci.yml` at
-he root of the GStreamer repository, then run the steps listed in the script section.
+the root of the GStreamer repository, then run the steps listed in the script section.
