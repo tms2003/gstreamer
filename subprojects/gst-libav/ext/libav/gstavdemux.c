@@ -2115,6 +2115,11 @@ gst_ffmpegdemux_register (GstPlugin * plugin)
      *
      * Since: 1.20
      */
+    /**
+     * element-avdemux_g723_1
+     *
+     * Since: 1.22
+     */
     if (!strcmp (in_plugin->name, "wsvqa") ||
         !strcmp (in_plugin->name, "wsaud") ||
         !strcmp (in_plugin->name, "wc3movie") ||
@@ -2152,7 +2157,8 @@ gst_ffmpegdemux_register (GstPlugin * plugin)
         !strcmp (in_plugin->name, "brstm") ||
         !strcmp (in_plugin->name, "bfstm") ||
         !strcmp (in_plugin->name, "gif") ||
-        !strcmp (in_plugin->name, "dsf") || !strcmp (in_plugin->name, "iff"))
+        !strcmp (in_plugin->name, "dsf") || !strcmp (in_plugin->name, "iff") ||
+        !strcmp (in_plugin->name, "g723_1"))
       rank = GST_RANK_MARGINAL;
     else {
       GST_DEBUG ("ignoring %s", in_plugin->name);

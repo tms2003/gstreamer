@@ -118,6 +118,7 @@ static const FormatInfo formats[] = {
   {"audio/amr", "Adaptive Multi Rate (AMR)", FLAG_AUDIO, "amr"},
   {"audio/AMR", "Adaptive Multi Rate (AMR)", FLAG_AUDIO, "amr"},
   {"audio/AMR-WB", "Adaptive Multi Rate WideBand (AMR-WB)", FLAG_AUDIO, "amr"},
+  {"audio/G723", "G.723.1", FLAG_AUDIO, ""},
   {"audio/iLBC-sh", "Internet Low Bitrate Codec (iLBC)", AUDIO_CONTAINER,
       "ilbc"},
   {"audio/ms-gsm", "MS GSM", FLAG_AUDIO, "gsm"},

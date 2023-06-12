@@ -640,6 +640,14 @@ gst_ff_aud_caps_new (AVCodecContext * context, AVCodec * codec,
         rates = l_rates;
         break;
       }
+      case AV_CODEC_ID_G723_1:
+      {
+        const static gint l_rates[] = { 8000 };
+        n_rates = G_N_ELEMENTS (l_rates);
+        rates = l_rates;
+        maxchannels = 1;
+        break;
+      }
       default:
         break;
     }
@@ -2345,6 +2353,11 @@ gst_ffmpeg_codecid_to_caps (enum AVCodecID codec_id,
       gst_caps_set_simple (caps, "lsbf", G_TYPE_BOOLEAN,
           FALSE, "planar", G_TYPE_BOOLEAN, TRUE, NULL);
       break;
+    case AV_CODEC_ID_G723_1:
+      caps = gst_ff_aud_caps_new (context, NULL, codec_id, encode,
+          "audio/G723", "channels", G_TYPE_INT, 1,
+          "rate", G_TYPE_INT, 8000, "framed", G_TYPE_BOOLEAN, TRUE, NULL);
+      break;
     case AV_CODEC_ID_APTX:
       caps =
           gst_ff_aud_caps_new (context, NULL, codec_id, encode, "audio/aptx",
@@ -3644,6 +3657,8 @@ gst_ffmpeg_formatid_to_caps (const gchar * format_name)
     caps = gst_caps_from_string ("audio/x-brstm");
   } else if (!strcmp (format_name, "bfstm")) {
     caps = gst_caps_from_string ("audio/x-bfstm");
+  } else if (!strcmp (format_name, "g723_1")) {
+    caps = gst_caps_from_string ("audio/G723");
   } else {
     gchar *name;
 
@@ -4412,6 +4427,9 @@ gst_ffmpeg_caps_to_codecid (const GstCaps * caps, AVCodecContext * context)
 
   } else if (!strcmp (mimetype, "audio/x-nellymoser")) {
     id = AV_CODEC_ID_NELLYMOSER;
+    audio = TRUE;
+  } else if (!strcmp (mimetype, "audio/G723")) {
+    id = AV_CODEC_ID_G723_1;
     audio = TRUE;
   } else if (!strncmp (mimetype, "audio/x-gst-av-", 15)) {
     gchar ext[16];

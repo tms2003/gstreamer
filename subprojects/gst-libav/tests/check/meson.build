@@ -3,6 +3,7 @@ libav_tests = [
   [ 'elements/avaudenc' ],
   [ 'elements/avdec_adpcm' ],
   [ 'elements/avdemux_ape' ],
+  [ 'elements/avdemux_g723_1' ],
   [ 'elements/avvidenc' ],
   [ 'generic/libavcodec-locking' ],
   [ 'generic/plugin-test' ]
@@ -57,4 +58,3 @@ foreach t : libav_tests
     test(test_name, exe, env: env, timeout: 3 * 60)
   endif
 endforeach
-
