@@ -165,6 +165,9 @@ struct _GstD3D11WindowClass
 
   void          (*set_title)              (GstD3D11Window * window,
                                            const gchar *title);
+
+  void          (*set_alpha)              (GstD3D11Window * window,
+                                           guint alpha);
 };
 
 GType         gst_d3d11_window_get_type             (void);
@@ -213,6 +216,9 @@ void          gst_d3d11_window_on_mouse_event       (GstD3D11Window * window,
                                                      gint button,
                                                      gdouble x,
                                                      gdouble y);
+
+void          gst_d3d11_window_set_alpha            (GstD3D11Window * window,
+                                                     guint alpha);
 
 /* utils */
 GstD3D11WindowNativeType gst_d3d11_window_get_native_type_from_handle (guintptr handle);
