@@ -433,6 +433,7 @@ tsmux_program_new (TsMux * mux, gint prog_id)
   program->pmt_interval = TSMUX_DEFAULT_PMT_INTERVAL;
 
   program->next_pmt_pcr = -1;
+  program->next_pcr = -1;
 
   if (prog_id == 0) {
     program->pgm_number = mux->next_pgm_no++;
@@ -668,6 +669,7 @@ tsmux_program_set_pcr_stream (TsMuxProgram * program, TsMuxStream * stream)
   if (program->pcr_stream == stream)
     return;
 
+  program->pcr_pid = 0;
   if (program->pcr_stream != NULL)
     tsmux_stream_pcr_unref (program->pcr_stream);
   if (stream)
@@ -1580,17 +1582,38 @@ done:
   return ret;
 }
 
+static gint64
+write_new_prog_pcr (TsMux * mux, TsMuxProgram * prog, gint64 cur_pcr)
+{
+  if (prog->next_pcr == -1 || cur_pcr > prog->next_pcr) {
+    prog->pi.flags |=
+        TSMUX_PACKET_FLAG_ADAPTATION | TSMUX_PACKET_FLAG_WRITE_PCR;
+    prog->pi.pcr = cur_pcr;
+
+    if (prog->next_pcr == -1)
+      prog->next_pcr = cur_pcr + mux->pcr_interval * 300;
+    else
+      prog->next_pcr += mux->pcr_interval * 300;
+  } else {
+    cur_pcr = -1;
+  }
+
+  return cur_pcr;
+}
+
+
 /**
  * tsmux_write_stream_packet:
  * @mux: a #TsMux
  * @stream: a #TsMuxStream
+ * @pcr_pid: PID of PCR stream
  *
  * Write a packet of @stream.
  *
  * Returns: TRUE if the packet could be written.
  */
 gboolean
-tsmux_write_stream_packet (TsMux * mux, TsMuxStream * stream)
+tsmux_write_stream_packet (TsMux * mux, TsMuxStream * stream, guint16 pcr_pid)
 {
   guint payload_len, payload_offs;
   TsMuxPacketInfo *pi = &stream->pi;
@@ -1598,12 +1621,19 @@ tsmux_write_stream_packet (TsMux * mux, TsMuxStream * stream)
   gint64 new_pcr = -1;
   GstBuffer *buf = NULL;
   GstMapInfo map;
+  gint64 cur_ts;
 
   g_return_val_if_fail (mux != NULL, FALSE);
   g_return_val_if_fail (stream != NULL, FALSE);
 
-  if (tsmux_stream_is_pcr (stream)) {
-    gint64 cur_ts = CLOCK_BASE;
+  /* update PMT if PCR pid has changed */
+  if (stream->program->pcr_pid != pcr_pid) {
+    stream->program->pcr_pid = pcr_pid;
+    stream->program->pmt_changed = TRUE;
+  }
+
+  if (tsmux_stream_is_pcr (stream) || stream->program->pcr_pid) {
+    cur_ts = CLOCK_BASE;
     if (tsmux_stream_get_dts (stream) != G_MININT64)
       cur_ts += tsmux_stream_get_dts (stream);
     else
@@ -1618,6 +1648,23 @@ tsmux_write_stream_packet (TsMux * mux, TsMuxStream * stream)
     new_pcr =
         write_new_pcr (mux, stream, get_current_pcr (mux, cur_ts),
         get_next_pcr (mux, cur_ts));
+
+    if (stream->program->pcr_pid) {
+      /* this should only enter block when time to send a PCR packet */
+      if (write_new_prog_pcr (mux, stream->program, get_current_pcr (mux,
+                  cur_ts)) != -1) {
+        if (!tsmux_get_buffer (mux, &buf))
+          return FALSE;
+
+        gst_buffer_map (buf, &map, GST_MAP_READ);
+        tsmux_write_ts_header (mux, map.data, &stream->program->pi,
+            &payload_len, &payload_offs, 0);
+        gst_buffer_unmap (buf, &map);
+        stream->program->pi.pid = stream->program->pcr_pid;
+        stream->program->pi.flags &= TSMUX_PACKET_FLAG_PES_FULL_HEADER;
+        tsmux_packet_out (mux, buf, new_pcr);
+      }
+    }
   }
 
   pi->packet_start_unit_indicator = tsmux_stream_at_pes_start (stream);
@@ -1695,7 +1742,10 @@ tsmux_program_free (TsMuxProgram * program)
 void
 tsmux_program_set_pmt_pid (TsMuxProgram * program, guint16 pmt_pid)
 {
+  g_return_if_fail (program != NULL);
+
   program->pmt_pid = pmt_pid;
+  program->pmt_changed = TRUE;
 }
 
 static gint
@@ -1787,10 +1837,13 @@ tsmux_write_pmt (TsMux * mux, TsMuxProgram * program)
 
     pmt = gst_mpegts_pmt_new ();
 
-    if (program->pcr_stream == NULL)
+    if ((program->pcr_stream == NULL) && (program->pcr_pid == 0))
       pmt->pcr_pid = 0x1FFF;
+    else if (program->pcr_pid != 0)
+      pmt->pcr_pid = program->pcr_pid;
     else
       pmt->pcr_pid = tsmux_stream_get_pid (program->pcr_stream);
+
 
 #if 0
     /* FIXME : These two descriptors should not be added in all PMT

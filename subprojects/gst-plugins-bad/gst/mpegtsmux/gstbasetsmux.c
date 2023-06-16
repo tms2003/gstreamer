@@ -876,6 +876,22 @@ gst_base_ts_mux_create_stream (GstBaseTsMux * mux, GstBaseTsMuxPad * ts_pad)
   return ret;
 }
 
+static gboolean
+gst_base_ts_mux_get_pmt_pcr_pid (GstBaseTsMux * mux, TsMuxProgram * prog,
+    gint * pcr_pid)
+{
+  gchar *prop_name = g_strdup_printf ("PCR_%d", prog->pgm_number);
+  if (mux->prog_map && gst_structure_has_field (mux->prog_map, prop_name)) {
+    if (gst_structure_has_field_typed (mux->prog_map, prop_name, G_TYPE_INT)) {
+      return gst_structure_get_int (mux->prog_map, prop_name, pcr_pid);
+    }
+  }
+  g_free (prop_name);
+
+  return FALSE;
+}
+
+
 /* Must be called with mux->lock held */
 static GstFlowReturn
 gst_base_ts_mux_create_pad_stream (GstBaseTsMux * mux, GstPad * pad)
@@ -945,29 +961,36 @@ gst_base_ts_mux_create_pad_stream (GstBaseTsMux * mux, GstPad * pad)
     if (ret != GST_FLOW_OK)
       goto no_stream;
   }
+  ts_pad->stream->program = ts_pad->prog;
 
   if (ts_pad->prog->pcr_stream == NULL) {
     /* Take the first stream of the program for the PCR */
     GST_DEBUG_OBJECT (ts_pad,
         "Use stream (pid=%d) from pad as PCR for program (prog_id = %d)",
         ts_pad->pid, ts_pad->prog_id);
-
     tsmux_program_set_pcr_stream (ts_pad->prog, ts_pad->stream);
   }
 
   /* Check for user-specified PCR PID */
-  prop_name = g_strdup_printf ("PCR_%d", ts_pad->prog->pgm_number);
-  if (mux->prog_map && gst_structure_has_field (mux->prog_map, prop_name)) {
-    const gchar *sink_name =
-        gst_structure_get_string (mux->prog_map, prop_name);
-
-    if (!g_strcmp0 (name, sink_name)) {
-      GST_DEBUG_OBJECT (mux, "User specified stream (pid=%d) as PCR for "
-          "program (prog_id = %d)", ts_pad->pid, ts_pad->prog->pgm_number);
-      tsmux_program_set_pcr_stream (ts_pad->prog, ts_pad->stream);
+  gint pcr_pid = 0;
+  if (!gst_base_ts_mux_get_pmt_pcr_pid (mux, ts_pad->prog, &pcr_pid)) {
+    prop_name = g_strdup_printf ("PCR_%d", ts_pad->prog->pgm_number);
+    if (mux->prog_map && gst_structure_has_field (mux->prog_map, prop_name)) {
+      if (gst_structure_has_field_typed (mux->prog_map, prop_name,
+              G_TYPE_STRING)) {
+        const gchar *sink_name =
+            gst_structure_get_string (mux->prog_map, prop_name);
+        if (!g_strcmp0 (name, sink_name))
+          pcr_pid = ts_pad->pid;
+      }
     }
+    g_free (prop_name);
   }
-  g_free (prop_name);
+  if (pcr_pid) {
+    GST_DEBUG_OBJECT (mux, "User specified stream (pid=%d) as PCR for "
+        "program (prog_id = %d)", ts_pad->pid, ts_pad->prog->pgm_number);
+    tsmux_program_set_pcr_stream (ts_pad->prog, ts_pad->stream);
+  }
 
   return ret;
 
@@ -1293,6 +1316,8 @@ gst_base_ts_mux_aggregate_buffer (GstBaseTsMux * mux,
   gboolean delta = TRUE, header = FALSE;
   StreamData *stream_data;
   GstMpegtsSection *scte_section = NULL;
+  gint pmt_pcr_pid;
+  gboolean has_pmt_pcr_pid;
 
   GST_DEBUG_OBJECT (mux, "Pads collected");
 
@@ -1383,7 +1408,8 @@ gst_base_ts_mux_aggregate_buffer (GstBaseTsMux * mux,
     }
   }
 
-  if (G_UNLIKELY (prog->pcr_stream == NULL)) {
+  has_pmt_pcr_pid = gst_base_ts_mux_get_pmt_pcr_pid (mux, prog, &pmt_pcr_pid);
+  if (!has_pmt_pcr_pid && G_UNLIKELY (prog->pcr_stream == NULL)) {
     /* Take the first data stream for the PCR */
     GST_DEBUG_OBJECT (best,
         "Use stream (pid=%d) from pad as PCR for program (prog_id = %d)",
@@ -1457,7 +1483,15 @@ gst_base_ts_mux_aggregate_buffer (GstBaseTsMux * mux,
   mux->is_delta = delta;
   mux->is_header = header;
   while (tsmux_stream_bytes_in_buffer (best->stream) > 0) {
-    if (!tsmux_write_stream_packet (mux->tsmux, best->stream)) {
+    gint pcr_pid = 0;
+    gchar *prop_name = g_strdup_printf ("PCR_%d", best->prog->pgm_number);
+    if (mux->prog_map && gst_structure_has_field (mux->prog_map, prop_name)) {
+      if (gst_structure_has_field_typed (mux->prog_map, prop_name, G_TYPE_INT)) {
+        gst_structure_get_int (mux->prog_map, prop_name, &pcr_pid);
+      }
+    }
+    g_free (prop_name);
+    if (!tsmux_write_stream_packet (mux->tsmux, best->stream, pcr_pid)) {
       /* Failed writing data for some reason. Set appropriate error */
       GST_DEBUG_OBJECT (mux, "Failed to write data packet");
       GST_ELEMENT_ERROR (mux, STREAM, MUX,
