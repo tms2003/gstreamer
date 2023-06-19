@@ -173,21 +173,23 @@ gst_v4l2_codec_allocator_prepare (GstV4l2CodecAllocator * self)
 {
   GstV4l2Decoder *decoder = self->decoder;
   GstPadDirection direction = self->direction;
-  gint ret;
   guint i;
 
-  ret = gst_v4l2_decoder_request_buffers (decoder, direction, self->pool_size);
-  if (ret < self->pool_size) {
-    if (ret >= 0)
-      GST_ERROR_OBJECT (self,
-          "%i buffer was needed, but only %i could be allocated",
-          self->pool_size, ret);
-    goto failed;
-  }
+  GST_DEBUG_OBJECT (self, "Try to create %d buffers", self->pool_size);
 
   for (i = 0; i < self->pool_size; i++) {
-    GstV4l2CodecBuffer *buf = gst_v4l2_codec_buffer_new (GST_ALLOCATOR (self),
-        decoder, direction, i);
+    GstV4l2CodecBuffer *buf;
+    gint index = gst_v4l2_decoder_create_buffers (decoder, direction, 1);
+    if (index < 0) {
+      GST_ERROR_OBJECT (self,
+          "%i buffer was needed, but only %i could be allocated",
+          self->pool_size, i);
+      goto failed;
+    }
+
+    buf =
+        gst_v4l2_codec_buffer_new (GST_ALLOCATOR (self), decoder, direction,
+        index);
     g_queue_push_tail (&self->pool, buf);
   }
 
