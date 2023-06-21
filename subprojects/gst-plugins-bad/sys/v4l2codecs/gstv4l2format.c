@@ -77,6 +77,19 @@ lookup_gst_fmt (GstVideoFormat gst_fmt)
   return ret;
 }
 
+static int
+gst_fmt_lookup (GstVideoFormat gst_fmt)
+{
+  gint i;
+
+  for (i = 0; format_map[i].v4l2_pix_fmt; i++) {
+    if (format_map[i].gst_fmt == gst_fmt)
+      return i;
+  }
+
+  return i;
+}
+
 static void
 set_stride (GstVideoInfo * info, gint plane, gint stride)
 {
@@ -202,4 +215,24 @@ gst_v4l2_format_from_video_format (GstVideoFormat format, guint32 * out_pix_fmt)
 
   *out_pix_fmt = entry->v4l2_pix_fmt;
   return TRUE;
+}
+
+static gint
+gst_v4l2_caps_compare_structures (const GstStructure * a,
+    const GstStructure * b)
+{
+  const GValue *formata = gst_structure_get_value (a, "format");
+  const GValue *formatb = gst_structure_get_value (b, "format");
+  GstVideoFormat vformata =
+      gst_video_format_from_string (g_value_get_string (formata));
+  GstVideoFormat vformatb =
+      gst_video_format_from_string (g_value_get_string (formatb));
+
+  return gst_fmt_lookup (vformata) - gst_fmt_lookup (vformatb);
+}
+
+GstCaps *
+gst_v4l2_sort_caps (GstCaps * caps)
+{
+  return gst_caps_sort (caps, gst_v4l2_caps_compare_structures);
 }
