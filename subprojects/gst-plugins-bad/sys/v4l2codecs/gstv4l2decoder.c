@@ -524,7 +524,7 @@ gst_v4l2_decoder_enum_src_formats (GstV4l2Decoder * self,
 
   GST_DEBUG_OBJECT (self, "Probed caps: %" GST_PTR_FORMAT, caps);
 
-  return caps;
+  return gst_v4l2_sort_caps (caps);
 }
 
 gboolean
