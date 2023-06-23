@@ -2322,6 +2322,13 @@ gst_audio_aggregator_aggregate (GstAggregator * agg, gboolean timeout)
       agg_segment->start + gst_util_uint64_scale (next_offset, GST_SECOND,
       rate);
 
+  if (agg_segment->rate > 0.0)
+    outbuf_stream_time = gst_segment_to_stream_time (agg_segment,
+        GST_FORMAT_TIME, agg_segment->position);
+  else
+    outbuf_stream_time = gst_segment_to_stream_time (agg_segment,
+        GST_FORMAT_TIME, next_timestamp);
+
   outbuf = aagg->priv->current_buffer;
 
   GST_LOG_OBJECT (agg,
@@ -2340,6 +2347,9 @@ gst_audio_aggregator_aggregate (GstAggregator * agg, gboolean timeout)
 
     if (!pad_eos)
       is_eos = FALSE;
+
+    /* Sync pad properties to the stream time */
+    sync_pad_values (element, &aggpad->parent, &outbuf_stream_time);
 
     input_buffer = gst_aggregator_pad_peek_buffer (aggpad);
 
@@ -2543,21 +2553,14 @@ gst_audio_aggregator_aggregate (GstAggregator * agg, gboolean timeout)
     GST_BUFFER_OFFSET (outbuf) = aagg->priv->offset;
     GST_BUFFER_OFFSET_END (outbuf) = next_offset;
     GST_BUFFER_DURATION (outbuf) = next_timestamp - agg_segment->position;
-    outbuf_stream_time = gst_segment_to_stream_time (agg_segment,
-        GST_FORMAT_TIME, agg_segment->position);
   } else {
     GST_BUFFER_PTS (outbuf) = next_timestamp;
     GST_BUFFER_OFFSET (outbuf) = next_offset;
     GST_BUFFER_OFFSET_END (outbuf) = aagg->priv->offset;
     GST_BUFFER_DURATION (outbuf) = agg_segment->position - next_timestamp;
-    outbuf_stream_time = gst_segment_to_stream_time (agg_segment,
-        GST_FORMAT_TIME, next_timestamp);
   }
 
   GST_OBJECT_UNLOCK (agg);
-
-  /* Sync pad properties to the stream time */
-  gst_element_foreach_sink_pad (element, sync_pad_values, &outbuf_stream_time);
 
   /* send it out */
   GST_LOG_OBJECT (aagg,
