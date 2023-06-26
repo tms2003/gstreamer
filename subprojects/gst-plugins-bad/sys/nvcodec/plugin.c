@@ -102,9 +102,10 @@ plugin_init (GstPlugin * plugin)
         api_minor_ver);
     nvdec_available = FALSE;
   }
-
+#ifndef HAVE_NVCODEC_NVMM
   if (!nvdec_available && !nvenc_available)
     return TRUE;
+#endif
 
   cuda_ret = CuInit (0);
   if (cuda_ret != CUDA_SUCCESS) {

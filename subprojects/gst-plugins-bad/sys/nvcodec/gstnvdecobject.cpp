@@ -365,7 +365,7 @@ gst_nv_dec_object_map_surface (GstNvDecObject * object,
       params.output_stream = gst_cuda_stream_get_handle (stream);
 
       if (!gst_cuda_result (CuvidMapVideoFrame (object->handle, surface->index,
-                  &surface->devptr, &surface->pitch, &params))) {
+                  (guintptr *) &surface->devptr, &surface->pitch, &params))) {
         GST_ERROR_OBJECT (object, "Couldn't map picture");
         return GST_FLOW_ERROR;
       }
