@@ -155,6 +155,7 @@ enum
   PROP_TIMEOUT,
   PROP_STRICT_SSL,
   PROP_SSL_CA_FILE,
+  PROP_PINNED_PUBLICKEY,
   PROP_RETRIES,
   PROP_CONNECTIONMAXTIME,
   PROP_MAXCONCURRENT_SERVER,
@@ -426,6 +427,12 @@ gst_curl_http_src_class_init (GstCurlHttpSrcClass * klass)
           GSTCURL_HANDLE_DEFAULT_CURLOPT_CAINFO,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
+  g_object_class_install_property (gobject_class, PROP_PINNED_PUBLICKEY,
+      g_param_spec_string ("pinned-publickey", "Set pinned public key",
+          "Pin server certificate validation to only validate against specific public key",
+          GSTCURL_HANDLE_DEFAULT_CURLOPT_PINNED_PUBLICKEY,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
   g_object_class_install_property (gobject_class, PROP_RETRIES,
       g_param_spec_int ("retries", "Retries",
           "Maximum number of retries until giving up (-1=infinite)",
@@ -568,6 +575,9 @@ gst_curl_http_src_set_property (GObject * object, guint prop_id,
     case PROP_SSL_CA_FILE:
       source->custom_ca_file = g_value_dup_string (value);
       break;
+    case PROP_PINNED_PUBLICKEY:
+      source->pinned_publickey = g_value_dup_string (value);
+      break;
     case PROP_RETRIES:
       source->total_retries = g_value_get_int (value);
       break;
@@ -651,6 +661,9 @@ gst_curl_http_src_get_property (GObject * object, guint prop_id,
     case PROP_SSL_CA_FILE:
       g_value_set_string (value, source->custom_ca_file);
       break;
+    case PROP_PINNED_PUBLICKEY:
+      g_value_set_string (value, source->pinned_publickey);
+      break;
     case PROP_RETRIES:
       g_value_set_int (value, source->total_retries);
       break;
@@ -706,6 +719,7 @@ gst_curl_http_src_init (GstCurlHttpSrc * source)
   source->max_conns_global = GSTCURL_DEFAULT_CONNECTIONS_GLOBAL;
   source->strict_ssl = GSTCURL_HANDLE_DEFAULT_CURLOPT_SSL_VERIFYPEER;
   source->custom_ca_file = NULL;
+  source->pinned_publickey = NULL;
   source->preferred_http_version = pref_http_ver;
   source->total_retries = GSTCURL_HANDLE_DEFAULT_RETRIES;
   source->retries_remaining = source->total_retries;
@@ -1152,6 +1166,7 @@ gst_curl_http_src_create_easy_handle (GstCurlHttpSrc * s)
   gst_curl_setopt_int (s, handle, CURLOPT_TIMEOUT, s->timeout_secs);
   gst_curl_setopt_bool (s, handle, CURLOPT_SSL_VERIFYPEER, s->strict_ssl);
   gst_curl_setopt_str (s, handle, CURLOPT_CAINFO, s->custom_ca_file);
+  gst_curl_setopt_str (s, handle, CURLOPT_PINNEDPUBLICKEY, s->pinned_publickey);
 
   if (s->request_position || s->stop_position > 0) {
     gchar *range;

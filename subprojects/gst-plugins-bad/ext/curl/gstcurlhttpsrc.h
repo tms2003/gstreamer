@@ -173,8 +173,9 @@ struct _GstCurlHttpSrc
   glong max_3xx_redirects;      /* CURLOPT_MAXREDIRS */
   gboolean keep_alive;          /* CURLOPT_TCP_KEEPALIVE */
   gint timeout_secs;            /* CURLOPT_TIMEOUT */
-  gboolean strict_ssl;		/* CURLOPT_SSL_VERIFYPEER */
-  gchar* custom_ca_file;	/* CURLOPT_CAINFO */
+  gboolean strict_ssl;          /* CURLOPT_SSL_VERIFYPEER */
+  gchar* custom_ca_file;        /* CURLOPT_CAINFO */
+  gchar* pinned_publickey;      /* CURLOPT_PINNEDPUBLICKEY */
 
   gint total_retries;
   gint retries_remaining;

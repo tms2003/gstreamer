@@ -50,6 +50,7 @@ struct _GstCurlTlsSink
   gchar *ca_path;
   gchar *crypto_engine;
   gboolean insecure;
+  gchar *pinned_publickey;
 };
 
 struct _GstCurlTlsSinkClass

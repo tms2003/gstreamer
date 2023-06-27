@@ -68,6 +68,7 @@
 #define GSTCURL_HANDLE_DEFAULT_CURLOPT_TIMEOUT 0
 #define GSTCURL_HANDLE_DEFAULT_CURLOPT_SSL_VERIFYPEER 1
 #define GSTCURL_HANDLE_DEFAULT_CURLOPT_CAINFO ((void *)0)
+#define GSTCURL_HANDLE_DEFAULT_CURLOPT_PINNED_PUBLICKEY ((void *)0)
 
 
 /* Defaults from http://curl.haxx.se/libcurl/c/curl_multi_setopt.html */
