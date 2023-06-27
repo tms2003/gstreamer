@@ -353,7 +353,7 @@ GstVideoRegionOfInterestMeta *gst_buffer_add_video_region_of_interest_meta    (G
                                                                                guint         h);
 
 GST_VIDEO_API
-GstVideoRegionOfInterestMeta *gst_buffer_add_video_region_of_interest_meta_id (GstBuffer   * buffer, 
+GstVideoRegionOfInterestMeta *gst_buffer_add_video_region_of_interest_meta_id (GstBuffer   * buffer,
 									       GQuark        roi_type,
                                                                                guint         x,
                                                                                guint         y,
