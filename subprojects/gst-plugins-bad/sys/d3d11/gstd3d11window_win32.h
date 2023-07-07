@@ -32,7 +32,8 @@ G_DECLARE_FINAL_TYPE (GstD3D11WindowWin32,
     gst_d3d11_window_win32, GST, D3D11_WINDOW_WIN32, GstD3D11Window);
 
 GstD3D11Window * gst_d3d11_window_win32_new (GstD3D11Device * device,
-                                             guintptr handle);
+                                             guintptr handle,
+                                             gboolean gdi_compatible);
 
 G_END_DECLS
 

@@ -97,6 +97,7 @@ struct _GstD3D11WindowWin32
 
   gboolean flushing;
   gboolean setup_external_hwnd;
+  gboolean flip_swapchain;
 };
 
 #define gst_d3d11_window_win32_parent_class parent_class
@@ -1083,8 +1084,17 @@ gst_d3d11_window_win32_create_swap_chain (GstD3D11Window * window,
   DXGI_SWAP_CHAIN_DESC desc = { 0, };
   IDXGISwapChain *new_swapchain = NULL;
   GstD3D11Device *device = window->device;
+  DXGI_SWAP_EFFECT effect = DXGI_SWAP_EFFECT_SEQUENTIAL;
+  DXGI_SCALING scaling = DXGI_SCALING_STRETCH;
 
   self->have_swapchain1 = FALSE;
+  self->flip_swapchain = FALSE;
+
+  if (!window->gdi_compatible && gst_d3d11_is_windows_8_or_greater ()) {
+    effect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
+    scaling = DXGI_SCALING_NONE;
+    self->flip_swapchain = TRUE;
+  }
 
   {
     DXGI_SWAP_CHAIN_DESC1 desc1 = { 0, };
@@ -1097,13 +1107,8 @@ gst_d3d11_window_win32_create_swap_chain (GstD3D11Window * window,
     desc1.SampleDesc.Quality = 0;
     desc1.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
     desc1.BufferCount = 2;
-    desc1.Scaling = DXGI_SCALING_STRETCH;
-
-    /* scaling-stretch would break aspect-ratio so we prefer to use scaling-none,
-     * but Windows7 does not support this method */
-    if (gst_d3d11_is_windows_8_or_greater ())
-      desc1.Scaling = DXGI_SCALING_NONE;
-    desc1.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
+    desc1.Scaling = scaling;
+    desc1.SwapEffect = effect;
     desc1.AlphaMode = DXGI_ALPHA_MODE_UNSPECIFIED;
     desc1.Flags = swapchain_flags;
 
@@ -1118,12 +1123,6 @@ gst_d3d11_window_win32_create_swap_chain (GstD3D11Window * window,
   }
 
   if (!new_swapchain) {
-    DXGI_SWAP_EFFECT swap_effect = DXGI_SWAP_EFFECT_DISCARD;
-
-    if (gst_d3d11_is_windows_8_or_greater ())
-      swap_effect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
-
-    /* we will get client area at on_resize */
     desc.BufferDesc.Width = 0;
     desc.BufferDesc.Height = 0;
     /* don't care refresh rate */
@@ -1136,10 +1135,12 @@ gst_d3d11_window_win32_create_swap_chain (GstD3D11Window * window,
     desc.SampleDesc.Quality = 0;
     desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
     desc.BufferCount = 2;
-    desc.SwapEffect = swap_effect;
+    desc.SwapEffect = DXGI_SWAP_EFFECT_SEQUENTIAL;
     desc.OutputWindow = self->internal_hwnd;
     desc.Windowed = TRUE;
     desc.Flags = swapchain_flags;
+
+    self->flip_swapchain = FALSE;
 
     new_swapchain = create_swap_chain (self, device, &desc);
   }
@@ -1234,7 +1235,7 @@ gst_d3d11_window_win32_present (GstD3D11Window * window, guint present_flags)
     return GST_D3D11_WINDOW_FLOW_CLOSED;
   }
 
-  if (self->have_swapchain1) {
+  if (self->have_swapchain1 && self->flip_swapchain) {
     IDXGISwapChain1 *swap_chain1 = (IDXGISwapChain1 *) window->swap_chain;
     DXGI_PRESENT_PARAMETERS present_params = { 0, };
 
@@ -1288,7 +1289,8 @@ gst_d3d11_window_win32_change_fullscreen_mode (GstD3D11Window * window)
 }
 
 GstD3D11Window *
-gst_d3d11_window_win32_new (GstD3D11Device * device, guintptr handle)
+gst_d3d11_window_win32_new (GstD3D11Device * device, guintptr handle,
+    gboolean gdi_compatible)
 {
   GstD3D11Window *window;
 
@@ -1302,6 +1304,8 @@ gst_d3d11_window_win32_new (GstD3D11Device * device, guintptr handle)
   }
 
   gst_object_ref_sink (window);
+
+  window->gdi_compatible = gdi_compatible;
 
   return window;
 }

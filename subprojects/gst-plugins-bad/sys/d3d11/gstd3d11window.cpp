@@ -871,7 +871,8 @@ gst_d3d111_window_present (GstD3D11Window * self, GstBuffer * buffer,
   /* We use flip mode swapchain and will not redraw borders.
    * So backbuffer should be cleared manually in order to remove artifact of
    * previous client's rendering on present signal */
-  if (self->emit_present) {
+  /* Or in case of GDI compatible mode, always redraw the entire area */
+  if (self->emit_present || self->gdi_compatible) {
     const FLOAT clear_color[] = { 0.0f, 0.0f, 0.0f, 1.0f };
     ID3D11DeviceContext *context =
         gst_d3d11_device_get_device_context_handle (self->device);
