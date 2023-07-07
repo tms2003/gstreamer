@@ -104,7 +104,7 @@ static void gst_d3d11_window_set_property (GObject * object, guint prop_id,
 static void gst_d3d11_window_get_property (GObject * object, guint prop_id,
     GValue * value, GParamSpec * pspec);
 static void gst_d3d11_window_dispose (GObject * object);
-static GstFlowReturn gst_d3d111_window_present (GstD3D11Window * self,
+static GstFlowReturn gst_d3d11_window_present (GstD3D11Window * self,
     GstBuffer * buffer, GstBuffer * render_target);
 static void gst_d3d11_window_on_resize_default (GstD3D11Window * window,
     guint width, guint height);
@@ -400,7 +400,7 @@ gst_d3d11_window_on_resize_default (GstD3D11Window * self, guint width,
 
   /* redraw the last scene if cached buffer exits */
   if (self->cached_buffer)
-    gst_d3d111_window_present (self, self->cached_buffer, self->backbuffer);
+    gst_d3d11_window_present (self, self->cached_buffer, self->backbuffer);
 }
 
 void
@@ -835,7 +835,7 @@ gst_d3d11_window_set_title (GstD3D11Window * window, const gchar * title)
 }
 
 static GstFlowReturn
-gst_d3d111_window_present (GstD3D11Window * self, GstBuffer * buffer,
+gst_d3d11_window_present (GstD3D11Window * self, GstBuffer * buffer,
     GstBuffer * backbuffer)
 {
   GstD3D11WindowClass *klass = GST_D3D11_WINDOW_GET_CLASS (self);
@@ -950,7 +950,7 @@ gst_d3d11_window_render (GstD3D11Window * window, GstBuffer * buffer)
   if (buffer)
     gst_buffer_replace (&window->cached_buffer, buffer);
 
-  return gst_d3d111_window_present (window, window->cached_buffer,
+  return gst_d3d11_window_present (window, window->cached_buffer,
       window->backbuffer);
 }
 
@@ -981,7 +981,7 @@ gst_d3d11_window_render_on_shared_handle (GstD3D11Window * window,
     return GST_FLOW_OK;
   }
 
-  ret = gst_d3d111_window_present (window, buffer, data.render_target);
+  ret = gst_d3d11_window_present (window, buffer, data.render_target);
 
   klass->release_shared_handle (window, &data);
 
