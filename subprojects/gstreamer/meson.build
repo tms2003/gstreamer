@@ -610,6 +610,10 @@ if bashcomp_dep.found()
   endif
 endif
 
+installed_tests_enabled = get_option('installed_tests')
+installed_tests_metadir = join_paths(datadir, 'installed-tests', meson.project_name())
+installed_tests_execdir = join_paths(libexecdir, 'installed-tests', meson.project_name())
+
 plugins_install_dir = join_paths(get_option('libdir'), 'gstreamer-1.0')
 
 pkgconfig = import('pkgconfig')

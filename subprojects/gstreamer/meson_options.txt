@@ -16,6 +16,7 @@ option('poisoning', type : 'boolean', value : false, description : 'Enable poiso
 option('memory-alignment', type: 'combo',
        choices : ['1', '2', '4', '8', '16', '32', '64', '128', '256', '512', '1024', '2048', '4096', '8192', 'malloc', 'pagesize'],
        value: 'malloc')
+option('installed_tests', type : 'boolean', value : false, description : 'Enable installed tests')
 
 # Feature options
 option('check', type : 'feature', value : 'auto', description : 'Build unit test libraries')

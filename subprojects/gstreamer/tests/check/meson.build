@@ -124,9 +124,15 @@ test_defines = [
   '-UG_DISABLE_ASSERT',
   '-UG_DISABLE_CAST_CHECKS',
   '-DGST_CHECK_TEST_ENVIRONMENT_BEACON="GST_STATE_IGNORE_ELEMENTS"',
-  '-DTESTFILE="' + meson.current_source_dir() + '/meson.build"',
   '-DGST_DISABLE_DEPRECATED',
 ]
+
+testfile = meson.current_source_dir() + '/meson.build'
+if installed_tests_enabled
+  install_data(testfile, install_dir : installed_tests_metadir, rename : 'testfile')
+  testfile = installed_tests_metadir + '/testfile'
+endif
+test_defines += '-DTESTFILE="@0@"'.format(testfile)
 
 # sanity checking
 if get_option('check').disabled()
@@ -145,21 +151,57 @@ foreach t : core_tests
 
   if not skip_test
     exe = executable(test_name, fname,
-        c_args : gst_c_args + test_defines,
-        cpp_args : gst_c_args + test_defines,
-        include_directories : [configinc],
-        link_with : link_with_libs,
-        dependencies : gst_deps + test_deps,
+      c_args : gst_c_args + test_defines,
+      cpp_args : gst_c_args + test_defines,
+      include_directories : [configinc],
+      link_with : link_with_libs,
+      dependencies : gst_deps + test_deps,
+      install_dir: installed_tests_execdir,
+      install: installed_tests_enabled,
     )
 
-    env = environment()
-    env.set('GST_PLUGIN_PATH_1_0', meson.project_build_root())
-    env.set('GST_PLUGIN_SYSTEM_PATH_1_0', '')
-    env.set('GST_STATE_IGNORE_ELEMENTS', '')
-    env.set('CK_DEFAULT_TIMEOUT', '20')
-    env.set('GST_REGISTRY', '@0@/@1@.registry'.format(meson.current_build_dir(), test_name))
-    env.set('GST_PLUGIN_SCANNER_1_0', gst_scanner_dir + '/gst-plugin-scanner')
-    env.set('GST_PLUGIN_LOADING_WHITELIST', 'gstreamer')
+    # meson environment object can't be passed to configure_file and
+    # installed tests uses configure_file to install the environment.
+    # use a dictionary as this is the simplest solution
+    # to install the environment.
+    env = {
+      'GST_PLUGIN_PATH_1_0': meson.project_build_root(),
+      'GST_PLUGIN_SYSTEM_PATH_1_0': '',
+      'GST_STATE_IGNORE_ELEMENTS': '',
+      'CK_DEFAULT_TIMEOUT': '20',
+      'GST_REGISTRY': '@0@/@1@.registry'.format(meson.current_build_dir(), test_name),
+      'GST_PLUGIN_SCANNER_1_0': gst_scanner_dir + '/gst-plugin-scanner',
+      'GST_PLUGIN_LOADING_WHITELIST': 'gstreamer',
+    }
+
+    if installed_tests_enabled
+      test_conf = configuration_data()
+      test_conf.set('installed_tests_dir', join_paths(prefix, installed_tests_execdir))
+      test_conf.set('program', test_name)
+      configure_file(
+        input: 'template.test.in',
+        output: test_name + '.test',
+        install_dir: installed_tests_metadir,
+        configuration: test_conf
+      )
+
+      # All the tests will be deployed on the target machine and
+      # we use the home folder ~ for the registry which will then expand at runtime.
+      # Using the /tmp/gstreamer-1.0/@0@.registry can be problematic as it mostly
+      # is mounted using tmpfs and if the machine crash from some reason we can lost the registry
+      # that is useful for debug propose of the tests itself.
+      env += {'GST_REGISTRY': '~/.cache/gstreamer-1.0/@0@.registry'.format(test_name)}
+
+      # Set the full path for the test it self.
+      env += {'TEST': '@0@/@1@'.format(join_paths(prefix, installed_tests_execdir), test_name)}
+
+      configure_file(
+        input : 'template.sh.in',
+        output: test_name + '.sh',
+        install_dir: installed_tests_execdir,
+        configuration : env,
+      )
+    endif
 
     test(test_name, exe, env: env, timeout : 3 * 60)
   endif
