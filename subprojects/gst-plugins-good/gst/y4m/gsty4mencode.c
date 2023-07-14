@@ -226,10 +226,14 @@ gst_y4m_encode_handle_frame (GstVideoEncoder * encoder,
 {
   GstY4mEncode *filter = GST_Y4M_ENCODE (encoder);
   GstClockTime timestamp;
-
+  GstVideoFrame vframe;
+  
   /* check we got some decent info from caps */
   if (GST_VIDEO_INFO_FORMAT (&filter->info) == GST_VIDEO_FORMAT_UNKNOWN)
     goto not_negotiated;
+
+  if (!gst_video_frame_map (&vframe, &filter->info, frame->input_buffer, GST_MAP_READ))
+    return GST_FLOW_ERROR;
 
   timestamp = GST_BUFFER_TIMESTAMP (frame->input_buffer);
 
@@ -250,9 +254,38 @@ gst_y4m_encode_handle_frame (GstVideoEncoder * encoder,
     frame->output_buffer = gst_y4m_encode_get_frame_header (filter);
   }
 
-  frame->output_buffer =
-      gst_buffer_append (frame->output_buffer,
-      gst_buffer_copy (frame->input_buffer));
+  if (filter->info.stride[0] == GST_VIDEO_FRAME_PLANE_STRIDE (&vframe, 0) &&
+      filter->info.stride[1] == GST_VIDEO_FRAME_PLANE_STRIDE (&vframe, 1) &&
+      filter->info.stride[2] == GST_VIDEO_FRAME_PLANE_STRIDE (&vframe, 2)) {
+      frame->output_buffer =
+        gst_buffer_append (frame->output_buffer,
+          gst_buffer_copy (frame->input_buffer));
+  } else {
+    /* Y4M requires YUV data without any padding. Therefore, we need to remove any existing padding. */
+    GstBuffer *buf = gst_buffer_new ();
+    if (!buf) {
+      gst_video_frame_unmap (&vframe);
+      return GST_FLOW_ERROR;
+    }
+
+    for (int i = 0; i < 3; i++) {
+      int offset = 0;
+      for (int j = 0; j < GST_VIDEO_FRAME_COMP_HEIGHT (&vframe, i); j++) {
+        gst_buffer_append_memory (buf,
+          gst_memory_new_wrapped (GST_MEMORY_FLAG_READONLY,
+            GST_VIDEO_FRAME_COMP_DATA (&vframe, i) + offset,
+            filter->info.stride[i],
+            0,
+            filter->info.stride[i],
+            NULL,
+            NULL));
+        offset += GST_VIDEO_FRAME_PLANE_STRIDE (&vframe, i);
+      }
+    }
+    frame->output_buffer = gst_buffer_append (frame->output_buffer, buf);
+  }
+
+  gst_video_frame_unmap (&vframe);
 
   /* decorate */
   frame->output_buffer = gst_buffer_make_writable (frame->output_buffer);
