@@ -955,6 +955,14 @@ gst_matroska_mux_handle_sink_event (GstCollectPads * pads,
         gst_matroska_mux_build_vobsub_private (context, clut);
       }
     }
+    case GST_EVENT_PROTECTION:{
+      const char *system_id, *origin;
+      GstBuffer *init_data;
+      gst_event_parse_protection (event, &system_id, &init_data, &origin);
+      gst_structure_set (context->protection_info, "kid", GST_TYPE_BUFFER,
+          init_data, NULL);
+      gst_event_unref (event);
+    }
       /* fall through */
     default:
       break;
@@ -1148,6 +1156,10 @@ gst_matroska_mux_video_pad_setcaps (GstPad * pad, GstCaps * caps)
   structure = gst_caps_get_structure (caps, 0);
 
   mimetype = gst_structure_get_name (structure);
+  if (!strcmp (mimetype, "application/x-webm-enc")) {
+    mimetype = gst_structure_get_string (structure, "original-media-type");
+    context->protection_info = gst_structure_copy (structure);
+  }
 
   interlace_mode = gst_structure_get_string (structure, "interlace-mode");
   if (interlace_mode != NULL) {
@@ -2036,6 +2048,10 @@ gst_matroska_mux_audio_pad_setcaps (GstPad * pad, GstCaps * caps)
 
   structure = gst_caps_get_structure (caps, 0);
   mimetype = gst_structure_get_name (structure);
+  if (!strcmp (mimetype, "application/x-webm-enc")) {
+    mimetype = gst_structure_get_string (structure, "original-media-type");
+    context->protection_info = gst_structure_copy (structure);
+  }
 
   /* general setup */
   gst_structure_get_int (structure, "rate", &samplerate);
