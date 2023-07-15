@@ -4106,6 +4106,8 @@ gst_matroska_mux_write_data (GstMatroskaMux * mux, GstMatroskaPad * collect_pad,
   gint flags = 0;
   GstClockTime buffer_timestamp;
   GstAudioClippingMeta *cmeta = NULL;
+  guint8 *protection = NULL;
+  guint protection_size = 0;
 
   /* write data */
   pad = GST_MATROSKAMUX_PAD_CAST (collect_pad->collect.pad);
@@ -4130,6 +4132,104 @@ gst_matroska_mux_write_data (GstMatroskaMux * mux, GstMatroskaPad * collect_pad,
     /* Remove the 'Frame container atom' header' */
     buf = gst_buffer_make_writable (buf);
     gst_buffer_resize (buf, 8, gst_buffer_get_size (buf) - 8);
+  }
+
+  /* for encrypted tracks we need to prefix the signal byte, the iv and the subsamples */
+  gboolean encrypted = FALSE;
+  guint iv_size = 0, subsample_count = 0;
+  GstBuffer *iv = NULL, *subsamples = NULL;
+  GstProtectionMeta *protection_meta = gst_buffer_get_protection_meta (buf);
+  if (protection_meta) {
+    GstStructure *info = protection_meta->info;
+    if (!gst_structure_get_boolean (info, "encrypted", &encrypted)) {
+      GST_ERROR ("GstProtection does not have an encrypted field");
+      return GST_FLOW_OK;
+    }
+    if (!gst_structure_get_uint (info, "iv_size", &iv_size)) {
+      GST_ERROR ("GstProtection does not have an iv_size field");
+      return GST_FLOW_OK;
+    }
+    if (!gst_structure_get_uint (info, "subsample_count", &subsample_count)) {
+      GST_ERROR ("GstProtection does not have a subsample_count field");
+      return GST_FLOW_OK;
+    }
+    if (iv_size && iv_size != 8) {
+      GST_ERROR ("Invalid iv_size");
+      return GST_FLOW_OK;
+    }
+    if (iv_size) {
+      gst_structure_get (info, "iv", GST_TYPE_BUFFER, &iv, NULL);
+      if (!iv || gst_buffer_get_size (iv) != iv_size) {
+        GST_ERROR ("GstProtection does not have an iv field");
+        return GST_FLOW_OK;
+      }
+    }
+    if (subsample_count) {
+      gst_structure_get (info, "subsamples", GST_TYPE_BUFFER, &subsamples,
+          NULL);
+      if (!subsamples
+          || (gst_buffer_get_size (subsamples) != (subsample_count * 6))) {
+        GST_ERROR ("GstProtection does not have a subsamples field");
+        return GST_FLOW_OK;
+      }
+    }
+  }
+  if (collect_pad->track->protection_info) {
+    GstMapInfo map = GST_MAP_INFO_INIT;
+    GstByteReader reader = GST_BYTE_READER_INIT (NULL, subsample_count * 6);
+    GstByteWriter writer;
+    guint16 cenc_clear = 0;
+    guint32 cenc_enc = 0, offset = 0;
+    guint8 signal_byte = 0;
+    guint8 num_partitions = 0;
+    gboolean error = FALSE;
+    if (encrypted) {
+      signal_byte |= GST_MATROSKA_BLOCK_ENCRYPTED;
+    }
+    if (subsample_count) {
+      if (!gst_buffer_map (subsamples, &map, GST_MAP_READ)) {
+        GST_ERROR ("Failed to map subsample buffer");
+        g_free (protection);
+        return GST_FLOW_OK;
+      }
+      reader.data = map.data;
+      if (!gst_byte_reader_peek_uint16_be (&reader, &cenc_clear)) {
+        GST_ERROR ("Failed to read clear partition length");
+        g_free (protection);
+        return GST_FLOW_OK;
+      }
+      num_partitions = subsample_count * 2 - 1;
+      if (!cenc_clear) {
+        num_partitions -= 1;
+      }
+      signal_byte |= GST_MATROSKA_BLOCK_PARTITIONED;
+    }
+    protection_size = 1 + iv_size + (num_partitions > 0) + num_partitions * 4;
+    protection = g_malloc (protection_size);
+    gst_byte_writer_init_with_data (&writer, protection, protection_size,
+        FALSE);
+    error |= !gst_byte_writer_put_uint8 (&writer, signal_byte);
+    if (iv) {
+      error |= !gst_byte_writer_put_buffer (&writer, iv, 0, iv_size);
+    }
+    if (subsamples) {
+      error |= !gst_byte_writer_put_uint8 (&writer, num_partitions);
+      for (int i = 0; i < subsample_count; i++) {
+        error |= !gst_byte_reader_get_uint16_be (&reader, &cenc_clear);
+        error |= !gst_byte_reader_get_uint32_be (&reader, &cenc_enc);
+        if (offset) {
+          error |= !gst_byte_writer_put_uint32_be (&writer, offset);
+        }
+        offset += cenc_clear;
+        error |= !gst_byte_writer_put_uint32_be (&writer, offset);
+        offset += cenc_enc;
+      }
+    }
+    if (error) {
+      GST_ERROR ("Failed to write protection data");
+      g_free (protection);
+      return GST_FLOW_OK;
+    }
   }
 
   buffer_timestamp =
@@ -4346,9 +4446,14 @@ gst_matroska_mux_write_data (GstMatroskaMux * mux, GstMatroskaPad * collect_pad,
         relative_timestamp, flags);
     gst_ebml_write_set_cache (ebml, 0x40);
     gst_ebml_write_buffer_header (ebml, GST_MATROSKA_ID_SIMPLEBLOCK,
-        gst_buffer_get_size (buf) + gst_buffer_get_size (hdr));
+        gst_buffer_get_size (buf) + gst_buffer_get_size (hdr) +
+        protection_size);
     gst_ebml_write_buffer (ebml, hdr);
     gst_ebml_write_flush_cache (ebml, FALSE, buffer_timestamp);
+    if (protection) {
+      GstBuffer *p_buf = gst_buffer_new_wrapped (protection, protection_size);
+      gst_ebml_write_buffer (ebml, p_buf);
+    }
     gst_ebml_write_buffer (ebml, buf);
 
     return gst_ebml_last_write_result (ebml);
@@ -4374,11 +4479,16 @@ gst_matroska_mux_write_data (GstMatroskaMux * mux, GstMatroskaPad * collect_pad,
     }
 
     gst_ebml_write_buffer_header (ebml, GST_MATROSKA_ID_BLOCK,
-        gst_buffer_get_size (buf) + gst_buffer_get_size (hdr));
+        gst_buffer_get_size (buf) + gst_buffer_get_size (hdr) +
+        protection_size);
     gst_ebml_write_buffer (ebml, hdr);
     gst_ebml_write_master_finish_full (ebml, blockgroup,
         gst_buffer_get_size (buf));
     gst_ebml_write_flush_cache (ebml, FALSE, buffer_timestamp);
+    if (protection) {
+      GstBuffer *p_buf = gst_buffer_new_wrapped (protection, protection_size);
+      gst_ebml_write_buffer (ebml, p_buf);
+    }
     gst_ebml_write_buffer (ebml, buf);
 
     return gst_ebml_last_write_result (ebml);
