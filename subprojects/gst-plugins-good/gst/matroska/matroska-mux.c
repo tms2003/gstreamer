@@ -2842,6 +2842,75 @@ gst_matroska_mux_write_colour (GstMatroskaMux * mux,
   gst_ebml_write_master_finish (ebml, master);
 }
 
+static gboolean
+gst_matroska_mux_track_protection (GstEbmlWrite * ebml,
+    GstStructure * protection_info)
+{
+  const gchar *field = NULL;
+  guint encryption_algorithm, cipher_mode, encoding_scope = 0;
+  GstBuffer *kid = NULL;
+  GstMapInfo map = GST_MAP_INFO_INIT;
+
+  field = gst_structure_get_string (protection_info, "encryption-algorithm");
+  if (strcmp (field, "AES") == 0) {
+    encryption_algorithm = 5;
+  } else {
+    GST_ERROR ("Unsupported encryption algorithm %s", field);
+    return FALSE;
+  }
+  field = gst_structure_get_string (protection_info, "cipher-mode");
+  if (strcmp (field, "CTR") == 0) {
+    cipher_mode = 1;
+  } else {
+    GST_ERROR ("Unsupported cipher mode");
+    return FALSE;
+  }
+  field = gst_structure_get_string (protection_info, "encoding-scope");
+  if (strcmp (field, "frame") == 0) {
+    encoding_scope = 1;
+  } else {
+    GST_ERROR ("Unsupported encoding scope");
+    return FALSE;
+  }
+
+  gst_structure_get (protection_info, "kid", GST_TYPE_BUFFER, &kid, NULL);
+  if (kid) {
+    if (!gst_buffer_map (kid, &map, GST_MAP_READ)) {
+      GST_ERROR ("Failed to map kid buffer");
+      return FALSE;
+    }
+  } else {
+    GST_ERROR ("Missing key id");
+    return FALSE;
+  }
+
+  guint64 content_encodings =
+      gst_ebml_write_master_start (ebml, GST_MATROSKA_ID_CONTENTENCODINGS);
+  guint64 encoding =
+      gst_ebml_write_master_start (ebml, GST_MATROSKA_ID_CONTENTENCODING);
+  gst_ebml_write_uint (ebml, GST_MATROSKA_ID_CONTENTENCODINGORDER, 0);
+  gst_ebml_write_uint (ebml, GST_MATROSKA_ID_CONTENTENCODINGSCOPE,
+      encoding_scope);
+  gst_ebml_write_uint (ebml, GST_MATROSKA_ID_CONTENTENCODINGTYPE, 1);
+  guint64 enc =
+      gst_ebml_write_master_start (ebml, GST_MATROSKA_ID_CONTENTENCRYPTION);
+  gst_ebml_write_uint (ebml, GST_MATROSKA_ID_CONTENTENCALGO,
+      encryption_algorithm);
+  gst_ebml_write_binary (ebml, GST_MATROSKA_ID_CONTENTENCKEYID, map.data,
+      gst_buffer_get_size (kid));
+  guint64 settings =
+      gst_ebml_write_master_start (ebml, GST_MATROSKA_ID_CONTENTENCAESSETTINGS);
+  gst_ebml_write_uint (ebml, GST_MATROSKA_ID_AESSETTINGSCIPHERMODE,
+      cipher_mode);
+  gst_ebml_write_master_finish (ebml, settings);
+  gst_ebml_write_master_finish (ebml, enc);
+  gst_ebml_write_master_finish (ebml, encoding);
+  gst_ebml_write_master_finish (ebml, content_encodings);
+
+  gst_buffer_unmap (kid, &map);
+  return TRUE;
+}
+
 /**
  * gst_matroska_mux_track_header:
  * @mux: #GstMatroskaMux
@@ -2998,7 +3067,13 @@ gst_matroska_mux_track_header (GstMatroskaMux * mux,
       break;
   }
 
-  GST_DEBUG_OBJECT (mux, "Wrote track header. Codec %s", context->codec_id);
+  if (context->protection_info
+      && gst_matroska_mux_track_protection (ebml, context->protection_info)) {
+    GST_DEBUG_OBJECT (mux, "Wrote encrypted track header. Codec %s",
+        context->codec_id);
+  } else {
+    GST_DEBUG_OBJECT (mux, "Wrote track header. Codec %s", context->codec_id);
+  }
 
   gst_ebml_write_ascii (ebml, GST_MATROSKA_ID_CODECID, context->codec_id);
   if (context->codec_priv)
