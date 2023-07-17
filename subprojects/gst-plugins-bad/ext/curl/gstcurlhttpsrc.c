@@ -1743,10 +1743,26 @@ static gboolean
 gst_curl_http_src_unlock_stop (GstBaseSrc * bsrc)
 {
   GstCurlHttpSrc *src = GST_CURLHTTPSRC (bsrc);
+  gint next_state;
 
   g_mutex_lock (&src->buffer_mutex);
-  src->state = src->pending_state;
+
+  next_state = src->pending_state;
+  if (src->connection_status == GSTCURL_WANT_REMOVAL) {
+    /* Wait until the curl handle is deleted, then mark the state as DONE */
+    while (src->connection_status != GSTCURL_NOT_CONNECTED) {
+      g_cond_wait (&src->buffer_cond, &src->buffer_mutex);
+    }
+    next_state = GSTCURL_DONE;
+  } else if (src->state == GSTCURL_UNLOCK
+      && src->pending_state == GSTCURL_REMOVED
+      && src->connection_status == GSTCURL_NOT_CONNECTED) {
+    /* If the curl handle has already been removed in multi_loop, simply mark the state as DONE */
+    next_state = GSTCURL_DONE;
+  }
+  src->state = next_state;
   src->pending_state = GSTCURL_NONE;
+
   g_cond_signal (&src->buffer_cond);
   g_mutex_unlock (&src->buffer_mutex);
 
