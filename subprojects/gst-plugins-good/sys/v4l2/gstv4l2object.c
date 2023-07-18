@@ -4394,6 +4394,61 @@ unsupported_format:
 }
 
 /**
+ * gst_v4l2_object_set_compose:
+ * @obj: the object
+ * @compose_rect: the region to compose
+ *
+ * Compose the video data to the regions specified in the @compose_rect.
+ *
+ * For capture devices, this compose the image sensor / video stream provided by
+ * the V4L2 device. The composing area specifies which part of the buffer is 
+ * actually written to by the hardware.
+ * For output devices, this compose the memory buffer that GStreamer passed to
+ * the V4L2 device. The application may select the part of display where the
+ * image should be displayed. The size and position of such a window is
+ * controlled by the compose target.
+ *
+ * The compose_rect may be modified by the V4L2 device to a region that
+ * fulfills H/W requirements.
+ *
+ * Returns: %TRUE on success, %FALSE on failure.
+ */
+gboolean
+gst_v4l2_object_set_compose (GstV4l2Object * obj,
+    struct v4l2_rect *compose_rect)
+{
+  struct v4l2_selection sel = { 0 };
+
+  GST_V4L2_CHECK_OPEN (obj);
+
+  sel.type = obj->type;
+  sel.target = V4L2_SEL_TGT_COMPOSE;
+  sel.flags = 0;
+  sel.r = *compose_rect;
+
+  GST_DEBUG_OBJECT (obj->dbg_obj,
+      "Desired composing left %u, top %u, size %ux%u", sel.r.left, sel.r.top,
+      sel.r.width, sel.r.height);
+
+  if (obj->ioctl (obj->video_fd, VIDIOC_S_SELECTION, &sel) < 0) {
+    if (errno != ENOTTY) {
+      GST_WARNING_OBJECT (obj->dbg_obj,
+          "Failed to set compose rectangle with VIDIOC_S_SELECTION: %s",
+          g_strerror (errno));
+      return FALSE;
+    }
+  }
+
+  GST_DEBUG_OBJECT (obj->dbg_obj,
+      "Got composing left %u, top %u, size %ux%u", sel.r.left, sel.r.top,
+      sel.r.width, sel.r.height);
+
+  *compose_rect = sel.r;
+
+  return TRUE;
+}
+
+/**
  * gst_v4l2_object_set_crop:
  * @obj: the object
  * @crop_rect: the region to crop
