@@ -42,8 +42,8 @@ typedef struct _TransportSendBinClass TransportSendBinClass;
 typedef struct _TransportReceiveBin TransportReceiveBin;
 typedef struct _TransportReceiveBinClass TransportReceiveBinClass;
 
-typedef struct _WebRTCTransceiver WebRTCTransceiver;
-typedef struct _WebRTCTransceiverClass WebRTCTransceiverClass;
+typedef struct _GstWebRTCTransceiver GstWebRTCTransceiver;
+typedef struct _GstWebRTCTransceiverClass GstWebRTCTransceiverClass;
 
 G_END_DECLS
 

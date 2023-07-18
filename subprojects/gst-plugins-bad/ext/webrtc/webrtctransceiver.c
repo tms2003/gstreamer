@@ -25,13 +25,13 @@
 #include "utils.h"
 #include "webrtctransceiver.h"
 
-#define GST_CAT_DEFAULT webrtc_transceiver_debug
+#define GST_CAT_DEFAULT gst_webrtc_transceiver_debug
 GST_DEBUG_CATEGORY_STATIC (GST_CAT_DEFAULT);
 
-#define webrtc_transceiver_parent_class parent_class
-G_DEFINE_TYPE_WITH_CODE (WebRTCTransceiver, webrtc_transceiver,
+#define gst_webrtc_transceiver_parent_class parent_class
+G_DEFINE_TYPE_WITH_CODE (GstWebRTCTransceiver, gst_webrtc_transceiver,
     GST_TYPE_WEBRTC_RTP_TRANSCEIVER,
-    GST_DEBUG_CATEGORY_INIT (webrtc_transceiver_debug,
+    GST_DEBUG_CATEGORY_INIT (gst_webrtc_transceiver_debug,
         "webrtctransceiver", 0, "webrtctransceiver");
     );
 
@@ -49,12 +49,12 @@ enum
 };
 
 void
-webrtc_transceiver_set_transport (WebRTCTransceiver * trans,
+gst_webrtc_transceiver_set_transport (GstWebRTCTransceiver * trans,
     TransportStream * stream)
 {
   GstWebRTCRTPTransceiver *rtp_trans;
 
-  g_return_if_fail (WEBRTC_IS_TRANSCEIVER (trans));
+  g_return_if_fail (GST_IS_WEBRTC_TRANSCEIVER (trans));
 
   rtp_trans = GST_WEBRTC_RTP_TRANSCEIVER (trans);
 
@@ -74,9 +74,9 @@ webrtc_transceiver_set_transport (WebRTCTransceiver * trans,
 }
 
 GstWebRTCDTLSTransport *
-webrtc_transceiver_get_dtls_transport (GstWebRTCRTPTransceiver * trans)
+gst_webrtc_transceiver_get_dtls_transport (GstWebRTCRTPTransceiver * trans)
 {
-  g_return_val_if_fail (WEBRTC_IS_TRANSCEIVER (trans), NULL);
+  g_return_val_if_fail (GST_IS_WEBRTC_TRANSCEIVER (trans), NULL);
 
   if (trans->sender) {
     return trans->sender->transport;
@@ -88,10 +88,10 @@ webrtc_transceiver_get_dtls_transport (GstWebRTCRTPTransceiver * trans)
 }
 
 static void
-webrtc_transceiver_set_property (GObject * object, guint prop_id,
+gst_webrtc_transceiver_set_property (GObject * object, guint prop_id,
     const GValue * value, GParamSpec * pspec)
 {
-  WebRTCTransceiver *trans = WEBRTC_TRANSCEIVER (object);
+  GstWebRTCTransceiver *trans = GST_WEBRTC_TRANSCEIVER (object);
 
   switch (prop_id) {
     case PROP_WEBRTC:
@@ -120,10 +120,10 @@ webrtc_transceiver_set_property (GObject * object, guint prop_id,
 }
 
 static void
-webrtc_transceiver_get_property (GObject * object, guint prop_id,
+gst_webrtc_transceiver_get_property (GObject * object, guint prop_id,
     GValue * value, GParamSpec * pspec)
 {
-  WebRTCTransceiver *trans = WEBRTC_TRANSCEIVER (object);
+  GstWebRTCTransceiver *trans = GST_WEBRTC_TRANSCEIVER (object);
 
   GST_OBJECT_LOCK (trans);
   switch (prop_id) {
@@ -144,9 +144,9 @@ webrtc_transceiver_get_property (GObject * object, guint prop_id,
 }
 
 static void
-webrtc_transceiver_finalize (GObject * object)
+gst_webrtc_transceiver_finalize (GObject * object)
 {
-  WebRTCTransceiver *trans = WEBRTC_TRANSCEIVER (object);
+  GstWebRTCTransceiver *trans = GST_WEBRTC_TRANSCEIVER (object);
 
   gst_clear_object (&trans->stream);
   gst_clear_object (&trans->ulpfecdec);
@@ -168,13 +168,13 @@ webrtc_transceiver_finalize (GObject * object)
 }
 
 static void
-webrtc_transceiver_class_init (WebRTCTransceiverClass * klass)
+gst_webrtc_transceiver_class_init (GstWebRTCTransceiverClass * klass)
 {
   GObjectClass *gobject_class = (GObjectClass *) klass;
 
-  gobject_class->get_property = webrtc_transceiver_get_property;
-  gobject_class->set_property = webrtc_transceiver_set_property;
-  gobject_class->finalize = webrtc_transceiver_finalize;
+  gobject_class->get_property = gst_webrtc_transceiver_get_property;
+  gobject_class->set_property = gst_webrtc_transceiver_set_property;
+  gobject_class->finalize = gst_webrtc_transceiver_finalize;
 
   /* some acrobatics are required to set the parent before _constructed()
    * has been called */
@@ -185,6 +185,11 @@ webrtc_transceiver_class_init (WebRTCTransceiverClass * klass)
           GST_TYPE_WEBRTC_BIN,
           G_PARAM_WRITABLE | G_PARAM_CONSTRUCT_ONLY | G_PARAM_STATIC_STRINGS));
 
+  /**
+   * GstWebRTCTransceiver:fec-type:
+   *
+   * Since: 1.20
+   **/
   g_object_class_install_property (gobject_class,
       PROP_FEC_TYPE,
       g_param_spec_enum ("fec-type", "FEC type",
@@ -193,6 +198,14 @@ webrtc_transceiver_class_init (WebRTCTransceiverClass * klass)
           DEFAULT_FEC_TYPE,
           G_PARAM_CONSTRUCT | G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
+  /**
+   * GstWebRTCTransceiver:do-nack:
+   *
+   * Whether to send NACK (negative acknowledgements) for feedback on packet
+   * loss. This is also known as RTP RTX (RTP retransmission).
+   *
+   * Since: 1.20
+   **/
   g_object_class_install_property (gobject_class,
       PROP_DO_NACK,
       g_param_spec_boolean ("do-nack", "Do nack",
@@ -200,26 +213,41 @@ webrtc_transceiver_class_init (WebRTCTransceiverClass * klass)
           DEFAULT_DO_NACK,
           G_PARAM_CONSTRUCT | G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
+  /**
+   * GstWebRTCTransceiver:fec-percentage:
+   *
+   * The amount of Forward Error Correction to apply to increase resilience of
+   * the stream. The higher the value here, the more duplicate data your
+   * stream will contain to account for constant or intermittent random packet
+   * loss. See also: fec-type.
+   *
+   * Note that this will not help with packet loss due to bandwidth
+   * constraints.
+   *
+   * Since: 1.20
+   **/
   g_object_class_install_property (gobject_class,
       PROP_FEC_PERCENTAGE,
       g_param_spec_uint ("fec-percentage", "FEC percentage",
           "The amount of Forward Error Correction to apply",
           0, 100, DEFAULT_FEC_PERCENTAGE,
           G_PARAM_CONSTRUCT | G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  gst_type_mark_as_plugin_api (GST_TYPE_WEBRTC_TRANSCEIVER, 0);
 }
 
 static void
-webrtc_transceiver_init (WebRTCTransceiver * trans)
+gst_webrtc_transceiver_init (GstWebRTCTransceiver * trans)
 {
 }
 
-WebRTCTransceiver *
-webrtc_transceiver_new (GstWebRTCBin * webrtc, GstWebRTCRTPSender * sender,
+GstWebRTCTransceiver *
+gst_webrtc_transceiver_new (GstWebRTCBin * webrtc, GstWebRTCRTPSender * sender,
     GstWebRTCRTPReceiver * receiver)
 {
-  WebRTCTransceiver *trans;
+  GstWebRTCTransceiver *trans;
 
-  trans = g_object_new (webrtc_transceiver_get_type (), "sender", sender,
+  trans = g_object_new (gst_webrtc_transceiver_get_type (), "sender", sender,
       "receiver", receiver, "webrtc", webrtc, NULL);
 
   return trans;
