@@ -120,7 +120,7 @@ if opencv_found
     cpp_args : gst_plugins_bad_args + gstopencv_cargs + [ '-DGST_USE_UNSTABLE_API' ],
     link_args : [noseh_link_args, '-lopencv_tracking'],
     include_directories : [configinc, libsinc],
-    dependencies : [gstbase_dep, gstvideo_dep, opencv_dep, gstopencv_dep],
+    dependencies : [gstbase_dep, gstvideo_dep, opencv_dep, gstopencv_dep, gstanalysismeta_dep],
     install : true,
     install_dir : plugins_install_dir,
   )
