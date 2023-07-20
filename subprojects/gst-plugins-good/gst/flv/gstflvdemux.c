@@ -86,7 +86,8 @@ static GstStaticPadTemplate video_src_template =
     GST_STATIC_CAPS ("video/x-flash-video, flvversion=(int) 1; "
         "video/x-flash-screen; "
         "video/x-vp6-flash; " "video/x-vp6-alpha; "
-        "video/x-h264, stream-format=avc;")
+        "video/x-h264, stream-format=avc;"
+        "video/x-av1, stream-format=obu-stream; ")
     );
 
 #define gst_flv_demux_parent_class parent_class
@@ -1435,53 +1436,66 @@ beach:
 }
 
 static gboolean
-gst_flv_demux_video_negotiate (GstFlvDemux * demux, guint32 codec_tag)
+gst_flv_demux_video_negotiate (GstFlvDemux * demux, guint32 codec_tag,
+    gboolean is_ex_header, guint32 fourcc)
 {
   gboolean ret = FALSE;
   GstCaps *caps = NULL, *old_caps;
   GstEvent *event;
   gchar *stream_id;
 
-  /* Generate caps for that pad */
-  switch (codec_tag) {
-    case 2:
-      caps =
-          gst_caps_new_simple ("video/x-flash-video", "flvversion", G_TYPE_INT,
-          1, NULL);
-      break;
-    case 3:
-      caps = gst_caps_new_empty_simple ("video/x-flash-screen");
-      break;
-    case 4:
-      caps = gst_caps_new_empty_simple ("video/x-vp6-flash");
-      break;
-    case 5:
-      caps = gst_caps_new_empty_simple ("video/x-vp6-alpha");
-      break;
-    case 7:
-      if (!demux->video_codec_data) {
-        GST_DEBUG_OBJECT (demux, "don't have h264 codec data yet");
-        ret = TRUE;
-        goto done;
-      }
-      caps =
-          gst_caps_new_simple ("video/x-h264", "stream-format", G_TYPE_STRING,
-          "avc", NULL);
-      break;
-      /* The following two are non-standard but apparently used, see in ffmpeg
-       * https://git.videolan.org/?p=ffmpeg.git;a=blob;f=libavformat/flvdec.c;h=2bf1e059e1cbeeb79e4af9542da23f4560e1cf59;hb=b18d6c58000beed872d6bb1fe7d0fbe75ae26aef#l254
-       * https://git.videolan.org/?p=ffmpeg.git;a=blob;f=libavformat/flvdec.c;h=2bf1e059e1cbeeb79e4af9542da23f4560e1cf59;hb=b18d6c58000beed872d6bb1fe7d0fbe75ae26aef#l282
-       */
-    case 8:
-      caps = gst_caps_new_empty_simple ("video/x-h263");
-      break;
-    case 9:
-      caps =
-          gst_caps_new_simple ("video/mpeg", "mpegversion", G_TYPE_INT, 4,
-          "systemstream", G_TYPE_BOOLEAN, FALSE, NULL);
-      break;
-    default:
-      GST_WARNING_OBJECT (demux, "unsupported video codec tag %u", codec_tag);
+  if (!is_ex_header) {
+    /* Generate caps for that pad */
+    switch (codec_tag) {
+      case 2:
+        caps =
+            gst_caps_new_simple ("video/x-flash-video", "flvversion",
+            G_TYPE_INT, 1, NULL);
+        break;
+      case 3:
+        caps = gst_caps_new_empty_simple ("video/x-flash-screen");
+        break;
+      case 4:
+        caps = gst_caps_new_empty_simple ("video/x-vp6-flash");
+        break;
+      case 5:
+        caps = gst_caps_new_empty_simple ("video/x-vp6-alpha");
+        break;
+      case 7:
+        if (!demux->video_codec_data) {
+          GST_DEBUG_OBJECT (demux, "don't have h264 codec data yet");
+          ret = TRUE;
+          goto done;
+        }
+        caps =
+            gst_caps_new_simple ("video/x-h264", "stream-format", G_TYPE_STRING,
+            "avc", NULL);
+        break;
+        /* The following two are non-standard but apparently used, see in ffmpeg
+         * https://git.videolan.org/?p=ffmpeg.git;a=blob;f=libavformat/flvdec.c;h=2bf1e059e1cbeeb79e4af9542da23f4560e1cf59;hb=b18d6c58000beed872d6bb1fe7d0fbe75ae26aef#l254
+         * https://git.videolan.org/?p=ffmpeg.git;a=blob;f=libavformat/flvdec.c;h=2bf1e059e1cbeeb79e4af9542da23f4560e1cf59;hb=b18d6c58000beed872d6bb1fe7d0fbe75ae26aef#l282
+         */
+      case 8:
+        caps = gst_caps_new_empty_simple ("video/x-h263");
+        break;
+      case 9:
+        caps =
+            gst_caps_new_simple ("video/mpeg", "mpegversion", G_TYPE_INT, 4,
+            "systemstream", G_TYPE_BOOLEAN, FALSE, NULL);
+        break;
+      default:
+        GST_WARNING_OBJECT (demux, "unsupported video codec tag %u", codec_tag);
+    }
+  } else {
+    switch (fourcc) {
+      case 'a' << 24 | 'v' << 16 | '0' << 8 | '1':
+        caps =
+            gst_caps_new_simple ("video/x-av1", "stream-format", G_TYPE_STRING,
+            "obu-stream", NULL);
+        break;
+      default:
+        GST_WARNING_OBJECT (demux, "unsupported fourcc tag %c", fourcc);
+    }
   }
 
   if (G_UNLIKELY (!caps)) {
@@ -1580,6 +1594,7 @@ done:
   if (G_LIKELY (ret)) {
     /* Store the caps we have set */
     demux->video_codec_tag = codec_tag;
+    demux->fourcc = fourcc;
 
     if (caps) {
       GST_DEBUG_OBJECT (demux->video_pad, "successfully negotiated caps %"
@@ -1608,6 +1623,8 @@ gst_flv_demux_parse_tag_video (GstFlvDemux * demux, GstBuffer * buffer)
   guint32 dts = 0, codec_data = 1, dts_ext = 0;
   gint32 cts = 0;
   gboolean keyframe = FALSE;
+  gboolean is_ex_header = FALSE;
+  guint32 fourcc = 0;
   guint8 flags = 0, codec_tag = 0;
   GstBuffer *outbuf;
   GstMapInfo map;
@@ -1657,6 +1674,7 @@ gst_flv_demux_parse_tag_video (GstFlvDemux * demux, GstBuffer * buffer)
     keyframe = TRUE;
   }
   /* Codec tag */
+  is_ex_header = flags & (0x8 << 4);
   codec_tag = flags & 0x0F;
   if (codec_tag == 4 || codec_tag == 5) {
     codec_data = 2;
@@ -1675,8 +1693,16 @@ gst_flv_demux_parse_tag_video (GstFlvDemux * demux, GstBuffer * buffer)
     GST_LOG_OBJECT (demux, "got cts %d", cts);
   }
 
-  GST_LOG_OBJECT (demux, "video tag with codec tag %u, keyframe (%d) "
-      "(flags %02X)", codec_tag, keyframe, flags);
+  if (!is_ex_header) {
+    GST_LOG_OBJECT (demux, "video tag with codec tag %u, keyframe (%d) "
+        "(flags %02X)", codec_tag, keyframe, flags);
+  } else {
+    fourcc = GST_READ_UINT32_BE (data + 8);
+    GST_LOG_OBJECT (demux, "video tag with extended header, fourcc: %c%c%c%c",
+        (fourcc >> 24) & 0xFF, (fourcc >> 16) & 0xFF, (fourcc >> 8) & 0xFF,
+        fourcc & 0xFF);
+    codec_data = 5;
+  }
 
   if (codec_tag == 7) {
     guint8 avc_packet_type = GST_READ_UINT8 (data + 8);
@@ -1699,7 +1725,7 @@ gst_flv_demux_parse_tag_video (GstFlvDemux * demux, GstBuffer * buffer)
             demux->tag_data_size - codec_data);;
         /* Use that buffer data in the caps */
         if (demux->video_pad)
-          gst_flv_demux_video_negotiate (demux, codec_tag);
+          gst_flv_demux_video_negotiate (demux, codec_tag, FALSE, -1);
         goto beach;
       }
       case 1:
@@ -1740,7 +1766,7 @@ gst_flv_demux_parse_tag_video (GstFlvDemux * demux, GstBuffer * buffer)
     gst_pad_set_active (demux->video_pad, TRUE);
 
     /* Needs to be active before setting caps */
-    if (!gst_flv_demux_video_negotiate (demux, codec_tag)) {
+    if (!gst_flv_demux_video_negotiate (demux, codec_tag, is_ex_header, fourcc)) {
       gst_object_unref (demux->video_pad);
       demux->video_pad = NULL;
       ret = GST_FLOW_ERROR;
@@ -1779,12 +1805,13 @@ gst_flv_demux_parse_tag_video (GstFlvDemux * demux, GstBuffer * buffer)
   }
 
   /* Check if caps have changed */
-  if (G_UNLIKELY (codec_tag != demux->video_codec_tag || demux->got_par)) {
+  if (G_UNLIKELY (codec_tag != demux->video_codec_tag || demux->got_par
+          || fourcc != demux->fourcc)) {
     GST_DEBUG_OBJECT (demux, "video settings have changed, changing caps");
-    if (codec_tag != demux->video_codec_tag)
+    if (!is_ex_header && codec_tag != demux->video_codec_tag)
       gst_buffer_replace (&demux->video_codec_data, NULL);
 
-    if (!gst_flv_demux_video_negotiate (demux, codec_tag)) {
+    if (!gst_flv_demux_video_negotiate (demux, codec_tag, is_ex_header, fourcc)) {
       ret = GST_FLOW_ERROR;
       goto beach;
     }
