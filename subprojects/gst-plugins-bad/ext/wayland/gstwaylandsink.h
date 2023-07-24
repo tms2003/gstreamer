@@ -71,6 +71,8 @@ struct _GstWaylandSink
 
   gchar *drm_device;
   gboolean skip_dumb_buffer_copy;
+
+  gboolean last_rendered;
 };
 
 struct _GstWaylandSinkClass

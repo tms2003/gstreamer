@@ -100,6 +100,8 @@ static gboolean
 gst_wayland_sink_propose_allocation (GstBaseSink * bsink, GstQuery * query);
 static GstFlowReturn gst_wayland_sink_show_frame (GstVideoSink * vsink,
     GstBuffer * buffer);
+static void
+render_last_buffer (GstWaylandSink * self, gboolean redraw);
 
 /* VideoOverlay interface */
 static void gst_wayland_sink_videooverlay_init (GstVideoOverlayInterface *
@@ -788,6 +790,9 @@ frame_redraw_callback (void *data, struct wl_callback *callback, uint32_t time)
     wl_callback_destroy (callback);
     self->callback = NULL;
   }
+
+  if (!self->last_rendered)
+    render_last_buffer (self, FALSE);
   g_mutex_unlock (&self->render_lock);
 }
 
@@ -799,6 +804,11 @@ static const struct wl_callback_listener frame_callback_listener = {
 static void
 render_last_buffer (GstWaylandSink * self, gboolean redraw)
 {
+  if (!self->last_buffer) {
+    GST_ERROR_OBJECT (self, "No buffer to render");
+    return;
+  }
+
   GstWlBuffer *wlbuffer;
   const GstVideoInfo *info = NULL;
   struct wl_surface *surface;
@@ -817,6 +827,7 @@ render_last_buffer (GstWaylandSink * self, gboolean redraw)
     self->video_info_changed = FALSE;
   }
   gst_wl_window_render (self->window, wlbuffer, info);
+  self->last_rendered = TRUE;
 }
 
 static void
@@ -863,14 +874,6 @@ gst_wayland_sink_show_frame (GstVideoSink * vsink, GstBuffer * buffer)
     }
   }
 
-  /* drop buffers until we get a frame callback */
-  if (self->redraw_pending) {
-    GST_LOG_OBJECT (self, "buffer %" GST_PTR_FORMAT " dropped (redraw pending)",
-        buffer);
-    ret = GST_BASE_SINK_FLOW_DROPPED;
-    goto done;
-  }
-
   /* make sure that the application has called set_render_rectangle() */
   if (G_UNLIKELY (gst_wl_window_get_render_rectangle (self->window)->w == 0))
     goto no_window_size;
@@ -901,9 +904,15 @@ gst_wayland_sink_show_frame (GstVideoSink * vsink, GstBuffer * buffer)
       if (gst_is_dmabuf_memory (gst_buffer_peek_memory (buffer, i)))
         nb_dmabuf++;
 
-    if (nb_dmabuf && (nb_dmabuf == gst_buffer_n_memory (buffer)))
+    if (nb_dmabuf && (nb_dmabuf == gst_buffer_n_memory (buffer))) {
+      /* dmabuf creation callbacks need to be handled from the display
+         thread.  Release the render lock so that the display thread
+         doesn't block in frame callbacks. */
+      g_mutex_unlock (&self->render_lock);
       wbuf = gst_wl_linux_dmabuf_construct_wl_buffer (buffer, self->display,
           &self->video_info);
+      g_mutex_lock (&self->render_lock);
+    }
 
     /* DMABuf did not work, let try and make this a dmabuf, it does not matter
      * if it was a SHM since the compositor needs to copy that anyway, and
@@ -1029,8 +1038,16 @@ render:
     goto done;
   }
 
+  if (!self->last_rendered && self->last_buffer) {
+    GST_WARNING_OBJECT (self,
+        "buffer %" GST_PTR_FORMAT " PTS %" GST_TIME_FORMAT " dropped (redraw pending)",
+        self->last_buffer, GST_TIME_ARGS (GST_BUFFER_PTS (self->last_buffer)));
+  }
+
   gst_buffer_replace (&self->last_buffer, to_render);
-  render_last_buffer (self, FALSE);
+  self->last_rendered = FALSE;
+  if (!self->redraw_pending)
+    render_last_buffer (self, FALSE);
 
   if (buffer != to_render)
     gst_buffer_unref (to_render);
