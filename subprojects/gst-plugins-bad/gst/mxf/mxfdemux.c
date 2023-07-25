@@ -190,7 +190,13 @@ gst_mxf_demux_reset_mxf_state (GstMXFDemux * demux)
     if (t->offsets)
       g_array_free (t->offsets, TRUE);
 
-    g_free (t->mapping_data);
+    if (t->mapping_data) {
+      if (t->handler->free_mapping_data)
+        t->handler->free_mapping_data (t->mapping_data);
+      else
+        g_free (t->mapping_data);
+      t->mapping_data = NULL;
+    }
 
     if (t->tags)
       gst_tag_list_unref (t->tags);
@@ -919,8 +925,13 @@ gst_mxf_demux_update_essence_tracks (GstMXFDemux * demux)
       if (track->parent.sequence->duration > etrack->duration)
         etrack->duration = track->parent.sequence->duration;
 
-      g_free (etrack->mapping_data);
-      etrack->mapping_data = NULL;
+      if (etrack->mapping_data) {
+        if (etrack->handler->free_mapping_data)
+          etrack->handler->free_mapping_data (etrack->mapping_data);
+        else
+          g_free (etrack->mapping_data);
+        etrack->mapping_data = NULL;
+      }
       etrack->handler = NULL;
       etrack->handle_func = NULL;
       if (etrack->tags)
@@ -987,8 +998,13 @@ gst_mxf_demux_update_essence_tracks (GstMXFDemux * demux)
 
       if (!caps && new) {
         GST_WARNING_OBJECT (demux, "No caps created, ignoring stream");
-        g_free (etrack->mapping_data);
-        etrack->mapping_data = NULL;
+        if (etrack->mapping_data) {
+          if (etrack->handler->free_mapping_data)
+            etrack->handler->free_mapping_data (etrack->mapping_data);
+          else
+            g_free (etrack->mapping_data);
+          etrack->mapping_data = NULL;
+        }
         if (etrack->tags)
           gst_tag_list_unref (etrack->tags);
         etrack->tags = NULL;
@@ -1045,7 +1061,13 @@ gst_mxf_demux_update_essence_tracks (GstMXFDemux * demux)
 
     next:
       if (new) {
-        g_free (etrack->mapping_data);
+        if (etrack->mapping_data) {
+          if (etrack->handler->free_mapping_data)
+            etrack->handler->free_mapping_data (etrack->mapping_data);
+          else
+            g_free (etrack->mapping_data);
+          etrack->mapping_data = NULL;
+        }
         if (etrack->tags)
           gst_tag_list_unref (etrack->tags);
         if (etrack->caps)
@@ -2122,39 +2144,53 @@ static guint64
 find_offset (GArray * offsets, gint64 * position, gboolean keyframe)
 {
   GstMXFDemuxIndex *idx;
-  guint64 current_offset = -1;
   gint64 current_position = *position;
+  gboolean need_prev_keyframe = FALSE;
+  gboolean only_b_frames = TRUE;
 
   if (!offsets || offsets->len <= *position)
     return -1;
 
-  idx = &g_array_index (offsets, GstMXFDemuxIndex, *position);
-  if (idx->offset != 0 && (!keyframe || idx->keyframe)) {
-    current_offset = idx->offset;
-  } else if (idx->offset != 0) {
-    current_position--;
-    while (current_position >= 0) {
-      GST_LOG ("current_position %" G_GINT64_FORMAT, current_position);
-      idx = &g_array_index (offsets, GstMXFDemuxIndex, current_position);
-      if (idx->offset == 0) {
-        GST_LOG ("breaking offset 0");
-        break;
-      } else if (!idx->keyframe) {
-        current_position--;
-        continue;
-      } else {
-        GST_LOG ("Breaking found offset");
-        current_offset = idx->offset;
+  while (current_position >= 0) {
+    GST_LOG ("Checking position %" G_GINT64_FORMAT, current_position);
+    idx = &g_array_index (offsets, GstMXFDemuxIndex, current_position);
+
+    if (idx->offset == 0) {
+      GST_LOG ("Breaking offset 0");
+      break;
+    } else if (!keyframe) {
+      GST_LOG ("Found offset");
+      break;
+    } else if (!MXF_INDEX_ENTRY_FLAGS_IS_SET_DELTA_UNIT (idx->flags)) {
+      /* keyframe */
+      if (!need_prev_keyframe
+          || MXF_INDEX_ENTRY_FLAGS_IS_SET_RANDOM_ACCESS (idx->flags)) {
+        GST_LOG ("Found keyframe");
         break;
       }
+      need_prev_keyframe = FALSE;
+      only_b_frames = FALSE;
+    } else if (only_b_frames
+        && MXF_INDEX_ENTRY_FLAGS_IS_SET_BACKWARD_PREDICTION (idx->flags)) {
+      if (MXF_INDEX_ENTRY_FLAGS_IS_SET_FORWARD_PREDICTION (idx->flags))
+        /* B-frame with foward prediction */
+        need_prev_keyframe = TRUE;
+      /* else: B-frame with backward prediction only
+       * => does not change whether previous keyframe is needed or not */
+    } else if (MXF_INDEX_ENTRY_FLAGS_IS_SET_FORWARD_PREDICTION (idx->flags)) {
+      /* P-frame */
+      need_prev_keyframe = FALSE;
+      only_b_frames = FALSE;
     }
+
+    current_position--;
   }
 
-  if (current_offset == -1)
+  if (idx->offset == 0 || current_position < 0)
     return -1;
 
   *position = current_position;
-  return current_offset;
+  return idx->offset;
 }
 
 /**
@@ -2198,8 +2234,7 @@ find_edit_entry (GstMXFDemux * demux, GstMXFDemuxEssenceTrack * etrack,
 
   /* Default values */
   entry->duration = 1;
-  /* By default every entry is a keyframe unless specified otherwise */
-  entry->keyframe = TRUE;
+  entry->flags = MXF_INDEX_ENTRY_FLAGS_DEFAULT;
 
   /* Look in the track offsets */
   if (etrack->offsets && etrack->offsets->len > position) {
@@ -2266,6 +2301,10 @@ search_in_segment:
           "Index table without entries, directly using requested position for keyframe search");
     } else {
       gint64 candidate;
+      MXFIndexEntryFlags flags;
+      gboolean need_prev_keyframe = FALSE;
+      gboolean only_b_frames = TRUE;
+
       GST_LOG_OBJECT (demux, "keyframe search");
       /* Search backwards for keyframe */
       for (candidate = position; candidate >= segment->index_start_position;
@@ -2274,16 +2313,36 @@ search_in_segment:
             &segment->index_entries[candidate - segment->index_start_position];
 
         /* Match */
-        if (segment_index_entry->flags & 0x80) {
-          GST_LOG_OBJECT (demux, "Found keyframe at position %" G_GINT64_FORMAT,
-              candidate);
-          position = candidate;
-          break;
+        flags = segment_index_entry->flags;
+        if (!MXF_INDEX_ENTRY_FLAGS_IS_SET_DELTA_UNIT (flags)) {
+          /* keyframe */
+          if (!need_prev_keyframe
+              || MXF_INDEX_ENTRY_FLAGS_IS_SET_RANDOM_ACCESS (flags)) {
+            GST_LOG_OBJECT (demux,
+                "Found keyframe at position %" G_GINT64_FORMAT, candidate);
+            position = candidate;
+            break;
+          }
+          need_prev_keyframe = FALSE;
+          only_b_frames = FALSE;
+        } else if (only_b_frames
+            && MXF_INDEX_ENTRY_FLAGS_IS_SET_BACKWARD_PREDICTION (flags)) {
+          if (MXF_INDEX_ENTRY_FLAGS_IS_SET_FORWARD_PREDICTION (flags))
+            /* B-frame with foward prediction */
+            need_prev_keyframe = TRUE;
+          /* else: B-frame with backward prediction only
+           * => does not change whether previous keyframe is needed or not */
+        } else if (MXF_INDEX_ENTRY_FLAGS_IS_SET_FORWARD_PREDICTION (flags)) {
+          /* P-frame */
+          need_prev_keyframe = FALSE;
+          only_b_frames = FALSE;
         }
 
         /* If a keyframe offset is specified and valid, use that */
         if (segment_index_entry->key_frame_offset
-            && !(segment_index_entry->flags & 0x08)) {
+            &&
+            !MXF_INDEX_ENTRY_FLAGS_IS_SET_OFFSET_OUT_OF_RANGE
+            (segment_index_entry->flags)) {
           GST_DEBUG_OBJECT (demux, "Using keyframe offset %d",
               segment_index_entry->key_frame_offset);
           position = candidate + segment_index_entry->key_frame_offset;
@@ -2343,6 +2402,7 @@ search_in_segment:
         segment->index_start_position + segment->n_index_entries);
     segment_index_entry =
         &segment->index_entries[position - segment->index_start_position];
+    entry->flags = segment_index_entry->flags;
     stream_offset = segment_index_entry->stream_offset;
 
     if (segment->n_delta_entries > 0)
@@ -2359,9 +2419,6 @@ search_in_segment:
         stream_offset +=
             segment_index_entry->slice_offset[delta_entry->slice - 1];
       stream_offset += delta_entry->element_delta;
-      if (delta_entry->pos_table_index == -1) {
-        entry->keyframe = (segment_index_entry->flags & 0x80) == 0x80;
-      }
       /* FIXME : Handle fractional offset position (delta_entry->pos_table_offset > 0) */
     }
 
@@ -2457,7 +2514,7 @@ find_entry_for_offset (GstMXFDemux * demux, GstMXFDemuxEssenceTrack * etrack,
 
   /* Default value */
   retentry->duration = 1;
-  retentry->keyframe = TRUE;
+  retentry->flags = MXF_INDEX_ENTRY_FLAGS_DEFAULT;
 
   /* Index-less search */
   if (etrack->offsets) {
@@ -2636,7 +2693,6 @@ find_entry_for_offset (GstMXFDemux * demux, GstMXFDemuxEssenceTrack * etrack,
   }
 
   if (index_entry && delta_entry && delta_entry->pos_table_index == -1) {
-    retentry->keyframe = (index_entry->flags & 0x80) == 0x80;
     if (!demux->temporal_order_misuse)
       retentry->pts =
           position + g_array_index (index_table->reverse_temporal_offsets,
@@ -2652,6 +2708,8 @@ find_entry_for_offset (GstMXFDemux * demux, GstMXFDemuxEssenceTrack * etrack,
   /* FIXME : check if position and cp_offs matches the table */
   GST_LOG_OBJECT (demux, "Found in index table. position:%" G_GINT64_FORMAT,
       position);
+  if (index_entry)
+    retentry->flags = index_entry->flags;
   retentry->initialized = TRUE;
   retentry->offset = original_offset;
   retentry->dts = position;
@@ -2673,6 +2731,7 @@ gst_mxf_demux_handle_generic_container_essence_element (GstMXFDemux * demux,
   guint64 pts = G_MAXUINT64;
   gint32 max_temporal_offset = 0;
   GstMXFDemuxIndex index_entry = { 0, };
+  MXFEssenceElementParsedProperties parsed_props = { 0, };
   guint64 offset;
 
   GST_DEBUG_OBJECT (demux,
@@ -2858,17 +2917,24 @@ gst_mxf_demux_handle_generic_container_essence_element (GstMXFDemux * demux,
   }
 
   if (index_entry.initialized) {
-    GST_DEBUG_OBJECT (demux, "Got entry dts:%" G_GINT64_FORMAT " keyframe:%d",
-        index_entry.dts, index_entry.keyframe);
+    GST_DEBUG_OBJECT (demux,
+        "Got entry dts:%" G_GINT64_FORMAT " random_access_point:%d keyframe:%d",
+        index_entry.dts,
+        MXF_INDEX_ENTRY_FLAGS_IS_SET_RANDOM_ACCESS (index_entry.flags),
+        !MXF_INDEX_ENTRY_FLAGS_IS_SET_DELTA_UNIT (index_entry.flags));
+  } else {
+    parsed_props.flags = MXF_INDEX_ENTRY_FLAGS_DEFAULT;
   }
-  if (index_entry.initialized && !index_entry.keyframe)
-    GST_BUFFER_FLAG_SET (inbuf, GST_BUFFER_FLAG_DELTA_UNIT);
 
   if (etrack->handle_func) {
+    MXFEssenceElementParsedProperties *props = NULL;
+    if (!index_entry.initialized)
+      props = &parsed_props;
+
     /* Takes ownership of inbuf */
     ret =
         etrack->handle_func (&klv->key, inbuf, etrack->caps,
-        etrack->source_track, etrack->mapping_data, &outbuf);
+        etrack->source_track, etrack->mapping_data, props, &outbuf);
     inbuf = NULL;
   } else {
     outbuf = inbuf;
@@ -2889,16 +2955,17 @@ gst_mxf_demux_handle_generic_container_essence_element (GstMXFDemux * demux,
     /* This can happen when doing scanning without entry tables */
     index_entry.duration = 1;
     index_entry.offset = demux->offset - demux->run_in;
+    index_entry.flags = parsed_props.flags;
     index_entry.dts = etrack->position;
     index_entry.pts = etrack->intra_only ? etrack->position : G_MAXUINT64;
-    index_entry.keyframe =
-        !GST_BUFFER_FLAG_IS_SET (outbuf, GST_BUFFER_FLAG_DELTA_UNIT);
     index_entry.initialized = TRUE;
     GST_DEBUG_OBJECT (demux,
         "Storing newly discovered information on track %d. dts: %"
-        G_GINT64_FORMAT " offset:%" G_GUINT64_FORMAT " keyframe:%d",
+        G_GINT64_FORMAT " offset:%" G_GUINT64_FORMAT
+        " random_access_point:%d keyframe:%d",
         etrack->track_id, index_entry.dts, index_entry.offset,
-        index_entry.keyframe);
+        MXF_INDEX_ENTRY_FLAGS_IS_SET_RANDOM_ACCESS (index_entry.flags),
+        !MXF_INDEX_ENTRY_FLAGS_IS_SET_DELTA_UNIT (index_entry.flags));
 
     if (!etrack->offsets)
       etrack->offsets = g_array_new (FALSE, TRUE, sizeof (GstMXFDemuxIndex));
@@ -2907,6 +2974,11 @@ gst_mxf_demux_handle_generic_container_essence_element (GstMXFDemux * demux,
     g_assert (etrack->position <= etrack->offsets->len);
     g_array_insert_val (etrack->offsets, etrack->position, index_entry);
   }
+
+  if (MXF_INDEX_ENTRY_FLAGS_IS_SET_DELTA_UNIT (index_entry.flags))
+    GST_BUFFER_FLAG_SET (outbuf, GST_BUFFER_FLAG_DELTA_UNIT);
+  else
+    GST_BUFFER_FLAG_UNSET (outbuf, GST_BUFFER_FLAG_DELTA_UNIT);
 
   if (peek)
     goto out;
@@ -3841,26 +3913,54 @@ find_closest_offset (GArray * offsets, gint64 * position, gboolean keyframe)
 {
   GstMXFDemuxIndex *idx;
   gint64 current_position = *position;
+  gboolean need_prev_keyframe = FALSE;
+  gboolean only_b_frames = TRUE;
 
   if (!offsets || offsets->len == 0)
     return -1;
 
   current_position = MIN (current_position, offsets->len - 1);
 
-  idx = &g_array_index (offsets, GstMXFDemuxIndex, current_position);
-  while (idx->offset == 0 || (keyframe && !idx->keyframe)) {
-    current_position--;
-    if (current_position < 0)
-      break;
+  while (current_position >= 0) {
+    GST_LOG ("Checking position %" G_GINT64_FORMAT, current_position);
     idx = &g_array_index (offsets, GstMXFDemuxIndex, current_position);
+
+    if (idx->offset == 0) {
+      GST_LOG ("Breaking offset 0");
+      break;
+    } else if (!keyframe) {
+      GST_LOG ("Found offset");
+      break;
+    } else if (!MXF_INDEX_ENTRY_FLAGS_IS_SET_DELTA_UNIT (idx->flags)) {
+      /* keyframe */
+      if (!need_prev_keyframe
+          || MXF_INDEX_ENTRY_FLAGS_IS_SET_RANDOM_ACCESS (idx->flags)) {
+        GST_LOG ("Found keyframe");
+        break;
+      }
+      need_prev_keyframe = FALSE;
+      only_b_frames = FALSE;
+    } else if (only_b_frames
+        && MXF_INDEX_ENTRY_FLAGS_IS_SET_BACKWARD_PREDICTION (idx->flags)) {
+      if (MXF_INDEX_ENTRY_FLAGS_IS_SET_FORWARD_PREDICTION (idx->flags))
+        /* B-frame with foward prediction */
+        need_prev_keyframe = TRUE;
+      /* else: B-frame with backward prediction only
+       * => does not change whether previous keyframe is needed or not */
+    } else if (MXF_INDEX_ENTRY_FLAGS_IS_SET_FORWARD_PREDICTION (idx->flags)) {
+      /* P-frame */
+      need_prev_keyframe = FALSE;
+      only_b_frames = FALSE;
+    }
+
+    current_position--;
   }
 
-  if (idx->offset != 0 && (!keyframe || idx->keyframe)) {
-    *position = current_position;
-    return idx->offset;
-  }
+  if (idx->offset == 0 || current_position < 0)
+    return -1;
 
-  return -1;
+  *position = current_position;
+  return idx->offset;
 }
 
 static guint64

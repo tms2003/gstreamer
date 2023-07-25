@@ -70,6 +70,7 @@ typedef struct _GstMXFMux
 
   GArray *index_table;
   guint current_index_pos;
+  guint64 last_random_access_pos;
   guint64 last_keyframe_pos;
 } GstMXFMux;
 

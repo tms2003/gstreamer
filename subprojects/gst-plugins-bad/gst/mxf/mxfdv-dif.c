@@ -75,7 +75,8 @@ static GstFlowReturn
 mxf_dv_dif_handle_essence_element (const MXFUL * key, GstBuffer * buffer,
     GstCaps * caps,
     MXFMetadataTimelineTrack * track,
-    gpointer mapping_data, GstBuffer ** outbuf)
+    gpointer mapping_data, MXFEssenceElementParsedProperties * props,
+    GstBuffer ** outbuf)
 {
   *outbuf = buffer;
 
@@ -176,7 +177,8 @@ mxf_dv_dif_create_caps (MXFMetadataTimelineTrack * track, GstTagList ** tags,
 static const MXFEssenceElementHandler mxf_dv_dif_essence_element_handler = {
   mxf_is_dv_dif_essence_track,
   mxf_dv_dif_get_track_wrapping,
-  mxf_dv_dif_create_caps
+  mxf_dv_dif_create_caps,
+  g_free,
 };
 
 static GstFlowReturn
@@ -243,6 +245,7 @@ static MXFEssenceElementWriter mxf_dv_dif_essence_element_writer = {
   mxf_dv_dif_update_descriptor,
   mxf_dv_dif_get_edit_rate,
   mxf_dv_dif_get_track_number_template,
+  g_free,
   NULL,
   {{0,}}
 };

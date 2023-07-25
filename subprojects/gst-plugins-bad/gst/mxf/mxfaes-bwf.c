@@ -24,7 +24,7 @@
 /* TODO:
  * - Handle the case were a track only references specific channels
  *   of the essence (ChannelID property)
- * - Add support for more codecs 
+ * - Add support for more codecs
  * - Handle more of the metadata inside the descriptors
  */
 
@@ -1141,7 +1141,8 @@ static GstFlowReturn
 mxf_bwf_handle_essence_element (const MXFUL * key, GstBuffer * buffer,
     GstCaps * caps,
     MXFMetadataTimelineTrack * track,
-    gpointer mapping_data, GstBuffer ** outbuf)
+    gpointer mapping_data, MXFEssenceElementParsedProperties * props,
+    GstBuffer ** outbuf)
 {
   *outbuf = buffer;
 
@@ -1159,7 +1160,8 @@ mxf_bwf_handle_essence_element (const MXFUL * key, GstBuffer * buffer,
 static GstFlowReturn
 mxf_aes3_handle_essence_element (const MXFUL * key, GstBuffer * buffer,
     GstCaps * caps, MXFMetadataTimelineTrack * track,
-    gpointer mapping_data, GstBuffer ** outbuf)
+    gpointer mapping_data, MXFEssenceElementParsedProperties * props,
+    GstBuffer ** outbuf)
 {
   *outbuf = buffer;
 
@@ -1444,7 +1446,8 @@ mxf_aes_bwf_create_caps (MXFMetadataTimelineTrack * track, GstTagList ** tags,
 static const MXFEssenceElementHandler mxf_aes_bwf_essence_handler = {
   mxf_is_aes_bwf_essence_track,
   mxf_aes_bwf_get_track_wrapping,
-  mxf_aes_bwf_create_caps
+  mxf_aes_bwf_create_caps,
+  g_free,
 };
 
 typedef struct
@@ -1591,6 +1594,7 @@ static MXFEssenceElementWriter mxf_bwf_essence_element_writer = {
   mxf_bwf_update_descriptor,
   mxf_bwf_get_edit_rate,
   mxf_bwf_get_track_number_template,
+  g_free,
   NULL,
   {{0,}}
 };

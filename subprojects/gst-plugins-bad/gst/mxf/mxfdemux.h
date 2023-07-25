@@ -159,7 +159,7 @@ typedef struct
   /* Duration in edit units */
   guint64 duration;
 
-  gboolean keyframe;
+  MXFIndexEntryFlags flags;
   gboolean initialized;
 
   /* Size, used for non-frame-wrapped content */

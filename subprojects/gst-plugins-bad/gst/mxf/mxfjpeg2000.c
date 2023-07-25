@@ -54,7 +54,8 @@ static GstFlowReturn
 mxf_jpeg2000_handle_essence_element (const MXFUL * key, GstBuffer * buffer,
     GstCaps * caps,
     MXFMetadataTimelineTrack * track,
-    gpointer mapping_data, GstBuffer ** outbuf)
+    gpointer mapping_data, MXFEssenceElementParsedProperties * props,
+    GstBuffer ** outbuf)
 {
   *outbuf = buffer;
 
@@ -225,7 +226,8 @@ mxf_jpeg2000_create_caps (MXFMetadataTimelineTrack * track, GstTagList ** tags,
 static const MXFEssenceElementHandler mxf_jpeg2000_essence_element_handler = {
   mxf_is_jpeg2000_essence_track,
   mxf_jpeg2000_get_track_wrapping,
-  mxf_jpeg2000_create_caps
+  mxf_jpeg2000_create_caps,
+  g_free,
 };
 
 static GstFlowReturn
@@ -333,6 +335,7 @@ static MXFEssenceElementWriter mxf_jpeg2000_essence_element_writer = {
   mxf_jpeg2000_update_descriptor,
   mxf_jpeg2000_get_edit_rate,
   mxf_jpeg2000_get_track_number_template,
+  g_free,
   NULL,
   {{0,}}
 };

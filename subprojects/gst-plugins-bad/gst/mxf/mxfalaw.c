@@ -48,7 +48,8 @@ static GstFlowReturn
 mxf_alaw_handle_essence_element (const MXFUL * key, GstBuffer * buffer,
     GstCaps * caps,
     MXFMetadataTimelineTrack * track,
-    gpointer mapping_data, GstBuffer ** outbuf)
+    gpointer mapping_data, MXFEssenceElementParsedProperties * props,
+    GstBuffer ** outbuf)
 {
   *outbuf = buffer;
 
@@ -158,7 +159,8 @@ mxf_alaw_create_caps (MXFMetadataTimelineTrack * track, GstTagList ** tags,
 static const MXFEssenceElementHandler mxf_alaw_essence_element_handler = {
   mxf_is_alaw_essence_track,
   mxf_alaw_get_track_wrapping,
-  mxf_alaw_create_caps
+  mxf_alaw_create_caps,
+  g_free,
 };
 
 typedef struct
@@ -304,6 +306,7 @@ static MXFEssenceElementWriter mxf_alaw_essence_element_writer = {
   mxf_alaw_update_descriptor,
   mxf_alaw_get_edit_rate,
   mxf_alaw_get_track_number_template,
+  g_free,
   NULL,
   {{0,}}
 };

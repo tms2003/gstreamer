@@ -34,9 +34,15 @@ typedef enum
   MXF_ESSENCE_WRAPPING_UNKNOWN_WRAPPING
 } MXFEssenceWrapping;
 
+typedef struct
+{
+  MXFIndexEntryFlags flags;
+} MXFEssenceElementParsedProperties;
+
 typedef GstFlowReturn (*MXFEssenceElementHandleFunc) (const MXFUL * key,
     GstBuffer * buffer, GstCaps * caps, MXFMetadataTimelineTrack * track,
-    gpointer mapping_data, GstBuffer ** outbuf);
+    gpointer mapping_data, MXFEssenceElementParsedProperties * props,
+    GstBuffer ** outbuf);
 
 typedef struct
 {
@@ -46,6 +52,7 @@ typedef struct
   GstCaps *(*create_caps) (MXFMetadataTimelineTrack * track, GstTagList ** tags,
       gboolean * intra_only, MXFEssenceElementHandleFunc * handler,
       gpointer * mapping_data);
+  void (*free_mapping_data) (gpointer mapping_data);
 } MXFEssenceElementHandler;
 
 typedef GstFlowReturn (*MXFEssenceElementWriteFunc) (GstBuffer * buffer,
@@ -65,6 +72,7 @@ typedef struct
       MXFFraction * edit_rate);
     guint32 (*get_track_number_template) (MXFMetadataFileDescriptor * a,
       GstCaps * caps, gpointer mapping_data);
+  void (*free_mapping_data) (gpointer mapping_data);
   const GstPadTemplate *pad_template;
   MXFUL data_definition;
 } MXFEssenceElementWriter;
