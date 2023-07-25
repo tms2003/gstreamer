@@ -99,7 +99,8 @@ pts_sync (PTSGenerator * tsg, GstClockTime gop_pts)
       gop_pts = tsg->max_pts + pts_get_duration (tsg, 1);
       gop_tsn = tsg->gop_tsn + tsg->ovl_tsn * 1024 + tsg->max_tsn + 1;
     } else {
-      gop_pts = 0;
+      /* Don't force gop_pts
+       * so as to let the video encoder base class determine pts */
       gop_tsn = 0;
     }
   } else {
@@ -124,8 +125,10 @@ pts_eval (PTSGenerator * tsg, GstClockTime pic_pts, guint pic_tsn)
 {
   GstClockTime pts;
 
-  if (!GST_CLOCK_TIME_IS_VALID (tsg->gop_pts))
-    tsg->gop_pts = pts_get_duration (tsg, pic_tsn);
+  if (!GST_CLOCK_TIME_IS_VALID (tsg->gop_pts)) {
+    /* Let the video encoder base class determine pts */
+    return GST_CLOCK_TIME_NONE;
+  }
 
   pts = pic_pts;
   if (!GST_CLOCK_TIME_IS_VALID (pts))
