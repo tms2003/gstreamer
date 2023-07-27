@@ -79,9 +79,59 @@ enum
 #define PICTURE_ID_NONE (UINT_MAX)
 #define IS_PICTURE_ID_15BITS(pid) (((guint)(pid) & 0x8000) != 0)
 
+static gboolean
+gst_rtp_vp8_src_event (GstPad * pad, GstObject * parent, GstEvent * event)
+{
+  GstRtpVP8Depay *self = GST_RTP_VP8_DEPAY (parent);
+  gboolean ret = FALSE;
+
+  switch (GST_EVENT_TYPE (event)) {
+    case GST_EVENT_CUSTOM_UPSTREAM:
+    {
+      const GstStructure *s = gst_event_get_structure (event);
+      if (gst_structure_has_name (s, "Vp8DecodedFrame")) {
+        guint frame_type;
+        if (gst_structure_get_uint (s, "frame_type", &frame_type)) {
+          GstEvent *rpsi = NULL;
+
+          if (frame_type == 0)
+            rpsi = gst_event_new_custom (GST_EVENT_CUSTOM_UPSTREAM,
+                gst_structure_new ("GstReferencePictureSelectionIndication",
+                    "payload", G_TYPE_UINT, self->pt,
+                    "bit_string", G_TYPE_UINT64, self->golden_frame_picture_id,
+                    NULL));
+
+          if (frame_type == 1)
+            rpsi = gst_event_new_custom (GST_EVENT_CUSTOM_UPSTREAM,
+                gst_structure_new ("GstReferencePictureSelectionIndication",
+                    "payload", G_TYPE_UINT, self->pt,
+                    "bit_string", G_TYPE_UINT64,
+                    self->alternate_frame_picture_id, NULL));
+
+          if (rpsi)
+            ret =
+                gst_pad_push_event (GST_RTP_BASE_DEPAYLOAD_SINKPAD (self),
+                rpsi);
+          gst_event_unref (event);
+        }
+      } else {
+        ret = gst_pad_event_default (pad, parent, event);
+      }
+      break;
+    }
+    default:
+      ret = gst_pad_event_default (pad, parent, event);
+      break;
+  }
+
+  return ret;
+}
+
 static void
 gst_rtp_vp8_depay_init (GstRtpVP8Depay * self)
 {
+  GstPad *srcpad = GST_RTP_BASE_DEPAYLOAD_SRCPAD (self);
+
   gst_rtp_base_depayload_set_aggregate_hdrext_enabled (GST_RTP_BASE_DEPAYLOAD
       (self), TRUE);
 
@@ -90,6 +140,8 @@ gst_rtp_vp8_depay_init (GstRtpVP8Depay * self)
   self->wait_for_keyframe = DEFAULT_WAIT_FOR_KEYFRAME;
   self->request_keyframe = DEFAULT_REQUEST_KEYFRAME;
   self->last_pushed_was_lost_event = FALSE;
+
+  gst_pad_set_event_function (srcpad, gst_rtp_vp8_src_event);
 }
 
 static void
@@ -283,6 +335,13 @@ send_last_lost_event_if_needed (GstRtpVP8Depay * self, guint new_picture_id)
   }
 }
 
+static gboolean
+gst_rtp_vp8_depay_parse_frame (GstRtpVP8Depay * self, GstBuffer * buffer,
+    gsize buffer_size)
+{
+  return gst_rtp_vp8_parse_header (buffer, buffer_size, &self->parsed_header);
+}
+
 static GstBuffer *
 gst_rtp_vp8_depay_process (GstRTPBaseDepayload * depay, GstRTPBuffer * rtp)
 {
@@ -296,6 +355,8 @@ gst_rtp_vp8_depay_process (GstRTPBaseDepayload * depay, GstRTPBuffer * rtp)
   guint part_id;
   gboolean frame_start;
   gboolean sent_lost_event = FALSE;
+
+  self->pt = gst_rtp_buffer_get_payload_type (rtp);
 
   if (G_UNLIKELY (GST_BUFFER_IS_DISCONT (rtp->buffer))) {
     GST_DEBUG_OBJECT (self, "Discontinuity, flushing adapter");
@@ -437,6 +498,14 @@ gst_rtp_vp8_depay_process (GstRTPBaseDepayload * depay, GstRTPBuffer * rtp)
         gst_pad_push_event (GST_RTP_BASE_DEPAYLOAD_SINKPAD (depay),
             gst_video_event_new_upstream_force_key_unit (GST_CLOCK_TIME_NONE,
                 TRUE, 0));
+      } else {
+
+        gst_rtp_vp8_depay_parse_frame (self, out, gst_buffer_get_size (out));
+        if (self->parsed_header.refresh_golden_frame)
+          self->golden_frame_picture_id = self->last_picture_id;
+
+        if (self->parsed_header.refresh_alternate_frame)
+          self->alternate_frame_picture_id = self->last_picture_id;
       }
     } else {
       guint profile, width, height;
