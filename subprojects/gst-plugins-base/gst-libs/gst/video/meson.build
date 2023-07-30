@@ -37,6 +37,7 @@ video_sources = files([
   'videodirection.c',
   'videoorientation.c',
   'videooverlay.c',
+  'gsttextlayout.c',
 ])
 
 video_headers = files([
@@ -77,6 +78,7 @@ video_headers = files([
   'video-overlay-composition.h',
   'video-multiview.h',
   'video-sei.h',
+  'gsttextlayout.h'
 ])
 install_headers(video_headers, subdir : 'gstreamer-1.0/gst/video/')
 
@@ -101,6 +103,7 @@ video_mkenum_headers = [
   'gstvideodecoder.h',
   'colorbalance.h',
   'navigation.h',
+  'gsttextlayout.h',
 ]
 
 video_enums = gnome.mkenums_simple('video-enumtypes',

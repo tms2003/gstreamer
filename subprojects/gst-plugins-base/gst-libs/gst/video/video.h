@@ -201,5 +201,6 @@ G_END_DECLS
 #include <gst/video/video-overlay-composition.h>
 #include <gst/video/videooverlay.h>
 #include <gst/video/video-sei.h>
+#include <gst/video/gsttextlayout.h>
 
 #endif /* __GST_VIDEO_H__ */

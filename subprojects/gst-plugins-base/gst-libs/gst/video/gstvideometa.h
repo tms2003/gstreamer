@@ -24,6 +24,7 @@
 
 #include <gst/video/video.h>
 #include <gst/video/gstvideotimecode.h>
+#include <gst/video/gsttextlayout.h>
 
 G_BEGIN_DECLS
 
@@ -412,6 +413,43 @@ gst_buffer_add_video_time_code_meta_full                     (GstBuffer         
                                                               guint                   seconds,
                                                               guint                   frames,
                                                               guint                   field_count);
+
+/**
+ * GstVideoSubtitleMeta:
+ * @meta: parent #GstMeta
+ * @stream: the #GstStream
+ * @buffer: the subtitle #GstBuffer
+ *
+ * Extra metadata containing subtitle information
+ *
+ * Since: 1.24
+ */
+typedef struct
+{
+  GstMeta meta;
+
+  GstStream *stream;
+  GstTextLayout *layout;
+
+  /*< private >*/
+  gpointer _gst_reserved[GST_PADDING];
+} GstVideoSubtitleMeta;
+
+GST_VIDEO_API
+GType gst_video_subtitle_meta_api_get_type (void);
+#define GST_VIDEO_SUBTITLE_META_API_TYPE (gst_video_subtitle_meta_api_get_type())
+
+GST_VIDEO_API
+const GstMetaInfo * gst_video_subtitle_meta_get_info (void);
+#define GST_VIDEO_SUBTITLE_META_INFO (gst_video_subtitle_meta_get_info())
+
+#define gst_buffer_get_video_subtitle_meta(b) \
+    ((GstVideoSubtitleMeta *) gst_buffer_get_meta((b), GST_VIDEO_SUBTITLE_META_API_TYPE))
+
+GST_VIDEO_API
+GstVideoSubtitleMeta * gst_buffer_add_video_subtitle_meta (GstBuffer * buffer,
+                                                           GstStream * stream,
+                                                           GstTextLayout * layout);
 
 G_END_DECLS
 
