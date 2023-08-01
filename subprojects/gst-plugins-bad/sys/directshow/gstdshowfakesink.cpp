@@ -52,11 +52,20 @@ HRESULT CDshowFakeSink::CheckMediaType (const CMediaType * pmt)
       (pmt->cbFormat != m_MediaType.cbFormat))
     return S_FALSE;
 
-  VIDEOINFOHEADER *info1 = (VIDEOINFOHEADER*)pmt->pbFormat;
-  VIDEOINFOHEADER *info2 = (VIDEOINFOHEADER*)m_MediaType.pbFormat;
-
-  if (memcmp(&info1->bmiHeader, &info2->bmiHeader, sizeof(BITMAPINFOHEADER)))
-    return S_FALSE;
+  if (IsEqualGUID(pmt->majortype, MEDIATYPE_Audio)) {
+    if ((pmt->bFixedSizeSamples != m_MediaType.bFixedSizeSamples)
+      || (pmt->bTemporalCompression != m_MediaType.bTemporalCompression)
+      || (pmt->lSampleSize != m_MediaType.lSampleSize)) {
+        return S_FALSE;
+    }
+  } else {
+    VIDEOINFOHEADER *info1 = (VIDEOINFOHEADER*)pmt->pbFormat;
+    VIDEOINFOHEADER *info2 = (VIDEOINFOHEADER*)m_MediaType.pbFormat;
+ 
+    if (memcmp(&info1->bmiHeader, &info2->bmiHeader, sizeof(BITMAPINFOHEADER))) {
+      return S_FALSE;
+    }
+  }
 
   return S_OK;
 }
