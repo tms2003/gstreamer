@@ -118,8 +118,9 @@ enum
 
 enum
 {
-  HEVCProfileMain    = 0x01,
-  HEVCProfileMain10  = 0x02
+  HEVCProfileMain      = 0x01,
+  HEVCProfileMain10    = 0x02,
+  HEVCProfileMainStill = 0x04
 };
 
 enum

@@ -1095,7 +1095,8 @@ static const struct
 } hevc_profile_mapping_table[] = {
   {
       HEVCProfileMain, "main"}, {
-      HEVCProfileMain10, "main-10"}
+      HEVCProfileMain10, "main-10"}, {
+      HEVCProfileMainStill, "main-still-picture"}
 };
 
 const gchar *
