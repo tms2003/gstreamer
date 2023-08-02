@@ -57,9 +57,6 @@
 #define DEFAULT_SHOW_TIMES_AS_DATES FALSE
 #define DEFAULT_DATETIME_FORMAT "%F %T" /* YYYY-MM-DD hh:mm:ss */
 
-static GstStaticCaps ntp_reference_timestamp_caps =
-GST_STATIC_CAPS ("timestamp/x-ntp");
-
 enum
 {
   PROP_0,
@@ -69,6 +66,9 @@ enum
   PROP_DATETIME_FORMAT,
   PROP_REFERENCE_TIMESTAMP_CAPS,
 };
+
+GST_DEBUG_CATEGORY_STATIC (gst_time_overlay_debug);
+#define GST_CAT_DEFAULT gst_time_overlay_debug
 
 #define gst_time_overlay_parent_class parent_class
 G_DEFINE_TYPE (GstTimeOverlay, gst_time_overlay, GST_TYPE_BASE_TEXT_OVERLAY);
@@ -154,6 +154,53 @@ gst_time_overlay_render_time (GstTimeOverlay * overlay, GstClockTime time)
   return g_strdup_printf ("%u:%02u:%02u.%03u", hours, mins, secs, msecs);
 }
 
+typedef struct
+{
+  const gchar *name;
+  GstClockTimeDiff unix_epoch_offset;
+} Epoch;
+
+static const Epoch epochs[] = {
+  // unix = unix
+  {"timestamp/x-unix", 0},
+  // ptp = unix
+  {"timestamp/x-ptp", 0},
+  // ntp = unix + 70 years + 17 leap days
+  {"timestamp/x-ntp", (GST_USECOND * G_TIME_SPAN_DAY * (70 * 365 + 17))},
+};
+
+static gboolean
+gst_reference_timestamp_meta_convert (GstReferenceTimestampMeta *meta,
+    const char *to_name, GstClockTime *timestamp)
+{
+  guint i;
+  const Epoch *iter, *to = NULL, *from = NULL;
+  const char *from_name = gst_structure_get_name
+      (gst_caps_get_structure (meta->reference, 0));
+  GstClockTime out = meta->timestamp;
+
+  if (g_strcmp0 (from_name, to_name) == 0) {
+    *timestamp = out;
+    return TRUE;
+  }
+
+  for (i = 0; i < G_N_ELEMENTS (epochs); i++) {
+    iter = &epochs[i];
+    if (g_strcmp0 (from_name, iter->name) == 0)
+      from = iter;
+    if (g_strcmp0 (to_name, iter->name) == 0)
+      to = iter;
+  }
+
+  if (from && to) {
+    out += GST_CLOCK_DIFF (from->unix_epoch_offset, to->unix_epoch_offset);
+    *timestamp = out;
+    return TRUE;
+  }
+
+  return FALSE;
+}
+
 /* Called with lock held */
 static gchar *
 gst_time_overlay_get_text (GstBaseTextOverlay * overlay,
@@ -206,6 +253,7 @@ gst_time_overlay_get_text (GstBaseTextOverlay * overlay,
       case GST_TIME_OVERLAY_TIME_LINE_REFERENCE_TIMESTAMP:
       {
         GstReferenceTimestampMeta *meta;
+        gpointer meta_iter = NULL;
 
         if (self->reference_timestamp_caps) {
           meta =
@@ -218,7 +266,12 @@ gst_time_overlay_get_text (GstBaseTextOverlay * overlay,
             ts = 0;
           }
         } else {
-          ts = 0;
+          while ((meta =
+                  (GstReferenceTimestampMeta *) gst_buffer_iterate_meta_filtered
+                  (video_frame, &meta_iter, GST_REFERENCE_TIMESTAMP_META_API_TYPE)))
+            if (gst_reference_timestamp_meta_convert (meta, "timestamp/x-ntp",
+                    &ts))
+              break;
         }
 
         break;
@@ -361,6 +414,9 @@ gst_time_overlay_class_init (GstTimeOverlayClass * klass)
           GST_TYPE_CAPS, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   gst_type_mark_as_plugin_api (GST_TYPE_TIME_OVERLAY_TIME_LINE, 0);
+
+  GST_DEBUG_CATEGORY_INIT (gst_time_overlay_debug, "timeoverlay", 0,
+      "timeoverlay interface");
 }
 
 static gboolean
@@ -398,8 +454,7 @@ gst_time_overlay_init (GstTimeOverlay * overlay)
   overlay->datetime_epoch = g_date_time_new_utc (1900, 1, 1, 0, 0, 0);
   overlay->datetime_format = g_strdup (DEFAULT_DATETIME_FORMAT);
 
-  overlay->reference_timestamp_caps =
-      gst_static_caps_get (&ntp_reference_timestamp_caps);
+  overlay->reference_timestamp_caps = NULL;
 
   context = textoverlay->pango_context;
 
