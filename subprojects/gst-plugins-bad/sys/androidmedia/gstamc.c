@@ -1483,7 +1483,10 @@ static const struct
       AACObjectMain, "main"}, {
       AACObjectLC, "lc"}, {
       AACObjectSSR, "ssr"}, {
-      AACObjectLTP, "ltp"}
+      AACObjectLTP, "ltp"}, {
+      AACObjectHE, "he-aac-v1"}, {
+      AACObjectLD, "ld"}, {
+      AACObjectHE_PS, "he-aac-v2"}
 };
 
 const gchar *
