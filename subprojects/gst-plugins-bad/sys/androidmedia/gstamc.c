@@ -510,8 +510,10 @@ static const struct
 } color_format_mapping_table[] = {
   {
       COLOR_FormatYUV420Planar, GST_VIDEO_FORMAT_I420}, {
+      COLOR_FormatYUV420PackedPlanar, GST_VIDEO_FORMAT_I420}, {
       COLOR_FormatYUV420Flexible, GST_VIDEO_FORMAT_I420}, {
       COLOR_FormatYUV420SemiPlanar, GST_VIDEO_FORMAT_NV12}, {
+      COLOR_FormatYUV420PackedSemiPlanar, GST_VIDEO_FORMAT_NV12}, {
       COLOR_TI_FormatYUV420PackedSemiPlanar, GST_VIDEO_FORMAT_NV12}, {
       COLOR_TI_FormatYUV420PackedSemiPlanarInterlaced, GST_VIDEO_FORMAT_NV12}, {
       COLOR_INTEL_FormatYUV420PackedSemiPlanar, GST_VIDEO_FORMAT_NV12}, {
