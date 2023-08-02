@@ -49,6 +49,7 @@ typedef struct _GstMpeg2decClass GstMpeg2decClass;
 typedef enum
 {
   MPEG2DEC_DISC_NONE            = 0,
+  MPEG2DEC_DISC_FLUSHING,
   MPEG2DEC_DISC_NEW_PICTURE,
   MPEG2DEC_DISC_NEW_KEYFRAME
 } DiscontState;
