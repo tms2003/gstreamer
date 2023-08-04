@@ -254,6 +254,7 @@ struct _GstURIDecodeBin3
   gulong db_pad_removed_id;
   gulong db_select_stream_id;
   gulong db_about_to_finish_id;
+  gulong db_select_decoder_id;
 
   /* 1 if shutting down */
   gint shutdown;
@@ -278,6 +279,8 @@ struct _GstURIDecodeBin3Class
 
     gint (*select_stream) (GstURIDecodeBin3 * dbin,
       GstStreamCollection * collection, GstStream * stream);
+    gboolean (*select_decoder) (GstURIDecodeBin3 * dbin,
+      GstStream * stream, GValue * decoder_factories);
 };
 
 GST_DEBUG_CATEGORY_STATIC (gst_uri_decode_bin3_debug);
@@ -289,6 +292,7 @@ enum
   SIGNAL_SELECT_STREAM,
   SIGNAL_SOURCE_SETUP,
   SIGNAL_ABOUT_TO_FINISH,
+  SIGNAL_SELECT_DECODER,
   LAST_SIGNAL
 };
 
@@ -581,6 +585,23 @@ gst_uri_decode_bin3_class_init (GstURIDecodeBin3Class * klass)
       g_signal_new ("about-to-finish", G_TYPE_FROM_CLASS (klass),
       G_SIGNAL_RUN_LAST, 0, NULL, NULL, NULL, G_TYPE_NONE, 0, G_TYPE_NONE);
 
+  /**
+   * GstURIDecodeBin3::select-decoder:
+   * @bin: the uridecodebin.
+   * @stream: a #GstStream
+   * @decoder_factories: a #GstValueArray of #GstElementFactory
+   *
+   * This signal is emitted when a reconfiguration is performed.
+   * It allows the subscriber to modify the order of the @decoder_factories list
+   * that will be instantiated/tested for the @stream.
+   *
+   * Returns: FALSE if the stream cannot be played
+   */
+  gst_uri_decode_bin3_signals[SIGNAL_SELECT_DECODER] =
+      g_signal_new ("select-decoder", G_TYPE_FROM_CLASS (klass),
+      G_SIGNAL_RUN_LAST, G_STRUCT_OFFSET (GstURIDecodeBin3Class,
+          select_decoder), NULL, NULL, NULL, G_TYPE_BOOLEAN, 2, GST_TYPE_STREAM,
+      G_TYPE_POINTER);
 
   gst_element_class_add_static_pad_template (gstelement_class,
       &video_src_template);
@@ -808,6 +829,29 @@ db_select_stream_cb (GstElement * decodebin,
 }
 
 static gboolean
+db_select_decoder_cb (GstElement * decodebin,
+    GstStream * stream, GValue * decoder_factories,
+    GstURIDecodeBin3 * uridecodebin)
+{
+  gboolean can_decode = GST_VALUE_HOLDS_ARRAY (decoder_factories) &&
+      gst_value_array_get_size (decoder_factories);
+  GValue args[3] = { {0}, {0}, {0} };
+  GValue ret = { 0 };
+
+  g_value_init (&args[0], GST_TYPE_ELEMENT);
+  g_value_set_object (&args[0], uridecodebin);
+  g_value_init (&args[1], GST_TYPE_STREAM);
+  g_value_set_object (&args[1], stream);
+  g_value_init (&args[2], G_TYPE_POINTER);
+  g_value_set_pointer (&args[2], decoder_factories);
+  g_value_init (&ret, G_TYPE_BOOLEAN);
+  g_value_set_boolean (&ret, can_decode);
+  g_signal_emitv (args,
+      gst_uri_decode_bin3_signals[SIGNAL_SELECT_DECODER], 0, &ret);
+  return g_value_get_boolean (&ret);
+}
+
+static gboolean
 check_pad_mode (GstElement * src, GstPad * pad, gpointer udata)
 {
   GstPadMode curmode = GST_PAD_MODE (pad);
@@ -914,6 +958,9 @@ gst_uri_decode_bin3_init (GstURIDecodeBin3 * dec)
   dec->db_about_to_finish_id =
       g_signal_connect (dec->decodebin, "about-to-finish",
       G_CALLBACK (db_about_to_finish_cb), dec);
+  dec->db_select_decoder_id =
+      g_signal_connect (dec->decodebin, "select-decoder",
+      G_CALLBACK (db_select_decoder_cb), dec);
 
   GST_OBJECT_FLAG_SET (dec, GST_ELEMENT_FLAG_SOURCE);
   gst_bin_set_suppressed_flags (GST_BIN (dec),
