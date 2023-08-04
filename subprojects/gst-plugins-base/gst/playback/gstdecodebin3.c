@@ -341,6 +341,8 @@ struct _GstDecodebin3Class
 
     gint (*select_stream) (GstDecodebin3 * dbin,
       GstStreamCollection * collection, GstStream * stream);
+    gboolean (*select_decoder) (GstDecodebin3 * dbin,
+      GstStream * stream, GValue * decoder_factories);
 };
 
 /* Input of decodebin, controls input pad and parsebin */
@@ -470,6 +472,7 @@ enum
 {
   SIGNAL_SELECT_STREAM,
   SIGNAL_ABOUT_TO_FINISH,
+  SIGNAL_SELECT_DECODER,
   LAST_SIGNAL
 };
 static guint gst_decodebin3_signals[LAST_SIGNAL] = { 0 };
@@ -585,6 +588,8 @@ static gboolean gst_decodebin3_send_event (GstElement * element,
     GstEvent * event);
 
 static void gst_decode_bin_update_factories_list (GstDecodebin3 * dbin);
+static GList *select_decoder (GstDecodebin3 * dbin, GstStream * s,
+    gboolean * ret);
 
 static DecodebinCollection *db_collection_new (GstStreamCollection *
     collection);
@@ -689,6 +694,22 @@ gst_decodebin3_class_init (GstDecodebin3Class * klass)
       g_signal_new ("about-to-finish", G_TYPE_FROM_CLASS (klass),
       G_SIGNAL_RUN_LAST, 0, NULL, NULL, NULL, G_TYPE_NONE, 0, G_TYPE_NONE);
 
+  /**
+   * GstDecodebin3::select-decoder:
+   * @decodebin: a #GstDecodebin3
+   * @stream: a #GstStream
+   * @decoder_factories: a #GstValueArray of #GstElementFactory
+   *
+   * This signal is emitted when a reconfiguration is performed.
+   * It allows the subscriber to modify the order of the @decoder_factories list
+   * that will be instantiated/tested for the @stream.
+   *
+   * Returns: FALSE if the stream cannot be played
+   */
+  gst_decodebin3_signals[SIGNAL_SELECT_DECODER] =
+      g_signal_new ("select-decoder", G_TYPE_FROM_CLASS (klass),
+      G_SIGNAL_RUN_LAST, G_STRUCT_OFFSET (GstDecodebin3Class, select_decoder),
+      NULL, NULL, NULL, G_TYPE_BOOLEAN, 2, GST_TYPE_STREAM, G_TYPE_POINTER);
 
   element_class->request_new_pad =
       GST_DEBUG_FUNCPTR (gst_decodebin3_request_new_pad);
@@ -3851,6 +3872,69 @@ check_downstream_reconfigure (GstPad * pad, GstPadProbeInfo * info,
   return GST_PAD_PROBE_REMOVE;
 }
 
+static void
+list_to_gst_array (GList * list, GValue * array)
+{
+  gst_value_array_init (array, 10);
+  for (GList * it = list; it; it = it->next) {
+    GValue val = { 0, };
+
+    g_value_init (&val, G_TYPE_POINTER);
+    g_value_set_pointer (&val, it->data);
+    gst_value_array_append_value (array, &val);
+    g_value_unset (&val);
+  }
+}
+
+static GList *
+gst_array_to_list (GValue * array)
+{
+  GList *ret = NULL;
+
+  for (guint i = 0; i < gst_value_array_get_size (array); i++) {
+    const GValue *val = gst_value_array_get_value (array, i);
+
+    if (G_VALUE_TYPE (val) != G_TYPE_POINTER)
+      continue;
+    ret = g_list_append (ret, gst_object_ref (g_value_get_pointer (val)));
+  }
+  return ret;
+}
+
+static GList *
+select_decoder (GstDecodebin3 * dbin, GstStream * s, gboolean * ret)
+{
+  GstCaps *caps = gst_stream_get_caps (s);
+  GList *factories = create_decoder_factory_list (dbin, caps),
+      *modifier_factories = NULL;
+  GValue decoder_factories = { 0, };
+  gboolean can_decode = factories != NULL;
+
+  list_to_gst_array (factories, &decoder_factories);
+  GST_DEBUG_OBJECT (dbin, "emit select decoder with %u factories for %s",
+      factories ? gst_value_array_get_size (&decoder_factories) : 0,
+      s->stream_id);
+
+  g_signal_emit (G_OBJECT (dbin), gst_decodebin3_signals[SIGNAL_SELECT_DECODER],
+      0, s, &decoder_factories, &can_decode);
+
+  if (can_decode && GST_VALUE_HOLDS_ARRAY (&decoder_factories) &&
+      gst_value_array_get_size (&decoder_factories)) {
+    GST_DEBUG_OBJECT (dbin, "got %u factories %s",
+        gst_value_array_get_size (&decoder_factories), s->stream_id);
+    modifier_factories = gst_array_to_list (&decoder_factories);
+  } else if (can_decode) {
+    GST_DEBUG_OBJECT (dbin, "using no decoder for %s", s->stream_id);
+  }
+  if (factories)
+    gst_plugin_feature_list_free (factories);
+  g_value_unset (&decoder_factories);
+  gst_caps_unref (caps);
+  if (ret)
+    *ret = can_decode;
+  return modifier_factories;
+}
+
 static GstPadProbeReturn
 reconfigure_from_downstream_probe (GstPad * pad, GstPadProbeInfo * info,
     DecodebinOutputStream * output)
@@ -3933,12 +4017,12 @@ remove_candidate_decoder (GstDecodebin3 * dbin, CandidateDecoder * candidate)
  */
 static gboolean
 db_output_stream_setup_decoder (DecodebinOutputStream * output,
-    GstCaps * new_caps, GstMessage ** msg)
+    GstCaps * new_caps, GstMessage ** msg, GList * factories)
 {
   gboolean ret = TRUE;
   GstDecodebin3 *dbin = output->dbin;
   MultiQueueSlot *slot = output->slot;
-  GList *factories, *next_factory;
+  GList *next_factory = factories;
 
   GST_DEBUG_OBJECT (dbin, "output %s:%s caps %" GST_PTR_FORMAT,
       GST_DEBUG_PAD_NAME (output->src_pad), new_caps);
@@ -3949,7 +4033,6 @@ db_output_stream_setup_decoder (DecodebinOutputStream * output,
     goto done;
   }
 
-  factories = next_factory = create_decoder_factory_list (dbin, new_caps);
   if (!next_factory) {
     GST_DEBUG ("Could not find an element for caps %" GST_PTR_FORMAT, new_caps);
     g_assert (output->decoder == NULL);
@@ -4101,8 +4184,12 @@ db_output_stream_reconfigure (DecodebinOutputStream * output, GstMessage ** msg)
   GstCaps *new_caps = (GstCaps *) gst_stream_get_caps (slot->active_stream);
   gboolean needs_decoder;
   gboolean ret = TRUE;
+  GList *factories;
 
-  needs_decoder = gst_caps_can_intersect (new_caps, dbin->caps) != TRUE;
+  factories = select_decoder (dbin, slot->active_stream, NULL);
+
+  needs_decoder = factories &&
+      gst_caps_can_intersect (new_caps, dbin->caps) != TRUE;
 
   GST_DEBUG_OBJECT (dbin,
       "Reconfiguring output %s:%s to slot %s:%s, needs_decoder:%d",
@@ -4137,7 +4224,7 @@ db_output_stream_reconfigure (DecodebinOutputStream * output, GstMessage ** msg)
     db_output_stream_reset (output);
 
     /* Setup the decoder */
-    ret = db_output_stream_setup_decoder (output, new_caps, msg);
+    ret = db_output_stream_setup_decoder (output, new_caps, msg, factories);
   }
 
   gst_caps_unref (new_caps);
