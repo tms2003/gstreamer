@@ -3810,6 +3810,64 @@ decode_pad_set_target (GstGhostPad * pad, GstPad * target)
   return res;
 }
 
+static gboolean
+prefered_caps_differ (GstCaps * caps0, GstCaps * caps1)
+{
+  const gchar *caps0_name, *caps1_name;
+
+  if (gst_caps_get_size (caps0) == 0 || gst_caps_get_size (caps1) == 0)
+    return TRUE;
+
+  caps0_name = gst_structure_get_name (gst_caps_get_structure (caps0, 0));
+  caps1_name = gst_structure_get_name (gst_caps_get_structure (caps1, 0));
+
+  return g_strcmp0 (caps0_name, caps1_name) != 0;
+}
+
+static GstPadProbeReturn
+check_downstream_reconfigure (GstPad * pad, GstPadProbeInfo * info,
+    DecodebinOutputStream * output)
+{
+  GstCaps *src_caps = gst_pad_get_current_caps (output->src_pad),
+      *downstream_caps;
+
+  if (!src_caps)
+    return GST_PAD_PROBE_REMOVE;
+
+  /* check that we are using the format prefered downstream */
+  downstream_caps = gst_pad_peer_query_caps (output->src_pad, NULL);
+  GST_DEBUG_OBJECT (output->src_pad,
+      "downstream %" GST_PTR_FORMAT " current %" GST_PTR_FORMAT,
+      downstream_caps, src_caps);
+
+  if (prefered_caps_differ (src_caps, downstream_caps)) {
+    GST_DEBUG_OBJECT (output->dbin, "reconfiguration is needed");
+    SELECTION_LOCK (output->dbin);
+    db_output_stream_reconfigure (output, NULL);
+    SELECTION_UNLOCK (output->dbin);
+  }
+  gst_caps_unref (src_caps);
+  gst_caps_unref (downstream_caps);
+  return GST_PAD_PROBE_REMOVE;
+}
+
+static GstPadProbeReturn
+reconfigure_from_downstream_probe (GstPad * pad, GstPadProbeInfo * info,
+    DecodebinOutputStream * output)
+{
+  GstEvent *event = GST_PAD_PROBE_INFO_EVENT (info);
+
+  if (GST_EVENT_TYPE (event) != GST_EVENT_RECONFIGURE)
+    return GST_PAD_PROBE_OK;
+
+  GST_DEBUG_OBJECT (output->src_pad, "got a reconfigure from downstream");
+
+  gst_pad_add_probe (output->slot->src_pad,
+      GST_PAD_PROBE_TYPE_BLOCK_DOWNSTREAM,
+      (GstPadProbeCallback) check_downstream_reconfigure, output, NULL);
+  return GST_PAD_PROBE_OK;
+}
+
 static void
 db_output_stream_expose_src_pad (DecodebinOutputStream * output)
 {
@@ -3832,6 +3890,8 @@ db_output_stream_expose_src_pad (DecodebinOutputStream * output)
 
   output->src_exposed = TRUE;
   gst_element_add_pad (GST_ELEMENT_CAST (slot->dbin), output->src_pad);
+  gst_pad_add_probe (output->src_pad, GST_PAD_PROBE_TYPE_EVENT_UPSTREAM,
+      (GstPadProbeCallback) reconfigure_from_downstream_probe, output, NULL);
 }
 
 static CandidateDecoder *
