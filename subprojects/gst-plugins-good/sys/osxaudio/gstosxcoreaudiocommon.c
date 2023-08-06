@@ -298,6 +298,55 @@ gst_core_audio_set_channel_layout (GstCoreAudio * core_audio,
   return ret;
 }
 
+void
+gst_core_audio_parse_channel_map (GstCoreAudio * core_audio,
+    const char *channel_map_s)
+{
+  SInt32 *channel_map = NULL;
+  char **chs = g_strsplit (channel_map_s, ",", 0);
+  guint32 num_chs = g_strv_length (chs);
+
+  if (num_chs >= GST_OSX_AUDIO_MAX_CHANNEL) {
+    GST_ERROR_OBJECT (core_audio, "Too many channels %u requested, max is %u",
+        num_chs, GST_OSX_AUDIO_MAX_CHANNEL);
+    goto done;
+  }
+
+  channel_map = g_malloc0_n (sizeof (SInt32), num_chs);
+
+  for (int i = 0; i < num_chs; i++) {
+    gint64 ch = g_ascii_strtoll (chs[i], NULL, 0);
+    if (ch >= GST_OSX_AUDIO_MAX_CHANNEL || ch < -1) {
+      GST_WARNING_OBJECT (core_audio, "Invalid channel idx %"
+          G_GINT64_FORMAT ", skipping", ch);
+      ch = -1;
+    }
+    channel_map[i] = ch;
+  }
+
+  core_audio->channel_map = channel_map;
+  core_audio->channel_map_len = num_chs;
+done:
+  g_strfreev (chs);
+}
+
+/* The AudioUnit must be uninitialized before calling this */
+gboolean
+gst_core_audio_set_channel_map (GstCoreAudio * core_audio, guint32 channels)
+{
+  guint32 size = core_audio->channel_map_len * sizeof (SInt32);
+
+  g_return_val_if_fail (channels <= GST_OSX_AUDIO_MAX_CHANNEL, FALSE);
+
+  if (core_audio->channel_map_len > channels)
+    GST_WARNING_OBJECT (core_audio->osxbuf, "Too many channels in channel map: "
+        "total channels are %u, channel map has %u", channels,
+        core_audio->channel_map_len);
+
+  return _core_audio_set_property (core_audio,
+      kAudioOutputUnitProperty_ChannelMap, core_audio->channel_map, size);
+}
+
 /* The AudioUnit must be uninitialized before calling this */
 gboolean
 gst_core_audio_set_format (GstCoreAudio * core_audio,

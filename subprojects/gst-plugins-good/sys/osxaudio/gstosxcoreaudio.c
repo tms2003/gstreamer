@@ -108,6 +108,8 @@ gst_core_audio_new (GstObject * osxbuf)
   core_audio = g_object_new (GST_TYPE_CORE_AUDIO, NULL);
   core_audio->osxbuf = osxbuf;
   core_audio->cached_caps = NULL;
+  core_audio->channel_map = NULL;
+  core_audio->channel_map_len = 0;
   return core_audio;
 }
 
@@ -137,6 +139,8 @@ gst_core_audio_close (GstCoreAudio * core_audio)
 
   AudioComponentInstanceDispose (core_audio->audiounit);
   core_audio->audiounit = NULL;
+  g_clear_pointer (&core_audio->channel_map, g_free);
+  core_audio->channel_map_len = 0;
   return TRUE;
 }
 

@@ -1172,6 +1172,9 @@ gst_core_audio_initialize_impl (GstCoreAudio * core_audio,
             format.mChannelsPerFrame, caps))
       goto done;
 
+    if (!gst_core_audio_set_channel_map (core_audio, format.mChannelsPerFrame))
+      goto done;
+
     if (core_audio->is_src) {
       propertySize = sizeof (*frame_size);
       status = AudioUnitGetProperty (core_audio->audiounit, kAudioDevicePropertyBufferFrameSize, kAudioUnitScope_Global, 0,     /* N/A for global */

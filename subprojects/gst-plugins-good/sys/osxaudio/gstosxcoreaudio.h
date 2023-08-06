@@ -92,6 +92,8 @@ struct _GstCoreAudio
   gint stream_idx;
   gboolean io_proc_active;
   gboolean io_proc_needs_deactivation;
+  SInt32 * channel_map;
+  guint32 channel_map_len;
 
   /* For LPCM in/out */
   AudioUnit audiounit;

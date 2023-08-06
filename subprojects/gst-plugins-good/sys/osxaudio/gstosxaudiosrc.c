@@ -62,6 +62,7 @@
 #include <gst/gst.h>
 #include "gstosxaudiosrc.h"
 #include "gstosxaudioelement.h"
+#include "gstosxcoreaudiocommon.h"
 
 GST_DEBUG_CATEGORY_STATIC (osx_audiosrc_debug);
 #define GST_CAT_DEFAULT osx_audiosrc_debug
@@ -76,7 +77,8 @@ enum
 enum
 {
   ARG_0,
-  ARG_DEVICE
+  ARG_DEVICE,
+  ARG_INPUT_CHANNELS,
 };
 
 static GstStaticPadTemplate src_factory = GST_STATIC_PAD_TEMPLATE ("src",
@@ -149,6 +151,12 @@ gst_osx_audio_src_class_init (GstOsxAudioSrcClass * klass)
       g_param_spec_int ("device", "Device ID", "Device ID of input device",
           0, G_MAXINT, 0, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
+  g_object_class_install_property (gobject_class, ARG_INPUT_CHANNELS,
+      g_param_spec_string ("input-channels", "Input Channels",
+          "Comma-separated list of audio channels to capture", NULL,
+          GST_PARAM_MUTABLE_READY | G_PARAM_READWRITE |
+          G_PARAM_STATIC_STRINGS));
+
   gstaudiobasesrc_class->create_ringbuffer =
       GST_DEBUG_FUNCPTR (gst_osx_audio_src_create_ringbuffer);
 
@@ -166,6 +174,7 @@ gst_osx_audio_src_init (GstOsxAudioSrc * src)
   gst_base_src_set_live (GST_BASE_SRC (src), TRUE);
 
   src->device_id = kAudioDeviceUnknown;
+  src->channel_map = NULL;
 }
 
 static void
@@ -177,6 +186,9 @@ gst_osx_audio_src_set_property (GObject * object, guint prop_id,
   switch (prop_id) {
     case ARG_DEVICE:
       src->device_id = g_value_get_int (value);
+      break;
+    case ARG_INPUT_CHANNELS:
+      src->channel_map = g_value_dup_string (value);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -193,6 +205,9 @@ gst_osx_audio_src_get_property (GObject * object, guint prop_id,
   switch (prop_id) {
     case ARG_DEVICE:
       g_value_set_int (value, src->device_id);
+      break;
+    case ARG_INPUT_CHANNELS:
+      g_value_set_string (value, src->channel_map);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -322,6 +337,10 @@ gst_osx_audio_src_create_ringbuffer (GstAudioBaseSrc * src)
    */
   if (ringbuffer->core_audio->device_id != osxsrc->device_id)
     ringbuffer->core_audio->device_id = osxsrc->device_id;
+
+  if (osxsrc->channel_map)
+    gst_core_audio_parse_channel_map (ringbuffer->core_audio,
+        osxsrc->channel_map);
 
   return GST_AUDIO_RING_BUFFER (ringbuffer);
 }
