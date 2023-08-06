@@ -27,6 +27,7 @@
 GST_DEBUG_CATEGORY_STATIC (osx_audio_debug);
 #define GST_CAT_DEFAULT osx_audio_debug
 
+#define gst_core_audio_parent_class parent_class
 G_DEFINE_TYPE (GstCoreAudio, gst_core_audio, G_TYPE_OBJECT);
 
 #ifdef HAVE_IOS
@@ -35,10 +36,26 @@ G_DEFINE_TYPE (GstCoreAudio, gst_core_audio, G_TYPE_OBJECT);
 #include "gstosxcoreaudiohal.c"
 #endif
 
+static void
+gst_core_audio_finalize (GObject * object)
+{
+  GstCoreAudio *core_audio;
+
+  core_audio = GST_CORE_AUDIO (object);
+
+  g_mutex_clear (&core_audio->io_proc_lock);
+
+  G_OBJECT_CLASS (parent_class)->finalize (object);
+}
 
 static void
 gst_core_audio_class_init (GstCoreAudioClass * klass)
 {
+  GObjectClass *gobject_class;
+
+  gobject_class = (GObjectClass *) klass;
+  parent_class = g_type_class_peek_parent (klass);
+  gobject_class->finalize = gst_core_audio_finalize;
 }
 
 static void
@@ -54,6 +71,7 @@ gst_core_audio_init (GstCoreAudio * core_audio)
   core_audio->hog_pid = -1;
   core_audio->disabled_mixing = FALSE;
 #endif
+  g_mutex_init (&core_audio->io_proc_lock);
 }
 
 static gboolean

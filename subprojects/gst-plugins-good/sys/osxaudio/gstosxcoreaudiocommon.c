@@ -23,7 +23,16 @@
 
 #include "gstosxcoreaudiocommon.h"
 
-void
+static OSStatus gst_core_audio_render_notify (GstCoreAudio * core_audio,
+    AudioUnitRenderActionFlags * ioActionFlags,
+    const AudioTimeStamp * inTimeStamp,
+    unsigned int inBusNumber,
+    unsigned int inNumberFrames, AudioBufferList * ioData);
+
+/**
+ * core_audio->io_proc_lock must be held before calling!
+*/
+static void
 gst_core_audio_remove_render_callback (GstCoreAudio * core_audio)
 {
   AURenderCallbackStruct input;
@@ -57,7 +66,7 @@ gst_core_audio_remove_render_callback (GstCoreAudio * core_audio)
   core_audio->io_proc_active = FALSE;
 }
 
-OSStatus
+static OSStatus
 gst_core_audio_render_notify (GstCoreAudio * core_audio,
     AudioUnitRenderActionFlags * ioActionFlags,
     const AudioTimeStamp * inTimeStamp,
@@ -71,12 +80,31 @@ gst_core_audio_render_notify (GstCoreAudio * core_audio,
    * work around some thread-safety issues in CoreAudio
    */
   if ((*ioActionFlags) & kAudioUnitRenderAction_PreRender) {
+    // core_audio->io_proc_lock held before call to AudioUnitRender
     if (core_audio->io_proc_needs_deactivation) {
       gst_core_audio_remove_render_callback (core_audio);
     }
   }
 
   return noErr;
+}
+
+static OSStatus
+gst_core_audio_io_proc_callback (GstCoreAudio * core_audio,
+    AudioUnitRenderActionFlags * ioActionFlags,
+    const AudioTimeStamp * inTimeStamp,
+    UInt32 inBusNumber, UInt32 inNumberFrames, AudioBufferList * bufferList)
+{
+  OSStatus status = 0;
+  g_mutex_lock (&core_audio->io_proc_lock);
+  if (core_audio->io_proc_active) {
+    status =
+        core_audio->element->io_proc (core_audio->osxbuf, ioActionFlags,
+        inTimeStamp, inBusNumber, inNumberFrames, bufferList);
+  }
+  g_mutex_unlock (&core_audio->io_proc_lock);
+
+  return status;
 }
 
 gboolean
@@ -86,6 +114,7 @@ gst_core_audio_io_proc_start (GstCoreAudio * core_audio)
   AURenderCallbackStruct input;
   AudioUnitPropertyID callback_type;
 
+  g_mutex_lock (&core_audio->io_proc_lock);
   GST_DEBUG_OBJECT (core_audio->osxbuf,
       "osx ring buffer start ioproc: %p device_id %lu",
       core_audio->element->io_proc, (gulong) core_audio->device_id);
@@ -94,8 +123,8 @@ gst_core_audio_io_proc_start (GstCoreAudio * core_audio)
         kAudioOutputUnitProperty_SetInputCallback :
         kAudioUnitProperty_SetRenderCallback;
 
-    input.inputProc = (AURenderCallback) core_audio->element->io_proc;
-    input.inputProcRefCon = core_audio->osxbuf;
+    input.inputProc = (AURenderCallback) gst_core_audio_io_proc_callback;
+    input.inputProcRefCon = core_audio;
 
     status = AudioUnitSetProperty (core_audio->audiounit, callback_type, kAudioUnitScope_Global, 0,     /* N/A for global */
         &input, sizeof (input));
@@ -103,6 +132,7 @@ gst_core_audio_io_proc_start (GstCoreAudio * core_audio)
     if (status) {
       GST_ERROR_OBJECT (core_audio->osxbuf,
           "AudioUnitSetProperty failed: %d", (int) status);
+      g_mutex_unlock (&core_audio->io_proc_lock);
       return FALSE;
     }
     // ### does it make sense to do this notify stuff for input mode?
@@ -112,12 +142,14 @@ gst_core_audio_io_proc_start (GstCoreAudio * core_audio)
     if (status) {
       GST_ERROR_OBJECT (core_audio->osxbuf,
           "AudioUnitAddRenderNotify failed %d", (int) status);
+      g_mutex_unlock (&core_audio->io_proc_lock);
       return FALSE;
     }
     core_audio->io_proc_active = TRUE;
   }
 
   core_audio->io_proc_needs_deactivation = FALSE;
+  g_mutex_unlock (&core_audio->io_proc_lock);
 
   status = AudioOutputUnitStart (core_audio->audiounit);
   if (status) {
@@ -143,9 +175,11 @@ gst_core_audio_io_proc_stop (GstCoreAudio * core_audio)
         "AudioOutputUnitStop failed: %d", (int) status);
   }
   // ###: why is it okay to directly remove from here but not from pause() ?
+  g_mutex_lock (&core_audio->io_proc_lock);
   if (core_audio->io_proc_active) {
     gst_core_audio_remove_render_callback (core_audio);
   }
+  g_mutex_unlock (&core_audio->io_proc_lock);
   return TRUE;
 }
 

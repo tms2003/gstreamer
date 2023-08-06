@@ -34,8 +34,6 @@ gboolean gst_core_audio_bind_device                       (GstCoreAudio *core_au
 
 void gst_core_audio_dump_channel_layout                   (AudioChannelLayout * channel_layout);
 
-void gst_core_audio_remove_render_callback                (GstCoreAudio * core_audio);
-
 gboolean gst_core_audio_io_proc_start                     (GstCoreAudio * core_audio);
 
 gboolean gst_core_audio_io_proc_stop                      (GstCoreAudio * core_audio);
@@ -53,13 +51,6 @@ gboolean gst_core_audio_set_channel_layout                (GstCoreAudio * core_a
 gboolean gst_core_audio_open_device                       (GstCoreAudio *core_audio,
                                                            OSType sub_type,
                                                            const gchar *adesc);
-
-OSStatus gst_core_audio_render_notify                     (GstCoreAudio * core_audio,
-                                                           AudioUnitRenderActionFlags * ioActionFlags,
-                                                           const AudioTimeStamp * inTimeStamp,
-                                                           unsigned int inBusNumber,
-                                                           unsigned int inNumberFrames,
-                                                           AudioBufferList * ioData);
 
 AudioChannelLabel gst_audio_channel_position_to_core_audio (GstAudioChannelPosition position, int channel);
 
