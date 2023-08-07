@@ -241,7 +241,6 @@ gst_play_sink_convert_bin_sink_event (GstPad * pad, GstObject * parent,
     GstEvent * event)
 {
   GstPlaySinkConvertBin *self = GST_PLAY_SINK_CONVERT_BIN (parent);
-  gboolean ret;
 
   switch (GST_EVENT_TYPE (event)) {
     case GST_EVENT_CAPS:
@@ -256,11 +255,7 @@ gst_play_sink_convert_bin_sink_event (GstPad * pad, GstObject * parent,
       break;
   }
 
-  ret = gst_pad_event_default (pad, parent, gst_event_ref (event));
-
-  gst_event_unref (event);
-
-  return ret;
+  return gst_pad_event_default (pad, parent, event);
 }
 
 static void
