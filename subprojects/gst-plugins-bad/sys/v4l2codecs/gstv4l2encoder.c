@@ -695,7 +695,7 @@ gst_v4l2_encoder_dequeue_sink (GstV4l2Encoder * self)
 
 static gboolean
 gst_v4l2_encoder_dequeue_src (GstV4l2Encoder * self, guint32 * out_frame_num,
-    guint32 * bytesused)
+    guint32 * bytesused, guint32 * flags)
 {
   gint ret;
   struct v4l2_plane planes[GST_VIDEO_MAX_PLANES] = { {0} };
@@ -717,6 +717,7 @@ gst_v4l2_encoder_dequeue_src (GstV4l2Encoder * self, guint32 * out_frame_num,
 
   *out_frame_num = buf.timestamp.tv_usec;
   *bytesused = buf.m.planes[0].bytesused;
+  *flags = buf.flags;
 
   GST_TRACE_OBJECT (self, "Dequeued bitstream buffer %i, %d bytes used",
       buf.index, buf.m.planes[0].bytesused);
@@ -1136,7 +1137,7 @@ gst_v4l2_encoder_request_queue (GstV4l2Request * request, guint flags)
 
 gint
 gst_v4l2_encoder_request_set_done (GstV4l2Request * request,
-    guint32 * bytesused)
+    guint32 * bytesused, guint32 * flags)
 {
   GstV4l2Encoder *encoder = request->encoder;
   GstV4l2Request *pending_req = NULL;
@@ -1166,7 +1167,7 @@ gst_v4l2_encoder_request_set_done (GstV4l2Request * request,
 
     if (!pending_req->hold_pic_buf) {
       guint32 frame_num = G_MAXUINT32;
-      if (!gst_v4l2_encoder_dequeue_src (encoder, &frame_num, bytesused)) {
+      if (!gst_v4l2_encoder_dequeue_src (encoder, &frame_num, bytesused, flags)) {
         pending_req->failed = TRUE;
       } else if (frame_num != pending_req->frame_num) {
         GST_WARNING_OBJECT (encoder,

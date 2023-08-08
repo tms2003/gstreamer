@@ -542,6 +542,7 @@ gst_v4l2_codec_vp8_enc_encode_frame (GstVp8Encoder * encoder,
   GstVideoCodecFrame *frame = vp8_frame->frame;
   GstBuffer *resized_buffer;
   guint32 bytesused;
+  guint32 flags;
 
   /* *INDENT-OFF* */
   struct v4l2_ext_control control[] = {
@@ -596,7 +597,7 @@ gst_v4l2_codec_vp8_enc_encode_frame (GstVp8Encoder * encoder,
     goto done;
   }
 
-  if (!gst_v4l2_encoder_request_set_done (request, &bytesused)) {
+  if (!gst_v4l2_encoder_request_set_done (request, &bytesused, &flags)) {
     GST_ELEMENT_ERROR (self, RESOURCE, WRITE,
         ("Driver did not ack the request."), (NULL));
     goto done;
@@ -608,6 +609,14 @@ gst_v4l2_codec_vp8_enc_encode_frame (GstVp8Encoder * encoder,
       GST_BUFFER_COPY_MEMORY | GST_BUFFER_COPY_DEEP, 0, bytesused);
   gst_buffer_replace (&frame->output_buffer, resized_buffer);
   gst_buffer_unref (resized_buffer);
+
+  if (flags & V4L2_BUF_FLAG_KEYFRAME) {
+    GST_BUFFER_FLAG_UNSET (frame->output_buffer, GST_BUFFER_FLAG_DELTA_UNIT);
+    GST_VIDEO_CODEC_FRAME_SET_SYNC_POINT (frame);
+  } else {
+    GST_BUFFER_FLAG_SET (frame->output_buffer, GST_BUFFER_FLAG_DELTA_UNIT);
+    GST_VIDEO_CODEC_FRAME_UNSET_SYNC_POINT (frame);
+  }
 
   return gst_video_encoder_finish_frame (venc, frame);
 

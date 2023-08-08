@@ -128,7 +128,7 @@ void              gst_v4l2_encoder_ro_request_unref (GstV4l2Request * request);
 gboolean          gst_v4l2_encoder_request_queue (GstV4l2Request * request,
                                                   guint flags);
 
-gint              gst_v4l2_encoder_request_set_done (GstV4l2Request * request, guint32 * bytesused);
+gint              gst_v4l2_encoder_request_set_done (GstV4l2Request * request, guint32 * bytesused, guint32 * flags);
 
 gboolean          gst_v4l2_encoder_request_failed (GstV4l2Request * request);
 
