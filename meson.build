@@ -635,6 +635,10 @@ if dotnet_format.found()
     )
 endif
 
+if not get_option('gst-indent').disabled()
+  subproject('gst-indent')
+endif
+
 summary({
   'gstreamer-full library': building_full,
   'gstreamer-full target type': get_option('gst-full-target-type'),
