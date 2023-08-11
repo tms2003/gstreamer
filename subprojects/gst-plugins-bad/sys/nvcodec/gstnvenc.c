@@ -34,16 +34,6 @@
 #include <gst/gl/gl.h>
 #endif
 
-#ifdef _WIN32
-#ifdef _WIN64
-#define NVENC_LIBRARY_NAME "nvEncodeAPI64.dll"
-#else
-#define NVENC_LIBRARY_NAME "nvEncodeAPI.dll"
-#endif
-#else
-#define NVENC_LIBRARY_NAME "libnvidia-encode.so.1"
-#endif
-
 /* For backward compatibility */
 #define GST_NVENC_MIN_API_MAJOR_VERSION 8
 #define GST_NVENC_MIN_API_MINOR_VERSION 1

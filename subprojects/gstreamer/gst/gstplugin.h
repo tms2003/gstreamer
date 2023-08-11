@@ -392,6 +392,11 @@ void                    gst_plugin_add_dependency_simple (GstPlugin   * plugin,
                                                           const gchar * paths,
                                                           const gchar * names,
                                                           GstPluginDependencyFlags flags);
+
+GST_API
+void                    gst_plugin_add_library_dependency (GstPlugin    * plugin,
+                                                           const gchar ** libs);
+
 GST_API
 void                    gst_plugin_list_free (GList *list);
 

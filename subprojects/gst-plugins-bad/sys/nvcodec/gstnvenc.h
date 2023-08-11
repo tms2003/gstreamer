@@ -28,6 +28,16 @@
 
 G_BEGIN_DECLS
 
+#ifdef G_OS_WIN32
+  #ifdef _WIN64
+    #define NVENC_LIBRARY_NAME "nvEncodeAPI64.dll"
+  #else
+    #define NVENC_LIBRARY_NAME "nvEncodeAPI.dll"
+  #endif
+#else
+  #define NVENC_LIBRARY_NAME "libnvidia-encode.so.1"
+#endif
+
 gboolean                gst_nvenc_cmp_guid (GUID g1, GUID g2);
 
 NV_ENC_BUFFER_FORMAT    gst_nvenc_get_nv_buffer_format (GstVideoFormat fmt);

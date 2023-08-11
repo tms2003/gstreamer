@@ -24,12 +24,6 @@
 #include "gstcuvidloader.h"
 #include <gmodule.h>
 
-#ifdef G_OS_WIN32
-#define NVCUVID_LIBNAME "nvcuvid.dll"
-#else
-#define NVCUVID_LIBNAME "libnvcuvid.so.1"
-#endif
-
 #define LOAD_SYMBOL(name,func,mandatory) G_STMT_START { \
   if (!g_module_symbol (module, G_STRINGIFY (name), (gpointer *) &vtable->func)) { \
     if (mandatory) { \

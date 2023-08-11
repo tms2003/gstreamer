@@ -48,6 +48,9 @@ plugin_init (GstPlugin * plugin)
   AMFFactory *amf_factory;
   ComPtr < IDXGIFactory1 > factory;
   HRESULT hr;
+  const gchar *lib_deps[] = { AMF_DLL_NAMEA, NULL };
+
+  gst_plugin_add_library_dependency (plugin, lib_deps);
 
   if (!IsWindows8OrGreater ())
     return TRUE;

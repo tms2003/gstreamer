@@ -26,6 +26,12 @@
 
 G_BEGIN_DECLS
 
+#ifdef G_OS_WIN32
+#define NVCUVID_LIBNAME "nvcuvid.dll"
+#else
+#define NVCUVID_LIBNAME "libnvcuvid.so.1"
+#endif
+
 /* cuvid.h */
 gboolean gst_cuvid_load_library     (guint api_major_ver,
                                      guint api_minor_ver);

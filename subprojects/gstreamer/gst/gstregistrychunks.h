@@ -82,9 +82,11 @@ typedef struct _GstRegistryChunkDep
   guint n_env_vars;
   guint n_paths;
   guint n_names;
+  guint n_libs;
 
   guint env_hash;
   guint stat_hash;
+  guint libs_hash;
 } GstRegistryChunkDep;
 
 /*

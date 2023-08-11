@@ -403,9 +403,11 @@ gst_registry_chunks_save_plugin_dep (GList ** list, GstPluginDep * dep)
   ed->n_env_vars = 0;
   ed->n_paths = 0;
   ed->n_names = 0;
+  ed->n_libs = 0;
 
   ed->env_hash = dep->env_hash;
   ed->stat_hash = dep->stat_hash;
+  ed->libs_hash = dep->libs_hash;
 
   for (s = dep->env_vars; s != NULL && *s != NULL; ++s, ++ed->n_env_vars)
     gst_registry_chunks_save_string (list, g_strdup (*s));
@@ -414,6 +416,9 @@ gst_registry_chunks_save_plugin_dep (GList ** list, GstPluginDep * dep)
     gst_registry_chunks_save_string (list, g_strdup (*s));
 
   for (s = dep->names; s != NULL && *s != NULL; ++s, ++ed->n_names)
+    gst_registry_chunks_save_string (list, g_strdup (*s));
+
+  for (s = dep->libs; s != NULL && *s != NULL; ++s, ++ed->n_libs)
     gst_registry_chunks_save_string (list, g_strdup (*s));
 
   *list = g_list_prepend (*list, chk);
@@ -785,9 +790,11 @@ gst_registry_chunks_load_plugin_dep (GstPlugin * plugin, gchar ** in,
 
   dep->env_hash = d->env_hash;
   dep->stat_hash = d->stat_hash;
+  dep->libs_hash = d->libs_hash;
 
   dep->flags = (GstPluginDependencyFlags) d->flags;
 
+  dep->libs = gst_registry_chunks_load_plugin_dep_strv (in, end, d->n_libs);
   dep->names = gst_registry_chunks_load_plugin_dep_strv (in, end, d->n_names);
   dep->paths = gst_registry_chunks_load_plugin_dep_strv (in, end, d->n_paths);
   dep->env_vars =
@@ -803,6 +810,8 @@ gst_registry_chunks_load_plugin_dep (GstPlugin * plugin, gchar ** in,
     GST_LOG_OBJECT (plugin, " path: %s", *s);
   for (s = dep->names; s != NULL && *s != NULL; ++s)
     GST_LOG_OBJECT (plugin, " name: %s", *s);
+  for (s = dep->libs; s != NULL && *s != NULL; ++s)
+    GST_LOG_OBJECT (plugin, " lib: %s", *s);
 
   return TRUE;
 fail:
