@@ -23,7 +23,6 @@
 #include <gst/video/video.h>
 #include <gst/base/base.h>
 #include "gstdwrite-utils.h"
-#include "gstdwrite-enums.h"
 
 G_BEGIN_DECLS
 
@@ -63,8 +62,7 @@ G_DECLARE_FINAL_TYPE (GstDWriteOverlayObject,
 
 GstDWriteOverlayObject * gst_dwrite_overlay_object_new (void);
 
-gboolean  gst_dwrite_overlay_object_start (GstDWriteOverlayObject * object,
-                                           IDWriteFactory * dwrite_factory);
+gboolean  gst_dwrite_overlay_object_start (GstDWriteOverlayObject * object);
 
 gboolean  gst_dwrite_overlay_object_stop  (GstDWriteOverlayObject * object);
 
@@ -86,9 +84,7 @@ gboolean  gst_dwrite_overlay_object_propose_allocation (GstDWriteOverlayObject *
 
 gboolean  gst_dwrite_overlay_object_set_caps (GstDWriteOverlayObject * object,
                                               GstElement * elem,
-                                              GstCaps * in_caps,
                                               GstCaps * out_caps,
-                                              GstVideoInfo * info,
                                               GstDWriteBlendMode * selected_mode);
 
 gboolean  gst_dwrite_overlay_object_update_device (GstDWriteOverlayObject * object,
@@ -100,10 +96,9 @@ GstFlowReturn gst_dwrite_overlay_object_prepare_output (GstDWriteOverlayObject *
                                                         GstBuffer * inbuf,
                                                         GstBuffer ** outbuf);
 
-gboolean  gst_dwrite_overlay_object_draw (GstDWriteOverlayObject * object,
-                                          GstBuffer * buffer,
-                                          IDWriteTextLayout * layout,
-                                          gint x,
-                                          gint y);
+GstFlowReturn gst_dwrite_overlay_object_draw (GstDWriteOverlayObject * object,
+                                              GstTextLayout * layout,
+                                              gboolean enable_color_font,
+                                              GstBuffer * buffer);
 
 G_END_DECLS

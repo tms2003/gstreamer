@@ -19,14 +19,12 @@
 
 #pragma once
 
-#include "gstdwritebaseoverlay.h"
+#include <gst/textlayoutoverlay/gstbasesubtitleoverlay.h>
 
 G_BEGIN_DECLS
 
 #define GST_TYPE_DWRITE_TEXT_OVERLAY (gst_dwrite_text_overlay_get_type())
 G_DECLARE_FINAL_TYPE (GstDWriteTextOverlay,
-    gst_dwrite_text_overlay, GST, DWRITE_TEXT_OVERLAY, GstDWriteBaseOverlay);
-
-void gst_dwrite_text_overlay_build_param_specs (std::vector<GParamSpec *> & pspec);
+    gst_dwrite_text_overlay, GST, DWRITE_TEXT_OVERLAY, GstBaseSubtitleOverlay);
 
 G_END_DECLS

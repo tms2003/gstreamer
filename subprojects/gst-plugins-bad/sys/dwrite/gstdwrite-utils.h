@@ -20,32 +20,16 @@
 #pragma once
 
 #include <gst/gst.h>
+#include <gst/d3d11/gstd3d11.h>
+#include <d2d1_1.h>
+#include <dwrite_2.h>
+
+#ifdef HAVE_DWRITE_COLOR_FONT
+#include <d2d1_3.h>
+#include <dwrite_3.h>
+#endif
 
 G_BEGIN_DECLS
-
-typedef struct
-{
-  GstMeta meta;
-
-  GstStream *stream;
-  GstBuffer *subtitle;
-
-  /*< private >*/
-  gpointer _gst_reserved[GST_PADDING];
-} GstDWriteSubtitleMeta;
-
-GType gst_dwrite_subtitle_meta_api_get_type (void);
-#define GST_DWRITE_SUBTITLE_META_API_TYPE (gst_dwrite_subtitle_meta_api_get_type())
-
-const GstMetaInfo * gst_dwrite_subtitle_meta_get_info (void);
-#define GST_DWRITE_SUBTITLE_META_INFO (gst_dwrite_subtitle_meta_get_info())
-
-#define gst_buffer_get_dwrite_subtitle_meta(b) \
-    ((GstDWriteSubtitleMeta *) gst_buffer_get_meta((b), GST_DWRITE_SUBTITLE_META_API_TYPE))
-
-GstDWriteSubtitleMeta * gst_buffer_add_dwrite_subtitle_meta (GstBuffer * buffer,
-                                                             GstStream * stream,
-                                                             GstBuffer * subtitle);
 
 gboolean gst_dwrite_is_windows_10_or_greater (void);
 

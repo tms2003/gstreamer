@@ -100,6 +100,8 @@ STDMETHODIMP
 
   self->factory_ = factory;
   factory->AddRef ();
+  factory->CreateTextAnalyzer (&self->analyzer_);
+
   *renderer = self;
 
   return S_OK;
@@ -134,9 +136,14 @@ IGstDWriteTextRenderer::QueryInterface (REFIID riid, void **object)
   } else if (riid == __uuidof (IDWritePixelSnapping)) {
     *object = static_cast < IDWritePixelSnapping * >
         (static_cast < IGstDWriteTextRenderer * >(this));
-  } else if (riid == IID_IGstDWriteTextRenderer) {
+  } else if (riid == __uuidof (IDWriteTextRenderer)) {
     *object = static_cast < IDWriteTextRenderer * >
         (static_cast < IGstDWriteTextRenderer * >(this));
+  } else if (riid == __uuidof (IDWriteTextRenderer1)) {
+    *object = static_cast < IDWriteTextRenderer1 * >
+        (static_cast < IGstDWriteTextRenderer * >(this));
+  } else if (riid == IID_IGstDWriteTextRenderer) {
+    *object = this;
   } else {
     *object = nullptr;
     return E_NOINTERFACE;
@@ -188,6 +195,47 @@ STDMETHODIMP
     DWRITE_GLYPH_RUN_DESCRIPTION const *glyph_run_desc,
     IUnknown * client_effect)
 {
+  return DrawGlyphRun (context, origin_x, origin_y,
+      DWRITE_GLYPH_ORIENTATION_ANGLE_0_DEGREES, mode, glyph_run,
+      glyph_run_desc, client_effect);
+}
+
+STDMETHODIMP
+    IGstDWriteTextRenderer::DrawUnderline (void *context, FLOAT origin_x,
+    FLOAT origin_y, DWRITE_UNDERLINE const *underline, IUnknown * client_effect)
+{
+  return DrawUnderline (context, origin_x, origin_y,
+      DWRITE_GLYPH_ORIENTATION_ANGLE_0_DEGREES, underline, client_effect);
+}
+
+STDMETHODIMP
+    IGstDWriteTextRenderer::DrawStrikethrough (void *context, FLOAT origin_x,
+    FLOAT origin_y, DWRITE_STRIKETHROUGH const *strikethrough,
+    IUnknown * client_effect)
+{
+  return DrawStrikethrough (context, origin_x, origin_y,
+      DWRITE_GLYPH_ORIENTATION_ANGLE_0_DEGREES, strikethrough, client_effect);
+}
+
+STDMETHODIMP
+    IGstDWriteTextRenderer::DrawInlineObject (void *context, FLOAT origin_x,
+    FLOAT origin_y, IDWriteInlineObject * inline_object, BOOL is_sideways,
+    BOOL is_right_to_left, IUnknown * client_effect)
+{
+  return DrawInlineObject (context, origin_x, origin_y,
+      DWRITE_GLYPH_ORIENTATION_ANGLE_0_DEGREES, inline_object, is_sideways,
+      is_right_to_left, client_effect);
+}
+
+/* IDWriteTextRenderer1 */
+STDMETHODIMP
+    IGstDWriteTextRenderer::DrawGlyphRun (void *context,
+    FLOAT origin_x, FLOAT origin_y,
+    DWRITE_GLYPH_ORIENTATION_ANGLE angle, DWRITE_MEASURING_MODE mode,
+    DWRITE_GLYPH_RUN const *glyph_run,
+    DWRITE_GLYPH_RUN_DESCRIPTION const *glyph_run_desc,
+    IUnknown * client_effect)
+{
   ComPtr < ID2D1PathGeometry > geometry;
   ComPtr < ID2D1GeometrySink > sink;
   ComPtr < ID2D1TransformedGeometry > transformed;
@@ -203,6 +251,7 @@ STDMETHODIMP
   RECT client_rect;
   D2D1_COLOR_F fg_color = D2D1::ColorF (D2D1::ColorF::Black);
   BOOL enable_color_font = FALSE;
+  D2D1_MATRIX_3X2_F rotate_matrix = D2D1::Matrix3x2F::Identity ();
 
   g_assert (context != nullptr);
 
@@ -210,6 +259,27 @@ STDMETHODIMP
   client_rect = render_ctx->client_rect;
   target = render_ctx->target;
   factory = render_ctx->factory;
+
+  if (angle != DWRITE_GLYPH_ORIENTATION_ANGLE_0_DEGREES) {
+    ComPtr < IDWriteTextAnalyzer1 > analyzer;
+    if (!analyzer_) {
+      GST_ERROR ("IDWriteTextAnalyzer interface is not available");
+      return E_FAIL;
+    }
+
+    hr = analyzer_->QueryInterface (IID_PPV_ARGS (&analyzer));
+    if (FAILED (hr)) {
+      GST_ERROR ("IDWriteTextAnalyzer1 interface is not available");
+      return hr;
+    }
+
+    hr = analyzer->GetGlyphOrientationTransform (angle, FALSE,
+        (DWRITE_MATRIX *) & rotate_matrix);
+    if (FAILED (hr)) {
+      GST_ERROR ("Couldn't get transform matrix");
+      return hr;
+    }
+  }
 
   if (client_effect)
     client_effect->QueryInterface (IID_IGstDWriteTextEffect, &effect);
@@ -242,9 +312,16 @@ STDMETHODIMP
         ascent = adjust * font_metrics.ascent;
         descent = adjust * font_metrics.descent;
 
-        bg_rect =
-            D2D1::RectF (origin_x, origin_y - ascent, origin_x + run_width,
-            origin_y + descent);
+        if (angle == DWRITE_GLYPH_ORIENTATION_ANGLE_0_DEGREES ||
+            angle == DWRITE_GLYPH_ORIENTATION_ANGLE_180_DEGREES) {
+          bg_rect =
+              D2D1::RectF (origin_x, origin_y - ascent, origin_x + run_width,
+              origin_y + descent);
+        } else {
+          bg_rect =
+              D2D1::RectF (origin_x - descent, origin_y, origin_x + ascent,
+              origin_y + run_width);
+        }
 
         hr = factory->CreateRectangleGeometry (bg_rect, &rect_geometry);
         if (FAILED (hr))
@@ -318,7 +395,8 @@ STDMETHODIMP
   sink->Close ();
 
   hr = factory->CreateTransformedGeometry (geometry.Get (),
-      D2D1::Matrix3x2F::Translation (origin_x, origin_y), &transformed);
+      rotate_matrix * D2D1::Matrix3x2F::Translation (origin_x, origin_y),
+      &transformed);
 
   if (FAILED (hr))
     return hr;
@@ -441,8 +519,8 @@ STDMETHODIMP
   if (shadow_brush) {
     FLOAT adjust = glyph_run->fontEmSize * 0.06;
     hr = factory->CreateTransformedGeometry (geometry.Get (),
-        D2D1::Matrix3x2F::Translation (origin_x + adjust, origin_y + adjust),
-        &shadow_transformed);
+        rotate_matrix * D2D1::Matrix3x2F::Translation (origin_x + adjust,
+            origin_y + adjust), &shadow_transformed);
 
     if (FAILED (hr))
       return hr;
@@ -462,7 +540,8 @@ STDMETHODIMP
 
 STDMETHODIMP
     IGstDWriteTextRenderer::DrawUnderline (void *context, FLOAT origin_x,
-    FLOAT origin_y, DWRITE_UNDERLINE const *underline, IUnknown * client_effect)
+    FLOAT origin_y, DWRITE_GLYPH_ORIENTATION_ANGLE angle,
+    DWRITE_UNDERLINE const *underline, IUnknown * client_effect)
 {
   ComPtr < ID2D1RectangleGeometry > geometry;
   ComPtr < ID2D1TransformedGeometry > transformed;
@@ -519,8 +598,8 @@ STDMETHODIMP
 
 STDMETHODIMP
     IGstDWriteTextRenderer::DrawStrikethrough (void *context, FLOAT origin_x,
-    FLOAT origin_y, DWRITE_STRIKETHROUGH const *strikethrough,
-    IUnknown * client_effect)
+    FLOAT origin_y, DWRITE_GLYPH_ORIENTATION_ANGLE angle,
+    DWRITE_STRIKETHROUGH const *strikethrough, IUnknown * client_effect)
 {
   ComPtr < ID2D1RectangleGeometry > geometry;
   ComPtr < ID2D1TransformedGeometry > transformed;
@@ -579,7 +658,8 @@ STDMETHODIMP
 
 STDMETHODIMP
     IGstDWriteTextRenderer::DrawInlineObject (void *context, FLOAT origin_x,
-    FLOAT origin_y, IDWriteInlineObject * inline_object, BOOL is_sideways,
+    FLOAT origin_y, DWRITE_GLYPH_ORIENTATION_ANGLE angle,
+    IDWriteInlineObject * inline_object, BOOL is_sideways,
     BOOL is_right_to_left, IUnknown * client_effect)
 {
   GST_WARNING ("Not implemented");
@@ -593,6 +673,8 @@ IGstDWriteTextRenderer::IGstDWriteTextRenderer (void)
 IGstDWriteTextRenderer::~IGstDWriteTextRenderer (void)
 {
   factory_->Release ();
+  if (analyzer_)
+    analyzer_->Release ();
 }
 
 STDMETHODIMP

@@ -19,12 +19,12 @@
 
 #pragma once
 
-#include "gstdwritebaseoverlay.h"
+#include <gst/textlayoutoverlay/gstbaseclockoverlay.h>
 
 G_BEGIN_DECLS
 
 #define GST_TYPE_DWRITE_CLOCK_OVERLAY (gst_dwrite_clock_overlay_get_type())
 G_DECLARE_FINAL_TYPE (GstDWriteClockOverlay,
-    gst_dwrite_clock_overlay, GST, DWRITE_CLOCK_OVERLAY, GstDWriteBaseOverlay);
+    gst_dwrite_clock_overlay, GST, DWRITE_CLOCK_OVERLAY, GstBaseClockOverlay);
 
 G_END_DECLS
