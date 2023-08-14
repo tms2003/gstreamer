@@ -255,6 +255,8 @@ struct _GstDecodebin3
   gboolean selection_updated;
   /* End of variables protected by selection_lock */
   gboolean upstream_selected;
+  /* When the first selection ready, this condition will been signal */
+  GCond first_selection;
 
   /* Factories */
   GMutex factories_lock;
@@ -638,6 +640,8 @@ gst_decodebin3_init (GstDecodebin3 * dbin)
   g_mutex_init (&dbin->selection_lock);
   g_mutex_init (&dbin->input_lock);
 
+  g_cond_init (&dbin->first_selection);
+
   dbin->caps = gst_static_caps_get (&default_raw_caps);
 
   GST_OBJECT_FLAG_SET (dbin, GST_BIN_FLAG_STREAMS_AWARE);
@@ -744,6 +748,8 @@ gst_decodebin3_finalize (GObject * object)
   g_mutex_clear (&dbin->factories_lock);
   g_mutex_clear (&dbin->selection_lock);
   g_mutex_clear (&dbin->input_lock);
+
+  g_cond_clear (&dbin->first_selection);
 
   G_OBJECT_CLASS (parent_class)->finalize (object);
 }
@@ -1767,6 +1773,7 @@ beach:
     dbin->requested_selection =
         g_list_copy_deep (tmp, (GCopyFunc) g_strdup, NULL);
     dbin->selection_updated = TRUE;
+    g_cond_signal (&dbin->first_selection);
     g_list_free (tmp);
   }
   SELECTION_UNLOCK (dbin);
@@ -2445,6 +2452,12 @@ check_slot_reconfiguration (GstDecodebin3 * dbin, MultiQueueSlot * slot)
   GstMessage *msg = NULL;
 
   SELECTION_LOCK (dbin);
+  /* Wait until the first selection ready, if caps event probe comes before
+     selection ready, get_output_for_slot will fail and we can not create
+     output slot for this stream */
+  while (!dbin->requested_selection)
+    g_cond_wait (&dbin->first_selection, &dbin->selection_lock);
+
   output = get_output_for_slot (slot);
   if (!output) {
     SELECTION_UNLOCK (dbin);
