@@ -486,7 +486,7 @@ gst_decodebin3_select_stream (GstDecodebin3 * dbin,
 static GstPad *gst_decodebin3_request_new_pad (GstElement * element,
     GstPadTemplate * temp, const gchar * name, const GstCaps * caps);
 static void gst_decodebin3_release_pad (GstElement * element, GstPad * pad);
-static void handle_stream_collection (GstDecodebin3 * dbin,
+static gboolean handle_stream_collection (GstDecodebin3 * dbin,
     GstStreamCollection * collection, DecodebinInput * input);
 static void gst_decodebin3_handle_message (GstBin * bin, GstMessage * message);
 static GstStateChangeReturn gst_decodebin3_change_state (GstElement * element,
@@ -1428,16 +1428,19 @@ sink_event_function (GstPad * sinkpad, GstDecodebin3 * dbin, GstEvent * event)
     case GST_EVENT_STREAM_COLLECTION:
     {
       GstStreamCollection *collection = NULL;
+      gboolean need_update_selection = FALSE;
 
       gst_event_parse_stream_collection (event, &collection);
       if (collection) {
         INPUT_LOCK (dbin);
-        handle_stream_collection (dbin, collection, input);
+        need_update_selection =
+            handle_stream_collection (dbin, collection, input);
         gst_object_unref (collection);
         INPUT_UNLOCK (dbin);
+
         SELECTION_LOCK (dbin);
         /* Post the (potentially) updated collection */
-        if (dbin->collection) {
+        if (need_update_selection && dbin->collection) {
           GstMessage *msg;
           msg =
               gst_message_new_stream_collection ((GstObject *) dbin,
@@ -1966,7 +1969,7 @@ stream_in_collection (GstDecodebin3 * dbin, gchar * sid)
 }
 
 /* Call with INPUT_LOCK taken */
-static void
+static gboolean
 handle_stream_collection (GstDecodebin3 * dbin,
     GstStreamCollection * collection, DecodebinInput * input)
 {
@@ -1977,7 +1980,7 @@ handle_stream_collection (GstDecodebin3 * dbin,
   if (!input) {
     GST_DEBUG_OBJECT (dbin,
         "Couldn't find corresponding input, most likely shutting down");
-    return;
+    return FALSE;
   }
 
   /* Replace collection in input */
@@ -2028,11 +2031,18 @@ handle_stream_collection (GstDecodebin3 * dbin,
     GST_FIXME_OBJECT (dbin, "New collection but already had one ...");
     /* FIXME : When do we switch from pending collection to active collection ?
      * When all streams from active collection are drained in multiqueue output ? */
+
+    if (collection == dbin->collection) {
+      SELECTION_UNLOCK (dbin);
+      return FALSE;
+    }
+
     gst_object_unref (dbin->collection);
     dbin->collection = collection;
   }
   dbin->select_streams_seqnum = GST_SEQNUM_INVALID;
   SELECTION_UNLOCK (dbin);
+  return TRUE;
 }
 
 /* Must be called with the selection lock taken */
@@ -2126,8 +2136,7 @@ gst_decodebin3_handle_message (GstBin * bin, GstMessage * message)
       }
       gst_message_parse_stream_collection (message, &collection);
       if (collection) {
-        handle_stream_collection (dbin, collection, input);
-        posting_collection = TRUE;
+        posting_collection = handle_stream_collection (dbin, collection, input);
       }
       INPUT_UNLOCK (dbin);
 
