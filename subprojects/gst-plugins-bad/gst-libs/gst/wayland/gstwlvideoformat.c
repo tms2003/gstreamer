@@ -105,7 +105,8 @@ gst_video_format_to_wl_dmabuf_format (GstVideoFormat format)
     if (wl_formats[i].gst_format == format)
       return wl_formats[i].dma_format;
 
-  GST_WARNING ("wayland dmabuf video format not found");
+  GST_WARNING ("wayland dmabuf video format not found %s",
+      gst_video_format_to_string (format));
   return 0;
 }
 

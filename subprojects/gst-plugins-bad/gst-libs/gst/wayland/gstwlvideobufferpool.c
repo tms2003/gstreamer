@@ -100,7 +100,7 @@ gst_wl_video_buffer_pool_start (GstBufferPool * pool)
     goto wrong_caps;
 
   format = GST_VIDEO_INFO_FORMAT (&self->vinfo);
-  if (!gst_video_format_to_wl_dmabuf_format (format))
+  if (!gst_video_dma_drm_fourcc_from_format (format))
     goto unsupported_pixel_format;
 
   if (GST_IS_DRM_DUMB_ALLOCATOR (allocator)) {
@@ -161,7 +161,7 @@ gst_wl_video_buffer_pool_alloc_buffer (GstBufferPool * pool,
   GstMemory *drm_mem, *dma_mem;
   gsize dumbbuf_size;
   GstVideoFormat format = GST_VIDEO_INFO_FORMAT (&self->vinfo);
-  guint32 drm_fourcc = gst_video_format_to_wl_dmabuf_format (format);
+  guint32 drm_fourcc = gst_video_dma_drm_fourcc_from_format (format);
 
   if (!self->allocator)
     return GST_BUFFER_POOL_CLASS (parent_class)->alloc_buffer (pool, buffer,

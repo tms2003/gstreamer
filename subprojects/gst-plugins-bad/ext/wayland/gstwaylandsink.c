@@ -550,11 +550,10 @@ gst_wayland_sink_get_caps (GstBaseSink * bsink, GstCaps * filter)
   if (self->display) {
     GValue shm_list = G_VALUE_INIT, dmabuf_list = G_VALUE_INIT;
     GValue value = G_VALUE_INIT;
-    GArray *formats, *modifiers;
+    GArray *formats;
     gint i;
     guint fmt;
     GstVideoFormat gfmt;
-    guint64 mod;
 
     g_value_init (&shm_list, GST_TYPE_LIST);
     g_value_init (&dmabuf_list, GST_TYPE_LIST);
@@ -575,18 +574,7 @@ gst_wayland_sink_get_caps (GstBaseSink * bsink, GstCaps * filter)
         &shm_list);
 
     /* Add corresponding dmabuf formats */
-    formats = gst_wl_display_get_dmabuf_formats (self->display);
-    modifiers = gst_wl_display_get_dmabuf_modifiers (self->display);
-    for (i = 0; i < formats->len; i++) {
-      fmt = g_array_index (formats, uint32_t, i);
-      gfmt = gst_wl_dmabuf_format_to_video_format (fmt);
-      mod = g_array_index (modifiers, guint64, i);
-      if (gfmt != GST_VIDEO_FORMAT_UNKNOWN) {
-        g_value_init (&value, G_TYPE_STRING);
-        g_value_take_string (&value, gst_wl_dmabuf_format_to_string (fmt, mod));
-        gst_value_list_append_and_take_value (&dmabuf_list, &value);
-      }
-    }
+    gst_wl_display_fill_drm_format_list (self->display, &dmabuf_list);
 
     gst_structure_take_value (gst_caps_get_structure (caps, 1), "drm-format",
         &dmabuf_list);
@@ -911,9 +899,6 @@ gst_wayland_sink_show_frame (GstVideoSink * vsink, GstBuffer * buffer)
     goto render;
   }
 
-  /* update video info from video meta */
-  mem = gst_buffer_peek_memory (buffer, 0);
-
   GST_LOG_OBJECT (self,
       "buffer %" GST_PTR_FORMAT " does not have a wl_buffer from our "
       "display, creating it", buffer);
@@ -984,6 +969,8 @@ gst_wayland_sink_show_frame (GstVideoSink * vsink, GstBuffer * buffer)
 handle_shm:
   if (!wbuf && gst_wl_display_check_format_for_shm (self->display,
           &self->video_info)) {
+    mem = gst_buffer_peek_memory (buffer, 0);
+
     if (gst_buffer_n_memory (buffer) == 1 && gst_is_fd_memory (mem))
       wbuf = gst_wl_shm_memory_construct_wl_buffer (mem, self->display,
           &self->video_info);
