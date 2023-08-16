@@ -744,7 +744,7 @@ gst_gtk_wayland_sink_change_state (GstElement * element,
   }
 
   ret = GST_ELEMENT_CLASS (parent_class)->change_state (element, transition);
-  if (ret != GST_STATE_CHANGE_SUCCESS)
+  if (ret == GST_STATE_CHANGE_FAILURE)
     return ret;
 
   switch (transition) {
@@ -762,6 +762,18 @@ gst_gtk_wayland_sink_change_state (GstElement * element,
         gst_wl_window_render (priv->wl_window, NULL, NULL);
       }
 
+      g_mutex_lock (&priv->render_lock);
+      if (priv->callback) {
+        wl_callback_destroy (priv->callback);
+        priv->callback = NULL;
+      }
+      priv->redraw_pending = FALSE;
+      g_mutex_unlock (&priv->render_lock);
+      break;
+    case GST_STATE_CHANGE_PAUSED_TO_PLAYING:
+    case GST_STATE_CHANGE_PLAYING_TO_PAUSED:
+      /* Destroy pending redraw callback otherwise
+       * element may freeze */
       g_mutex_lock (&priv->render_lock);
       if (priv->callback) {
         wl_callback_destroy (priv->callback);
