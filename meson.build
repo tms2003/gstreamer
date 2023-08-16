@@ -33,6 +33,8 @@ endif
 # Install gst-indent pre-commit hook
 run_command(python3, '-c', 'import shutil; shutil.copy("scripts/git-hooks/multi-pre-commit.hook", ".git/hooks/pre-commit")', check: false)
 
+indent = find_program('gnuindent', 'gindent', 'indent', 'gst-indent-1.0', native: true, required: true)
+
 gitlint_req = '>= 0.18'
 gitlint = find_program('gitlint', version: gitlint_req, required: false)
 if gitlint.found()
@@ -73,15 +75,6 @@ if not meson.is_subproject() and cc.get_id() == 'msvc'
       endif
     endif
   endif
-endif
-
-# Ensure that MSVC interprets all source code as UTF-8. Only do this when we're
-# not a subproject, because subprojects are not allowed to call
-# add_global_arguments().
-if not meson.is_subproject() and cc.get_id() == 'msvc'
-  add_global_arguments(
-      cc.get_supported_arguments(['/utf-8']), # set the input encoding to utf-8
-      language: ['c', 'cpp'])
 endif
 
 building_full = get_option('default_library') == 'static'
