@@ -94,6 +94,9 @@ GST_WL_API
 gboolean gst_wl_display_fill_drm_format_list (GstWlDisplay * self, GValue *format_list);
 
 GST_WL_API
+gchar *gst_wl_display_get_drm_device (GstWlDisplay *self);
+
+GST_WL_API
 gboolean gst_wl_display_query_dmabuf_format_support (GstWlDisplay * self,
     guint32 fourcc, guint64 modifier,
     gboolean *is_modifier, gboolean *is_implicit, gboolean *is_linear);

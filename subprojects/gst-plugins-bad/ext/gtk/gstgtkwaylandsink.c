@@ -82,6 +82,7 @@ gst_gtk_wayland_sink_navigation_interface_init (GstNavigationInterface * iface);
 static void
 calculate_adjustment (GtkWidget * start_widget, GtkAllocation * allocation);
 
+/* Properties */
 enum
 {
   PROP_0,
@@ -89,6 +90,8 @@ enum
   PROP_DISPLAY,
   PROP_ROTATE_METHOD,
   PROP_DRM_DEVICE,
+  PROP_DUMB_BUFFER_COPY,
+  PROP_LAST
 };
 
 typedef struct _GstGtkWaylandSinkPrivate
@@ -122,6 +125,7 @@ typedef struct _GstGtkWaylandSinkPrivate
   struct wl_callback *callback;
 
   gchar *drm_device;
+  gboolean dumb_buffer_copy;
   gboolean skip_dumb_buffer_copy;
 } GstGtkWaylandSinkPrivate;
 
@@ -174,6 +178,16 @@ gst_gtk_wayland_sink_class_init (GstGtkWaylandSinkClass * klass)
       g_param_spec_string ("drm-device", "DRM Device", "Path of the "
           "DRM device to use for dumb buffer allocation",
           NULL,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | G_PARAM_CONSTRUCT_ONLY));
+
+  /**
+   * GstGtkWaylandSink:dumb-buffer-copy:
+   *
+   * Since: 1.24
+   */
+  g_object_class_install_property (gobject_class, PROP_DUMB_BUFFER_COPY,
+      g_param_spec_boolean ("dumb-buffer-copy", "Dumb Buffer copy",
+          "Whether to copy buffers to dumb buffers for use with DMABuf", FALSE,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | G_PARAM_CONSTRUCT_ONLY));
 
   gstelement_class->change_state =
@@ -402,6 +416,11 @@ gst_gtk_wayland_sink_get_property (GObject * object, guint prop_id,
       g_value_set_string (value, priv->drm_device);
       GST_OBJECT_UNLOCK (self);
       break;
+    case PROP_DUMB_BUFFER_COPY:
+      GST_OBJECT_LOCK (self);
+      g_value_set_boolean (value, priv->dumb_buffer_copy);
+      GST_OBJECT_UNLOCK (self);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -424,6 +443,11 @@ gst_gtk_wayland_sink_set_property (GObject * object, guint prop_id,
     case PROP_DRM_DEVICE:
       GST_OBJECT_LOCK (self);
       priv->drm_device = g_value_dup_string (value);
+      GST_OBJECT_UNLOCK (self);
+      break;
+    case PROP_DUMB_BUFFER_COPY:
+      GST_OBJECT_LOCK (self);
+      priv->dumb_buffer_copy = g_value_get_boolean (value);
       GST_OBJECT_UNLOCK (self);
       break;
     default:
@@ -1187,8 +1211,14 @@ gst_gtk_wayland_sink_show_frame (GstVideoSink * vsink, GstBuffer * buffer)
      * offloading the compositor from a copy helps maintaining a smoother
      * desktop.
      */
-    if (!priv->skip_dumb_buffer_copy) {
+    if (priv->dumb_buffer_copy && !priv->skip_dumb_buffer_copy) {
       GstVideoFrame src, dst;
+
+      if (!priv->drm_device) {
+        priv->drm_device = gst_wl_display_get_drm_device (priv->display);
+          GST_DEBUG_OBJECT (self, "Using compositor drm device %s",
+          priv->drm_device);
+    }
 
       if (!gst_gtk_wayland_activate_drm_dumb_pool (self)) {
         priv->skip_dumb_buffer_copy = TRUE;

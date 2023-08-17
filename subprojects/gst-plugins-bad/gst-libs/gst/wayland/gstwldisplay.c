@@ -283,6 +283,24 @@ gst_wl_display_fill_drm_format_list (GstWlDisplay *self, GValue *format_list)
       format_list);
 }
 
+/**
+ * gst_wl_display_get_drm_device:
+ * @self: The #GstWlDisplay
+ *
+ * Returns: (nullable): a newly allocated string containing the path to the
+ *     primary node for the DRM device provided by the compositor or
+ *     %NULL if information is unavailable.
+ *
+ * Since: 1.24
+ */
+gchar *
+gst_wl_display_get_drm_device (GstWlDisplay *self)
+{
+  GstWlDisplayPrivate *priv = gst_wl_display_get_instance_private (self);
+
+  return gst_wl_dmabuf_feedback_get_main_device (priv->dmabuf_feedback);
+}
+
 static void
 on_dmabuf_feedback_changed (GstWlDmaBufFeedback *feedback, GstWlWindow *self)
 {

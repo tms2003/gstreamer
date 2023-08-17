@@ -36,4 +36,6 @@ gboolean gst_wl_dmabuf_feedback_query_format_support (GstWlDmaBufFeedback *self,
 
 gboolean gst_wl_dmabuf_feedback_fill_drm_format_list (GstWlDmaBufFeedback *self, GValue *format_list);
 
+gchar *gst_wl_dmabuf_feedback_get_main_device (GstWlDmaBufFeedback *self);
+
 G_END_DECLS

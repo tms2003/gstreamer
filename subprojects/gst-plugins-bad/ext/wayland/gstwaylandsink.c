@@ -63,6 +63,7 @@ enum
   PROP_FULLSCREEN,
   PROP_ROTATE_METHOD,
   PROP_DRM_DEVICE,
+  PROP_DUMB_BUFFER_COPY,
   PROP_LAST
 };
 
@@ -178,7 +179,7 @@ gst_wayland_sink_class_init (GstWaylandSinkClass * klass)
           GST_TYPE_VIDEO_ORIENTATION_METHOD, GST_VIDEO_ORIENTATION_IDENTITY,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
- /**
+  /**
    * waylandsink:drm-device:
    *
    * Since: 1.24
@@ -189,15 +190,25 @@ gst_wayland_sink_class_init (GstWaylandSinkClass * klass)
           NULL,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | G_PARAM_CONSTRUCT_ONLY));
 
+  /**
+   * waylandsink:dumb-buffer-copy:
+   *
+   * Since: 1.24
+   */
+  g_object_class_install_property (gobject_class, PROP_DUMB_BUFFER_COPY,
+      g_param_spec_boolean ("dumb-buffer-copy", "Dumb Buffer copy",
+          "Whether to copy buffers to dumb buffers for use with DMABuf", FALSE,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | G_PARAM_CONSTRUCT_ONLY));
 
- /**
-  * waylandsink:render-rectangle:
-  *
-  * This helper installs the "render-rectangle" property into the
-  * class.
-  *
-  * Since: 1.22
-  */
+
+  /**
+   * waylandsink:render-rectangle:
+   *
+   * This helper installs the "render-rectangle" property into the
+   * class.
+   *
+   * Since: 1.22
+   */
   gst_video_overlay_install_properties (gobject_class, PROP_LAST);
 }
 
@@ -284,6 +295,11 @@ gst_wayland_sink_get_property (GObject * object,
       g_value_set_string (value, self->drm_device);
       GST_OBJECT_UNLOCK (self);
       break;
+    case PROP_DUMB_BUFFER_COPY:
+      GST_OBJECT_LOCK (self);
+      g_value_set_boolean (value, self->dumb_buffer_copy);
+      GST_OBJECT_UNLOCK (self);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -314,6 +330,11 @@ gst_wayland_sink_set_property (GObject * object,
     case PROP_DRM_DEVICE:
       GST_OBJECT_LOCK (self);
       self->drm_device = g_value_dup_string (value);
+      GST_OBJECT_UNLOCK (self);
+      break;
+    case PROP_DUMB_BUFFER_COPY:
+      GST_OBJECT_LOCK (self);
+      self->dumb_buffer_copy = g_value_get_boolean (value);
       GST_OBJECT_UNLOCK (self);
       break;
     default:
@@ -919,8 +940,14 @@ gst_wayland_sink_show_frame (GstVideoSink * vsink, GstBuffer * buffer)
      * offloading the compositor from a copy helps maintaining a smoother
      * desktop.
      */
-    if (!self->skip_dumb_buffer_copy) {
+    if (self->dumb_buffer_copy && !self->skip_dumb_buffer_copy) {
       GstVideoFrame src, dst;
+
+      if (!self->drm_device) {
+        self->drm_device = gst_wl_display_get_drm_device (self->display);
+        GST_DEBUG_OBJECT (self, "Using compositor drm device %s",
+            self->drm_device);
+      }
 
       if (!gst_wayland_activate_drm_dumb_pool (self)) {
         self->skip_dumb_buffer_copy = TRUE;

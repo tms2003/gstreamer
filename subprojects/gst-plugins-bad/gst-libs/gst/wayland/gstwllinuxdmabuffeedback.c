@@ -562,3 +562,14 @@ gst_wl_dmabuf_feedback_fill_drm_format_list (GstWlDmaBufFeedback *self,
 
   return num_formats != 0;
 }
+
+gchar *
+gst_wl_dmabuf_feedback_get_main_device (GstWlDmaBufFeedback *self)
+{
+  gchar *device = NULL;
+
+  if (self->feedback)
+    device = g_strdup (self->feedback->primary_node);
+
+  return device;
+}
