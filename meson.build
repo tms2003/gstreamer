@@ -359,7 +359,8 @@ if building_full
   init_static_plugins_c = configure_file(
     output: 'gstinitstaticplugins.c',
     command : [generate_init_static_plugins,
-               '-o ' + '@OUTPUT@',
+               '-C ' + '@OUTPUT@',
+               '-H ' + 'gstinitstaticplugins.h',
                '-p ' + static_plugins,
                '-e ' + get_option('gst-full-elements'),
                '-t ' + get_option('gst-full-typefind-functions'),
@@ -413,6 +414,18 @@ if building_full
     ]
   else
     glib_deps = [glib_dep, gobject_dep]
+  endif
+  gio_dep = dependency('gio-2.0')
+  if gio_dep.type_name() == 'internal'
+    glib_subproject = subproject('glib')
+    exposed_libs += glib_subproject.get_variable('libglib')
+    exposed_libs += glib_subproject.get_variable('libgio')
+    incdir_deps += [
+      glib_dep.partial_dependency(includes: true),
+      gio_dep.partial_dependency(includes: true),
+    ]
+  else
+    glib_deps += [gio_dep]
   endif
 
   link_deps = []
@@ -501,6 +514,10 @@ if building_full
           deps += d
         endif
       endforeach
+      extra_deps = []
+      foreach d : data.get('extra_deps', [])
+        extra_deps += d
+      endforeach
 
       exe = executable(exe_name,
         data.get('files'),
@@ -508,7 +525,7 @@ if building_full
         install_tag: data.get('install_tag', 'bin'),
         install_dir: data.get('install_dir', get_option('bindir')),
         include_directories : data.get('include_directories', [configinc]),
-        dependencies : [gst_full_dep] + deps,
+        dependencies : [gst_full_dep] + deps + extra_deps,
         c_args: data.get('extra_c_args', []) + gst_c_args + ['-DG_LOG_DOMAIN="@0@"'.format(exe_name)],
         cpp_args: data.get('extra_cpp_args', []),
         objc_args: data.get('extra_objc_args', []),

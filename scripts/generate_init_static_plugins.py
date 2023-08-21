@@ -4,7 +4,7 @@ import argparse
 import os
 from string import Template
 
-TEMPLATE = Template('''
+TEMPLATE_H = Template('''
 #include <gst/gst.h>
 
 $elements_declaration
@@ -13,6 +13,18 @@ $device_providers_declaration
 $dynamic_types_declaration
 $plugins_declaration
 $giomodules_declaration
+
+#if defined _WIN32 || defined __CYGWIN__
+    #define GST_INIT_STATIC_PLUGINS_API __declspec(dllexport)
+#else
+    #define GST_INIT_STATIC_PLUGINS_API __attribute__ ((visibility ("default")))
+#endif
+
+GST_INIT_STATIC_PLUGINS_API void gst_init_static_plugins (void);
+''')
+
+TEMPLATE = Template('''
+#include "$outfile_header"
 
 void
 gst_init_static_plugins (void)
@@ -62,7 +74,8 @@ def process_features(features_list, plugins, feature_prefix):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('-o', dest="output", help="Output file")
+    parser.add_argument('-C', dest="output_c", help="Output C file name")
+    parser.add_argument('-H', dest="output_h", help="Output header file name")
     parser.add_argument('-p', '--plugins', nargs='?', default='', dest="plugins", help="The list of plugins")
     parser.add_argument('-e', '--elements', nargs='?', default='', dest="elements", help="The list of plugin:elements")
     parser.add_argument('-t', '--type-finds', nargs='?', default='',
@@ -74,10 +87,16 @@ if __name__ == "__main__":
     parser.add_argument('--giomodules', nargs='?', default='',
                         dest="giomodules", help="The list of GIO modules")
     options = parser.parse_args()
-    if options.output is None:
-        output_file = 'gstinitstaticplugins.c'
+    if options.output_c is None:
+        output_file_c = 'gstinitstaticplugins.c'
     else:
-        output_file = options.output
+        output_file_c = options.output_c
+    if  options.output_h is None:
+        output_file_h = 'gstinitstaticplugins.h'
+    else:
+        output_file_h = options.output_h
+    output_file_header = os.path.basename(output_file_h)
+
     enable_staticelements_plugin = 0
     elements_declaration = []
     elements_registration = []
@@ -129,19 +148,25 @@ if __name__ == "__main__":
         giomodules_declaration.append(f'extern void g_io_{module_name}_load (gpointer data);')
         giomodules_registration.append(f'g_io_{module_name}_load (NULL);')
 
-    with open(output_file.strip(), "w") as f:
+    with open(output_file_h.strip(), "w") as f:
+        static_elements_plugin = ''
+        f.write(TEMPLATE_H.substitute({
+            'elements_declaration': '\n'.join(elements_declaration),
+            'typefind_funcs_declaration': '\n'.join(typefind_funcs_declaration),
+            'device_providers_declaration': '\n'.join(device_providers_declaration),
+            'dynamic_types_declaration': '\n'.join(dynamic_types_declaration),
+            'plugins_declaration': '\n'.join(plugins_declaration),
+            'giomodules_declaration': '\n'.join(giomodules_declaration),
+        }))
+
+    with open(output_file_c.strip(), "w") as f:
         static_elements_plugin = ''
         f.write(TEMPLATE.substitute({
-            'elements_declaration': '\n'.join(elements_declaration),
+            'outfile_header':output_file_header.strip(),
             'elements_registration': '\n    '.join(elements_registration),
-            'typefind_funcs_declaration': '\n'.join(typefind_funcs_declaration),
             'typefind_funcs_registration': '\n    '.join(typefind_funcs_registration),
-            'device_providers_declaration': '\n'.join(device_providers_declaration),
             'device_providers_registration': '\n    '.join(device_providers_registration),
-            'dynamic_types_declaration': '\n'.join(dynamic_types_declaration),
             'dynamic_types_registration': '\n    '.join(dynamic_types_registration),
-            'plugins_declaration': '\n'.join(plugins_declaration),
             'plugins_registration': '\n    '.join(plugins_registration),
-            'giomodules_declaration': '\n'.join(giomodules_declaration),
             'giomodules_registration': '\n    '.join(giomodules_registration),
         }))

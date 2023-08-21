@@ -71,7 +71,7 @@ GstClockTime _priv_start_time;
 
 GQuark _Q_VALIDATE_MONITOR;
 
-#ifdef G_OS_WIN32
+#if defined(G_OS_WIN32) && !defined(GST_STATIC_COMPILATION)
 BOOL WINAPI DllMain (HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved);
 BOOL WINAPI
 DllMain (HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
@@ -81,7 +81,7 @@ DllMain (HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
 
   return TRUE;
 }
-#endif /* G_OS_WIN32 */
+#endif /* defined(G_OS_WIN32) && !defined(GST_STATIC_COMPILATION) */
 
 static GstRegistry *
 gst_validate_registry_get (void)
@@ -428,7 +428,7 @@ gst_validate_init_plugins (void)
 
     /* add the main (installed) library path */
 
-#ifdef G_OS_WIN32
+#if defined(G_OS_WIN32) && !defined(GST_STATIC_COMPILATION)
     {
       char *base_dir;
       char *dir;
