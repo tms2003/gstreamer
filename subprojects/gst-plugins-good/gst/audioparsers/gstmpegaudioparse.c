@@ -823,6 +823,16 @@ gst_mpeg_audio_parse_handle_frame (GstBaseParse * parse,
         "layer", G_TYPE_INT, layer,
         "rate", G_TYPE_INT, rate,
         "channels", G_TYPE_INT, channels, "parsed", G_TYPE_BOOLEAN, TRUE, NULL);
+    if (mode == MPEG_AUDIO_CHANNEL_MODE_DUAL_CHANNEL) {
+      GstAudioInfo info;
+
+      gst_caps_set_simple (caps, "channel-mask", GST_TYPE_BITMASK, 0, NULL);
+      if (gst_audio_info_from_caps (&info, caps)) {
+        info.flags |= GST_AUDIO_FLAG_UNPOSITIONED;
+      }
+      gst_caps_unref (caps);
+      caps = gst_audio_info_to_caps (&info);
+    }
     gst_pad_set_caps (GST_BASE_PARSE_SRC_PAD (parse), caps);
     gst_caps_unref (caps);
 
