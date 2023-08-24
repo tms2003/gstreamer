@@ -28,7 +28,6 @@
 #include "mxfessence.h"
 
 G_BEGIN_DECLS
-
 #define GST_TYPE_MXF_DEMUX \
   (gst_mxf_demux_get_type())
 #define GST_MXF_DEMUX(obj) \
@@ -55,7 +54,8 @@ typedef struct _GstMXFDemuxPadClass GstMXFDemuxPadClass;
  *
  * It optionally contains the content of the klv (data field).
  */
-typedef struct {
+typedef struct
+{
   MXFUL key;
   guint64 offset;               /* absolute offset of K */
   gsize length;                 /* Size of data (i.e. V) */
@@ -68,10 +68,11 @@ typedef struct {
 } GstMXFKLV;
 
 
-typedef enum {
-  GST_MXF_DEMUX_STATE_UNKNOWN,	/* Still looking for run-in/klv */
-  GST_MXF_DEMUX_STATE_KLV,	/* Next read/fetch is a KLV */
-  GST_MXF_DEMUX_STATE_ESSENCE	/* Next read/fetch is within a KLV (i.e. non-frame-wrapped) */
+typedef enum
+{
+  GST_MXF_DEMUX_STATE_UNKNOWN,  /* Still looking for run-in/klv */
+  GST_MXF_DEMUX_STATE_KLV,      /* Next read/fetch is a KLV */
+  GST_MXF_DEMUX_STATE_ESSENCE   /* Next read/fetch is within a KLV (i.e. non-frame-wrapped) */
 } GstMXFDemuxState;
 
 typedef struct _GstMXFDemuxPartition GstMXFDemuxPartition;
@@ -269,7 +270,7 @@ struct _GstMXFDemux
   GArray *essence_tracks;
 
   GList *pending_index_table_segments;
-  GList *index_tables; /* one per BodySID / IndexSID */
+  GList *index_tables;          /* one per BodySID / IndexSID */
   gboolean index_table_segments_collected;
 
   GArray *random_index_pack;
@@ -306,5 +307,4 @@ struct _GstMXFDemuxClass
 GType gst_mxf_demux_get_type (void);
 
 G_END_DECLS
-
 #endif /* __MXF_DEMUX_H__ */

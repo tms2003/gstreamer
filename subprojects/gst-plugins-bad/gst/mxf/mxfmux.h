@@ -27,7 +27,6 @@
 #include "mxfessence.h"
 
 G_BEGIN_DECLS
-
 #define GST_TYPE_MXF_MUX \
   (gst_mxf_mux_get_type ())
 #define GST_MXF_MUX(obj) \
@@ -38,8 +37,7 @@ G_BEGIN_DECLS
   (G_TYPE_CHECK_INSTANCE_TYPE ((obj), GST_TYPE_MXF_MUX))
 #define GST_IS_MXF_MUX_CLASS(klass) \
   (G_TYPE_CHECK_CLASS_TYPE ((klass), GST_TYPE_MXF_MUX))
-
-typedef enum
+    typedef enum
 {
   GST_MXF_MUX_STATE_HEADER,
   GST_MXF_MUX_STATE_DATA,
@@ -47,7 +45,8 @@ typedef enum
   GST_MXF_MUX_STATE_ERROR
 } GstMXFMuxState;
 
-typedef struct _GstMXFMux {
+typedef struct _GstMXFMux
+{
   GstAggregator parent;
 
   /* <private> */
@@ -74,12 +73,12 @@ typedef struct _GstMXFMux {
   guint64 last_keyframe_pos;
 } GstMXFMux;
 
-typedef struct _GstMXFMuxClass {
+typedef struct _GstMXFMuxClass
+{
   GstAggregatorClass parent;
 } GstMXFMuxClass;
 
 GType gst_mxf_mux_get_type (void);
 
 G_END_DECLS
-
 #endif /* __MXF_MUX_H__ */
