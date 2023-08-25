@@ -3,6 +3,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import argparse
 
 NOT_PYCODESTYLE_COMPLIANT_MESSAGE_PRE = \
     "Your code is not fully pycodestyle compliant and contains"\
@@ -47,8 +48,18 @@ def copy_files_to_tmp_dir(files):
 
 
 def main():
-    modified_files = system('git', 'diff-index', '--cached',
-                            '--name-only', 'HEAD', '--diff-filter=ACMR').split("\n")[:-1]
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--ci-check", help="Check all the files repository instead.", action="store_true", default=False
+    )
+    args = parser.parse_args()
+
+    if args.ci_check:
+        modified_files = system('fd', '-e', 'py').split("\n")[:-1]
+    else:
+        modified_files = system('git', 'diff-index', '--cached',
+                                '--name-only', 'HEAD', '--diff-filter=ACMR').split("\n")[:-1]
+
     non_compliant_files = []
     output_message = None
 
