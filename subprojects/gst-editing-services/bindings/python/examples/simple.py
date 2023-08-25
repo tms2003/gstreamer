@@ -60,6 +60,7 @@ class Simple:
         print "Could not load asset %s: %s" % (asset_id, error)
         self.loop.quit()
 
+
 if __name__ == "__main__":
     if len(os.sys.argv) != 2:
         print "You must specify a file URI"

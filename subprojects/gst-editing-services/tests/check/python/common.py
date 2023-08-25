@@ -29,7 +29,7 @@ from gi.repository import GES  # noqa
 from gi.repository import GLib  # noqa
 from gi.repository import GObject  # noqa
 import contextlib  # noqa
-import os  #noqa
+import os  # noqa
 import unittest  # noqa
 import tempfile  # noqa
 
@@ -124,7 +124,8 @@ def created_video_asset(uri=None, num_bufs=30, framerate="30/1"):
             name = f.name
         else:
             name = urlparse(uri).path
-        pipe = Gst.parse_launch(f"videotestsrc num-buffers={num_bufs} ! video/x-raw,framerate={framerate} ! theoraenc ! oggmux ! filesink location={name}")
+        pipe = Gst.parse_launch(
+            f"videotestsrc num-buffers={num_bufs} ! video/x-raw,framerate={framerate} ! theoraenc ! oggmux ! filesink location={name}")
         pipe.set_state(Gst.State.PLAYING)
         assert pipe.get_bus().timed_pop_filtered(Gst.CLOCK_TIME_NONE, Gst.MessageType.EOS)
         pipe.set_state(Gst.State.NULL)
@@ -198,6 +199,7 @@ class GESTest(unittest.TestCase):
                     message, message and ": ", err_code.value_name,
                     error.message, code.value_name))
 
+
 class GESSimpleTimelineTest(GESTest):
 
     def __init__(self, *args):
@@ -265,7 +267,7 @@ class GESSimpleTimelineTest(GESTest):
         self.assertTrue(isinstance(element, type(ref)), "%s and %s do not have the same type!" % (ref, element))
 
         props = [p for p in ref.list_properties() if p.name not in ['name']
-            and not GObject.type_is_a(p.value_type, GObject.Object)]
+                 and not GObject.type_is_a(p.value_type, GObject.Object)]
         for p in props:
             pname = p.name
             refval = GObject.Value()
@@ -277,7 +279,7 @@ class GESSimpleTimelineTest(GESTest):
             value.set_value(element.get_property(pname))
 
             self.assertTrue(Gst.value_compare(refval, value) == Gst.VALUE_EQUAL,
-                "%s are not equal: %s != %s\n    %s != %s" % (pname, value, refval, element, ref))
+                            "%s are not equal: %s != %s\n    %s != %s" % (pname, value, refval, element, ref))
 
         if isinstance(ref, GES.TrackElement):
             self.assertElementAreEqual(ref.get_nleobject(), element.get_nleobject())
@@ -290,8 +292,8 @@ class GESSimpleTimelineTest(GESTest):
         for ttype in ttypes:
             if ttypes.count(ttype) > 1:
                 self.warning("Can't deeply check %s and %s "
-                    "(only one track per type supported %s %s found)" % (ref,
-                    element, ttypes.count(ttype), ttype))
+                             "(only one track per type supported %s %s found)" % (ref,
+                                                                                  element, ttypes.count(ttype), ttype))
                 return
 
         children = element.get_children(False)
@@ -317,7 +319,7 @@ class GESSimpleTimelineTest(GESTest):
                     break
 
             self.assertIsNotNone(child, "Could not find equivalent child %s in %s(%s)" % (ref_child,
-                element, children))
+                                                                                          element, children))
 
             self.assertElementAreEqual(ref_child, child)
 
@@ -327,6 +329,7 @@ class GESSimpleTimelineTest(GESTest):
         self.assertTrue(self.timeline.save_to_uri(uri, None, True))
         project = GES.Project.new(uri)
         mainloop = create_main_loop()
+
         def loaded_cb(unused_project, unused_timeline):
             mainloop.quit()
 

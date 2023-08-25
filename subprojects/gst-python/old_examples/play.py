@@ -2,20 +2,21 @@
 # -*- Mode: Python -*-
 # vi:si:et:sw=4:sts=4:ts=4
 
+import gtk
+import gst.interfaces
+import gst
+import pygst
+import gobject
+import sys
 import pygtk
 pygtk.require('2.0')
 
-import sys
 
-import gobject
 gobject.threads_init()
 
-import pygst
 pygst.require('0.10')
-import gst
-import gst.interfaces
-import gtk
 gtk.gdk.threads_init()
+
 
 class GstPlayer:
     def __init__(self, videowidget):
@@ -40,7 +41,7 @@ class GstPlayer:
             self.videowidget.set_sink(message.src)
             message.src.set_property('force-aspect-ratio', True)
             gtk.gdk.threads_leave()
-            
+
     def on_message(self, bus, message):
         t = message.type
         if t == gst.MESSAGE_ERROR:
@@ -77,9 +78,9 @@ class GstPlayer:
         """
         gst.debug("seeking to %r" % location)
         event = gst.event_new_seek(1.0, gst.FORMAT_TIME,
-            gst.SEEK_FLAG_FLUSH | gst.SEEK_FLAG_ACCURATE,
-            gst.SEEK_TYPE_SET, location,
-            gst.SEEK_TYPE_NONE, 0)
+                                   gst.SEEK_FLAG_FLUSH | gst.SEEK_FLAG_ACCURATE,
+                                   gst.SEEK_TYPE_SET, location,
+                                   gst.SEEK_TYPE_NONE, 0)
 
         res = self.player.send_event(event)
         if res:
@@ -97,7 +98,7 @@ class GstPlayer:
         gst.info("playing player")
         self.player.set_state(gst.STATE_PLAYING)
         self.playing = True
-        
+
     def stop(self):
         self.player.set_state(gst.STATE_NULL)
         gst.info("stopped player")
@@ -107,7 +108,8 @@ class GstPlayer:
 
     def is_playing(self):
         return self.playing
-    
+
+
 class VideoWidget(gtk.DrawingArea):
     def __init__(self):
         gtk.DrawingArea.__init__(self)
@@ -126,8 +128,10 @@ class VideoWidget(gtk.DrawingArea):
         self.imagesink = sink
         self.imagesink.set_xwindow_id(self.window.xid)
 
+
 class PlayerWindow(gtk.Window):
     UPDATE_INTERVAL = 500
+
     def __init__(self):
         gtk.Window.__init__(self)
         self.set_default_size(410, 325)
@@ -140,7 +144,7 @@ class PlayerWindow(gtk.Window):
             self.player.seek(0L)
             self.play_toggled()
         self.player.on_eos = lambda *x: on_eos()
-        
+
         self.update_id = -1
         self.changed_id = -1
         self.seek_timeout_id = -1
@@ -155,17 +159,17 @@ class PlayerWindow(gtk.Window):
 
     def load_file(self, location):
         self.player.set_location(location)
-                                  
+
     def create_ui(self):
         vbox = gtk.VBox()
         self.add(vbox)
 
         self.videowidget = VideoWidget()
         vbox.pack_start(self.videowidget)
-        
+
         hbox = gtk.HBox()
         vbox.pack_start(hbox, fill=False, expand=False)
-        
+
         self.pause_image = gtk.image_new_from_stock(gtk.STOCK_MEDIA_PAUSE,
                                                     gtk.ICON_SIZE_BUTTON)
         self.pause_image.show()
@@ -180,7 +184,7 @@ class PlayerWindow(gtk.Window):
         hbox.pack_start(button, False)
         button.set_property('has-default', True)
         button.connect('clicked', lambda *args: self.play_toggled())
-        
+
         self.adjustment = gtk.Adjustment(0.0, 0.00, 100.0, 0.1, 1.0, 1.0)
         hscale = gtk.HScale(self.adjustment)
         hscale.set_digits(2)
@@ -211,7 +215,7 @@ class PlayerWindow(gtk.Window):
             real = 0
         else:
             real = value * self.p_duration / 100
-        
+
         seconds = real / gst.SECOND
 
         return "%02d:%02d" % (seconds / 60, seconds % 60)
@@ -219,7 +223,7 @@ class PlayerWindow(gtk.Window):
     def scale_button_press_cb(self, widget, event):
         # see seek.c:start_seek
         gst.debug('starting seek')
-        
+
         self.button.set_sensitive(False)
         self.was_playing = self.player.is_playing()
         if self.was_playing:
@@ -233,15 +237,15 @@ class PlayerWindow(gtk.Window):
         # make sure we get changed notifies
         if self.changed_id == -1:
             self.changed_id = self.hscale.connect('value-changed',
-                self.scale_value_changed_cb)
-            
+                                                  self.scale_value_changed_cb)
+
     def scale_value_changed_cb(self, scale):
         # see seek.c:seek_cb
-        real = long(scale.get_value() * self.p_duration / 100) # in ns
+        real = long(scale.get_value() * self.p_duration / 100)  # in ns
         gst.debug('value changed, perform seek to %r' % real)
         self.player.seek(real)
         # allow for a preroll
-        self.player.get_state(timeout=50*gst.MSECOND) # 50 ms
+        self.player.get_state(timeout=50*gst.MSECOND)  # 50 ms
 
     def scale_button_release_cb(self, widget, event):
         # see seek.cstop_seek
@@ -261,7 +265,7 @@ class PlayerWindow(gtk.Window):
             self.error('Had a previous update timeout id')
         else:
             self.update_id = gobject.timeout_add(self.UPDATE_INTERVAL,
-                self.update_scale_cb)
+                                                 self.update_scale_cb)
 
     def update_scale_cb(self):
         self.p_position, self.p_duration = self.player.query_position()
@@ -270,6 +274,7 @@ class PlayerWindow(gtk.Window):
             self.adjustment.set_value(value)
 
         return True
+
 
 def main(args):
     def usage():
@@ -294,6 +299,7 @@ def main(args):
     w.show_all()
 
     gtk.main()
+
 
 if __name__ == '__main__':
     sys.exit(main(sys.argv))

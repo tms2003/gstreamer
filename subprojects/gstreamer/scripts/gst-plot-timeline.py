@@ -28,7 +28,7 @@ BACKGROUND_COLOR = (0, 0, 0)
 
 # assumes GST_DEBUG_LOG_COLOR=1
 #                             timestamp          pid  thread        level   category,file,line,msg
-mark_regex = re.compile (r'^(\d+:\d+:\d+\.\d+) +\d+ +0?x?[0-9a-f]+ [A-Z]+ +([-a-zA-Z0-9_]+ )(.*)')
+mark_regex = re.compile(r'^(\d+:\d+:\d+\.\d+) +\d+ +0?x?[0-9a-f]+ [A-Z]+ +([-a-zA-Z0-9_]+ )(.*)')
 mark_timestamp_group = 1
 mark_program_group = 2
 mark_log_group = 3
@@ -37,37 +37,46 @@ success_result = "0"
 
 skip_lines = 0
 max_lines = 500
-filter_regex = re.compile ('')
+filter_regex = re.compile('')
 skip_regex = re.compile('')
+
 
 class BaseMark:
     colors = 0, 0, 0
+
     def __init__(self, timestamp, log):
         self.timestamp = timestamp
         self.log = log
         self.timestamp_ypos = 0
         self.log_ypos = 0
 
+
 class AccessMark(BaseMark):
     pass
+
 
 class LastMark(BaseMark):
     colors = 1.0, 0, 0
 
+
 class FirstMark(BaseMark):
     colors = 1.0, 0, 0
 
+
 class ExecMark(BaseMark):
-#    colors = 0.75, 0.33, 0.33
+    #    colors = 0.75, 0.33, 0.33
     colors = (1.0, 0.0, 0.0)
+
     def __init__(self, timestamp, log):
         BaseMark.__init__(self, timestamp,
                           'execve: ' + os.path.basename(log))
+
 
 class Metrics:
     def __init__(self):
         self.width = 0
         self.height = 0
+
 
 # don't use black or red
 palette = [
@@ -78,34 +87,36 @@ palette = [
     (0.50, 0.40, 0.63),
     (0.29, 0.67, 0.78),
     (0.96, 0.62, 0.34)
-    ]
+]
+
 
 class SyscallParser:
-    def __init__ (self):
+    def __init__(self):
         self.syscalls = []
 
-    def add_line (self, str):
-        m = mark_regex.search (str)
+    def add_line(self, str):
+        m = mark_regex.search(str)
         if m:
-            timestr = m.group (mark_timestamp_group).split(':')
-            timestamp = float (timestr[2]) + (float (timestr[1]) * 60.0) + (float (timestr[0]) * 3600.0)
-            program = m.group (mark_program_group)
-            text = program + m.group (mark_log_group)
+            timestr = m.group(mark_timestamp_group).split(':')
+            timestamp = float(timestr[2]) + (float(timestr[1]) * 60.0) + (float(timestr[0]) * 3600.0)
+            program = m.group(mark_program_group)
+            text = program + m.group(mark_log_group)
             if text == 'last':
-                self.syscalls.append (LastMark (timestamp, text))
+                self.syscalls.append(LastMark(timestamp, text))
             elif text == 'first':
-                self.syscalls.append (FirstMark (timestamp, text))
+                self.syscalls.append(FirstMark(timestamp, text))
             else:
-                s = AccessMark (timestamp, text)
-                program_hash = program.__hash__ ()
-                s.colors = palette[program_hash % len (palette)]
-                self.syscalls.append (s)
+                s = AccessMark(timestamp, text)
+                program_hash = program.__hash__()
+                s.colors = palette[program_hash % len(palette)]
+                self.syscalls.append(s)
         else:
             print 'No log in %s' % str
             return
 
+
 def parse_strace(filename):
-    parser = SyscallParser ()
+    parser = SyscallParser()
 
     global skip_lines
     global max_lines
@@ -131,9 +142,10 @@ def parse_strace(filename):
             break
 
         if filter_regex.search(line):
-            parser.add_line (line)
+            parser.add_line(line)
 
     return parser.syscalls
+
 
 def normalize_timestamps(syscalls):
 
@@ -141,6 +153,7 @@ def normalize_timestamps(syscalls):
 
     for syscall in syscalls:
         syscall.timestamp -= first_timestamp
+
 
 def compute_syscall_metrics(syscalls):
     global PIXELS_PER_SECOND
@@ -177,6 +190,7 @@ def compute_syscall_metrics(syscalls):
 
     return metrics
 
+
 def plot_time_scale(surface, ctx, metrics):
     num_seconds = (metrics.height + PIXELS_PER_SECOND - 1) / PIXELS_PER_SECOND
 
@@ -192,6 +206,7 @@ def plot_time_scale(surface, ctx, metrics):
 
         ctx.move_to(0, ypos + 2 + FONT_SIZE)
         ctx.show_text("%d s" % i)
+
 
 def plot_syscall(surface, ctx, syscall):
     ctx.set_source_rgb(*syscall.colors)
@@ -209,10 +224,11 @@ def plot_syscall(surface, ctx, syscall):
     ctx.move_to(LOG_TEXT_XPOS, syscall.log_ypos)
     ctx.show_text("%8.5f: %s" % (syscall.timestamp, syscall.log))
 
+
 def plot_syscalls_to_surface(syscalls, metrics):
     num_syscalls = len(syscalls)
 
-    print 'picture size: %d x %d' % (metrics.width, metrics.height);
+    print 'picture size: %d x %d' % (metrics.width, metrics.height)
 
     surface = cairo.ImageSurface(cairo.FORMAT_RGB24,
                                  metrics.width, metrics.height)
@@ -223,7 +239,7 @@ def plot_syscalls_to_surface(syscalls, metrics):
 
     # Background
 
-    ctx.set_source_rgb (*BACKGROUND_COLOR)
+    ctx.set_source_rgb(*BACKGROUND_COLOR)
     ctx.rectangle(0, 0, metrics.width, metrics.height)
     ctx.fill()
 
@@ -239,6 +255,7 @@ def plot_syscalls_to_surface(syscalls, metrics):
         plot_syscall(surface, ctx, syscall)
 
     return surface
+
 
 def main(args):
 
@@ -309,6 +326,7 @@ def main(args):
     surface.write_to_png(out_filename)
 
     return 0
+
 
 if __name__ == "__main__":
     sys.exit(main(sys.argv))

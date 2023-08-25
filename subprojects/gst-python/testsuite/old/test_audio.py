@@ -20,6 +20,7 @@
 
 from common import gobject, gst, unittest, TestCase
 
+
 class Audio(TestCase):
 
     def testBufferclip(self):

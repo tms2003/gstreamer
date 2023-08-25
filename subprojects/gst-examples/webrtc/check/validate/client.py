@@ -15,6 +15,10 @@
 # Free Software Foundation, Inc., 51 Franklin St, Fifth Floor,
 # Boston, MA 02110-1301, USA.
 
+from gi.repository import GstValidate
+from gi.repository import GstSdp
+from gi.repository import GstWebRTC
+from gi.repository import Gst
 import threading
 import copy
 
@@ -23,19 +27,16 @@ from enums import NegotiationState, DataChannelState
 
 import gi
 gi.require_version("Gst", "1.0")
-from gi.repository import Gst
 gi.require_version("GstWebRTC", "1.0")
-from gi.repository import GstWebRTC
 gi.require_version("GstSdp", "1.0")
-from gi.repository import GstSdp
 gi.require_version("GstValidate", "1.0")
-from gi.repository import GstValidate
 
 
 class WebRTCBinObserver(WebRTCObserver):
     """
     Observe a webrtcbin element.
     """
+
     def __init__(self, element):
         WebRTCObserver.__init__(self)
         self.element = element
@@ -66,9 +67,9 @@ class WebRTCBinObserver(WebRTCObserver):
     def _on_description_set(self, promise, desc):
         new_state = self._update_negotiation_from_description_state(desc)
         if new_state == NegotiationState.OFFER_SET:
-            self.on_offer_set.fire (desc)
+            self.on_offer_set.fire(desc)
         elif new_state == NegotiationState.ANSWER_SET:
-            self.on_answer_set.fire (desc)
+            self.on_answer_set.fire(desc)
 
     def _on_new_transceiver(self, element, transceiver):
         self.on_new_transceiver.fire(transceiver)
@@ -136,12 +137,14 @@ class WebRTCBinObserver(WebRTCObserver):
         self.add_channel(observer)
 
     def wait_for_negotiation_needed(self, generation):
-        self._negotiation_needed_observer.wait_for ((generation,))
+        self._negotiation_needed_observer.wait_for((generation,))
+
 
 class WebRTCStream(object):
     """
     An stream attached to a webrtcbin element
     """
+
     def __init__(self):
         self.bin = None
 
@@ -179,11 +182,13 @@ class WebRTCStream(object):
         self.bin.set_locked_state(False)
         self.bin.sync_state_with_parent()
 
+
 class WebRTCClient(WebRTCBinObserver):
     """
     Client for performing webrtc operations.  Controls the pipeline that
     contains a webrtcbin element.
     """
+
     def __init__(self):
         self.pipeline = Gst.Pipeline(None)
         self.webrtcbin = Gst.ElementFactory.make("webrtcbin")
@@ -192,21 +197,21 @@ class WebRTCClient(WebRTCBinObserver):
         self._streams = []
 
     def stop(self):
-        self.pipeline.set_state (Gst.State.NULL)
+        self.pipeline.set_state(Gst.State.NULL)
 
     def add_stream(self, desc):
         stream = WebRTCStream()
         stream.set_description(desc)
-        stream.add_and_link (self.pipeline, self.webrtcbin)
+        stream.add_and_link(self.pipeline, self.webrtcbin)
         self._streams.append(stream)
 
     def add_stream_with_pad(self, desc, pad):
         stream = WebRTCStream()
         stream.set_description(desc)
-        stream.add_and_link_to (self.pipeline, self.webrtcbin, pad)
+        stream.add_and_link_to(self.pipeline, self.webrtcbin, pad)
         self._streams.append(stream)
 
-    def set_options (self, opts):
+    def set_options(self, opts):
         if opts.has_field("local-bundle-policy"):
             self.webrtcbin.props.bundle_policy = opts["local-bundle-policy"]
 
@@ -215,6 +220,7 @@ class WebRTCBinDataChannelObserver(DataChannelObserver):
     """
     Data channel observer for a webrtcbin data channel.
     """
+
     def __init__(self, target, ident, location):
         super().__init__(ident, location)
         self.target = target
@@ -227,20 +233,25 @@ class WebRTCBinDataChannelObserver(DataChannelObserver):
         self.signal_handlers.append(target.connect("on-buffered-amount-low", self._on_buffered_amount_low))
 
     def _on_open(self, channel):
-        self._update_state (DataChannelState.OPEN)
+        self._update_state(DataChannelState.OPEN)
+
     def _on_close(self, channel):
-        self._update_state (DataChannelState.CLOSED)
+        self._update_state(DataChannelState.CLOSED)
+
     def _on_error(self, channel):
-        self._update_state (DataChannelState.ERROR)
+        self._update_state(DataChannelState.ERROR)
+
     def _on_message_data(self, channel, data):
         self.data.append(msg)
+
     def _on_message_string(self, channel, msg):
-        self.got_message (msg)
+        self.got_message(msg)
+
     def _on_buffered_amount_low(self, channel):
         pass
 
     def close(self):
         self.target.emit('close')
 
-    def send_string (self, msg):
+    def send_string(self, msg):
         self.target.emit('send-string', msg)

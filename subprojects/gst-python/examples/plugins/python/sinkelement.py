@@ -26,9 +26,11 @@ Gst.init_python()
 #
 # Simple Sink element created entirely in python
 #
+
+
 class MySink(GstBase.BaseSink, Gst.URIHandler):
-    __gstmetadata__ = ('CustomSink','Sink', \
-                      'Custom test sink element', 'Edward Hervey')
+    __gstmetadata__ = ('CustomSink', 'Sink',
+                       'Custom test sink element', 'Edward Hervey')
 
     __gsttemplates__ = Gst.PadTemplate.new("sink",
                                            Gst.PadDirection.SINK,
@@ -52,6 +54,7 @@ class MySink(GstBase.BaseSink, Gst.URIHandler):
 
     def do_set_uri(self, uri):
         return True
+
 
 GObject.type_register(MySink)
 __gstelementfactory__ = ("mysink", Gst.Rank.NONE, MySink)

@@ -17,6 +17,7 @@
 # Free Software Foundation, Inc., 51 Franklin St, Fifth Floor,
 # Boston, MA 02110-1301, USA.
 
+from unittest import mock
 from . import overrides_hack
 
 import tempfile  # noqa
@@ -29,7 +30,6 @@ from gi.repository import Gst  # noqa
 from gi.repository import GES  # noqa
 from gi.repository import GLib  # noqa
 import unittest  # noqa
-from unittest import mock
 
 from . import common  # noqa
 
@@ -47,6 +47,7 @@ class TestTimeline(common.GESSimpleTimelineTest):
         project = GES.Project.new(uri=timeline.get_asset().props.uri)
 
         loaded_called = False
+
         def loaded(unused_project, unused_timeline):
             nonlocal loaded_called
             loaded_called = True
@@ -88,6 +89,7 @@ class TestTimeline(common.GESSimpleTimelineTest):
         self.assertEqual(len(project.list_assets(GES.Extractable)), 2)
 
         mainloop = common.create_main_loop()
+
         def loaded_cb(unused_project, unused_timeline):
             mainloop.quit()
         project.connect("loaded", loaded_cb)
@@ -111,7 +113,6 @@ class TestTimeline(common.GESSimpleTimelineTest):
                 all_clips.add(self.append_clip(l))
         self.assertEqual(set(self.timeline.iter_clips()), all_clips)
 
-
     def test_nested_serialization(self):
         nested_timeline = common.create_project(with_group=True, saved=True)
         nested_project = nested_timeline.get_asset()
@@ -129,6 +130,7 @@ class TestTimeline(common.GESSimpleTimelineTest):
         self.assertEqual(len(project.list_assets(GES.Extractable)), 2)
 
         mainloop = common.create_main_loop()
+
         def loaded(unused_project, unused_timeline):
             mainloop.quit()
         project.connect("loaded", loaded)
@@ -234,8 +236,9 @@ class TestTimeline(common.GESSimpleTimelineTest):
 
         layer = self.timeline.append_layer()
         asset = GES.Asset.request(GES.TestClip, "framerate=120/1,height=500,width=500,max-duration=f120")
-        clip = layer.add_asset( asset, 0, 0, Gst.SECOND, GES.TrackType.UNKNOWN)
-        self.assertEqual(clip.get_id(), "GESTestClip, framerate=(fraction)120/1, height=(int)500, width=(int)500, max-duration=(string)f120;")
+        clip = layer.add_asset(asset, 0, 0, Gst.SECOND, GES.TrackType.UNKNOWN)
+        self.assertEqual(
+            clip.get_id(), "GESTestClip, framerate=(fraction)120/1, height=(int)500, width=(int)500, max-duration=(string)f120;")
 
         test_source, = clip.get_children(True)
         self.assertEqual(test_source.get_natural_size(), (True, 500, 500))
@@ -266,9 +269,9 @@ class TestTimeline(common.GESSimpleTimelineTest):
                     audio_track = track
             return video_track, audio_track
 
-
         def check_set_active_for_tracks(layer, active, tracks, expected_changed_tracks):
             callback_called = []
+
             def _check_active_changed_cb(layer, active, tracks, expected_tracks, expected_active):
                 self.assertEqual(set(tracks), set(expected_tracks))
                 self.assertEqual(active, expected_active)
@@ -309,7 +312,7 @@ class TestTimeline(common.GESSimpleTimelineTest):
         check_nle_object_activeness(c1, GES.TrackType.AUDIO, True)
 
         self.assertTrue(c1.edit([], self.layer.get_priority(), GES.EditMode.EDIT_NORMAL,
-                   GES.Edge.EDGE_NONE, c1.props.start))
+                                GES.Edge.EDGE_NONE, c1.props.start))
         check_nle_object_activeness(c1, GES.TrackType.VIDEO, True)
         check_nle_object_activeness(c1, GES.TrackType.AUDIO, False)
         self.check_reload_timeline()
@@ -803,7 +806,7 @@ class TestEditing(common.GESSimpleTimelineTest):
         self.assertEqual(group.props.start, 5)
         self.assertEqual(group.props.duration, 15)
 
-        group1 = GES.Group.new ()
+        group1 = GES.Group.new()
         group1.add(group)
         clips[0].trim(0)
         self.assertTimelineTopology([
@@ -874,7 +877,6 @@ class TestEditing(common.GESSimpleTimelineTest):
                 (GES.TestClip, 10, 10),
             ]
         ])
-
 
         self.assertFalse(effect.set_duration(20))
         self.assertEqual(effect.props.duration, 10)
@@ -953,7 +955,7 @@ class TestEditing(common.GESSimpleTimelineTest):
                 (GES.TextOverlayClip, 20, 10),
                 (GES.TestClip, 20, 10),
             ]
-        ], groups=[(clip0, overlay),])
+        ], groups=[(clip0, overlay), ])
 
         # Can't move as clip0 and clip1 would fully overlap
         self.assertFalse(overlay.set_start(40))
@@ -1116,12 +1118,14 @@ class TestInvalidOverlaps(common.GESSimpleTimelineTest):
         clip2 = self.add_clip(start=10, in_point=0, duration=2)
 
         self.assertFalse(clip1.set_start(10))
-        self.assertFalse(clip1.edit([], -1, GES.EditMode.EDIT_TRIM, GES.Edge.EDGE_END, clip2.props.start + clip2.props.duration))
+        self.assertFalse(clip1.edit([], -1, GES.EditMode.EDIT_TRIM,
+                         GES.Edge.EDGE_END, clip2.props.start + clip2.props.duration))
         self.assertFalse(clip1.ripple_end(clip2.props.start + clip2.props.duration))
         self.assertFalse(clip1.roll_end(clip2.props.start + clip2.props.duration))
 
         # clip2's end edge to the left, to decrease its duration.
-        self.assertFalse(clip2.edit([], -1, GES.EditMode.EDIT_TRIM, GES.Edge.EDGE_END, clip1.props.start + clip1.props.duration))
+        self.assertFalse(clip2.edit([], -1, GES.EditMode.EDIT_TRIM,
+                         GES.Edge.EDGE_END, clip1.props.start + clip1.props.duration))
         self.assertFalse(clip2.ripple_end(clip1.props.start + clip1.props.duration))
         self.assertFalse(clip2.roll_end(clip1.props.start + clip1.props.duration))
 
@@ -1169,7 +1173,7 @@ class TestInvalidOverlaps(common.GESSimpleTimelineTest):
             ]
         ])
 
-        self.assertFalse(clip.edit([], -1, GES.EditMode.EDIT_RIPPLE, GES.Edge.EDGE_NONE, clip.props.start -20))
+        self.assertFalse(clip.edit([], -1, GES.EditMode.EDIT_RIPPLE, GES.Edge.EDGE_NONE, clip.props.start - 20))
         self.assertTimelineTopology([
             [  # Unique layer
                 (GES.TestClip, 0, 10),
@@ -1192,7 +1196,8 @@ class TestInvalidOverlaps(common.GESSimpleTimelineTest):
                 (GES.TestClip, 11, 2)
             ]
         ])
-        self.assertFalse(clip1.edit([], -1, GES.EditMode.EDIT_ROLL, GES.Edge.EDGE_END, clip1.props.start + clip1.props.duration - 1))
+        self.assertFalse(clip1.edit([], -1, GES.EditMode.EDIT_ROLL, GES.Edge.EDGE_END,
+                         clip1.props.start + clip1.props.duration - 1))
         self.assertFalse(clip1.roll_end(13))
         self.assertTimelineTopology([
             [  # Unique layer
@@ -1272,7 +1277,7 @@ class TestInvalidOverlaps(common.GESSimpleTimelineTest):
         clips[1].props.start += 2
         group = GES.Container.group(clips[1:])
         self.assertTrue(clips[1].edit([], 1, GES.EditMode.EDIT_NORMAL, GES.Edge.EDGE_NONE,
-            group.props.start))
+                                      group.props.start))
 
         self.assertTimelineTopology([
             [
@@ -1296,7 +1301,7 @@ class TestInvalidOverlaps(common.GESSimpleTimelineTest):
         ])
 
         self.assertFalse(clips[1].edit([], 0, GES.EditMode.EDIT_NORMAL,
-            GES.Edge.EDGE_NONE, group.props.start))
+                                       GES.Edge.EDGE_NONE, group.props.start))
         self.assertTimelineTopology([
             [
                 (GES.TestClip, 15, 10),
@@ -1490,6 +1495,7 @@ class TestConfigurationRules(common.GESSimpleTimelineTest):
         self.assertFalse(clip3.trim(19))
         self.assertFalse(clip1.set_duration(31))
 
+
 class TestSnapping(common.GESSimpleTimelineTest):
 
     def test_snapping(self):
@@ -1517,6 +1523,7 @@ class TestSnapping(common.GESSimpleTimelineTest):
         self.timeline.set_snapping_distance(5)
 
         snaps = []
+
         def snapping_started_cb(timeline, element1, element2, dist, self):
             snaps.append(set([element1, element2]))
 
@@ -1553,6 +1560,7 @@ class TestSnapping(common.GESSimpleTimelineTest):
         self.timeline.set_snapping_distance(1)
 
         not_called = []
+
         def snapping_started_cb(timeline, element1, element2, dist, self):
             not_called.append("No snapping should happen")
 
@@ -1579,6 +1587,7 @@ class TestSnapping(common.GESSimpleTimelineTest):
         self.timeline.set_snapping_distance(1)
 
         not_called = []
+
         def snapping_started_cb(timeline, element1, element2, dist, self):
             not_called.append("No snapping should happen")
 
@@ -1592,6 +1601,7 @@ class TestSnapping(common.GESSimpleTimelineTest):
         self.assertEqual(len(self.layer.get_clips()), 2)
         self.assertEqual(clip1.props.duration, split_position)
         self.assertEqual(clip2.props.start, split_position)
+
 
 class TestComplexEditing(common.GESTimelineConfigTest):
 
@@ -1711,11 +1721,11 @@ class TestComplexEditing(common.GESTimelineConfigTest):
             c0, 1, GES.EditMode.EDIT_NORMAL, GES.Edge.EDGE_NONE, 22, 17,
             [c2], [c3],
             {
-                c0 : {"start": 25, "layer": 1},
-                c1 : {"start": 12, "layer": 2},
-                c2 : {"start": 17, "layer": 2},
-                g0 : {"start": 12, "layer": 2},
-                g1 : {"start": 12, "layer": 1}
+                c0: {"start": 25, "layer": 1},
+                c1: {"start": 12, "layer": 2},
+                c2: {"start": 17, "layer": 2},
+                g0: {"start": 12, "layer": 2},
+                g1: {"start": 12, "layer": 1}
             }, [(c3, c1, track)], [])
 
         """
@@ -1754,10 +1764,10 @@ class TestComplexEditing(common.GESTimelineConfigTest):
             g0, 0, GES.EditMode.EDIT_NORMAL, GES.Edge.EDGE_START, 5, 17,
             [c1], [c3],
             {
-                c1 : {"start": 5, "layer": 0},
-                c2 : {"start": 10, "layer": 0},
-                g0 : {"start": 5, "layer": 0},
-                g1 : {"start": 5, "duration": 25, "layer": 0},
+                c1: {"start": 5, "layer": 0},
+                c2: {"start": 10, "layer": 0},
+                g0: {"start": 5, "layer": 0},
+                g1: {"start": 5, "duration": 25, "layer": 0},
             }, [], [(c3, c1, track)])
 
         """
@@ -1797,8 +1807,8 @@ class TestComplexEditing(common.GESTimelineConfigTest):
             c2, 1, GES.EditMode.EDIT_NORMAL, GES.Edge.EDGE_END, 21, None,
             [], [],
             {
-                c2 : {"duration": 11, "layer": 1},
-                g0 : {"duration": 16},
+                c2: {"duration": 11, "layer": 1},
+                g0: {"duration": 16},
             }, [], [(c1, c2, track)])
 
         # no snapping when we use move layer
@@ -1806,7 +1816,7 @@ class TestComplexEditing(common.GESTimelineConfigTest):
         self.assertTrue(
             c3.move_to_layer(self.timeline.get_layer(1)))
         self.assertTimelineConfig(
-            new_props={c3 : {"layer": 1}}, new_transitions=[(c3, c2, track)])
+            new_props={c3: {"layer": 1}}, new_transitions=[(c3, c2, track)])
 
     def test_ripple(self):
         """
@@ -1915,9 +1925,9 @@ class TestComplexEditing(common.GESTimelineConfigTest):
             c2, 1, GES.EditMode.EDIT_RIPPLE, GES.Edge.EDGE_NONE, 8, 7,
             [c2], [c0],
             {
-                c2 : {"start": 7},
-                c4 : {"start": 14},
-                c5 : {"start": 18},
+                c2: {"start": 7},
+                c4: {"start": 14},
+                c5: {"start": 18},
             }, [], [])
 
         """
@@ -1959,8 +1969,8 @@ class TestComplexEditing(common.GESTimelineConfigTest):
             c2, 1, GES.EditMode.EDIT_RIPPLE, GES.Edge.EDGE_END, 19, 20,
             [c2], [c3],
             {
-                c2 : {"duration": 13},
-                c5 : {"start": 21},
+                c2: {"duration": 13},
+                c5: {"start": 21},
             }, [], [])
 
         """
@@ -2005,12 +2015,12 @@ class TestComplexEditing(common.GESTimelineConfigTest):
             c2, 2, GES.EditMode.EDIT_RIPPLE, GES.Edge.EDGE_NONE, 0, 15,
             [c2], [c1],
             {
-                c0 : {"start": 2, "layer": 1},
-                c2 : {"start": 2, "layer": 2},
-                c3 : {"start": 15, "layer": 2},
-                c4 : {"start": 9, "layer": 3},
-                c5 : {"start": 16, "layer": 3},
-                g0 : {"start": 2, "layer": 1},
+                c0: {"start": 2, "layer": 1},
+                c2: {"start": 2, "layer": 2},
+                c3: {"start": 15, "layer": 2},
+                c4: {"start": 9, "layer": 3},
+                c5: {"start": 16, "layer": 3},
+                g0: {"start": 2, "layer": 1},
             }, [(c0, c1, track)], [(c1, c2, track)])
 
         """
@@ -2064,8 +2074,8 @@ class TestComplexEditing(common.GESTimelineConfigTest):
             c0, 1, GES.EditMode.EDIT_RIPPLE, GES.Edge.EDGE_END, 10, None,
             [], [],
             {
-                c0 : {"duration": 8},
-                c4 : {"start": 12},
+                c0: {"duration": 8},
+                c4: {"start": 12},
             }, [], [])
 
         """
@@ -2117,8 +2127,8 @@ class TestComplexEditing(common.GESTimelineConfigTest):
             c5, 0, GES.EditMode.EDIT_RIPPLE, GES.Edge.EDGE_START, 18, None,
             [], [],
             {
-                c5 : {"start": 18, "layer": 0},
-                g1 : {"layer": 0, "duration": 21},
+                c5: {"start": 18, "layer": 0},
+                g1: {"layer": 0, "duration": 21},
             }, [], [(c4, c5, track)])
 
         """
@@ -2171,10 +2181,10 @@ class TestComplexEditing(common.GESTimelineConfigTest):
             c5, 1, GES.EditMode.EDIT_RIPPLE, GES.Edge.EDGE_NONE, 12, 10,
             [c1], [c0],
             {
-                c5 : {"start": 13, "layer": 1},
-                c1 : {"start": 0, "layer": 2},
-                g1 : {"start": 0, "layer": 1},
-                c4 : {"start": 7, "layer": 4},
+                c5: {"start": 13, "layer": 1},
+                c1: {"start": 0, "layer": 2},
+                g1: {"start": 0, "layer": 1},
+                c4: {"start": 7, "layer": 4},
             }, [(c1, c2, track)], [(c0, c1, track)])
 
         """
@@ -2225,14 +2235,14 @@ class TestComplexEditing(common.GESTimelineConfigTest):
             c1, 1, GES.EditMode.EDIT_RIPPLE, GES.Edge.EDGE_START, 20, 21,
             [c1], [c5],
             {
-                c1 : {"start": 21, "layer": 1},
-                g1 : {"start": 13, "duration": 18},
-                c0 : {"start": 23, "layer": 0},
-                c2 : {"start": 23, "layer": 1},
-                c3 : {"start": 36, "layer": 1},
-                g0 : {"start": 23, "layer": 0},
-                g2 : {"start": 23, "layer": 0},
-                c4 : {"start": 28, "layer": 3},
+                c1: {"start": 21, "layer": 1},
+                g1: {"start": 13, "duration": 18},
+                c0: {"start": 23, "layer": 0},
+                c2: {"start": 23, "layer": 1},
+                c3: {"start": 36, "layer": 1},
+                g0: {"start": 23, "layer": 0},
+                g2: {"start": 23, "layer": 0},
+                c4: {"start": 28, "layer": 3},
             }, [], [])
 
     def test_trim(self):
@@ -2370,7 +2380,7 @@ class TestComplexEditing(common.GESTimelineConfigTest):
         self.assertEdit(
             v4, 3, GES.EditMode.EDIT_TRIM, GES.Edge.EDGE_START, 1, None, [], [],
             {
-                v4 : {"start": 1, "in-point": 1, "duration": 12},
+                v4: {"start": 1, "in-point": 1, "duration": 12},
             }, [], [])
 
         # and trim v5 end
@@ -2378,7 +2388,7 @@ class TestComplexEditing(common.GESTimelineConfigTest):
             v5, 3, GES.EditMode.EDIT_TRIM, GES.Edge.EDGE_END, 25, 24,
             [v5], [a2, a4, v1, v3],
             {
-                v5 : {"duration": 6},
+                v5: {"duration": 6},
             }, [], [])
 
         """
@@ -2436,11 +2446,11 @@ class TestComplexEditing(common.GESTimelineConfigTest):
             g2, 0, GES.EditMode.EDIT_TRIM, GES.Edge.EDGE_START, 0, 1,
             [v0, v2, a3], [v4],
             {
-                v0 : {"start": 1, "in-point": 1, "duration": 14},
-                a3 : {"start": 1, "in-point": 6, "duration": 11},
-                v2 : {"start": 1, "in-point": 0, "duration": 17},
-                g0 : {"start": 1, "duration": 19},
-                g2 : {"start": 1, "duration": 23},
+                v0: {"start": 1, "in-point": 1, "duration": 14},
+                a3: {"start": 1, "in-point": 6, "duration": 11},
+                v2: {"start": 1, "in-point": 0, "duration": 17},
+                g0: {"start": 1, "duration": 19},
+                g2: {"start": 1, "duration": 23},
             }, [], [])
 
         self.timeline.set_snapping_distance(0)
@@ -2449,7 +2459,7 @@ class TestComplexEditing(common.GESTimelineConfigTest):
         self.assertEdit(
             v4, 3, GES.EditMode.EDIT_TRIM, GES.Edge.EDGE_END, 11, None, [], [],
             {
-                v4 : {"duration": 10},
+                v4: {"duration": 10},
             }, [], [])
 
         self.timeline.set_snapping_distance(2)
@@ -2507,21 +2517,21 @@ class TestComplexEditing(common.GESTimelineConfigTest):
             g2, 0, GES.EditMode.EDIT_TRIM, GES.Edge.EDGE_START, 12, 11,
             [a3, v0, v2], [v4],
             {
-                v0 : {"start": 11, "in-point": 11, "duration": 4},
-                a1 : {"start": 11, "in-point": 1, "duration": 4},
-                v1 : {"start": 11, "in-point": 1, "duration": 13},
-                a3 : {"start": 11, "in-point": 16, "duration": 1},
-                v2 : {"start": 11, "in-point": 10, "duration": 7},
-                g0 : {"start": 11, "duration": 9},
-                g1 : {"start": 11, "duration": 13},
-                g2 : {"start": 11, "duration": 13},
+                v0: {"start": 11, "in-point": 11, "duration": 4},
+                a1: {"start": 11, "in-point": 1, "duration": 4},
+                v1: {"start": 11, "in-point": 1, "duration": 13},
+                a3: {"start": 11, "in-point": 16, "duration": 1},
+                v2: {"start": 11, "in-point": 10, "duration": 7},
+                g0: {"start": 11, "duration": 9},
+                g1: {"start": 11, "duration": 13},
+                g2: {"start": 11, "duration": 13},
             }, [], [])
 
         # trim end to use as a snapping point
         self.assertEdit(
             v5, 4, GES.EditMode.EDIT_TRIM, GES.Edge.EDGE_END, 27, None, [], [],
             {
-                v5 : {"duration": 9, "layer": 4},
+                v5: {"duration": 9, "layer": 4},
             }, [], [])
 
         """
@@ -2587,18 +2597,18 @@ class TestComplexEditing(common.GESTimelineConfigTest):
             g2, 1, GES.EditMode.EDIT_TRIM, GES.Edge.EDGE_END, 29, 27,
             [a2, a4, v1, v3], [v5],
             {
-                a2 : {"duration": 12, "layer": 2},
-                v1 : {"duration": 16, "layer": 2},
-                a4 : {"duration": 12, "layer": 3},
-                v3 : {"duration": 15, "layer": 3},
-                g1 : {"duration": 16, "layer": 2},
-                g2 : {"duration": 16, "layer": 1},
-                a0 : {"layer": 1},
-                a1 : {"layer": 1},
-                v0 : {"layer": 1},
-                a3 : {"layer": 3},
-                v2 : {"layer": 3},
-                g0 : {"layer": 1},
+                a2: {"duration": 12, "layer": 2},
+                v1: {"duration": 16, "layer": 2},
+                a4: {"duration": 12, "layer": 3},
+                v3: {"duration": 15, "layer": 3},
+                g1: {"duration": 16, "layer": 2},
+                g2: {"duration": 16, "layer": 1},
+                a0: {"layer": 1},
+                a1: {"layer": 1},
+                v0: {"layer": 1},
+                a3: {"layer": 3},
+                v2: {"layer": 3},
+                g0: {"layer": 1},
             }, [], [])
 
         # trim start to use as a snapping point
@@ -2607,7 +2617,7 @@ class TestComplexEditing(common.GESTimelineConfigTest):
             v5, 4, GES.EditMode.EDIT_TRIM, GES.Edge.EDGE_START, 19, None,
             [], [],
             {
-                v5 : {"start": 19, "in-point": 1, "duration": 8},
+                v5: {"start": 19, "in-point": 1, "duration": 8},
             }, [], [])
 
         self.timeline.set_snapping_distance(2)
@@ -2667,14 +2677,14 @@ class TestComplexEditing(common.GESTimelineConfigTest):
             g2, 1, GES.EditMode.EDIT_TRIM, GES.Edge.EDGE_END, 17, 19,
             [a2, a4, v1, v3], [v5],
             {
-                a0 : {"duration": 7},
-                a2 : {"duration": 4},
-                v1 : {"duration": 8},
-                a4 : {"duration": 4},
-                v3 : {"duration": 7},
-                g0 : {"duration": 8},
-                g1 : {"duration": 8},
-                g2 : {"duration": 8},
+                a0: {"duration": 7},
+                a2: {"duration": 4},
+                v1: {"duration": 8},
+                a4: {"duration": 4},
+                v3: {"duration": 7},
+                g0: {"duration": 8},
+                g1: {"duration": 8},
+                g2: {"duration": 8},
             }, [], [])
 
         """
@@ -2731,17 +2741,17 @@ class TestComplexEditing(common.GESTimelineConfigTest):
         self.assertEdit(
             v0, 1, GES.EditMode.EDIT_TRIM, GES.Edge.EDGE_START, 5, None, [], [],
             {
-                v0 : {"start": 5, "in-point": 5, "duration": 10},
-                g0 : {"start": 5, "duration": 14},
-                g2 : {"start": 5, "duration": 14},
+                v0: {"start": 5, "in-point": 5, "duration": 10},
+                g0: {"start": 5, "duration": 14},
+                g2: {"start": 5, "duration": 14},
             }, [], [])
 
         self.assertEdit(
             a2, 2, GES.EditMode.EDIT_TRIM, GES.Edge.EDGE_END, 23, None, [], [],
             {
-                a2 : {"duration": 8},
-                g1 : {"duration": 12},
-                g2 : {"duration": 18},
+                a2: {"duration": 8},
+                g1: {"duration": 12},
+                g2: {"duration": 18},
             }, [], [])
         """
         , . . . . , . . . . , . . . . , . . . . , . . . . , . . . . ,
@@ -2797,21 +2807,20 @@ class TestComplexEditing(common.GESTimelineConfigTest):
             g0, 0, GES.EditMode.EDIT_TRIM, GES.Edge.EDGE_START, 9, 11,
             [v0], [v1, v2, v4, a3],
             {
-                v0 : {"start": 11, "in-point": 11, "duration": 4, "layer": 0},
-                a0 : {"layer": 0},
-                a1 : {"layer": 0},
-                g0 : {"start": 11, "duration": 8, "layer": 0},
-                g2 : {"start": 11, "duration": 12, "layer": 0},
+                v0: {"start": 11, "in-point": 11, "duration": 4, "layer": 0},
+                a0: {"layer": 0},
+                a1: {"layer": 0},
+                g0: {"start": 11, "duration": 8, "layer": 0},
+                g2: {"start": 11, "duration": 12, "layer": 0},
             }, [], [])
 
         self.assertEdit(
             g0, 0, GES.EditMode.EDIT_TRIM, GES.Edge.EDGE_END, 17, 18,
             [a0], [v2],
             {
-                a0 : {"duration": 6},
-                g0 : {"duration": 7},
+                a0: {"duration": 6},
+                g0: {"duration": 7},
             }, [], [])
-
 
     def test_roll(self):
         """
@@ -2930,7 +2939,7 @@ class TestComplexEditing(common.GESTimelineConfigTest):
 
         # give c6 a bit more allowed duration so we can focus on c9
         self.assertTrue(c6.set_inpoint(10))
-        self.assertTimelineConfig({ c6 : {"in-point": 10}})
+        self.assertTimelineConfig({c6: {"in-point": 10}})
         # cannot roll c6 to 0 because it would cause c9 to be trimmed
         # below its start
         self.assertFailEdit(
@@ -2938,11 +2947,11 @@ class TestComplexEditing(common.GESTimelineConfigTest):
             GES.Error.NEGATIVE_TIME)
         # set back
         self.assertTrue(c6.set_inpoint(7))
-        self.assertTimelineConfig({ c6 : {"in-point": 7}})
+        self.assertTimelineConfig({c6: {"in-point": 7}})
 
         # give c7 a bit more allowed duration so we can focus on c10
         self.assertTrue(c7.set_inpoint(0))
-        self.assertTimelineConfig({ c7 : {"in-point": 0}})
+        self.assertTimelineConfig({c7: {"in-point": 0}})
         # cannot roll end c7 to 30 because it would cause c10 to be
         # trimmed beyond its end
         self.assertFailEdit(
@@ -2950,7 +2959,7 @@ class TestComplexEditing(common.GESTimelineConfigTest):
             GES.Error.NEGATIVE_TIME)
         # set back
         self.assertTrue(c7.set_inpoint(1))
-        self.assertTimelineConfig({ c7 : {"in-point": 1}})
+        self.assertTimelineConfig({c7: {"in-point": 1}})
 
         # moving layer is not supported
         self.assertFailEdit(
@@ -2969,20 +2978,20 @@ class TestComplexEditing(common.GESTimelineConfigTest):
             c6, -1, GES.EditMode.EDIT_ROLL, GES.Edge.EDGE_START, 11, None,
             [], [],
             {
-                c6 : {"start": 11, "in-point": 8, "duration": 4},
-                c1 : {"duration": 11},
-                c9 : {"duration": 8},
-                g1 : {"duration": 11},
+                c6: {"start": 11, "in-point": 8, "duration": 4},
+                c1: {"duration": 11},
+                c9: {"duration": 8},
+                g1: {"duration": 11},
             }, [], [])
         # and reset
         self.assertEdit(
             c6, -1, GES.EditMode.EDIT_ROLL, GES.Edge.EDGE_START, 10, None,
             [], [],
             {
-                c6 : {"start": 10, "in-point": 7, "duration": 5},
-                c1 : {"duration": 10},
-                c9 : {"duration": 7},
-                g1 : {"duration": 10},
+                c6: {"start": 10, "in-point": 7, "duration": 5},
+                c1: {"duration": 10},
+                c9: {"duration": 7},
+                g1: {"duration": 10},
             }, [], [])
 
         # same with g0
@@ -2990,23 +2999,23 @@ class TestComplexEditing(common.GESTimelineConfigTest):
             g0, -1, GES.EditMode.EDIT_ROLL, GES.Edge.EDGE_START, 11, None,
             [], [],
             {
-                c6 : {"start": 11, "in-point": 8, "duration": 4},
-                c3 : {"start": 11, "in-point": 3, "duration": 5},
-                g0 : {"start": 11, "duration": 9},
-                c1 : {"duration": 11},
-                c9 : {"duration": 8},
-                g1 : {"duration": 11},
+                c6: {"start": 11, "in-point": 8, "duration": 4},
+                c3: {"start": 11, "in-point": 3, "duration": 5},
+                g0: {"start": 11, "duration": 9},
+                c1: {"duration": 11},
+                c9: {"duration": 8},
+                g1: {"duration": 11},
             }, [], [])
         self.assertEdit(
             g0, -1, GES.EditMode.EDIT_ROLL, GES.Edge.EDGE_START, 10, None,
             [], [],
             {
-                c6 : {"start": 10, "in-point": 7, "duration": 5},
-                c3 : {"start": 10, "in-point": 2, "duration": 6},
-                g0 : {"start": 10, "duration": 10},
-                c1 : {"duration": 10},
-                c9 : {"duration": 7},
-                g1 : {"duration": 10},
+                c6: {"start": 10, "in-point": 7, "duration": 5},
+                c3: {"start": 10, "in-point": 2, "duration": 6},
+                g0: {"start": 10, "duration": 10},
+                c1: {"duration": 10},
+                c9: {"duration": 7},
+                g1: {"duration": 10},
             }, [], [])
 
         self.timeline.set_snapping_distance(1)
@@ -3021,12 +3030,12 @@ class TestComplexEditing(common.GESTimelineConfigTest):
             c6, -1, GES.EditMode.EDIT_ROLL, GES.Edge.EDGE_START, 2, 3,
             [c6], [c12],
             {
-                c6 : {"start": 3, "in-point": 0, "duration": 12},
-                g0 : {"start": 3, "duration": 17},
-                c1 : {"duration": 3},
-                c8 : {"duration": 3},
-                c9 : {"duration": 0},
-                g1 : {"duration": 3},
+                c6: {"start": 3, "in-point": 0, "duration": 12},
+                g0: {"start": 3, "duration": 17},
+                c1: {"duration": 3},
+                c8: {"duration": 3},
+                c9: {"duration": 0},
+                g1: {"duration": 3},
             }, [], [(c1, c0, video), (c8, c12, audio0)])
 
         # bring back
@@ -3037,53 +3046,52 @@ class TestComplexEditing(common.GESTimelineConfigTest):
             g0, -1, GES.EditMode.EDIT_ROLL, GES.Edge.EDGE_START, 10, None,
             [], [],
             {
-                c6 : {"start": 10, "in-point": 7, "duration": 5},
-                g0 : {"start": 10, "duration": 10},
-                c1 : {"duration": 10},
-                c8 : {"duration": 10},
-                c9 : {"duration": 7},
-                g1 : {"duration": 10},
+                c6: {"start": 10, "in-point": 7, "duration": 5},
+                g0: {"start": 10, "duration": 10},
+                c1: {"duration": 10},
+                c8: {"duration": 10},
+                c9: {"duration": 7},
+                g1: {"duration": 10},
             }, [(c1, c0, video), (c8, c12, audio0)], [])
-
 
         # same but with the end edge of g0
         self.timeline.set_snapping_distance(0)
         self.assertEdit(
             c7, -1, GES.EditMode.EDIT_ROLL, GES.Edge.EDGE_END, 19, None, [], [],
             {
-                c7 : {"duration": 4},
-                c2 : {"start": 19, "in-point": 19, "duration": 11},
-                c10 : {"start": 19, "in-point": 0, "duration": 8},
-                g2 : {"start": 19, "duration": 11},
+                c7: {"duration": 4},
+                c2: {"start": 19, "in-point": 19, "duration": 11},
+                c10: {"start": 19, "in-point": 0, "duration": 8},
+                g2: {"start": 19, "duration": 11},
             }, [], [])
         self.assertEdit(
             c7, -1, GES.EditMode.EDIT_ROLL, GES.Edge.EDGE_END, 20, None, [], [],
             {
-                c7 : {"duration": 5},
-                c2 : {"start": 20, "in-point": 20, "duration": 10},
-                c10 : {"start": 20, "in-point": 1, "duration": 7},
-                g2 : {"start": 20, "duration": 10},
+                c7: {"duration": 5},
+                c2: {"start": 20, "in-point": 20, "duration": 10},
+                c10: {"start": 20, "in-point": 1, "duration": 7},
+                g2: {"start": 20, "duration": 10},
             }, [], [])
         # do same with g0
         self.assertEdit(
             g0, -1, GES.EditMode.EDIT_ROLL, GES.Edge.EDGE_END, 19, None, [], [],
             {
-                c7 : {"duration": 4},
-                c5 : {"duration": 5},
-                g0 : {"duration": 9},
-                c2 : {"start": 19, "in-point": 19, "duration": 11},
-                c10 : {"start": 19, "in-point": 0, "duration": 8},
-                g2 : {"start": 19, "duration": 11},
+                c7: {"duration": 4},
+                c5: {"duration": 5},
+                g0: {"duration": 9},
+                c2: {"start": 19, "in-point": 19, "duration": 11},
+                c10: {"start": 19, "in-point": 0, "duration": 8},
+                g2: {"start": 19, "duration": 11},
             }, [], [])
         self.assertEdit(
             g0, -1, GES.EditMode.EDIT_ROLL, GES.Edge.EDGE_END, 20, None, [], [],
             {
-                c7 : {"duration": 5},
-                c5 : {"duration": 6},
-                g0 : {"duration": 10},
-                c2 : {"start": 20, "in-point": 20, "duration": 10},
-                c10 : {"start": 20, "in-point": 1, "duration": 7},
-                g2 : {"start": 20, "duration": 10},
+                c7: {"duration": 5},
+                c5: {"duration": 6},
+                g0: {"duration": 10},
+                c2: {"start": 20, "in-point": 20, "duration": 10},
+                c10: {"start": 20, "in-point": 1, "duration": 7},
+                g2: {"start": 20, "duration": 10},
             }, [], [])
 
         self.timeline.set_snapping_distance(1)
@@ -3097,12 +3105,12 @@ class TestComplexEditing(common.GESTimelineConfigTest):
             c7, -1, GES.EditMode.EDIT_ROLL, GES.Edge.EDGE_END, 28, 27,
             [c7], [c13],
             {
-                c7 : {"duration": 12},
-                g0 : {"duration": 17},
-                c2 : {"start": 27, "in-point": 27, "duration": 3},
-                c10 : {"start": 27, "in-point": 8, "duration": 0},
-                c11 : {"start": 27, "in-point": 7, "duration": 3},
-                g2 : {"start": 27, "duration": 3},
+                c7: {"duration": 12},
+                g0: {"duration": 17},
+                c2: {"start": 27, "in-point": 27, "duration": 3},
+                c10: {"start": 27, "in-point": 8, "duration": 0},
+                c11: {"start": 27, "in-point": 7, "duration": 3},
+                g2: {"start": 27, "duration": 3},
             }, [], [(c0, c2, video), (c13, c11, audio1)])
         # bring back using g0
         # NOTE: no snapping to c5 end edge because it is part of the
@@ -3110,12 +3118,12 @@ class TestComplexEditing(common.GESTimelineConfigTest):
         self.assertEdit(
             g0, -1, GES.EditMode.EDIT_ROLL, GES.Edge.EDGE_END, 20, None, [], [],
             {
-                c7 : {"duration": 5},
-                g0 : {"duration": 10},
-                c2 : {"start": 20, "in-point": 20, "duration": 10},
-                c10 : {"start": 20, "in-point": 1, "duration": 7},
-                c11 : {"start": 20, "in-point": 0, "duration": 10},
-                g2 : {"start": 20, "duration": 10},
+                c7: {"duration": 5},
+                g0: {"duration": 10},
+                c2: {"start": 20, "in-point": 20, "duration": 10},
+                c10: {"start": 20, "in-point": 1, "duration": 7},
+                c11: {"start": 20, "in-point": 0, "duration": 10},
+                g2: {"start": 20, "duration": 10},
             }, [(c0, c2, video), (c13, c11, audio1)], [])
 
         # adjust c0 for snapping
@@ -3124,12 +3132,12 @@ class TestComplexEditing(common.GESTimelineConfigTest):
             c0, -1, GES.EditMode.EDIT_ROLL, GES.Edge.EDGE_START, 8, None,
             [], [],
             {
-                c0 : {"start": 8, "in-point": 1, "duration": 15},
+                c0: {"start": 8, "in-point": 1, "duration": 15},
             }, [], [])
         self.assertEdit(
             c0, -1, GES.EditMode.EDIT_ROLL, GES.Edge.EDGE_END, 22, None, [], [],
             {
-                c0 : {"duration": 14},
+                c0: {"duration": 14},
             }, [], [])
         """
         , . . . . , . . . . , . . . . , . . . . , . . . . , . . . . ,
@@ -3188,11 +3196,11 @@ class TestComplexEditing(common.GESTimelineConfigTest):
             c5, -1, GES.EditMode.EDIT_ROLL, GES.Edge.EDGE_END, 23, 22,
             [c5], [c0],
             {
-                c5 : {"duration": 8},
-                g0 : {"duration": 12},
-                c11 : {"start": 22, "in-point": 2, "duration": 8},
-                c10 : {"start": 22, "in-point": 3, "duration": 5},
-                g2 : {"start": 22, "duration": 8},
+                c5: {"duration": 8},
+                g0: {"duration": 12},
+                c11: {"start": 22, "in-point": 2, "duration": 8},
+                c10: {"start": 22, "in-point": 3, "duration": 5},
+                g2: {"start": 22, "duration": 8},
             }, [], [])
 
         # same with c3 at its start edge
@@ -3200,11 +3208,11 @@ class TestComplexEditing(common.GESTimelineConfigTest):
             c3, -1, GES.EditMode.EDIT_ROLL, GES.Edge.EDGE_START, 7, 8,
             [c3], [c0],
             {
-                c3 : {"start": 8, "in-point": 0, "duration": 8},
-                g0 : {"start": 8, "duration": 14},
-                c8 : {"duration": 8},
-                c9 : {"duration": 5},
-                g1 : {"duration": 8},
+                c3: {"start": 8, "in-point": 0, "duration": 8},
+                g0: {"start": 8, "duration": 14},
+                c8: {"duration": 8},
+                c9: {"duration": 5},
+                g1: {"duration": 8},
             }, [], [])
         """
         , . . . . , . . . . , . . . . , . . . . , . . . . , . . . . ,
@@ -3253,15 +3261,15 @@ class TestComplexEditing(common.GESTimelineConfigTest):
             c1, -1, GES.EditMode.EDIT_ROLL, GES.Edge.EDGE_END, 8, 8,
             [c1], [c9, c8, c3, c0],
             {
-                c1 : {"duration": 8},
-                c6 : {"start": 8, "in-point": 5, "duration": 7},
+                c1: {"duration": 8},
+                c6: {"start": 8, "in-point": 5, "duration": 7},
             }, [], [(c1, c0, video)])
         self.assertEdit(
             c2, -1, GES.EditMode.EDIT_ROLL, GES.Edge.EDGE_START, 22, 22,
             [c2], [c0, c5, c10, c11],
             {
-                c2 : {"start": 22, "in-point": 22, "duration": 8},
-                c7 : {"duration": 7},
+                c2: {"start": 22, "in-point": 22, "duration": 8},
+                c7: {"duration": 7},
             }, [], [(c0, c2, video)])
 
         # move c3 end edge out the way
@@ -3350,9 +3358,9 @@ class TestComplexEditing(common.GESTimelineConfigTest):
         self.assertEdit(
             c1, 1, GES.EditMode.NORMAL, GES.Edge.NONE, 95, 4, [c0], [snap_to],
             {
-                c0 : {"start": 4, "layer": 1},
-                c1 : {"start": 104, "layer": 1},
-                g1 : {"start": 4, "layer": 1},
+                c0: {"start": 4, "layer": 1},
+                c1: {"start": 104, "layer": 1},
+                g1: {"start": 4, "layer": 1},
             }, [], [])
 
     def test_move_layer(self):
@@ -3425,14 +3433,14 @@ class TestComplexEditing(common.GESTimelineConfigTest):
         self.timeline.move_layer(layer, 2)
         self.assertTimelineConfig(
             {
-                c0 : {"layer": 2},
-                c1 : {"layer": 2},
-                c2 : {"layer": 0},
-                c3 : {"layer": 0},
-                c4 : {"layer": 1},
-                c5 : {"layer": 1},
-                c6 : {"layer": 1},
-                g1 : {"layer": 0},
+                c0: {"layer": 2},
+                c1: {"layer": 2},
+                c2: {"layer": 0},
+                c3: {"layer": 0},
+                c4: {"layer": 1},
+                c5: {"layer": 1},
+                c6: {"layer": 1},
+                g1: {"layer": 0},
             })
         """
         , . . . . , . . . . , . . . . , . . . . , . . . . , . . . . ,
@@ -3485,12 +3493,12 @@ class TestComplexEditing(common.GESTimelineConfigTest):
         self.timeline.move_layer(layer, 0)
         self.assertTimelineConfig(
             {
-                c2 : {"layer": 1},
-                c3 : {"layer": 1},
-                c4 : {"layer": 0},
-                c5 : {"layer": 0},
-                c6 : {"layer": 0},
-                g0 : {"layer": 1},
+                c2: {"layer": 1},
+                c3: {"layer": 1},
+                c4: {"layer": 0},
+                c5: {"layer": 0},
+                c6: {"layer": 0},
+                g0: {"layer": 1},
             })
         """
         , . . . . , . . . . , . . . . , . . . . , . . . . , . . . . ,
@@ -3540,26 +3548,26 @@ class TestComplexEditing(common.GESTimelineConfigTest):
         self.timeline.move_layer(layer, 1)
         self.assertTimelineConfig(
             {
-                c0 : {"layer": 3},
-                c1 : {"layer": 3},
-                c2 : {"layer": 2},
-                c3 : {"layer": 2},
-                g0 : {"layer": 2},
+                c0: {"layer": 3},
+                c1: {"layer": 3},
+                c2: {"layer": 2},
+                c3: {"layer": 2},
+                g0: {"layer": 2},
             })
         layer = self.timeline.get_layer(3)
         self.assertIsNotNone(layer)
         self.timeline.move_layer(layer, 0)
         self.assertTimelineConfig(
             {
-                c0 : {"layer": 0},
-                c1 : {"layer": 0},
-                c2 : {"layer": 3},
-                c3 : {"layer": 3},
-                c4 : {"layer": 1},
-                c5 : {"layer": 1},
-                c6 : {"layer": 1},
-                g0 : {"layer": 0},
-                g1 : {"layer": 1},
+                c0: {"layer": 0},
+                c1: {"layer": 0},
+                c2: {"layer": 3},
+                c3: {"layer": 3},
+                c4: {"layer": 1},
+                c5: {"layer": 1},
+                c6: {"layer": 1},
+                g0: {"layer": 0},
+                g1: {"layer": 1},
             })
         """
         , . . . . , . . . . , . . . . , . . . . , . . . . , . . . . ,
@@ -3635,13 +3643,13 @@ class TestComplexEditing(common.GESTimelineConfigTest):
 
         self.assertEdit(
             c0, 0, GES.EditMode.EDIT_NORMAL, GES.Edge.EDGE_NONE, 8, None,
-            [], [], {c0 : {"start": 8}}, [], [])
+            [], [], {c0: {"start": 8}}, [], [])
         self.assertEdit(
             c0, 0, GES.EditMode.EDIT_NORMAL, GES.Edge.EDGE_START, 5, None,
-            [], [], {c0 : {"start": 5}}, [], [])
+            [], [], {c0: {"start": 5}}, [], [])
         self.assertEdit(
             c0, 0, GES.EditMode.EDIT_NORMAL, GES.Edge.EDGE_END, 8, None,
-            [], [], {c0 : {"duration": 3}}, [], [])
+            [], [], {c0: {"duration": 3}}, [], [])
 
         c1 = self.add_clip("c1", 0, [track], 30, 3)
         self.assertTimelineConfig()
@@ -3649,7 +3657,7 @@ class TestComplexEditing(common.GESTimelineConfigTest):
         # end edge snaps to start of c1
         self.assertEdit(
             c0, 0, GES.EditMode.EDIT_NORMAL, GES.Edge.EDGE_NONE, 10, 30,
-            [c0], [c1], {c0 : {"start": 27}}, [], [])
+            [c0], [c1], {c0: {"start": 27}}, [], [])
 
     def test_disable_timeline_editing_apis(self):
         track = self.add_video_track()
@@ -3728,6 +3736,7 @@ class TestTransitions(common.GESSimpleTimelineTest):
             timeline = project.extract()
 
             mainloop = common.create_main_loop()
+
             def loaded_cb(unused_project, unused_timeline):
                 mainloop.quit()
             project.connect("loaded", loaded_cb)
@@ -3746,6 +3755,7 @@ class TestTransitions(common.GESSimpleTimelineTest):
             timeline = project.extract()
 
             mainloop = common.create_main_loop()
+
             def loaded_cb(unused_project, unused_timeline):
                 mainloop.quit()
             project.connect("loaded", loaded_cb)

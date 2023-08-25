@@ -20,6 +20,7 @@
 
 from common import gst, unittest, TestCase
 
+
 class SegmentTest(TestCase):
     def testSeekNoSize(self):
         segment = gst.Segment()
@@ -57,6 +58,7 @@ class SegmentTest(TestCase):
         self.assertEquals(res, True)
         self.assertEquals(cstart, 100)
         self.assertEquals(cstop, 150)
+
 
 if __name__ == "__main__":
     unittest.main()

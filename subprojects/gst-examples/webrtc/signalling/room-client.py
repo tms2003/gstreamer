@@ -35,6 +35,7 @@ if SERVER_ADDR.startswith(('wss://', 'https://')):
     sslctx.check_hostname = False
     sslctx.verify_mode = ssl.CERT_NONE
 
+
 def get_answer_sdp(offer, peer_id):
     # Here we'd parse the incoming JSON message for ICE and SDP candidates
     print("Got: " + offer)
@@ -43,11 +44,13 @@ def get_answer_sdp(offer, peer_id):
     print("Sent: " + answer)
     return answer
 
+
 def get_offer_sdp(peer_id):
     sdp = json.dumps({'sdp': 'initial sdp'})
     offer = 'ROOM_PEER_MSG {} {}'.format(peer_id, sdp)
     print("Sent: " + offer)
     return offer
+
 
 async def hello():
     async with websockets.connect(SERVER_ADDR, ssl=sslctx) as ws:

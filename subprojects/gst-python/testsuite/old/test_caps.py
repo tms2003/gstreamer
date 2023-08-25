@@ -23,10 +23,12 @@
 import sys
 from common import gst, unittest, TestCase
 
+
 class CapsTest(TestCase):
     def setUp(self):
         TestCase.setUp(self)
-        self.caps = gst.caps_from_string('video/x-raw-yuv,width=10,framerate=5/1;video/x-raw-rgb,width=15,framerate=10/1')
+        self.caps = gst.caps_from_string(
+            'video/x-raw-yuv,width=10,framerate=5/1;video/x-raw-rgb,width=15,framerate=10/1')
         self.assertEquals(self.caps.__refcount__, 1)
         self.structure = self.caps[0]
         self.any = gst.Caps("ANY")
@@ -108,7 +110,6 @@ class CapsTest(TestCase):
         structure = caps[0]
         del caps
         assert structure['width'] == 0
-        
 
     def testCapsStructureChange(self):
         'test if changing the structure of the caps works by reference'
@@ -126,15 +127,15 @@ class CapsTest(TestCase):
         self.assertRaises(TypeError, gst.Caps, 2.0)
         self.assertRaises(TypeError, gst.Caps, object)
         self.assertRaises(TypeError, gst.Caps, 1, 2, 3)
-        
+
         # This causes segfault!
         #self.assertRaises(TypeError, gst.Caps, struct, 10, None)
 
     def testTrueFalse(self):
         'test that comparisons using caps work the intended way'
-        assert self.any # not empty even though it has no structures
+        assert self.any  # not empty even though it has no structures
         assert not self.empty
-        assert not gst.Caps('EMPTY') # also empty
+        assert not gst.Caps('EMPTY')  # also empty
         assert gst.Caps('your/mom')
 
     def testComparisons(self):
@@ -167,22 +168,22 @@ class CapsTest(TestCase):
         test2 = test | subset
         test = test2 - set
         assert not test
-        #our own extensions foolow here
+        # our own extensions foolow here
         assert subset == set & subset
         assert set == set | subset
         assert set - subset == set ^ subset
 
     def testSubtract(self):
         self.doSubtract(
-            gst.Caps ("some/mime, _int = [ 1, 2 ], list = { \"A\", \"B\", \"C\" }"),
-            gst.Caps ("some/mime, _int = 1, list = \"A\""))
+            gst.Caps("some/mime, _int = [ 1, 2 ], list = { \"A\", \"B\", \"C\" }"),
+            gst.Caps("some/mime, _int = 1, list = \"A\""))
         self.doSubtract(
-            gst.Caps ("some/mime, _double = (double) 1.0; other/mime, _int = { 1, 2 }"),
-            gst.Caps ("some/mime, _double = (double) 1.0"))
+            gst.Caps("some/mime, _double = (double) 1.0; other/mime, _int = { 1, 2 }"),
+            gst.Caps("some/mime, _double = (double) 1.0"))
 
     def testNoneValue(self):
         caps = gst.Caps("foo")
-        
+
         def invalid_assignment():
             caps[0]["bar"] = None
         self.assertRaises(TypeError, invalid_assignment)

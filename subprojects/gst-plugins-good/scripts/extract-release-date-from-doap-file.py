@@ -25,7 +25,7 @@ import sys
 import xml.etree.ElementTree as ET
 
 if len(sys.argv) != 3:
-  sys.exit('Usage: {} VERSION DOAP-FILE'.format(sys.argv[0]))
+    sys.exit('Usage: {} VERSION DOAP-FILE'.format(sys.argv[0]))
 
 release_version = sys.argv[1]
 doap_fn = sys.argv[2]
@@ -36,10 +36,10 @@ root = tree.getroot()
 namespaces = {'doap': 'http://usefulinc.com/ns/doap#'}
 
 for v in root.findall('doap:release/doap:Version', namespaces=namespaces):
-  if v.findtext('doap:revision', namespaces=namespaces) == release_version:
-    release_date = v.findtext('doap:created', namespaces=namespaces)
-    if release_date:
-      print(release_date)
-      sys.exit(0)
+    if v.findtext('doap:revision', namespaces=namespaces) == release_version:
+        release_date = v.findtext('doap:created', namespaces=namespaces)
+        if release_date:
+            print(release_date)
+            sys.exit(0)
 
 sys.exit('Could not find a release with version {} in {}'.format(release_version, doap_fn))

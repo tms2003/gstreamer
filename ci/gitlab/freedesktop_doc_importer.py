@@ -5,10 +5,10 @@ from datetime import datetime
 import tempfile
 from subprocess import check_call, call, check_output
 
-BRANCH="main"
-NAMESPACE="gstreamer"
-JOB="documentation"
-DOC_BASE="/srv/gstreamer.freedesktop.org/public_html/documentation"
+BRANCH = "main"
+NAMESPACE = "gstreamer"
+JOB = "documentation"
+DOC_BASE = "/srv/gstreamer.freedesktop.org/public_html/documentation"
 
 print(f"Running at {datetime.now()}")
 with tempfile.TemporaryDirectory() as tmpdir:

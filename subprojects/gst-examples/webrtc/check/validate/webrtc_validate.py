@@ -17,6 +17,11 @@
 # Free Software Foundation, Inc., 51 Franklin St, Fifth Floor,
 # Boston, MA 02110-1301, USA.
 
+from gi.repository import GstValidate
+from gi.repository import GstSdp
+from gi.repository import GstWebRTC
+from gi.repository import Gst
+from gi.repository import GLib
 import os
 import sys
 import argparse
@@ -31,20 +36,16 @@ from enums import SignallingState, NegotiationState, DataChannelState, Actions
 
 import gi
 gi.require_version("GLib", "2.0")
-from gi.repository import GLib
 gi.require_version("Gst", "1.0")
-from gi.repository import Gst
 gi.require_version("GstWebRTC", "1.0")
-from gi.repository import GstWebRTC
 gi.require_version("GstSdp", "1.0")
-from gi.repository import GstSdp
 gi.require_version("GstValidate", "1.0")
-from gi.repository import GstValidate
 
 FORMAT = '%(asctime)-23s %(levelname)-7s  %(thread)d   %(name)-24s\t%(funcName)-24s %(message)s'
 LEVEL = os.environ.get("LOGLEVEL", "DEBUG")
 logging.basicConfig(level=LEVEL, format=FORMAT)
 l = logging.getLogger(__name__)
+
 
 class WebRTCApplication(object):
     def __init__(self, server, id_, peerid, scenario_name, browser_name, html_source, test_name=None):
@@ -68,7 +69,7 @@ class WebRTCApplication(object):
             self.client.pipeline.set_state(Gst.State.PLAYING)
 
     def _on_scenario_done(self, scenario):
-        l.error ('scenario done')
+        l.error('scenario done')
         GLib.idle_add(self.quit)
 
     def _connect_actions(self, actions):
@@ -103,20 +104,20 @@ class WebRTCApplication(object):
             elif atype == Actions.SEND_DATA_CHANNEL_STRING:
                 assert action.structure["which"] in ("local", "remote")
                 c = self.client if action.structure["which"] == "local" else self.remote_client
-                channel = c.find_channel (action.structure["id"])
-                channel.send_string (action.structure["msg"])
+                channel = c.find_channel(action.structure["id"])
+                channel.send_string(action.structure["msg"])
                 return GstValidate.ActionReturn.OK
             elif atype == Actions.WAIT_FOR_DATA_CHANNEL_STATE:
                 assert action.structure["which"] in ("local", "remote")
                 c = self.client if action.structure["which"] == "local" else self.remote_client
                 states = [DataChannelState(action.structure["state"]), DataChannelState.ERROR]
-                channel = c.find_channel (action.structure["id"])
+                channel = c.find_channel(action.structure["id"])
                 state = channel.wait_for_states(states)
                 return GstValidate.ActionReturn.OK if state != DataChannelState.ERROR else GstValidate.ActionReturn.ERROR
             elif atype == Actions.CLOSE_DATA_CHANNEL:
                 assert action.structure["which"] in ("local", "remote")
                 c = self.client if action.structure["which"] == "local" else self.remote_client
-                channel = c.find_channel (action.structure["id"])
+                channel = c.find_channel(action.structure["id"])
                 channel.close()
                 return GstValidate.ActionReturn.OK
             elif atype == Actions.WAIT_FOR_DATA_CHANNEL:
@@ -127,20 +128,20 @@ class WebRTCApplication(object):
             elif atype == Actions.WAIT_FOR_DATA_CHANNEL_STRING:
                 assert action.structure["which"] in ("local", "remote")
                 c = self.client if action.structure["which"] == "local" else self.remote_client
-                channel = c.find_channel (action.structure["id"])
+                channel = c.find_channel(action.structure["id"])
                 channel.wait_for_message(action.structure["msg"])
                 return GstValidate.ActionReturn.OK
             elif atype == Actions.WAIT_FOR_NEGOTIATION_NEEDED:
                 self.client.wait_for_negotiation_needed(action.structure["generation"])
                 return GstValidate.ActionReturn.OK
             elif atype == Actions.SET_WEBRTC_OPTIONS:
-                self.client.set_options (action.structure)
-                self.remote_client.set_options (action.structure)
+                self.client.set_options(action.structure)
+                self.remote_client.set_options(action.structure)
                 return GstValidate.ActionReturn.OK
             else:
                 assert "Not reached" == ""
 
-        actions.action.connect (on_action)
+        actions.action.connect(on_action)
 
     def _connect_client_observer(self):
         def on_offer_created(offer):
@@ -156,7 +157,7 @@ class WebRTCApplication(object):
         self.client.on_answer_created.connect(on_answer_created)
 
         def on_ice_candidate(mline, candidate):
-            msg = json.dumps({'ice': {'sdpMLineIndex': str(mline), 'candidate' : candidate}})
+            msg = json.dumps({'ice': {'sdpMLineIndex': str(mline), 'candidate': candidate}})
             self.signalling.send(msg)
         self.client.on_ice_candidate.connect(on_ice_candidate)
 
@@ -183,7 +184,7 @@ class WebRTCApplication(object):
 
         def error(msg):
             # errors are unexpected
-            l.error ('Unexpected error: ' + msg)
+            l.error('Unexpected error: ' + msg)
             GLib.idle_add(self.quit)
             GLib.idle_add(sys.exit, -20)
         self.signalling.error.connect(error)
@@ -195,7 +196,7 @@ class WebRTCApplication(object):
         self._connect_client_observer()
 
         self.signalling = WebRTCSignallingClient(self.server, self.id)
-        self.remote_client = RemoteWebRTCObserver (self.signalling)
+        self.remote_client = RemoteWebRTCObserver(self.signalling)
         self._connect_signalling_observer()
 
         actions = ActionObserver()
@@ -209,12 +210,12 @@ class WebRTCApplication(object):
         self.browser = Browser(create_driver(self.browser_name))
         self.browser.open(self.html_source)
 
-        browser_id = self.browser.get_peer_id ()
+        browser_id = self.browser.get_peer_id()
         assert browser_id == self.peerid
 
         self.signalling.create_session(self.peerid)
         test_name = self.test_name if self.test_name else self.scenario_name
-        self.remote_client.set_title (test_name)
+        self.remote_client.set_title(test_name)
 
         self._init_validate(self.scenario_name)
 
@@ -241,6 +242,7 @@ class WebRTCApplication(object):
             self.quit()
             raise
 
+
 def parse_options():
     parser = argparse.ArgumentParser()
     parser.add_argument('id', help='ID of this client', type=int)
@@ -251,6 +253,7 @@ def parse_options():
     parser.add_argument('--browser', help='Browser name to use', default=None)
     parser.add_argument('--name', help='Name of the test', default=None)
     return parser.parse_args()
+
 
 def init():
     Gst.init(None)
@@ -276,10 +279,13 @@ def init():
 
     return args
 
+
 def run():
     args = init()
-    w = WebRTCApplication (args.server, args.id, args.peer_id, args.scenario, args.browser, args.html_source, test_name=args.name)
+    w = WebRTCApplication(args.server, args.id, args.peer_id, args.scenario,
+                          args.browser, args.html_source, test_name=args.name)
     return w.run()
+
 
 if __name__ == "__main__":
     sys.exit(run())

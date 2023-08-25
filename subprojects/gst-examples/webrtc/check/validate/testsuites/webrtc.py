@@ -28,4 +28,3 @@ def setup_tests(test_manager, options):
     print("Setting up webrtc tests")
 
     return True
-

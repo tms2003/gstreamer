@@ -19,22 +19,22 @@
 # License along with this library; if not, write to the
 # Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
 # Boston, MA 02110-1301, USA.
-# 
+#
 # Author: David I. Lehn <dlehn@users.sourceforge.net>
 #
 
+import gst
+import pygst
+import gtk
+import gobject
+import time
+import sys
 import pygtk
 pygtk.require('2.0')
 
-import sys
-import time
-import gobject
-import gtk
 
-import pygst
 pygst.require('0.10')
 
-import gst
 
 class BPS(object):
     def __init__(self):
@@ -49,13 +49,13 @@ class BPS(object):
         print '\t%d buffers / %fs\t= %f bps\t= %f spb' % (self.buffers, dt, bps, spb)
 
     def fakesrc(self, buffers):
-        src = gst.element_factory_make('fakesrc','src')
+        src = gst.element_factory_make('fakesrc', 'src')
         src.set_property('silent', 1)
         src.set_property('num_buffers', buffers)
         return src
 
     def fakesink(self):
-        sink = gst.element_factory_make('fakesink','sink')
+        sink = gst.element_factory_make('fakesink', 'sink')
         sink.set_property('silent', 1)
         return sink
 
@@ -77,7 +77,7 @@ class BPS(object):
         self.bus = self.pipeline.get_bus()
 
         self.start = time.time()
-        
+
         self.pipeline.set_state(gst.STATE_PLAYING)
 
         while 1:
@@ -90,31 +90,33 @@ class BPS(object):
 
     def run(self, buffers):
         self.buffers = buffers
-        
+
         print '# Testing buffer processing rate for "fakesrc ! fakesink"'
         print '# bps = buffers per second'
         print '# spb = seconds per buffer'
-        
+
         self.pipeline = self.build_pipeline(buffers)
         assert self.pipeline
 
         self.test()
-    
+
+
 def main(args):
     "GStreamer Buffers-Per-Second tester"
 
     if len(args) < 2:
         print 'usage: %s buffers' % args[0]
         return 1
-    
+
     bps = BPS()
-    
+
     buffers = int(args[1])
     if buffers < 1:
         print 'buffers must be higher than 0'
         return
 
     bps.run(buffers)
+
 
 if __name__ == '__main__':
     sys.exit(main(sys.argv))

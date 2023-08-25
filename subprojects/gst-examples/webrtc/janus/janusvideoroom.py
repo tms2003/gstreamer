@@ -2,6 +2,10 @@
 # Copyright @tobiasfriden and @saket424 on github
 # See https://github.com/centricular/gstwebrtc-demos/issues/66
 # Copyright Jan Schmidt <jan@centricular.com> 2020
+from gi.repository import GstSdp
+from gi.repository import GstWebRTC
+from gi.repository import Gst
+import gi
 import random
 import ssl
 import websockets
@@ -20,7 +24,7 @@ DO_VP8 = True
 # Set to False to disable RTX (lost packet retransmission)
 DO_RTX = True
 # Choose the video source:
-VIDEO_SRC="videotestsrc pattern=ball"
+VIDEO_SRC = "videotestsrc pattern=ball"
 # VIDEO_SRC="v4l2src"
 
 
@@ -28,15 +32,18 @@ VIDEO_SRC="videotestsrc pattern=ball"
 class JanusEvent:
     sender = attr.ib(validator=attr.validators.instance_of(int))
 
+
 @attr.s
 class PluginData(JanusEvent):
     plugin = attr.ib(validator=attr.validators.instance_of(str))
     data = attr.ib()
     jsep = attr.ib()
 
+
 @attr.s
 class WebrtcUp(JanusEvent):
     pass
+
 
 @attr.s
 class Media(JanusEvent):
@@ -48,18 +55,22 @@ class Media(JanusEvent):
         if kind not in ["video", "audio"]:
             raise ValueError("kind must equal video or audio")
 
+
 @attr.s
 class SlowLink(JanusEvent):
     uplink = attr.ib(validator=attr.validators.instance_of(bool))
     lost = attr.ib(validator=attr.validators.instance_of(int))
 
+
 @attr.s
 class HangUp(JanusEvent):
     reason = attr.ib(validator=attr.validators.instance_of(str))
 
+
 @attr.s(cmp=False)
 class Ack:
     transaction = attr.ib(validator=attr.validators.instance_of(str))
+
 
 @attr.s
 class Jsep:
@@ -67,18 +78,15 @@ class Jsep:
     type = attr.ib(validator=attr.validators.in_(["offer", "pranswer", "answer", "rollback"]))
 
 
-import gi
 gi.require_version('Gst', '1.0')
-from gi.repository import Gst
 gi.require_version('GstWebRTC', '1.0')
-from gi.repository import GstWebRTC
 gi.require_version('GstSdp', '1.0')
-from gi.repository import GstSdp
 
 if DO_VP8:
-    ( encoder, payloader, rtp_encoding) = ( "vp8enc target-bitrate=100000 overshoot=25 undershoot=100 deadline=33000 keyframe-max-dist=1", "rtpvp8pay picture-id-mode=2", "VP8" )
+    (encoder, payloader, rtp_encoding) = (
+        "vp8enc target-bitrate=100000 overshoot=25 undershoot=100 deadline=33000 keyframe-max-dist=1", "rtpvp8pay picture-id-mode=2", "VP8")
 else:
-    ( encoder, payloader, rtp_encoding) = ( "x264enc", "rtph264pay aggregate-mode=zero-latency", "H264" )
+    (encoder, payloader, rtp_encoding) = ("x264enc", "rtph264pay aggregate-mode=zero-latency", "H264")
 
 PIPELINE_DESC = '''
  webrtcbin name=sendrecv stun-server=stun://stun.l.google.com:19302
@@ -86,8 +94,10 @@ PIPELINE_DESC = '''
  {} ! {} !  queue ! application/x-rtp,media=video,encoding-name={},payload=96 ! sendrecv.
 '''.format(VIDEO_SRC, encoder, payloader, rtp_encoding)
 
+
 def transaction_id():
     return ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(8))
+
 
 @attr.s
 class JanusGateway:
@@ -97,17 +107,17 @@ class JanusGateway:
     conn = None
 
     async def connect(self):
-        sslCon=None
+        sslCon = None
         if self.server.startswith("wss"):
-            sslCon=ssl.SSLContext()
+            sslCon = ssl.SSLContext()
         self.conn = await websockets.connect(self.server, subprotocols=['janus-protocol'], ssl=sslCon)
         transaction = transaction_id()
         await self.conn.send(json.dumps({
             "janus": "create",
             "transaction": transaction
-            }))
+        }))
         resp = await self.conn.recv()
-        print (resp)
+        print(resp)
         parsed = json.loads(resp)
         assert parsed["janus"] == "success", "Failed creating session"
         assert parsed["transaction"] == transaction, "Incorrect transaction"
@@ -147,7 +157,7 @@ class JanusGateway:
 
         await self.conn.send(json.dumps(janus_message))
 
-        #while True:
+        # while True:
         #    resp = await self._recv_and_parse()
         #    if isinstance(resp, PluginData):
         #        return resp
@@ -171,7 +181,7 @@ class JanusGateway:
 
         await self.conn.send(json.dumps(janus_message))
 
-        #while True:
+        # while True:
         #    resp = await self._recv_and_parse()
         #    if isinstance(resp, PluginData):
         #        if jsep is not None:
@@ -242,6 +252,7 @@ class JanusGateway:
         else:
             return raw
 
+
 class WebRTCClient:
     def __init__(self, peer_id, server):
         self.conn = None
@@ -254,14 +265,14 @@ class WebRTCClient:
 
     def send_sdp_offer(self, offer):
         text = offer.sdp.as_text()
-        print ('Sending offer:\n%s' % text)
+        print('Sending offer:\n%s' % text)
         # configure media
         media = {'audio': True, 'video': True}
         request = {'request': 'publish'}
         request.update(media)
         self.request = request
-        self.offermsg = { 'sdp': text, 'trickle': True, 'type': 'offer' }
-        print (self.offermsg)
+        self.offermsg = {'sdp': text, 'trickle': True, 'type': 'offer'}
+        print(self.offermsg)
         loop = asyncio.new_event_loop()
         loop.run_until_complete(self.signaling.sendmessage(self.request, self.offermsg))
 
@@ -280,13 +291,13 @@ class WebRTCClient:
 
     def send_ice_candidate_message(self, _, mlineindex, candidate):
         icemsg = {'candidate': candidate, 'sdpMLineIndex': mlineindex}
-        print ("Sending ICE", icemsg)
+        print("Sending ICE", icemsg)
         loop = asyncio.new_event_loop()
         loop.run_until_complete(self.signaling.sendtrickle(icemsg))
 
     def on_incoming_decodebin_stream(self, _, pad):
         if not pad.has_current_caps():
-            print (pad, 'has no caps, ignoring')
+            print(pad, 'has no caps, ignoring')
             return
 
         caps = pad.get_current_caps()
@@ -336,7 +347,7 @@ class WebRTCClient:
 
         trans = self.webrtc.emit('get-transceiver', 0)
         if DO_RTX:
-            trans.set_property ('do-nack', True)
+            trans.set_property('do-nack', True)
         self.pipe.set_state(Gst.State.PLAYING)
 
     def extract_ice_from_sdp(self, sdp):
@@ -347,17 +358,17 @@ class WebRTCClient:
                 if mlineindex < 0:
                     print("Received ice candidate in SDP before any m= line")
                     continue
-                print ('Received remote ice-candidate mlineindex {}: {}'.format(mlineindex, candidate))
+                print('Received remote ice-candidate mlineindex {}: {}'.format(mlineindex, candidate))
                 self.webrtc.emit('add-ice-candidate', mlineindex, candidate)
             elif line.startswith("m="):
                 mlineindex += 1
 
     async def handle_sdp(self, msg):
-        print (msg)
+        print(msg)
         if 'sdp' in msg:
             sdp = msg['sdp']
             assert(msg['type'] == 'answer')
-            print ('Received answer:\n%s' % sdp)
+            print('Received answer:\n%s' % sdp)
             res, sdpmsg = GstSdp.SDPMessage.new_from_text(sdp)
             answer = GstWebRTC.WebRTCSessionDescription.new(GstWebRTC.WebRTCSDPType.ANSWER, sdpmsg)
             promise = Gst.Promise.new()
@@ -366,7 +377,7 @@ class WebRTCClient:
 
             # Extract ICE candidates from the SDP to work around a GStreamer
             # limitation in (at least) 1.16.2 and below
-            self.extract_ice_from_sdp (sdp)
+            self.extract_ice_from_sdp(sdp)
 
         elif 'ice' in msg:
             ice = msg['ice']
@@ -381,9 +392,9 @@ class WebRTCClient:
 
         loop = asyncio.get_event_loop()
         loop.create_task(signaling.keepalive())
-        #asyncio.create_task(self.keepalive())
+        # asyncio.create_task(self.keepalive())
 
-        joinmessage = { "request": "join", "ptype": "publisher", "room": 1234, "display": self.peer_id }
+        joinmessage = {"request": "join", "ptype": "publisher", "room": 1234, "display": self.peer_id}
         await signaling.sendmessage(joinmessage)
 
         assert signaling.conn
@@ -396,21 +407,21 @@ class WebRTCClient:
                     if msg.jsep is not None:
                         await self.handle_sdp(msg.jsep)
                 elif isinstance(msg, Media):
-                    print (msg)
+                    print(msg)
                 elif isinstance(msg, WebrtcUp):
-                    print (msg)
+                    print(msg)
                 elif isinstance(msg, SlowLink):
-                    print (msg)
+                    print(msg)
                 elif isinstance(msg, HangUp):
-                    print (msg)
+                    print(msg)
                 elif not isinstance(msg, Ack):
                     if 'candidate' in msg:
-                       ice = msg['candidate']
-                       print (ice)
-                       if 'candidate' in ice:
-                           candidate = ice['candidate']
-                           sdpmlineindex = ice['sdpMLineIndex']
-                           self.webrtc.emit('add-ice-candidate', sdpmlineindex, candidate)
+                        ice = msg['candidate']
+                        print(ice)
+                        if 'candidate' in ice:
+                            candidate = ice['candidate']
+                            sdpmlineindex = ice['sdpMLineIndex']
+                            self.webrtc.emit('add-ice-candidate', sdpmlineindex, candidate)
                     print(msg)
             except (KeyboardInterrupt, ConnectionClosed):
                 return
@@ -419,6 +430,7 @@ class WebRTCClient:
 
     async def close(self):
         return await self.signaling.close()
+
 
 def check_plugins():
     needed = ["opus", "vpx", "nice", "webrtc", "dtls", "srtp", "rtp",
@@ -430,7 +442,7 @@ def check_plugins():
     return True
 
 
-if __name__=='__main__':
+if __name__ == '__main__':
     Gst.init(None)
     if not check_plugins():
         sys.exit(1)

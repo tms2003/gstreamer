@@ -5,6 +5,7 @@ import os
 import sys
 import shutil
 
+
 def accept_command(commands):
     """Search @commands and returns the first found absolute path."""
     for command in commands:
@@ -14,13 +15,14 @@ def accept_command(commands):
 
     return None
 
+
 if __name__ == "__main__":
     ninja = accept_command(["ninja", "ninja-build"])
     buildroot = os.environ["MESON_BUILD_ROOT"]
 
-    bindinate  = False
+    bindinate = False
     if len(sys.argv) > 1 and sys.argv[1] == "bindinate":
-        bindinate  = True
+        bindinate = True
 
     print("Building all code")
     subprocess.check_call([ninja, "-C", buildroot])

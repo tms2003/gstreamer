@@ -32,6 +32,7 @@ if SERVER_ADDR.startswith(('wss://', 'https://')):
     sslctx.check_hostname = False
     sslctx.verify_mode = ssl.CERT_NONE
 
+
 def reply_sdp_ice(msg):
     # Here we'd parse the incoming JSON message for ICE and SDP candidates
     print("Got: " + msg)
@@ -39,10 +40,12 @@ def reply_sdp_ice(msg):
     print("Sent: " + reply)
     return reply
 
+
 def send_sdp_ice():
     reply = json.dumps({'sdp': 'initial sdp'})
     print("Sent: " + reply)
     return reply
+
 
 async def hello():
     async with websockets.connect(SERVER_ADDR, ssl=sslctx) as ws:
@@ -63,7 +66,7 @@ async def hello():
                 return
             if sent_sdp:
                 print('Got reply sdp: ' + msg)
-                return # Done
+                return  # Done
             if CALLEE_ID:
                 if msg == 'SESSION_OK':
                     await ws.send(send_sdp_ice())
@@ -73,7 +76,7 @@ async def hello():
                     return
             else:
                 await ws.send(reply_sdp_ice(msg))
-                return # Done
+                return  # Done
 
 print('Our uid is {!r}'.format(PEER_ID))
 

@@ -23,6 +23,7 @@ from common import gst, unittest, TestCase, pygobject_2_13
 import sys
 import time
 
+
 class TypeFindTest(TestCase):
     def testTypeFind(self):
         def application_awesome_type_find(typefind, arg1,  arg2):
@@ -31,7 +32,7 @@ class TypeFindTest(TestCase):
 
             data = typefind.peek(0, 5)
             self.failUnless(data == '', 'peek out of length??')
-            
+
             data = typefind.peek(0, 0)
             self.failUnless(data == '', '0 peek??')
 
@@ -42,11 +43,11 @@ class TypeFindTest(TestCase):
             self.failUnless(data == 'AWSM')
 
             typefind.suggest(gst.TYPE_FIND_MAXIMUM,
-                    gst.Caps('application/awesome'))
+                             gst.Caps('application/awesome'))
 
         res = gst.type_find_register('application/awesome', gst.RANK_PRIMARY,
-                application_awesome_type_find, ['.twi'],
-                gst.Caps('application/awesome'), 'arg1', 'arg2')
+                                     application_awesome_type_find, ['.twi'],
+                                     gst.Caps('application/awesome'), 'arg1', 'arg2')
         self.failUnless(res, 'type_find_register failed')
 
         factory = None
@@ -59,7 +60,7 @@ class TypeFindTest(TestCase):
 
         obj = gst.Pad('src', gst.PAD_SRC)
         buffer = gst.Buffer('AWSM')
-        caps, probability =  gst.type_find_helper_for_buffer(obj, buffer)
+        caps, probability = gst.type_find_helper_for_buffer(obj, buffer)
 
         self.failUnlessEqual(str(caps), 'application/awesome')
         self.failUnlessEqual(probability, gst.TYPE_FIND_MAXIMUM)

@@ -5,6 +5,7 @@ Simple script to update the children properties information for
 GESTrackElement-s that add children properties all the time
 """
 
+from gi.repository import Gst, GES, GObject
 import gi
 import os
 import sys
@@ -14,7 +15,6 @@ gi.require_version("Gst", "1.0")
 gi.require_version("GObject", "2.0")
 gi.require_version("GES", "1.0")
 
-from gi.repository import Gst, GES, GObject
 
 overrides = {
     "GstFramePositioner": False,
@@ -33,6 +33,7 @@ if __name__ == "__main__":
     layer = tl.append_layer()
 
     elements = []
+
     def add_clip(c, add=True, override_name=None):
         c.props.duration = Gst.SECOND
         c.props.start = layer.get_duration()
@@ -45,7 +46,8 @@ if __name__ == "__main__":
             else:
                 elements.append(c)
 
-    add_clip(GES.UriClipAsset.request_sync(Gst.filename_to_uri(os.path.join("../../", "tests/check/assets/audio_video.ogg"))).extract())
+    add_clip(GES.UriClipAsset.request_sync(Gst.filename_to_uri(
+        os.path.join("../../", "tests/check/assets/audio_video.ogg"))).extract())
     add_clip(GES.TestClip.new())
     add_clip(GES.TitleClip.new())
 
@@ -69,9 +71,9 @@ if __name__ == "__main__":
 
                 if GObject.type_is_a(prop, GObject.ParamSpecEnum.__gtype__):
                     lines += ["", "Valid values:"]
-                    for value  in prop.enum_class.__enum_values__.values():
+                    for value in prop.enum_class.__enum_values__.values():
                         lines.append("  - **%s** (%d) – %s" % (value.value_name,
-                            int(value), value.value_nick))
+                                                               int(value), value.value_nick))
                 else:
                     lines += ["", "Value type: #" + prop.value_type.name]
 
@@ -85,6 +87,5 @@ if __name__ == "__main__":
                 if len(lines) > 1:
                     doc += '\n'
                     doc += '\n'.join(lines[1:])
-
 
                 print(doc + "\n", file=f)

@@ -20,6 +20,7 @@
 
 from common import gobject, gst, unittest, TestCase
 
+
 class Descriptions(TestCase):
 
     def testSourceDescription(self):
@@ -60,4 +61,3 @@ class Descriptions(TestCase):
 # * missing-plugins
 # * install-plugins (and detect if there weren't compiled because of a version
 #   of plugins-base too low)
-

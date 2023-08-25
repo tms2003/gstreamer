@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+from gi.repository import Gst
 import os
 import unittest
 from selenium import webdriver
@@ -14,14 +15,14 @@ import signal
 
 import gi
 gi.require_version('Gst', '1.0')
-from gi.repository import Gst
 
 thread = None
 stop = None
 server = None
 
+
 class AsyncIOThread(threading.Thread):
-    def __init__ (self, loop):
+    def __init__(self, loop):
         threading.Thread.__init__(self)
         self.loop = loop
 
@@ -29,15 +30,17 @@ class AsyncIOThread(threading.Thread):
         asyncio.set_event_loop(self.loop)
         self.loop.run_forever()
         self.loop.close()
-        print ("closed loop")
+        print("closed loop")
 
     def stop_thread(self):
         self.loop.call_soon_threadsafe(self.loop.stop)
 
+
 async def run_until(server, stop_token):
     async with server:
         await stop_token
-    print ("run_until done")
+    print("run_until done")
+
 
 def setUpModule():
     global thread, server
@@ -48,10 +51,12 @@ def setUpModule():
     thread = AsyncIOThread(loop)
     thread.start()
     server = sserver.WebRTCSimpleServer('127.0.0.1', 8443, 20, False, cacerts_path)
+
     def f():
         global stop
         stop = asyncio.ensure_future(server.run())
     loop.call_soon_threadsafe(f)
+
 
 def tearDownModule():
     global thread, stop
@@ -59,6 +64,7 @@ def tearDownModule():
     thread.stop_thread()
     thread.join()
     print("thread joined")
+
 
 def valid_int(n):
     if isinstance(n, int):
@@ -71,15 +77,17 @@ def valid_int(n):
             return False
     return False
 
+
 def create_firefox_driver():
     capabilities = webdriver.DesiredCapabilities().FIREFOX.copy()
     capabilities['acceptSslCerts'] = True
     capabilities['acceptInsecureCerts'] = True
     profile = FirefoxProfile()
-    profile.set_preference ('media.navigator.streams.fake', True)
-    profile.set_preference ('media.navigator.permission.disabled', True)
+    profile.set_preference('media.navigator.streams.fake', True)
+    profile.set_preference('media.navigator.permission.disabled', True)
 
     return webdriver.Firefox(firefox_profile=profile, capabilities=capabilities)
+
 
 def create_chrome_driver():
     capabilities = webdriver.DesiredCapabilities().CHROME.copy()
@@ -92,6 +100,7 @@ def create_chrome_driver():
     copts.add_argument('--enable-blink-features=RTCUnifiedPlanByDefault')
 
     return webdriver.Chrome(options=copts, desired_capabilities=capabilities)
+
 
 class ServerConnectionTestCase(unittest.TestCase):
     def setUp(self):
@@ -109,7 +118,7 @@ class ServerConnectionTestCase(unittest.TestCase):
             lambda x: x.find_element_by_id('peer-id'),
             message='Peer-id element was never seen'
         )
-        WebDriverWait (self.browser, 5).until(
+        WebDriverWait(self.browser, 5).until(
             lambda x: valid_int(peer_id.text),
             message='Peer-id never became a number'
         )
@@ -127,18 +136,20 @@ class ServerConnectionTestCase(unittest.TestCase):
 
         async def do_things():
             await client.connect()
+
             async def stop_after(client, delay):
                 await asyncio.sleep(delay)
                 await client.stop()
-            future = asyncio.ensure_future (stop_after (client, 5))
+            future = asyncio.ensure_future(stop_after(client, 5))
             res = await client.loop()
             thread.stop_thread()
             return res
 
         res = asyncio.run_coroutine_threadsafe(do_things(), loop).result()
         thread.join()
-        print ("client thread joined")
+        print("client thread joined")
         self.assertEqual(res, 0)
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

@@ -17,6 +17,7 @@
 # Free Software Foundation, Inc., 51 Franklin St, Fifth Floor,
 # Boston, MA 02110-1301, USA.
 
+from unittest import mock
 from . import overrides_hack
 
 import gi
@@ -30,7 +31,6 @@ from gi.repository import GES  # noqa
 from . import common  # noqa
 
 import unittest  # noqa
-from unittest import mock
 
 Gst.init(None)
 GES.init()
@@ -181,6 +181,7 @@ class TestGroup(common.GESSimpleTimelineTest):
         project = GES.Project.new(uri=timeline.get_asset().props.uri)
 
         loaded_called = False
+
         def loaded(unused_project, unused_timeline):
             nonlocal loaded_called
             loaded_called = True
@@ -388,20 +389,21 @@ class TestGroup(common.GESSimpleTimelineTest):
             [
                 (GES.TestClip, 0, 10),
             ],
-            [ ],
+            [],
             [
                 (GES.TestClip, 20, 10),
             ]
         ], groups=[(clip1,)])
 
         self.assertEqual(group.get_layer_priority(), 2)
-        self.assertTrue(clip1.edit(self.timeline.get_layers(), 0, GES.EditMode.EDIT_NORMAL, GES.Edge.EDGE_NONE, clip1.start))
+        self.assertTrue(clip1.edit(self.timeline.get_layers(), 0,
+                        GES.EditMode.EDIT_NORMAL, GES.Edge.EDGE_NONE, clip1.start))
 
         self.assertTimelineTopology([
             [
                 (GES.TestClip, 0, 10),
                 (GES.TestClip, 20, 10),
             ],
-            [ ],
-            [ ]
+            [],
+            []
         ], groups=[(clip1,)])

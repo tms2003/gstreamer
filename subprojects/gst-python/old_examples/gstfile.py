@@ -11,16 +11,16 @@
 # _ subclassing a gst.Pipeline
 # _ and overidding existing methods (do_iterate())
 
+from gst.extend.discoverer import Discoverer
+import pygst
 import os
 import sys
 
 import gobject
 gobject.threads_init()
 
-import pygst
 pygst.require('0.10')
 
-from gst.extend.discoverer import Discoverer
 
 class GstFile:
     """
@@ -43,7 +43,7 @@ class GstFile:
         if len(self.files):
             print "\n"
         gobject.idle_add(self._discover_one)
-        
+
     def _discover_one(self):
         if not len(self.files):
             gobject.idle_add(self.mainloop.quit)
@@ -61,6 +61,7 @@ class GstFile:
         self.current.discover()
         return False
 
+
 def main(args):
     if len(args) < 2:
         print 'usage: %s files...' % args[0]
@@ -68,6 +69,7 @@ def main(args):
 
     gstfile = GstFile(args[1:])
     gstfile.run()
+
 
 if __name__ == '__main__':
     sys.exit(main(sys.argv))

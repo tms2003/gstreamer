@@ -26,6 +26,7 @@ import sys
 import gc
 import gobject
 
+
 class SrcBin(gst.Bin):
     def prepare(self):
         src = gst.element_factory_make('fakesrc')
@@ -33,7 +34,10 @@ class SrcBin(gst.Bin):
         pad = src.get_pad("src")
         ghostpad = gst.GhostPad("src", pad)
         self.add_pad(ghostpad)
+
+
 gobject.type_register(SrcBin)
+
 
 class SinkBin(gst.Bin):
     def prepare(self):
@@ -47,10 +51,11 @@ class SinkBin(gst.Bin):
     def connect_handoff(self, cb, *args, **kwargs):
         self.sink.set_property('signal-handoffs', True)
         self.sink.connect('handoff', cb, *args, **kwargs)
-        
+
+
 gobject.type_register(SinkBin)
 
-        
+
 class PipeTest(TestCase):
     def setUp(self):
         gst.info("setUp")
@@ -71,7 +76,7 @@ class PipeTest(TestCase):
 
     def tearDown(self):
         gst.info("tearDown")
-        self.assertTrue (self.pipeline.__gstrefcount__ >= 1 and self.pipeline.__gstrefcount__ <= 2)
+        self.assertTrue(self.pipeline.__gstrefcount__ >= 1 and self.pipeline.__gstrefcount__ <= 2)
         self.assertEquals(sys.getrefcount(self.pipeline), pygobject_2_13 and 2 or 3)
         self.assertEquals(self.src.__gstrefcount__, 2)
         self.assertEquals(sys.getrefcount(self.src), pygobject_2_13 and 2 or 3)
@@ -81,8 +86,8 @@ class PipeTest(TestCase):
         del self.pipeline
         self.gccollect()
 
-        self.assertEquals(self.src.__gstrefcount__, 1) # parent gone
-        self.assertEquals(self.sink.__gstrefcount__, 1) # parent gone
+        self.assertEquals(self.src.__gstrefcount__, 1)  # parent gone
+        self.assertEquals(self.sink.__gstrefcount__, 1)  # parent gone
         self.assertEquals(sys.getrefcount(self.src), pygobject_2_13 and 2 or 3)
         self.assertEquals(sys.getrefcount(self.sink), pygobject_2_13 and 2 or 3)
         gst.debug('deleting src')
@@ -93,7 +98,7 @@ class PipeTest(TestCase):
         self.gccollect()
 
         TestCase.tearDown(self)
-        
+
     def testBinState(self):
         self.pipeline.add(self.src, self.sink)
         self.src.link(self.sink)
@@ -107,7 +112,7 @@ class PipeTest(TestCase):
                 break
 
         while self._handoffs < 10:
-                pass
+            pass
 
         self.assertEquals(self.pipeline.set_state(gst.STATE_NULL), gst.STATE_CHANGE_SUCCESS)
         while True:
@@ -115,36 +120,36 @@ class PipeTest(TestCase):
             if ret == gst.STATE_CHANGE_SUCCESS and cur == gst.STATE_NULL:
                 break
 
-##     def testProbedLink(self):
-##         self.pipeline.add(self.src)
+# def testProbedLink(self):
+# self.pipeline.add(self.src)
 ##         pad = self.src.get_pad("src")
-        
-##         self.sink.connect_handoff(self._sink_handoff_cb)
+
+# self.sink.connect_handoff(self._sink_handoff_cb)
 ##         self._handoffs = 0
 
-##         # FIXME: adding a probe to the ghost pad does not work atm
-##         # id = pad.add_buffer_probe(self._src_buffer_probe_cb)
+# FIXME: adding a probe to the ghost pad does not work atm
+# id = pad.add_buffer_probe(self._src_buffer_probe_cb)
 ##         realpad = pad.get_target()
 ##         self._probe_id = realpad.add_buffer_probe(self._src_buffer_probe_cb)
 
 ##         self._probed = False
-        
-##         while True:
+
+# while True:
 ##             (ret, cur, pen) = self.pipeline.get_state()
-##             if ret == gst.STATE_CHANGE_SUCCESS and cur == gst.STATE_PLAYING:
-##                 break
+# if ret == gst.STATE_CHANGE_SUCCESS and cur == gst.STATE_PLAYING:
+# break
 
-##         while not self._probed:
-##             pass
+# while not self._probed:
+# pass
 
-##         while self._handoffs < 10:
-##             pass
+# while self._handoffs < 10:
+# pass
 
-##         self.pipeline.set_state(gst.STATE_NULL)
-##         while True:
+# self.pipeline.set_state(gst.STATE_NULL)
+# while True:
 ##             (ret, cur, pen) = self.pipeline.get_state()
-##             if ret == gst.STATE_CHANGE_SUCCESS and cur == gst.STATE_NULL:
-##                 break
+# if ret == gst.STATE_CHANGE_SUCCESS and cur == gst.STATE_NULL:
+# break
 
     def _src_buffer_probe_cb(self, pad, buffer):
         gst.debug("received probe on pad %r" % pad)
@@ -154,7 +159,7 @@ class PipeTest(TestCase):
         # this seems to get rid of the warnings about pushing on an unactivated
         # pad
         gst.debug('setting sink state')
-        
+
         # FIXME: attempt one: sync to current pending state of bin
         (res, cur, pen) = self.pipeline.get_state(timeout=0)
         target = pen
@@ -165,7 +170,7 @@ class PipeTest(TestCase):
         # print target
         # if we don't set async, it will possibly end up in PAUSED
         self.sink.set_state(target)
-        
+
         gst.debug('linking')
         self.src.link(self.sink)
         gst.debug('removing buffer probe id %r' % self._probe_id)
@@ -176,6 +181,7 @@ class PipeTest(TestCase):
     def _sink_handoff_cb(self, sink, buffer, pad):
         gst.debug('received handoff on pad %r' % pad)
         self._handoffs += 1
+
 
 class TargetTest(TestCase):
     def test_target(self):
@@ -189,6 +195,7 @@ class TargetTest(TestCase):
 
         ghost.set_target(src)
         self.failUnless(ghost.get_target() is src)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -17,12 +17,12 @@
 # License along with this library; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA
 
+from gi.repository import Gst
+from common import TestCase, unittest
 import sys
 import overrides_hack
 overrides_hack
-from common import TestCase, unittest
 
-from gi.repository import Gst
 
 class TimeArgsTest(TestCase):
     def testNoneTime(self):
@@ -36,6 +36,7 @@ class TimeArgsTest(TestCase):
 
     def testOneSecond(self):
         self.assertEquals(Gst.TIME_ARGS(Gst.SECOND), '0:00:01.000000000')
+
 
 class TestNotInitialized(TestCase):
     def testNotInitialized(self):
@@ -93,6 +94,7 @@ class TestBin(TestCase):
         Gst.init(None)
         self.assertEqual(Gst.ElementFactory.make("bin", None).sinkpads, [])
 
+
 class TestBufferMap(TestCase):
 
     def test_map_unmap_manual(self):
@@ -111,6 +113,7 @@ class TestBufferMap(TestCase):
             self.assertEqual(info.data[0], 42)
         with self.assertRaises(ValueError):
             info.data[0]
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -19,6 +19,13 @@
 
 """GStreamer Development Utilities Common GUI module."""
 
+from .generictreemodel import GenericTreeModel
+from GstDebugViewer.Common import utils
+import GstDebugViewer
+from gi.types import GObjectMeta
+from gi.repository import Gdk
+from gi.repository import Gtk
+from gi.repository import GObject
 import os
 
 import logging
@@ -26,14 +33,6 @@ import logging
 import gi
 
 gi.require_version('Gtk', '3.0')
-from gi.repository import GObject
-from gi.repository import Gtk
-from gi.repository import Gdk
-from gi.types import GObjectMeta
-
-import GstDebugViewer
-from GstDebugViewer.Common import utils
-from .generictreemodel import GenericTreeModel
 
 
 def widget_add_popup_menu(widget, menu, button=3):

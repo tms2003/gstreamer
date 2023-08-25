@@ -25,11 +25,13 @@ source_dir = os.path.join(os.environ['MESON_SOURCE_ROOT'], os.environ['MESON_SUB
 dest = BASENAME.format(version, arch)
 dest_path = os.path.join(source_dir, dest)
 
+
 def get_sha256(zipf):
     hasher = hashlib.sha256()
     with open(zipf, 'rb') as f:
         hasher.update(f.read())
     return hasher.hexdigest()
+
 
 if os.path.isfile(dest_path):
     found_sha256 = get_sha256(dest_path)

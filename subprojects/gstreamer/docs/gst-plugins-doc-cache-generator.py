@@ -88,7 +88,6 @@ class GstPluginsHotdocConfGen:
 UNSTABLE_VALUE = "unstable-values"
 
 
-
 def dict_recursive_update(d, u):
     modified = False
     unstable_values = d.get(UNSTABLE_VALUE, [])
@@ -109,22 +108,23 @@ def dict_recursive_update(d, u):
 
 
 def test_unstable_values():
-    current_cache = { "v1": "yes", "unstable-values": "v1"}
-    new_cache = { "v1": "no" }
+    current_cache = {"v1": "yes", "unstable-values": "v1"}
+    new_cache = {"v1": "no"}
 
     assert(dict_recursive_update(current_cache, new_cache) == False)
 
-    new_cache = { "v1": "no", "unstable-values": "v2" }
+    new_cache = {"v1": "no", "unstable-values": "v2"}
     assert(dict_recursive_update(current_cache, new_cache) == True)
 
-    current_cache = { "v1": "yes", "v2": "yay", "unstable-values": "v1",}
-    new_cache = { "v1": "no" }
+    current_cache = {"v1": "yes", "v2": "yay", "unstable-values": "v1", }
+    new_cache = {"v1": "no"}
     assert(dict_recursive_update(current_cache, new_cache) == False)
 
-    current_cache = { "v1": "yes", "v2": "yay", "unstable-values": "v2"}
-    new_cache = { "v1": "no", "v2": "unstable" }
+    current_cache = {"v1": "yes", "v2": "yay", "unstable-values": "v2"}
+    new_cache = {"v1": "no", "v2": "unstable"}
     assert (dict_recursive_update(current_cache, new_cache) == True)
-    assert (current_cache == { "v1": "no", "v2": "yay", "unstable-values": "v2" })
+    assert (current_cache == {"v1": "no", "v2": "yay", "unstable-values": "v2"})
+
 
 if __name__ == "__main__":
     if sys.argv[1] == "hotdoc-config":

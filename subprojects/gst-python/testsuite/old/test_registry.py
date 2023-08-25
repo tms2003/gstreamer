@@ -24,6 +24,7 @@ import sys
 import gc
 from common import gst, unittest, TestCase
 
+
 class RegistryTest(TestCase):
     def setUp(self):
         self.registry = gst.registry_get_default()
@@ -40,8 +41,9 @@ class RegistryTest(TestCase):
     def testGetPathList(self):
         # FIXME: this returns an empty list; probably due to core;
         # examine problem
-        
+
         paths = self.registry.get_path_list()
+
 
 class RegistryFeatureTest(TestCase):
     def setUp(self):
@@ -54,7 +56,7 @@ class RegistryFeatureTest(TestCase):
 
     def testFeatureList(self):
         self.assertRaises(TypeError, self.registry.get_feature_list, "kaka")
-        
+
         elements = map(lambda f: f.get_name(), self.efeatures)
         self.failUnless('fakesink' in elements)
 
@@ -62,7 +64,7 @@ class RegistryFeatureTest(TestCase):
 
         indexers = map(lambda f: f.get_name(), self.ifeatures)
         self.failUnless('memindex' in indexers)
-        
-        
+
+
 if __name__ == "__main__":
     unittest.main()

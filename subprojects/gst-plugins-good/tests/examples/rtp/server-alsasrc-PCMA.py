@@ -1,12 +1,12 @@
 #! /usr/bin/env python
 
+from gi.repository import GObject, Gst
 import gi
 import sys
 gi.require_version('Gst', '1.0')
-from gi.repository import GObject, Gst
 
 
-#gst-launch -v rtpbin name=rtpbin audiotestsrc ! audioconvert ! alawenc ! rtppcmapay ! rtpbin.send_rtp_sink_0 \
+# gst-launch -v rtpbin name=rtpbin audiotestsrc ! audioconvert ! alawenc ! rtppcmapay ! rtpbin.send_rtp_sink_0 \
 #                rtpbin.send_rtp_src_0 ! udpsink port=10000 host=xxx.xxx.xxx.xxx \
 #                rtpbin.send_rtcp_src_0 ! udpsink port=10001 host=xxx.xxx.xxx.xxx sync=false async=false \
 #                udpsrc port=10002 ! rtpbin.recv_rtcp_sink_0

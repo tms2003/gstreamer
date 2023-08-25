@@ -2,20 +2,21 @@
 # -*- Mode: Python -*-
 # vi:si:et:sw=4:sts=4:ts=4
 
+import gtk
+import gst.interfaces
+import gst
+import pygst
+import gobject
+import sys
 import pygtk
 pygtk.require('2.0')
 
-import sys
 
-import gobject
 gobject.threads_init()
 
-import pygst
 pygst.require('0.10')
-import gst
-import gst.interfaces
-import gtk
 gtk.gdk.threads_init()
+
 
 class SwitchTest:
     def __init__(self, videowidget):
@@ -42,7 +43,7 @@ class SwitchTest:
             self.videowidget.set_sink(message.src)
             message.src.set_property('force-aspect-ratio', True)
             gtk.gdk.threads_leave()
-            
+
     def on_message(self, bus, message):
         t = message.type
         if t == gst.MESSAGE_ERROR:
@@ -60,7 +61,7 @@ class SwitchTest:
         self.playing = True
         gst.info("playing player")
         self.pipeline.set_state(gst.STATE_PLAYING)
-        
+
     def stop(self):
         self.pipeline.set_state(gst.STATE_NULL)
         gst.info("stopped player")
@@ -71,13 +72,13 @@ class SwitchTest:
 
     def is_playing(self):
         return self.playing
-    
+
     def switch(self, padname):
         switch = self.pipeline.get_by_name('s')
         stop_time = switch.emit('block')
         newpad = switch.get_static_pad(padname)
         start_time = newpad.get_property('running-time')
-        
+
         gst.warning('stop time = %d' % (stop_time,))
         gst.warning('stop time = %s' % (gst.TIME_ARGS(stop_time),))
 
@@ -87,6 +88,7 @@ class SwitchTest:
         gst.warning('switching from %r to %r'
                     % (switch.get_property('active-pad'), padname))
         switch.emit('switch', newpad, stop_time, start_time)
+
 
 class VideoWidget(gtk.DrawingArea):
     def __init__(self):
@@ -106,8 +108,10 @@ class VideoWidget(gtk.DrawingArea):
         self.imagesink = sink
         self.imagesink.set_xwindow_id(self.window.xid)
 
+
 class SwitchWindow(gtk.Window):
     UPDATE_INTERVAL = 500
+
     def __init__(self):
         gtk.Window.__init__(self)
         self.set_default_size(410, 325)
@@ -130,10 +134,10 @@ class SwitchWindow(gtk.Window):
 
     def load_file(self, location):
         self.player.set_location(location)
-                                  
+
     def play(self):
         self.player.play()
-        
+
     def populate_combobox(self):
         switch = self.player.pipeline.get_by_name('s')
         for i, pad in enumerate([p for p in switch.pads()
@@ -156,10 +160,10 @@ class SwitchWindow(gtk.Window):
 
         self.videowidget = VideoWidget()
         vbox.pack_start(self.videowidget)
-        
+
         hbox = gtk.HBox()
         vbox.pack_start(hbox, fill=False, expand=False)
-        
+
         self.combobox = combobox = gtk.combo_box_new_text()
         combobox.show()
         hbox.pack_start(combobox)
@@ -169,6 +173,7 @@ class SwitchWindow(gtk.Window):
 
         self.videowidget.connect_after('realize',
                                        lambda *x: self.play())
+
 
 def main(args):
     def usage():
@@ -187,6 +192,7 @@ def main(args):
     w.show_all()
     gtk.main()
     return 0
+
 
 if __name__ == '__main__':
     sys.exit(main(sys.argv))

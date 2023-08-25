@@ -330,11 +330,13 @@ def main():
     # See: host, port in https://docs.python.org/3/library/asyncio-eventloop.html#asyncio.loop.create_server
     parser.add_argument('--addr', default='', help='Address to listen on (default: all interfaces, both ipv4 and ipv6)')
     parser.add_argument('--port', default=8443, type=int, help='Port to listen on')
-    parser.add_argument('--keepalive-timeout', dest='keepalive_timeout', default=30, type=int, help='Timeout for keepalive (in seconds)')
+    parser.add_argument('--keepalive-timeout', dest='keepalive_timeout', default=30,
+                        type=int, help='Timeout for keepalive (in seconds)')
     parser.add_argument('--cert-path', default=os.path.dirname(__file__))
     parser.add_argument('--disable-ssl', default=False, help='Disable ssl', action='store_true')
     parser.add_argument('--health', default='/health', help='Health check route')
-    parser.add_argument('--restart-on-cert-change', default=False, dest='cert_restart', action='store_true', help='Automatically restart if the SSL certificate changes')
+    parser.add_argument('--restart-on-cert-change', default=False, dest='cert_restart',
+                        action='store_true', help='Automatically restart if the SSL certificate changes')
 
     options = parser.parse_args(sys.argv[1:])
 

@@ -7,10 +7,11 @@
 # Test case for the GstController on sinesrc -> alsasink
 # Inspired from ensonic's examples/controller/audio-controller.c
 
+import time
+import gst
 import pygst
 pygst.require('0.10')
-import gst
-import time
+
 
 def main():
     pipeline = gst.Pipeline("audiocontroller")
@@ -35,6 +36,7 @@ def main():
     pipeline.set_state(gst.STATE_PLAYING)
 
     time.sleep(7)
+
 
 if __name__ == "__main__":
     main()

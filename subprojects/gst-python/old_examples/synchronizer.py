@@ -2,20 +2,21 @@
 # -*- Mode: Python -*-
 # vi:si:et:sw=4:sts=4:ts=4
 
+import gtk
+import gst.interfaces
+import gst
+import pygst
+import gobject
+import sys
 import pygtk
 pygtk.require('2.0')
 
-import sys
 
-import gobject
 gobject.threads_init()
 
-import pygst
 pygst.require('0.10')
-import gst
-import gst.interfaces
-import gtk
 gtk.gdk.threads_init()
+
 
 class GstPlayer:
     def __init__(self, videowidget):
@@ -39,7 +40,7 @@ class GstPlayer:
             self.videowidget.set_sink(message.src)
             message.src.set_property('force-aspect-ratio', True)
             gtk.gdk.threads_leave()
-            
+
     def on_message(self, bus, message):
         t = message.type
         if t == gst.MESSAGE_ERROR:
@@ -80,9 +81,9 @@ class GstPlayer:
         """
         gst.debug("seeking to %r" % location)
         event = gst.event_new_seek(1.0, gst.FORMAT_TIME,
-            gst.SEEK_FLAG_FLUSH,
-            gst.SEEK_TYPE_SET, location,
-            gst.SEEK_TYPE_NONE, 0)
+                                   gst.SEEK_FLAG_FLUSH,
+                                   gst.SEEK_TYPE_SET, location,
+                                   gst.SEEK_TYPE_NONE, 0)
 
         res = self.player.send_event(event)
         if res:
@@ -100,7 +101,7 @@ class GstPlayer:
         gst.info("playing player")
         self.player.set_state(gst.STATE_PLAYING)
         self.playing = True
-        
+
     def stop(self):
         self.player.set_state(gst.STATE_NULL)
         gst.info("stopped player")
@@ -110,7 +111,8 @@ class GstPlayer:
 
     def is_playing(self):
         return self.playing
-    
+
+
 class VideoWidget(gtk.DrawingArea):
     def __init__(self):
         gtk.DrawingArea.__init__(self)
@@ -128,6 +130,7 @@ class VideoWidget(gtk.DrawingArea):
         assert self.window.xid
         self.imagesink = sink
         self.imagesink.set_xwindow_id(self.window.xid)
+
 
 class SyncPoints(gtk.VBox):
     def __init__(self, window):
@@ -154,19 +157,20 @@ class SyncPoints(gtk.VBox):
 
         renderer = gtk.CellRendererText()
         column = gtk.TreeViewColumn("Audio time", renderer)
+
         def time_to_text(column, cell, method, iter, i):
             cell.set_property('text', self.get_time_as_str(iter, i))
         column.set_cell_data_func(renderer, time_to_text, 0)
         column.set_expand(True)
         column.set_clickable(True)
         view.append_column(column)
-        
+
         renderer = gtk.CellRendererText()
         column = gtk.TreeViewColumn("Video time", renderer)
         column.set_cell_data_func(renderer, time_to_text, 1)
         column.set_expand(True)
         view.append_column(column)
-        
+
         view.show()
         self.pack_start(view, True, True, 6)
 
@@ -176,22 +180,24 @@ class SyncPoints(gtk.VBox):
 
         add = gtk.Button(stock=gtk.STOCK_ADD)
         add.show()
+
         def add_and_select(*x):
             iter = model.append()
             self.view.get_selection().select_iter(iter)
             self.changed()
         add.connect("clicked", add_and_select)
         hbox.pack_end(add, False, False, 0)
-        
+
         remove = gtk.Button(stock=gtk.STOCK_REMOVE)
         remove.show()
+
         def remove_selected(*x):
             model, iter = self.view.get_selection().get_selected()
             model.remove(iter)
             self.changed()
         remove.connect("clicked", remove_selected)
         hbox.pack_end(remove, False, False, 0)
-        
+
         pad = gtk.Label('   ')
         pad.show()
         hbox.pack_end(pad)
@@ -232,7 +238,6 @@ class SyncPoints(gtk.VBox):
             print 'A/V %d: %s -- %s' % (index,
                                         self.get_time_as_str(row.iter, 0),
                                         self.get_time_as_str(row.iter, 1))
-            
 
     def set_selected_audio(self, time):
         sel = self.view.get_selection()
@@ -269,6 +274,7 @@ class SyncPoints(gtk.VBox):
             self.pwindow.play_toggled()
         self.pwindow.player.get_state(timeout=gst.MSECOND * 200)
 
+
 class ProgressDialog(gtk.Dialog):
     def __init__(self, title, description, task, parent, flags, buttons):
         gtk.Dialog.__init__(self, title, parent, flags, buttons)
@@ -289,7 +295,7 @@ class ProgressDialog(gtk.Dialog):
         label.set_alignment(0.0, 0.0)
         label.show()
         vbox.pack_start(label, False)
-        
+
         label = gtk.Label(description)
         label.set_use_markup(True)
         label.set_alignment(0.0, 0.0)
@@ -313,10 +319,12 @@ class ProgressDialog(gtk.Dialog):
     def set_task(self, task):
         self.progresstext.set_markup('<i>%s</i>' % task)
 
+
 UNKNOWN = 0
 SUCCESS = 1
 FAILURE = 2
 CANCELLED = 3
+
 
 class RemuxProgressDialog(ProgressDialog):
     def __init__(self, parent, fromname, toname):
@@ -331,7 +339,7 @@ class RemuxProgressDialog(ProgressDialog):
                                 (gtk.STOCK_CANCEL, CANCELLED,
                                  gtk.STOCK_CLOSE, SUCCESS))
         self.set_completed(False)
-        
+
     def update_position(self, pos, dur):
         remaining = dur - pos
         minutes = remaining // (gst.SECOND * 60)
@@ -342,6 +350,7 @@ class RemuxProgressDialog(ProgressDialog):
     def set_completed(self, completed):
         self.set_response_sensitive(CANCELLED, not completed)
         self.set_response_sensitive(SUCCESS, completed)
+
 
 class Resynchronizer(gst.Pipeline):
 
@@ -387,7 +396,7 @@ class Resynchronizer(gst.Pipeline):
                                                  CANCELLED,
                                                  gtk.STOCK_SAVE,
                                                  SUCCESS))
-        chooser.set_uri(self.fromuri) # to select the folder
+        chooser.set_uri(self.fromuri)  # to select the folder
         chooser.unselect_all()
         chooser.set_do_overwrite_confirmation(True)
         name = self.fromuri.split('/')[-1][:-4] + '-remuxed.ogg'
@@ -408,7 +417,7 @@ class Resynchronizer(gst.Pipeline):
                 # (requires implementing a vmethod, dunno how to do that
                 # although i think it's possible)
                 # HACK: why does self.query_position(..) not give useful
-                # answers? 
+                # answers?
                 pad = self.resyncbin.get_pad('src')
                 pos, format = pad.query_position(gst.FORMAT_TIME)
                 dur, format = pad.query_duration(gst.FORMAT_TIME)
@@ -419,7 +428,7 @@ class Resynchronizer(gst.Pipeline):
                 pass
             return True
         if self._query_id == -1:
-            self._query_id = gobject.timeout_add(100, # 10 Hz
+            self._query_id = gobject.timeout_add(100,  # 10 Hz
                                                  do_query)
 
     def _stop_queries(self):
@@ -432,7 +441,7 @@ class Resynchronizer(gst.Pipeline):
             print 'error', message
             self._stop_queries()
             m = gtk.MessageDialog(self.window,
-                                  gtk.DIALOG_MODAL|gtk.DIALOG_DESTROY_WITH_PARENT,
+                                  gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT,
                                   gtk.MESSAGE_ERROR,
                                   gtk.BUTTONS_CLOSE,
                                   "Error processing file")
@@ -451,7 +460,7 @@ class Resynchronizer(gst.Pipeline):
             if name.startswith('file://'):
                 name = name[7:]
             self.pdialog.set_task('Finished writing %s' % name)
-            self.pdialog.update_position(1,1)
+            self.pdialog.update_position(1, 1)
             self._stop_queries()
             self.pdialog.set_completed(True)
         elif message.type == gst.MESSAGE_STATE_CHANGED:
@@ -493,7 +502,7 @@ class Resynchronizer(gst.Pipeline):
 
         self.set_state(gst.STATE_PAUSED)
         return True
-        
+
     def run(self, main_window):
         if self.start(main_window):
             loop = gobject.MainLoop()
@@ -502,7 +511,8 @@ class Resynchronizer(gst.Pipeline):
         else:
             self.resolution = CANCELLED
         return self.resolution
-        
+
+
 class ResyncBin(gst.Bin):
     def __init__(self, sync_points, maxdiff):
         self.__gobject_init__()
@@ -563,8 +573,10 @@ class ResyncBin(gst.Bin):
             parser.set_property('synchronization-points',
                                 self.sync_points)
 
+
 class PlayerWindow(gtk.Window):
     UPDATE_INTERVAL = 500
+
     def __init__(self):
         gtk.Window.__init__(self)
         self.set_default_size(600, 500)
@@ -577,7 +589,7 @@ class PlayerWindow(gtk.Window):
             self.player.seek(0L)
             self.play_toggled()
         self.player.on_eos = lambda *x: on_eos()
-        
+
         self.update_id = -1
         self.changed_id = -1
         self.seek_timeout_id = -1
@@ -599,7 +611,7 @@ class PlayerWindow(gtk.Window):
         else:
             self.videowidget.connect_after('realize',
                                            lambda *x: self.play_toggled())
-                                  
+
     def create_ui(self):
         vbox = gtk.VBox()
         vbox.show()
@@ -608,11 +620,11 @@ class PlayerWindow(gtk.Window):
         self.videowidget = VideoWidget()
         self.videowidget.show()
         vbox.pack_start(self.videowidget)
-        
+
         hbox = gtk.HBox()
         hbox.show()
         vbox.pack_start(hbox, fill=False, expand=False)
-        
+
         self.adjustment = gtk.Adjustment(0.0, 0.00, 100.0, 0.1, 1.0, 1.0)
         hscale = gtk.HScale(self.adjustment)
         hscale.set_digits(2)
@@ -624,7 +636,7 @@ class PlayerWindow(gtk.Window):
         hscale.show()
         self.hscale = hscale
 
-        table = gtk.Table(3,3)
+        table = gtk.Table(3, 3)
         table.show()
         vbox.pack_start(table, fill=False, expand=False, padding=6)
 
@@ -646,14 +658,14 @@ class PlayerWindow(gtk.Window):
             sizegroup.add_widget(kid)
         bvbox.show()
         table.attach(bvbox, 0, 1, 1, 3, gtk.FILL, gtk.FILL)
-        
+
         # can't set this property before the button has a window
         button.set_property('has-default', True)
         button.connect('clicked', lambda *args: self.play_toggled())
 
         self.sync = sync = SyncPoints(self)
         sync.show()
-        table.attach(sync, 1, 2, 0, 3, gtk.EXPAND, gtk.EXPAND|gtk.FILL, 12)
+        table.attach(sync, 1, 2, 0, 3, gtk.EXPAND, gtk.EXPAND | gtk.FILL, 12)
         # nasty things to get sizes
         l = gtk.Label('\n\n\n')
         l.show()
@@ -700,11 +712,11 @@ class PlayerWindow(gtk.Window):
         chooser.add_filter(f)
         f = gtk.FileFilter()
         f.set_name("Ogg files")
-        f.add_pattern("*.ogg") # as long as this is the only thing we
-                               # support...
+        f.add_pattern("*.ogg")  # as long as this is the only thing we
+        # support...
         chooser.add_filter(f)
         chooser.set_filter(f)
-        
+
         prev = self.player.get_location()
         if prev:
             chooser.set_uri(prev)
@@ -718,7 +730,7 @@ class PlayerWindow(gtk.Window):
             return True
         else:
             return False
-        
+
     def play_toggled(self):
         if self.player.is_playing():
             self.player.pause()
@@ -735,7 +747,7 @@ class PlayerWindow(gtk.Window):
             real = 0
         else:
             real = value * self.p_duration / 100
-        
+
         seconds = real / gst.SECOND
 
         return "%02d:%02d" % (seconds / 60, seconds % 60)
@@ -743,7 +755,7 @@ class PlayerWindow(gtk.Window):
     def scale_button_press_cb(self, widget, event):
         # see seek.c:start_seek
         gst.debug('starting seek')
-        
+
         self.button.set_sensitive(False)
         self.was_playing = self.player.is_playing()
         if self.was_playing:
@@ -757,15 +769,15 @@ class PlayerWindow(gtk.Window):
         # make sure we get changed notifies
         if self.changed_id == -1:
             self.changed_id = self.hscale.connect('value-changed',
-                self.scale_value_changed_cb)
-            
+                                                  self.scale_value_changed_cb)
+
     def scale_value_changed_cb(self, scale):
         # see seek.c:seek_cb
-        real = long(scale.get_value() * self.p_duration / 100) # in ns
+        real = long(scale.get_value() * self.p_duration / 100)  # in ns
         gst.debug('value changed, perform seek to %r' % real)
         self.player.seek(real)
         # allow for a preroll
-        self.player.get_state(timeout=50*gst.MSECOND) # 50 ms
+        self.player.get_state(timeout=50*gst.MSECOND)  # 50 ms
 
     def scale_button_release_cb(self, widget, event):
         # see seek.cstop_seek
@@ -785,7 +797,7 @@ class PlayerWindow(gtk.Window):
             self.error('Had a previous update timeout id')
         else:
             self.update_id = gobject.timeout_add(self.UPDATE_INTERVAL,
-                self.update_scale_cb)
+                                                 self.update_scale_cb)
 
     def update_scale_cb(self):
         had_duration = self.p_duration != gst.CLOCK_TIME_NONE
@@ -794,6 +806,7 @@ class PlayerWindow(gtk.Window):
             value = self.p_position * 100.0 / self.p_duration
             self.adjustment.set_value(value)
         return True
+
 
 def main(args):
     def usage():
@@ -815,6 +828,7 @@ def main(args):
         return usage()
 
     gtk.main()
+
 
 if __name__ == '__main__':
     sys.exit(main(sys.argv))

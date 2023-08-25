@@ -32,55 +32,55 @@ import gobject
 # and is inspired by JACK's meterbridge dpm_meters.c
 
 class FVUMeter(gtk.DrawingArea):
-    __gsignals__ = { 'expose-event' : 'override',
-                     'size-allocate': 'override',
-                     'size-request': 'override',
-                     'realize' : 'override'
-             }
+    __gsignals__ = {'expose-event': 'override',
+                    'size-allocate': 'override',
+                    'size-request': 'override',
+                    'realize': 'override'
+                    }
     __gproperties__ = {
-        'peak' : (gobject.TYPE_FLOAT,
-                  'peak volume level',
-                  'peak volume level in dB',
+        'peak': (gobject.TYPE_FLOAT,
+                 'peak volume level',
+                 'peak volume level in dB',
+                 -90.0,
+                 0,
+                 -90.0,
+                 gobject.PARAM_READWRITE),
+        'decay': (gobject.TYPE_FLOAT,
+                  'decay volume level',
+                  'decay volume level in dB',
                   -90.0,
                   0,
                   -90.0,
                   gobject.PARAM_READWRITE),
-        'decay' : (gobject.TYPE_FLOAT,
-                   'decay volume level',
-                   'decay volume level in dB',
-                   -90.0,
-                   0,
-                   -90.0,
-                   gobject.PARAM_READWRITE),
         'orange-threshold': (gobject.TYPE_FLOAT,
-                            'threshold for orange',
-                            'threshold for orange use in dB',
-                            -90.0,
-                            0,
-                            -10.0,
-                            gobject.PARAM_READWRITE),
+                             'threshold for orange',
+                             'threshold for orange use in dB',
+                             -90.0,
+                             0,
+                             -10.0,
+                             gobject.PARAM_READWRITE),
         'red-threshold': (gobject.TYPE_FLOAT,
-                         'threshold for red',
-                         'threshold for red use in dB',
-                         -90.0,
-                         0,
-                         -1.0,
-                         gobject.PARAM_READWRITE)
-                            
+                          'threshold for red',
+                          'threshold for red use in dB',
+                          -90.0,
+                          0,
+                          -1.0,
+                          gobject.PARAM_READWRITE)
+
     }
     green_gc = None
     orange_gc = None
     red_gc = None
     yellow_gc = None
-    
+
     topborder = 7
     peaklevel = -90.0
     decaylevel = -90.0
     orange_threshold = -10.0
     red_threshold = -1.0
     bottomborder = 25
-    leftborder = 15 
-    rightborder = 65 
+    leftborder = 15
+    rightborder = 65
 
     # Returns the meter deflection percentage given a db value
     def iec_scale(self, db):
@@ -130,16 +130,16 @@ class FVUMeter(gtk.DrawingArea):
             raise AttributeError, 'unknown property %s' % property.name
 
         self.queue_draw()
-                
+
     def do_size_request(self, requisition):
-        requisition.width = 250 
+        requisition.width = 250
         requisition.height = 50
 
     def do_size_allocate(self, allocation):
         self.allocation = allocation
         if self.flags() & gtk.REALIZED:
             self.window.move_resize(*allocation)
-    
+
     def do_realize(self):
         self.set_flags(self.flags() | gtk.REALIZED)
 
@@ -159,20 +159,20 @@ class FVUMeter(gtk.DrawingArea):
         self.orange_gc = gdk.GC(self.window, foreground=orange)
         self.red_gc = gdk.GC(self.window, foreground=red)
         self.yellow_gc = gdk.GC(self.window, foreground=yellow)
- 
+
         self.window.set_user_data(self)
         self.style.attach(self.window)
         self.style.set_background(self.window, gtk.STATE_NORMAL)
 
     def do_expose_event(self, event):
         self.chain(event)
-       
+
         x, y, w, h = self.allocation
         vumeter_width = w - (self.leftborder + self.rightborder)
         vumeter_height = h - (self.topborder + self.bottomborder)
         self.window.draw_rectangle(self.style.black_gc, True,
                                    self.leftborder, self.topborder,
-                                   vumeter_width, 
+                                   vumeter_width,
                                    vumeter_height)
         # draw peak level
         # 0 maps to width of 0, full scale maps to total width
@@ -185,9 +185,9 @@ class FVUMeter(gtk.DrawingArea):
             draw_gc = self.red_gc
         if peakwidth > 0:
             self.window.draw_rectangle(draw_gc, True,
-                    self.leftborder, self.topborder,
-                    peakwidth, vumeter_height)
-     
+                                       self.leftborder, self.topborder,
+                                       peakwidth, vumeter_height)
+
         # draw yellow decay level
         if self.decaylevel > -90.0:
             decaylevelpct = self.iec_scale(self.decaylevel)
@@ -197,10 +197,10 @@ class FVUMeter(gtk.DrawingArea):
             if decaywidth == 0:
                 decaywidth = 1
             self.window.draw_line(self.yellow_gc,
-                self.leftborder + decaywidth - 1,
-                self.topborder,
-                self.leftborder + decaywidth - 1,
-                self.topborder + vumeter_height - 1)
+                                  self.leftborder + decaywidth - 1,
+                                  self.topborder,
+                                  self.leftborder + decaywidth - 1,
+                                  self.topborder + vumeter_height - 1)
 
         # draw tick marks
         scalers = [
@@ -209,31 +209,32 @@ class FVUMeter(gtk.DrawingArea):
             ('-30', 0.30),
             ('-20', 0.50),
             ('-10', 0.75),
-            ( '-5', 0.875),
-            (  '0', 1.0),
+            ('-5', 0.875),
+            ('0', 1.0),
         ]
         for level, scale in scalers:
             # tick mark, 6 pixels high
             # we cheat again here by putting the 0 at the first pixel
-            self.window.draw_line(self.style.black_gc, 
-                self.leftborder + int(scale * (vumeter_width - 1)),
-                h - self.bottomborder,
-                self.leftborder + int(scale * (vumeter_width - 1)),
-                h - self.bottomborder + 5)
+            self.window.draw_line(self.style.black_gc,
+                                  self.leftborder + int(scale * (vumeter_width - 1)),
+                                  h - self.bottomborder,
+                                  self.leftborder + int(scale * (vumeter_width - 1)),
+                                  h - self.bottomborder + 5)
             # tick label
             layout = self.create_pango_layout(level)
             layout_width, layout_height = layout.get_pixel_size()
             self.window.draw_layout(self.style.black_gc,
-                self.leftborder + int(scale * vumeter_width)
-                    - int(layout_width / 2),
-                h - self.bottomborder + 7, layout)
+                                    self.leftborder + int(scale * vumeter_width)
+                                    - int(layout_width / 2),
+                                    h - self.bottomborder + 7, layout)
 
         # draw the peak level to the right
         layout = self.create_pango_layout("%.2fdB" % self.peaklevel)
         layout_width, layout_height = layout.get_pixel_size()
         self.window.draw_layout(self.style.black_gc,
-            self.leftborder + vumeter_width + 5,
-            self.topborder + int(vumeter_height / 2 - layout_height / 2),
-            layout)
+                                self.leftborder + vumeter_width + 5,
+                                self.topborder + int(vumeter_height / 2 - layout_height / 2),
+                                layout)
+
 
 gobject.type_register(FVUMeter)

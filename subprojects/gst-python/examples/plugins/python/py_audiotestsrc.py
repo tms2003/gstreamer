@@ -8,13 +8,13 @@ Example pipeline:
 gst-launch-1.0 py_audiotestsrc ! autoaudiosink
 '''
 
+from gi.repository import Gst, GLib, GObject, GstBase, GstAudio
 import gi
 
 gi.require_version('Gst', '1.0')
 gi.require_version('GstBase', '1.0')
 gi.require_version('GstAudio', '1.0')
 
-from gi.repository import Gst, GLib, GObject, GstBase, GstAudio
 
 try:
     import numpy as np
@@ -24,8 +24,8 @@ except ImportError:
 
 Gst.init_python()
 
-OCAPS = Gst.Caps.from_string (
-        'audio/x-raw, format=F32LE, layout=interleaved, rate=44100, channels=2')
+OCAPS = Gst.Caps.from_string(
+    'audio/x-raw, format=F32LE, layout=interleaved, rate=44100, channels=2')
 
 SAMPLESPERBUFFER = 1024
 
@@ -34,9 +34,10 @@ DEFAULT_VOLUME = 0.8
 DEFAULT_MUTE = False
 DEFAULT_IS_LIVE = False
 
+
 class AudioTestSrc(GstBase.BaseSrc):
-    __gstmetadata__ = ('CustomSrc','Src', \
-                      'Custom test src element', 'Mathieu Duponchelle')
+    __gstmetadata__ = ('CustomSrc', 'Src',
+                       'Custom test src element', 'Mathieu Duponchelle')
 
     __gproperties__ = {
         "freq": (int,
@@ -46,7 +47,7 @@ class AudioTestSrc(GstBase.BaseSrc):
                  GLib.MAXINT,
                  DEFAULT_FREQ,
                  GObject.ParamFlags.READWRITE
-                ),
+                 ),
         "volume": (float,
                    "Volume",
                    "Volume of test signal",
@@ -54,19 +55,19 @@ class AudioTestSrc(GstBase.BaseSrc):
                    1.0,
                    DEFAULT_VOLUME,
                    GObject.ParamFlags.READWRITE
-                  ),
+                   ),
         "mute": (bool,
                  "Mute",
                  "Mute the test signal",
                  DEFAULT_MUTE,
                  GObject.ParamFlags.READWRITE
-                ),
+                 ),
         "is-live": (bool,
-                 "Is live",
-                 "Whether to act as a live source",
-                 DEFAULT_IS_LIVE,
-                 GObject.ParamFlags.READWRITE
-                ),
+                    "Is live",
+                    "Whether to act as a live source",
+                    DEFAULT_IS_LIVE,
+                    GObject.ParamFlags.READWRITE
+                    ),
     }
 
     __gsttemplates__ = Gst.PadTemplate.new("src",
@@ -114,7 +115,7 @@ class AudioTestSrc(GstBase.BaseSrc):
         else:
             raise AttributeError('unknown property %s' % prop.name)
 
-    def do_start (self):
+    def do_start(self):
         self.next_sample = 0
         self.next_byte = 0
         self.next_time = 0
@@ -126,7 +127,7 @@ class AudioTestSrc(GstBase.BaseSrc):
     def do_gst_base_src_query(self, query):
         if query.type == Gst.QueryType.LATENCY:
             latency = Gst.util_uint64_scale_int(self.generate_samples_per_buffer,
-                    Gst.SECOND, self.info.rate)
+                                                Gst.SECOND, self.info.rate)
             is_live = self.is_live
             query.set_latency(is_live, latency, Gst.CLOCK_TIME_NONE)
             res = True
@@ -166,10 +167,10 @@ class AudioTestSrc(GstBase.BaseSrc):
 
         try:
             with buf.map(Gst.MapFlags.WRITE) as info:
-                array = np.ndarray(shape = self.info.channels * samples, dtype = np.float32, buffer = info.data)
+                array = np.ndarray(shape=self.info.channels * samples, dtype=np.float32, buffer=info.data)
                 if not self.mute:
                     r = np.repeat(np.arange(self.accumulator, self.accumulator + samples),
-                            self.info.channels)
+                                  self.info.channels)
                     np.sin(2 * np.pi * r * self.freq / self.info.rate, out=array)
                     array *= self.volume
                 else:

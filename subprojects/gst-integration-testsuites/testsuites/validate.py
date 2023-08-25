@@ -45,14 +45,14 @@ BLACKLIST = [('validate.file.transcode.to_vorbis_and_vp8_in_webm.GH1_00094_1920x
               'https://gitlab.freedesktop.org/gstreamer/gst-plugins-base/issues/541'),
              ('validate.hls.playback.change_state_intensive.*',
               'https://gitlab.freedesktop.org/gstreamer/gst-plugins-bad/issues/482'),
-            ('validate.rtsp.*playback.switch.*',
+             ('validate.rtsp.*playback.switch.*',
              'https://gitlab.freedesktop.org/gstreamer/gst-plugins-base/issues/357'),
-            ('validate.rtsp.*playback.*seek.*mxf$|validate.rtsp.*playback.*change_state_intensive.*mxf$',
+             ('validate.rtsp.*playback.*seek.*mxf$|validate.rtsp.*playback.*change_state_intensive.*mxf$',
              'Actions on MXF streams with rtsp-server fail in racy ways.'
-             ' (Deactivating as it is not very important.)'),
-            ('validate.rtsp.*pal-dv25_mxf$',
+              ' (Deactivating as it is not very important.)'),
+             ('validate.rtsp.*pal-dv25_mxf$',
              'File has decoding issues with rtsp-server.'
-             ' (Deactivating as it is not very important.)'),
+              ' (Deactivating as it is not very important.)'),
              ("(?!.*.media_check.qtdemux-test-frag-basic_zero_dur_no_mehd_mp4).*.qtdemux-test-frag-basic_zero_dur_no_mehd_mp4",
               '`qtdemux-test-frag-basic_zero_dur_no_mehd_mp4` is there only for media_check tests.'),
              ('validate.rtsp.*playback.*mp3_h265_0_mp4$',
@@ -65,6 +65,7 @@ BLACKLIST = [('validate.file.transcode.to_vorbis_and_vp8_in_webm.GH1_00094_1920x
               'Racy with CI. No frames decoded before the end of the stream.'),
              ]
 
+
 def add_accurate_seek_tests(test_manager, media_dir, extra_data):
     accurate_seeks_media_infos = []
     for f in [
@@ -76,21 +77,23 @@ def add_accurate_seek_tests(test_manager, media_dir, extra_data):
             'mp4/timecoded_vp8_2997fps.mp4.media_info.skipped',
             'mp4/timecoded_vp8_30fps.mp4.media_info.skipped',
 
-            'mp4/timecoded_h264_23976fps.mp4.media_info.skipped',
-            'mp4/timecoded_h264_2997fps.mp4.media_info.skipped',
-            'mp4/timecoded_h264_30fps.mp4.media_info.skipped',
-        ]:
+        'mp4/timecoded_h264_23976fps.mp4.media_info.skipped',
+        'mp4/timecoded_h264_2997fps.mp4.media_info.skipped',
+        'mp4/timecoded_h264_30fps.mp4.media_info.skipped',
+    ]:
         dirname = os.path.join(media_dir, "defaults", os.path.dirname(f))
         filename = os.path.basename(f)
         media_info = os.path.join(dirname, filename)
-        reference_frames_dir = os.path.join(dirname, re.sub(r"\.media_info.*", "_reference_frames", filename).replace('.', '_'))
+        reference_frames_dir = os.path.join(dirname, re.sub(
+            r"\.media_info.*", "_reference_frames", filename).replace('.', '_'))
         accurate_seeks_media_infos.append((media_info, reference_frames_dir))
 
     test_manager.add_generators(
         test_manager.GstValidateCheckAccurateSeekingTestGenerator(
             'accurate_seeks',
             test_manager,
-            [(os.path.join(media_dir, media_info), os.path.join(media_dir, reference_frames_dir)) for media_info, reference_frames_dir in accurate_seeks_media_infos],
+            [(os.path.join(media_dir, media_info), os.path.join(media_dir, reference_frames_dir))
+             for media_info, reference_frames_dir in accurate_seeks_media_infos],
             extra_data=extra_data)
     )
 
@@ -107,9 +110,9 @@ def setup_tests(test_manager, options):
         else:
             print("Syncing gst-integration-testsuites media files")
             subprocess.check_call(['git', 'submodule', 'update', '--init'],
-                                cwd=utils.DEFAULT_GST_QA_ASSETS)
+                                  cwd=utils.DEFAULT_GST_QA_ASSETS)
             subprocess.check_call(['git', 'lfs', 'pull', '--exclude='],
-                                cwd=pathlib.Path(utils.DEFAULT_GST_QA_ASSETS) / 'medias')
+                                  cwd=pathlib.Path(utils.DEFAULT_GST_QA_ASSETS) / 'medias')
 
     options.add_paths(assets_dir)
     options.set_http_server_dir(media_dir)
@@ -126,7 +129,7 @@ def setup_tests(test_manager, options):
 
     test_manager.add_generators(
         GstValidateSimpleTestsGenerator("simple", test_manager,
-            os.path.join(testsuite_dir, "validate"))
+                                        os.path.join(testsuite_dir, "validate"))
     )
 
     test_manager.add_expected_issues(KNOWN_ISSUES)

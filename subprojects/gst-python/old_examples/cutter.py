@@ -24,18 +24,23 @@ import gst
 import time
 
 import gobject
-#gobject.threads_init() # so we can safely receive signals from threads
+# gobject.threads_init() # so we can safely receive signals from threads
 
 count = 0
+
 
 def on_message_application(cutter, message, loop):
     global count
     s = message.structure
     which = 'below'
-    if s['above']: which = 'above'
+    if s['above']:
+        which = 'above'
     print "%s: %s threshold" % (gst.TIME_ARGS(s['timestamp']), which)
-    if s['above']: count += 1
-    if count > 2: loop.quit()
+    if s['above']:
+        count += 1
+    if count > 2:
+        loop.quit()
+
 
 def main():
     type = 'async'
@@ -75,6 +80,7 @@ def main():
     loop.run()
 
     pipeline.set_state(gst.STATE_NULL)
+
 
 if __name__ == "__main__":
     main()

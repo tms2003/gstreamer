@@ -22,13 +22,14 @@
 #
 # Author: Andy Wingo <wingo@pobox.com>
 
+import gst
 import gtk
 from gtk import gdk
 import gobject
 
 import pygst
 pygst.require('0.10')
-import gst
+
 
 class DebugSlider(gtk.HScale):
     def __init__(self):
@@ -44,6 +45,7 @@ class DebugSlider(gtk.HScale):
             gst.debug_set_default_threshold(newlevel)
 
         self.connect('value-changed', value_changed)
+
 
 if __name__ == '__main__':
     p = gst.parse_launch('fakesrc ! fakesink')

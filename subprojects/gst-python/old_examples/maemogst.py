@@ -1,12 +1,14 @@
+import sys
+import gst
+import hildon
+import gtk
 import gobject
 gobject.threads_init()
-import gtk
 gtk.gdk.threads_init()
-import hildon
-import gst
-import sys
 
 # VideoWidget taken from play.py in gst-python examples
+
+
 class VideoWidget(gtk.DrawingArea):
     def __init__(self):
         gtk.DrawingArea.__init__(self)
@@ -25,6 +27,7 @@ class VideoWidget(gtk.DrawingArea):
         self.imagesink = sink
         self.imagesink.set_xwindow_id(self.window.xid)
 
+
 class MaemoGstView:
 
     def __init__(self):
@@ -38,9 +41,9 @@ class MaemoGstView:
         self.video_widget = VideoWidget()
         # video widget we want to expand to size
         box.pack_start(self.video_widget, True, True, 0)
-        # a button finger height to play/pause 
+        # a button finger height to play/pause
         self.button = hildon.Button(gtk.HILDON_SIZE_FINGER_HEIGHT,
-            hildon.BUTTON_ARRANGEMENT_VERTICAL, title="Pause")
+                                    hildon.BUTTON_ARRANGEMENT_VERTICAL, title="Pause")
         self.button.connect_after("clicked", self.on_button_clicked)
         # don't want button to expand or fill, just stay finger height
         box.pack_start(self.button, False, False, 0)
@@ -79,8 +82,8 @@ class MaemoGstView:
     def on_message(self, bus, message):
         if message.type == gst.MESSAGE_ERROR:
             err, debug = message.parse_error()
-            hildon.hildon_banner_show_information(self.w, '', 
-                "Error: %s" % err)
+            hildon.hildon_banner_show_information(self.w, '',
+                                                  "Error: %s" % err)
 
     def on_button_clicked(self, widget):
         success, state, pending = self.pipeline.get_state(1)
@@ -93,9 +96,11 @@ class MaemoGstView:
                 self.pipeline.set_state(gst.STATE_PLAYING)
                 self.button.set_label("Pause")
 
+
 def main():
     view = MaemoGstView()
     gtk.main()
+
 
 if __name__ == '__main__':
     sys.exit(main())

@@ -26,6 +26,7 @@ from common import gst, unittest, TestCase, pygobject_2_13
 
 import gobject
 
+
 class TestConstruction(TestCase):
     def setUp(self):
         self.gctrack()
@@ -46,7 +47,8 @@ class TestConstruction(TestCase):
 
     def testParseLaunch(self):
         pipeline = gst.parse_launch('fakesrc ! fakesink')
-        
+
+
 class Pipeline(TestCase):
     def setUp(self):
         self.gctrack()
@@ -66,17 +68,19 @@ class Pipeline(TestCase):
         self.assertEqual(self.pipeline.get_state()[1], gst.STATE_NULL)
         self.pipeline.set_state(gst.STATE_PLAYING)
         self.assertEqual(self.pipeline.get_state()[1], gst.STATE_PLAYING)
-        
+
         time.sleep(1)
 
         self.assertEqual(self.pipeline.get_state()[1], gst.STATE_PLAYING)
         self.pipeline.set_state(gst.STATE_NULL)
         self.assertEqual(self.pipeline.get_state()[1], gst.STATE_NULL)
 
+
 class PipelineTags(TestCase):
     def setUp(self):
         self.gctrack()
-        self.pipeline = gst.parse_launch('audiotestsrc num-buffers=100 ! vorbisenc name=encoder ! oggmux name=muxer ! fakesink')
+        self.pipeline = gst.parse_launch(
+            'audiotestsrc num-buffers=100 ! vorbisenc name=encoder ! oggmux name=muxer ! fakesink')
 
     def tearDown(self):
         del self.pipeline
@@ -97,7 +101,7 @@ class PipelineTags(TestCase):
         self.assertEqual(self.pipeline.get_state()[1], gst.STATE_NULL)
         self.pipeline.set_state(gst.STATE_PLAYING)
         self.assertEqual(self.pipeline.get_state()[1], gst.STATE_PLAYING)
-        
+
         time.sleep(1)
 
         self.assertEqual(self.pipeline.get_state()[1], gst.STATE_PLAYING)
@@ -139,7 +143,7 @@ class PipelineAndBus(TestCase):
     def tearDown(self):
         # FIXME: fix the refcount issues with the bus/pipeline
         # flush the bus to be able to assert on the pipeline refcount
-        #while self.pipeline.__gstrefcount__ > 1:
+        # while self.pipeline.__gstrefcount__ > 1:
         self.gccollect()
 
         # one for the pipeline, two for the snake
@@ -150,15 +154,15 @@ class PipelineAndBus(TestCase):
         self.gccollect()
 
         gst.debug('THOMAS: pipeline rc %d' % self.pipeline.__gstrefcount__)
-        #self.assertEquals(self.pipeline.__gstrefcount__, 1)
+        # self.assertEquals(self.pipeline.__gstrefcount__, 1)
         del self.pipeline
         self.gccollect()
-        #self.assertEquals(self.bus.__gstrefcount__, 2)
+        # self.assertEquals(self.bus.__gstrefcount__, 2)
         del self.bus
         self.gccollect()
 
         # the async thread can be holding a ref, Wim is going to work on this
-        #TestCase.tearDown(self)
+        # TestCase.tearDown(self)
 
     def _message_received(self, bus, message):
         gst.debug('received message: %s, %s' % (

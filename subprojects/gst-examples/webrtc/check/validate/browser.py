@@ -23,14 +23,16 @@ from selenium.webdriver.chrome.options import Options as COptions
 
 l = logging.getLogger(__name__)
 
+
 def create_firefox_driver():
     capabilities = webdriver.DesiredCapabilities().FIREFOX.copy()
     capabilities['acceptSslCerts'] = True
     profile = FirefoxProfile()
-    profile.set_preference ('media.navigator.streams.fake', True)
-    profile.set_preference ('media.navigator.permission.disabled', True)
+    profile.set_preference('media.navigator.streams.fake', True)
+    profile.set_preference('media.navigator.permission.disabled', True)
 
     return webdriver.Firefox(firefox_profile=profile, capabilities=capabilities)
+
 
 def create_chrome_driver():
     capabilities = webdriver.DesiredCapabilities().CHROME.copy()
@@ -41,10 +43,11 @@ def create_chrome_driver():
     copts.add_argument('--use-fake-device-for-media-stream')
     copts.add_argument('--enable-blink-features=RTCUnifiedPlanByDefault')
     # XXX: until libnice can deal with mdns candidates
-    local_state = {"enabled_labs_experiments" : ["enable-webrtc-hide-local-ips-with-mdns@2"] }
-    copts.add_experimental_option("localState", {"browser" : local_state})
+    local_state = {"enabled_labs_experiments": ["enable-webrtc-hide-local-ips-with-mdns@2"]}
+    copts.add_experimental_option("localState", {"browser": local_state})
 
     return webdriver.Chrome(options=copts, desired_capabilities=capabilities)
+
 
 def create_driver(name):
     if name == 'firefox':
@@ -53,6 +56,7 @@ def create_driver(name):
         return create_chrome_driver()
     else:
         raise ValueError("Unknown browser name \'" + name + "\'")
+
 
 def valid_int(n):
     if isinstance(n, int):
@@ -65,10 +69,12 @@ def valid_int(n):
             return False
     return False
 
+
 class Browser(object):
     """
     A browser as connected through selenium.
     """
+
     def __init__(self, driver):
         l.info('Using driver \'' + driver.name + '\' with capabilities ' + str(driver.capabilities))
         self.driver = driver
@@ -81,7 +87,7 @@ class Browser(object):
             lambda x: x.find_element_by_id('peer-id'),
             message='Peer-id element was never seen'
         )
-        WebDriverWait (self.driver, 5).until(
+        WebDriverWait(self.driver, 5).until(
             lambda x: valid_int(peer_id.text),
             message='Peer-id never became a number'
         )

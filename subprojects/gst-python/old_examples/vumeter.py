@@ -24,16 +24,15 @@
 # A test more of gst-plugins than of gst-python.
 
 
+import fvumeter
+import gst
+import pygst
+import gobject
+import gtk
 import pygtk
 pygtk.require('2.0')
-import gtk
-import gobject
 
-import pygst
 pygst.require('0.10')
-import gst
-
-import fvumeter
 
 
 def clamp(x, min, max):
@@ -50,7 +49,7 @@ class Window(gtk.Dialog):
         self.prepare_ui()
 
     def prepare_ui(self):
-        self.set_default_size(200,60)
+        self.set_default_size(200, 60)
         self.set_title('Volume Level')
         self.connect('delete-event', lambda *x: gtk.main_quit())
         self.vus = []
@@ -70,9 +69,9 @@ class Window(gtk.Dialog):
         if secondary:
             m.format_secondary_text(secondary)
         m.run()
-                              
+
     def on_message(self, bus, message):
-        if  message.structure.get_name() == 'level':
+        if message.structure.get_name() == 'level':
             s = message.structure
             for i in range(0, len(s['peak'])):
                 self.vus[i].freeze_notify()
@@ -80,7 +79,7 @@ class Window(gtk.Dialog):
                 peak = clamp(s['peak'][i], -90.0, 0.0)
                 if peak > decay:
                     print "ERROR: peak bigger than decay!"
-            
+
                 self.vus[i].set_property('decay', decay)
                 self.vus[i].set_property('peak', peak)
         return True
@@ -101,7 +100,8 @@ class Window(gtk.Dialog):
         except gobject.GError, e:
             self.set_sensitive(True)
             self.error('Could not create pipeline', e.__str__)
-        
+
+
 if __name__ == '__main__':
     w = Window()
     w.show_all()

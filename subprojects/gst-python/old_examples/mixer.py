@@ -28,4 +28,3 @@ for t in a.list_tracks():
     if t.flags & gst.interfaces.MIXER_TRACK_RECORD:
         sys.stdout.write(' (selected)')
     sys.stdout.write('\n')
-

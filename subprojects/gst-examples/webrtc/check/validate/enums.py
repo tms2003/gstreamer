@@ -17,6 +17,7 @@
 
 from enum import Enum, unique
 
+
 @unique
 class SignallingState(Enum):
     """
@@ -27,6 +28,7 @@ class SignallingState(Enum):
     OPEN = "open"               # websocket connection is open
     HELLO = "hello"             # hello was sent and received
     SESSION = "session"         # session setup was sent and received
+
 
 @unique
 class NegotiationState(Enum):
@@ -41,6 +43,7 @@ class NegotiationState(Enum):
     OFFER_SET = "offer-set"                     # offer has been set
     ANSWER_SET = "answer-set"                   # answer has been set
 
+
 @unique
 class DataChannelState(Enum):
     """
@@ -51,6 +54,7 @@ class DataChannelState(Enum):
     CLOSED = "closed"           # data channel is closed, sending data will fail
     ERROR = "error"             # data channel encountered an error
 
+
 @unique
 class Actions(Enum):
     """
@@ -59,7 +63,8 @@ class Actions(Enum):
     """
     CREATE_OFFER = "create-offer"                                   # create an offer and send it to the peer
     CREATE_ANSWER = "create-answer"                                 # create an answer and send it to the peer
-    WAIT_FOR_NEGOTIATION_STATE = "wait-for-negotiation-state"       # wait for the @NegotiationState to reach a certain value
+    # wait for the @NegotiationState to reach a certain value
+    WAIT_FOR_NEGOTIATION_STATE = "wait-for-negotiation-state"
     ADD_STREAM = "add-stream"                                       # add a stream to send to the peer. local only
     ADD_DATA_CHANNEL = "add-data-channel"                           # add a stream to send to the peer. local only
     WAIT_FOR_DATA_CHANNEL = "wait-for-data-channel"                 # wait for a data channel to appear

@@ -1,9 +1,9 @@
 #! /usr/bin/env python
 
+from gi.repository import GObject, Gst
 import gi
 import sys
 gi.require_version('Gst', '1.0')
-from gi.repository import GObject, Gst
 
 #
 # A simple RTP receiver
@@ -38,15 +38,17 @@ RTCP_SEND_PORT = 5007
 GObject.threads_init()
 Gst.init(sys.argv)
 
-#gst-launch -v rtpbin name=rtpbin                                                \
+# gst-launch -v rtpbin name=rtpbin                                                \
 #       udpsrc caps=$AUDIO_CAPS port=$RTP_RECV_PORT ! rtpbin.recv_rtp_sink_0              \
 #             rtpbin. ! rtppcmadepay ! alawdec ! audioconvert ! audioresample ! autoaudiosink \
 #           udpsrc port=$RTCP_RECV_PORT ! rtpbin.recv_rtcp_sink_0                              \
 #         rtpbin.send_rtcp_src_0 ! udpsink port=$RTCP_SEND_PORT host=$DEST sync=false async=false
 
+
 def pad_added_cb(rtpbin, new_pad, depay):
     sinkpad = Gst.Element.get_static_pad(depay, 'sink')
     lres = Gst.Pad.link(new_pad, sinkpad)
+
 
 # the pipeline to hold eveything
 pipeline = Gst.Pipeline('rtp_client')
@@ -117,4 +119,3 @@ mainloop = GObject.MainLoop()
 mainloop.run()
 
 Gst.Element.set_state(pipeline, Gst.State.NULL)
-

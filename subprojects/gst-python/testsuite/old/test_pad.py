@@ -25,13 +25,15 @@ from common import gst, unittest, TestCase, pygobject_2_13
 import sys
 import time
 
+
 class PadTemplateTest(TestCase):
     def testConstructor(self):
         template = gst.PadTemplate("template", gst.PAD_SINK,
-            gst.PAD_ALWAYS, gst.caps_from_string("audio/x-raw-int"))
+                                   gst.PAD_ALWAYS, gst.caps_from_string("audio/x-raw-int"))
         self.failUnless(template)
         self.assertEquals(sys.getrefcount(template), pygobject_2_13 and 2 or 3)
         #self.assertEquals(template.__gstrefcount__, 1)
+
 
 class PadPushUnlinkedTest(TestCase):
     def setUp(self):
@@ -75,6 +77,7 @@ class PadPushUnlinkedTest(TestCase):
     def _probe_handler(self, pad, buffer, ret):
         return ret
 
+
 class PadPushLinkedTest(TestCase):
     def setUp(self):
         TestCase.setUp(self)
@@ -101,7 +104,7 @@ class PadPushLinkedTest(TestCase):
         TestCase.tearDown(self)
 
     def _chain_func(self, pad, buffer):
-        gst.debug('got buffer %r, id %x, with GMO rc %d'% (
+        gst.debug('got buffer %r, id %x, with GMO rc %d' % (
             buffer, id(buffer), buffer.__grefcount__))
         self.buffers.append(buffer)
 
@@ -146,7 +149,7 @@ class PadPushLinkedTest(TestCase):
         # ... but they wrap the same GstBuffer
         self.failUnless(self.buffer == self.buffers[0])
         self.assertEquals(repr(self.buffer), repr(self.buffers[0]))
-        
+
         self.src.remove_buffer_probe(probe_id)
         self.assertEquals(len(self.buffers), 1)
         self.buffers = None
@@ -156,6 +159,8 @@ class PadPushLinkedTest(TestCase):
         return ret
 
 # test for event probes with linked pads
+
+
 class PadPushEventLinkedTest(TestCase):
     def setUp(self):
         TestCase.setUp(self)
@@ -182,7 +187,7 @@ class PadPushEventLinkedTest(TestCase):
         TestCase.tearDown(self)
 
     def _chain_func(self, pad, buffer):
-        gst.debug('got buffer %r, id %x, with GMO rc %d'% (
+        gst.debug('got buffer %r, id %x, with GMO rc %d' % (
             buffer, id(buffer), buffer.__grefcount__))
         self.buffers.append(buffer)
 
@@ -242,7 +247,7 @@ class PadPushEventLinkedTest(TestCase):
         # ... but they wrap the same GstEvent
         self.assertEquals(repr(self.event), repr(self.events[0]))
         self.failUnless(self.event == self.events[0])
-        
+
         self.src.remove_buffer_probe(probe_id)
         self.assertEquals(len(self.events), 1)
         self.events = None
@@ -260,6 +265,7 @@ class PadPushEventLinkedTest(TestCase):
         return ret
 
 # a test to show that we can link a pad from the probe handler
+
 
 class PadPushProbeLinkTest(TestCase):
     def setUp(self):
@@ -304,12 +310,11 @@ class PadPushProbeLinkTest(TestCase):
         self.buffers = None
         self.assertEquals(self.buffer.__grefcount__, 1)
 
-
     def _probe_handler(self, pad, buffer):
         self.src.link(self.sink)
         return True
-      
- 
+
+
 class PadTest(TestCase):
     def testConstructor(self):
         # first style uses gst_pad_new
@@ -328,6 +333,7 @@ class PadTest(TestCase):
         # second uses gst_pad_new_from_template
         #template = gst.PadTemplate()
 
+
 class PadPipelineTest(TestCase):
     def setUp(self):
         TestCase.setUp(self)
@@ -339,7 +345,7 @@ class PadPipelineTest(TestCase):
         del self.pipeline
         del self.srcpad
         TestCase.tearDown(self)
-        
+
 # FIXME: now that GstQuery is a miniobject with various _new_ factory
 # functions, we need to figure out a way to deal with them in python
 #    def testQuery(self):
@@ -361,9 +367,9 @@ class PadProbePipeTest(TestCase):
         self.assertEquals(sys.getrefcount(self.fakesrc), pygobject_2_13 and 2 or 3)
 
         self.pipeline.add(self.fakesrc, self.fakesink)
-        self.assertEquals(self.fakesrc.__gstrefcount__, 2) # added
+        self.assertEquals(self.fakesrc.__gstrefcount__, 2)  # added
         self.assertEquals(sys.getrefcount(self.fakesrc), pygobject_2_13 and 2 or 3)
-        self.assertEquals(self.fakesink.__gstrefcount__, 2) # added
+        self.assertEquals(self.fakesink.__gstrefcount__, 2)  # added
         self.assertEquals(sys.getrefcount(self.fakesink), pygobject_2_13 and 2 or 3)
 
         self.fakesrc.link(self.fakesink)
@@ -378,7 +384,7 @@ class PadProbePipeTest(TestCase):
     def tearDown(self):
         # Refcount must be either 1 or 2, to allow for a possibly still running
         # state-recalculation thread
-        self.assertTrue (self.pipeline.__gstrefcount__ >= 1 and self.pipeline.__gstrefcount__ <= 2)
+        self.assertTrue(self.pipeline.__gstrefcount__ >= 1 and self.pipeline.__gstrefcount__ <= 2)
 
         self.assertEquals(sys.getrefcount(self.pipeline), pygobject_2_13 and 2 or 3)
         self.assertEquals(self.fakesrc.__gstrefcount__, 2)
@@ -387,8 +393,8 @@ class PadProbePipeTest(TestCase):
         del self.pipeline
         self.gccollect()
 
-        self.assertEquals(self.fakesrc.__gstrefcount__, 1) # parent gone
-        self.assertEquals(self.fakesink.__gstrefcount__, 1) # parent gone
+        self.assertEquals(self.fakesrc.__gstrefcount__, 1)  # parent gone
+        self.assertEquals(self.fakesink.__gstrefcount__, 1)  # parent gone
         self.assertEquals(sys.getrefcount(self.fakesrc), pygobject_2_13 and 2 or 3)
         self.assertEquals(sys.getrefcount(self.fakesink), pygobject_2_13 and 2 or 3)
         gst.debug('deleting fakesrc')
@@ -399,7 +405,7 @@ class PadProbePipeTest(TestCase):
         self.gccollect()
 
         TestCase.tearDown(self)
-        
+
     def testFakeSrcProbeOnceKeep(self):
         self.fakesrc.set_property('num-buffers', 1)
 
@@ -463,6 +469,7 @@ class PadProbePipeTest(TestCase):
 
         handle = None
         self._num_times_called = 0
+
         def buffer_probe(pad, buffer, data):
             self._num_times_called += 1
             pad.remove_buffer_probe(handle)
@@ -484,6 +491,7 @@ class PadProbePipeTest(TestCase):
         del m
         self.gccollect()
 
+
 class PadRefCountTest(TestCase):
     def testAddPad(self):
         # add a pad to an element
@@ -502,7 +510,7 @@ class PadRefCountTest(TestCase):
         self.assertEquals(sys.getrefcount(e), pygobject_2_13 and 2 or 3)
         self.assertEquals(e.__gstrefcount__, 1)
         self.assertEquals(sys.getrefcount(pad), pygobject_2_13 and 2 or 3)
-        self.assertEquals(pad.__gstrefcount__, 2) # added to element
+        self.assertEquals(pad.__gstrefcount__, 2)  # added to element
 
         gst.debug('deleting element and collecting')
         self.gccollect()
@@ -510,17 +518,18 @@ class PadRefCountTest(TestCase):
         if not pygobject_2_13:
             # the element will be collected at 'del e' if we're using
             # pygobject >= 2.13.0
-            self.assertEquals(self.gccollect(), 1) # collected the element
+            self.assertEquals(self.gccollect(), 1)  # collected the element
         self.assertEquals(sys.getrefcount(pad), pygobject_2_13 and 2 or 3)
-        self.assertEquals(pad.__gstrefcount__, 1) # removed from element
+        self.assertEquals(pad.__gstrefcount__, 1)  # removed from element
 
         gst.debug('deleting pad and collecting')
         del pad
         if not pygobject_2_13:
             # the pad will be collected at 'del pad' if we're using
             # pygobject >= 2.13.0
-            self.assertEquals(self.gccollect(), 1) # collected the pad
+            self.assertEquals(self.gccollect(), 1)  # collected the pad
         gst.debug('going into teardown')
+
 
 class PadBlockTest(TestCase):
     def testCallbackFlush(self):
@@ -529,7 +538,7 @@ class PadBlockTest(TestCase):
 
         def blocked_cb(pad, blocked):
             pad.push_event(gst.event_new_flush_start())
-       
+
         pad = gst.Pad('src', gst.PAD_SRC)
         pad.set_active(True)
         pad.set_blocked_async(True, blocked_cb)
@@ -549,20 +558,21 @@ class PadBlockTest(TestCase):
         cb_refcount = sys.getrefcount(blocked_cb)
         # sys.getrefcount() returns refcount + 1
         self.assertEquals(cb_refcount, 2)
-       
+
         pad = gst.Pad('src', gst.PAD_SRC)
         pad.set_active(True)
         pad.set_blocked_async(True, blocked_cb)
         # set_blocked_async refs the callback
         self.assertEquals(sys.getrefcount(blocked_cb), 3)
-            
+
         buf = gst.Buffer('ciao')
         pad.push(buf)
-        
+
         # in blocked_cb() we called set_blocked_async() with a different
         # callback, so blocked_cb() should have been unreffed
         cb_refcount_after = sys.getrefcount(blocked_cb)
         self.assertEquals(sys.getrefcount(blocked_cb), cb_refcount)
+
 
 if __name__ == "__main__":
     unittest.main()

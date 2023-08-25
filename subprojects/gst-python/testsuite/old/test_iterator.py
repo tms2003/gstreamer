@@ -20,6 +20,7 @@
 import unittest
 from common import gst, TestCase
 
+
 class IteratorTest(TestCase):
     # XXX: Elements
     def testBinIterateElements(self):
@@ -27,7 +28,7 @@ class IteratorTest(TestCase):
         elements = list(pipeline.elements())
         fakesrc = pipeline.get_by_name("src")
         fakesink = pipeline.get_by_name("sink")
-        
+
         self.assertEqual(len(elements), 2)
         self.failUnless(fakesrc in elements)
         self.failUnless(fakesink in elements)
@@ -42,7 +43,7 @@ class IteratorTest(TestCase):
         #       set in gst_bin_iterated_sorted
 
     def testBinIterateSorted(self):
-        pipeline =  gst.parse_launch("fakesrc name=src ! fakesink name=sink")
+        pipeline = gst.parse_launch("fakesrc name=src ! fakesink name=sink")
         elements = list(pipeline.sorted())
         fakesrc = pipeline.get_by_name("src")
         fakesink = pipeline.get_by_name("sink")
@@ -69,7 +70,6 @@ class IteratorTest(TestCase):
         self.failUnless(fakesink in elements)
         self.failUnless(not fakesrc in elements)
 
-    
     def testIteratePadsFakeSrc(self):
         fakesrc = gst.element_factory_make('fakesrc')
         pads = list(fakesrc.pads())
@@ -88,7 +88,7 @@ class IteratorTest(TestCase):
             break
         else:
             raise AssertionError
-        
+
     def testIteratePadsFakeSink(self):
         fakesink = gst.element_factory_make('fakesink')
         pads = list(fakesink.pads())
@@ -114,4 +114,3 @@ class IteratorTest(TestCase):
         # therefore have an exception raised
         self.assertRaises(TypeError, p.iterate_internal_links)
         del p
-

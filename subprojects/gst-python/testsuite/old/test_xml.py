@@ -22,8 +22,9 @@
 
 from common import gst, unittest, TestCase
 
+
 class PadTest(TestCase):
-        
+
     def testQuery(self):
         # don't run this test if we don't have the libxml2 module
         try:
@@ -47,7 +48,7 @@ class PadTest(TestCase):
         element = elements[0]
         assert isinstance(element, gst.Pipeline)
         assert element.get_name() == 'test-pipeline'
-        
+
+
 if __name__ == "__main__":
     unittest.main()
-        

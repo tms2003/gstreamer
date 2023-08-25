@@ -22,6 +22,7 @@ import sys
 from common import gobject, gst, unittest, TestCase
 import gc
 
+
 class NewTest(TestCase):
     def testEOS(self):
         gst.info("creating new bin")
@@ -54,6 +55,7 @@ class NewTest(TestCase):
         bin.set_state(gst.STATE_NULL)
         self.failUnless(self.got_message == True)
         self.gccollect()
+
 
 class TestCreateMessages(TestCase):
 
@@ -197,6 +199,7 @@ class TestCreateMessages(TestCase):
             self.assertEquals(ain, 30)
             self.assertEquals(aout, 1024)
             self.assertEquals(left, 123456)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -24,6 +24,7 @@ from common import gst, unittest, TestCase
 
 import gobject
 
+
 def find_mixer_element():
     """ Searches for an element implementing the mixer interface """
     allmix = [x for x in gst.registry_get_default().get_feature_list(gst.ElementFactory)
@@ -31,6 +32,7 @@ def find_mixer_element():
     if allmix == []:
         return None
     return allmix[0]
+
 
 class Availability(TestCase):
     def testXOverlay(self):
@@ -41,6 +43,7 @@ class Availability(TestCase):
         assert hasattr(gst.interfaces, 'Mixer')
         assert issubclass(gst.interfaces.Mixer, gobject.GInterface)
 
+
 class FunctionCall(TestCase):
     def FIXME_testXOverlay(self):
         # obviously a testsuite is not allowed to instantiate this
@@ -50,6 +53,7 @@ class FunctionCall(TestCase):
         assert isinstance(element, gst.Element)
         assert isinstance(element, gst.interfaces.XOverlay)
         element.set_xwindow_id(0L)
+
 
 class MixerTest(TestCase):
     def setUp(self):

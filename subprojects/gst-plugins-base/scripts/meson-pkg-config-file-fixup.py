@@ -25,7 +25,7 @@ import os
 import sys
 
 if len(sys.argv) < 3:
-  sys.exit('Usage: {} PC_FILE_BASE_NAME VAR1 [VAR2 [VAR3 ..]]'.format(sys.argv[0]))
+    sys.exit('Usage: {} PC_FILE_BASE_NAME VAR1 [VAR2 [VAR3 ..]]'.format(sys.argv[0]))
 
 pc_name = sys.argv[1]
 pc_vars = sys.argv[2:]
@@ -34,22 +34,22 @@ build_root = os.environ['MESON_BUILD_ROOT']
 
 # Poking into the private dir is not entirely kosher of course..
 pc_files = [
-  os.path.join(build_root, 'meson-private', pc_name + '.pc'),
-  os.path.join(build_root, 'meson-uninstalled', pc_name + '-uninstalled.pc')
+    os.path.join(build_root, 'meson-private', pc_name + '.pc'),
+    os.path.join(build_root, 'meson-uninstalled', pc_name + '-uninstalled.pc')
 ]
 
 for pc_file in pc_files:
-  out_lines = ''
+    out_lines = ''
 
-  with open(pc_file, 'r') as f:
-    for line in f:
-      r = line.strip().split('=', 1)
-      if len(r) == 2 and r[0] in pc_vars:
-        out_lines += '{}={}\n'.format(r[0], r[1].replace('\\ ', ' '))
-      else:
-        out_lines += line
+    with open(pc_file, 'r') as f:
+        for line in f:
+            r = line.strip().split('=', 1)
+            if len(r) == 2 and r[0] in pc_vars:
+                out_lines += '{}={}\n'.format(r[0], r[1].replace('\\ ', ' '))
+            else:
+                out_lines += line
 
-  with open(pc_file, 'w') as f_new:
-      f_new.write(out_lines)
+    with open(pc_file, 'w') as f_new:
+        f_new.write(out_lines)
 
 sys.exit(0)

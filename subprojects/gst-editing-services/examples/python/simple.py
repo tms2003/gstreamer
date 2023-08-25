@@ -54,6 +54,7 @@ class Simple:
     def start(self):
         self.loop.run()
 
+
 if __name__ == "__main__":
     if len(os.sys.argv) != 2:
         print("You must specify a file URI")

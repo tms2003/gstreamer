@@ -27,6 +27,7 @@ import tempfile
 
 from common import gst, unittest, testhelper, TestCase
 
+
 class EventTest(TestCase):
     def setUp(self):
         TestCase.setUp(self)
@@ -47,22 +48,22 @@ class EventTest(TestCase):
         del self.sink
         del self.pipeline
         TestCase.tearDown(self)
-        
+
     def testEventSeek(self):
         # this event only serves to change the rate of data transfer
         event = gst.event_new_seek(1.0, gst.FORMAT_BYTES, gst.SEEK_FLAG_FLUSH,
-            gst.SEEK_TYPE_NONE, 0, gst.SEEK_TYPE_NONE, 0)
+                                   gst.SEEK_TYPE_NONE, 0, gst.SEEK_TYPE_NONE, 0)
         # FIXME: but basesrc goes into an mmap/munmap spree, needs to be fixed
 
         event = gst.event_new_seek(1.0, gst.FORMAT_BYTES, gst.SEEK_FLAG_FLUSH,
-            gst.SEEK_TYPE_SET, 0, gst.SEEK_TYPE_NONE, 0)
+                                   gst.SEEK_TYPE_SET, 0, gst.SEEK_TYPE_NONE, 0)
         assert event
         gst.debug('sending event')
         self.sink.send_event(event)
         gst.debug('sent event')
 
         self.assertEqual(event.parse_seek(), (1.0, gst.FORMAT_BYTES, gst.SEEK_FLAG_FLUSH,
-            gst.SEEK_TYPE_SET, 0, gst.SEEK_TYPE_NONE, 0))
+                                              gst.SEEK_TYPE_SET, 0, gst.SEEK_TYPE_NONE, 0))
 
     def testWrongEvent(self):
         buffer = gst.Buffer()
@@ -73,64 +74,66 @@ class EventTest(TestCase):
 
 class EventFileSrcTest(TestCase):
 
-   def setUp(self):
-       TestCase.setUp(self)
-       gst.info("start")
-       self.filename = tempfile.mktemp()
-       open(self.filename, 'w').write(''.join(map(str, range(10))))
-       
-       self.pipeline = gst.parse_launch('filesrc name=source location=%s blocksize=1 ! fakesink signal-handoffs=1 name=sink' % self.filename)
-       self.source = self.pipeline.get_by_name('source')
-       self.sink = self.pipeline.get_by_name('sink')
-       self.sigid = self.sink.connect('handoff', self.handoff_cb)
-       self.bus = self.pipeline.get_bus()
-       
-   def tearDown(self):
-       self.pipeline.set_state(gst.STATE_NULL)
-       self.sink.disconnect(self.sigid)
-       if os.path.exists(self.filename):
-           os.remove(self.filename)
-       del self.bus
-       del self.pipeline
-       del self.source
-       del self.sink
-       del self.handoffs
-       TestCase.tearDown(self)
+    def setUp(self):
+        TestCase.setUp(self)
+        gst.info("start")
+        self.filename = tempfile.mktemp()
+        open(self.filename, 'w').write(''.join(map(str, range(10))))
 
-   def handoff_cb(self, element, buffer, pad):
-       self.handoffs.append(str(buffer))
+        self.pipeline = gst.parse_launch(
+            'filesrc name=source location=%s blocksize=1 ! fakesink signal-handoffs=1 name=sink' % self.filename)
+        self.source = self.pipeline.get_by_name('source')
+        self.sink = self.pipeline.get_by_name('sink')
+        self.sigid = self.sink.connect('handoff', self.handoff_cb)
+        self.bus = self.pipeline.get_bus()
 
-   def playAndIter(self):
-       self.handoffs = []
-       self.pipeline.set_state(gst.STATE_PLAYING)
-       assert self.pipeline.set_state(gst.STATE_PLAYING)
-       while 42:
-           msg = self.bus.pop()
-           if msg and msg.type == gst.MESSAGE_EOS:
-               break
-       assert self.pipeline.set_state(gst.STATE_PAUSED)
-       handoffs = self.handoffs
-       self.handoffs = []
-       return handoffs
+    def tearDown(self):
+        self.pipeline.set_state(gst.STATE_NULL)
+        self.sink.disconnect(self.sigid)
+        if os.path.exists(self.filename):
+            os.remove(self.filename)
+        del self.bus
+        del self.pipeline
+        del self.source
+        del self.sink
+        del self.handoffs
+        TestCase.tearDown(self)
 
-   def sink_seek(self, offset, method=gst.SEEK_TYPE_SET):
-       self.sink.seek(1.0, gst.FORMAT_BYTES, gst.SEEK_FLAG_FLUSH,
-                      method, offset,
-                      gst.SEEK_TYPE_NONE, 0)
-      
-   def testSimple(self):
-       handoffs = self.playAndIter()
-       assert handoffs == map(str, range(10))
-   
-   def testSeekCur(self):
-       self.sink_seek(8)
-       self.playAndIter()
+    def handoff_cb(self, element, buffer, pad):
+        self.handoffs.append(str(buffer))
+
+    def playAndIter(self):
+        self.handoffs = []
+        self.pipeline.set_state(gst.STATE_PLAYING)
+        assert self.pipeline.set_state(gst.STATE_PLAYING)
+        while 42:
+            msg = self.bus.pop()
+            if msg and msg.type == gst.MESSAGE_EOS:
+                break
+        assert self.pipeline.set_state(gst.STATE_PAUSED)
+        handoffs = self.handoffs
+        self.handoffs = []
+        return handoffs
+
+    def sink_seek(self, offset, method=gst.SEEK_TYPE_SET):
+        self.sink.seek(1.0, gst.FORMAT_BYTES, gst.SEEK_FLAG_FLUSH,
+                       method, offset,
+                       gst.SEEK_TYPE_NONE, 0)
+
+    def testSimple(self):
+        handoffs = self.playAndIter()
+        assert handoffs == map(str, range(10))
+
+    def testSeekCur(self):
+        self.sink_seek(8)
+        self.playAndIter()
+
 
 class TestEmit(TestCase):
     def testEmit(self):
         object = testhelper.get_object()
         object.connect('event', self._event_cb)
-        
+
         # First emit from C
         testhelper.emit_event(object)
 
@@ -139,7 +142,7 @@ class TestEmit(TestCase):
 
     def _event_cb(self, obj, event):
         assert isinstance(event, gst.Event)
-    
+
 
 class TestDelayedEventProbe(TestCase):
     # this test:
@@ -153,7 +156,7 @@ class TestDelayedEventProbe(TestCase):
         self.src.set_property('num-buffers', 10)
         self.pipeline.add(self.src)
         self.srcpad = self.src.get_pad('src')
-        
+
     def tearDown(self):
         gst.debug('setting pipeline to NULL')
         self.pipeline.set_state(gst.STATE_NULL)
@@ -187,7 +190,7 @@ class TestDelayedEventProbe(TestCase):
         self.failUnless(self._eos)
         self.assertEquals(self._eos.type, gst.EVENT_EOS)
         self.assertEquals(self._eos.__grefcount__, 1)
- 
+
     def _event_probe_cb(self, pad, event):
         if event.type == gst.EVENT_NEWSEGMENT:
             self._newsegment = event
@@ -195,7 +198,7 @@ class TestDelayedEventProbe(TestCase):
             # drop the event, we're storing it for later sending
             return False
 
-        if  event.type == gst.EVENT_EOS:
+        if event.type == gst.EVENT_EOS:
             self._eos = event
             # we also want fakesink to get it
             return True
@@ -220,10 +223,11 @@ class TestDelayedEventProbe(TestCase):
 
         # we don't want to be called again
         self.srcpad.remove_buffer_probe(self._buffer_probe_id)
-        
+
         self._had_buffer = True
         # now let the buffer through
         return True
+
 
 class TestEventCreationParsing(TestCase):
 
@@ -239,6 +243,7 @@ class TestEventCreationParsing(TestCase):
             self.assertEquals(rate, 1.0)
             self.assertEquals(flush, True)
             self.assertEquals(intermediate, True)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -103,12 +103,13 @@ class TestTransitionClip(unittest.TestCase):
             vtransition, = clip.children
             self.assertEqual(vtransition.props.invert, True)
 
+
 class TestTitleClip(unittest.TestCase):
 
     def testSetColor(self):
         timeline = GES.Timeline.new_audio_video()
         clip = GES.TitleClip.new()
-        timeline.append_layer().add_clip(clip )
+        timeline.append_layer().add_clip(clip)
         self.assertTrue(clip.set_child_property('color', 1))
         self.assertTrue(clip.set_child_property('color', 4294967295))
 
@@ -243,7 +244,7 @@ class TestTrackElements(common.GESSimpleTimelineTest):
             self.assert_effects(test_clip, *ref_effects_list)
 
         effects = ["agingtv", "dicetv", "burn", "gamma", "edgetv", "alpha",
-            "exclusion", "chromahold", "coloreffects", "videobalance"]
+                   "exclusion", "chromahold", "coloreffects", "videobalance"]
 
         for effect in effects:
             add_effect(GES.Effect.new(effect))
@@ -325,7 +326,7 @@ class TestTrackElements(common.GESSimpleTimelineTest):
         self.assertEqual(clip, clip1)
         clip1_child, = clip1.get_children(True)
         clip2_child, = clip2.get_children(True)
-        self.assertCountEqual (children, [clip1_child, clip2_child])
+        self.assertCountEqual(children, [clip1_child, clip2_child])
 
         # can freely move children between the ungrouped clips
         self.assertTrue(clip1.remove(clip1_child))
@@ -338,7 +339,7 @@ class TestTrackElements(common.GESSimpleTimelineTest):
         self.assertEqual(grouped, clip1)
 
         self.assertCountEqual(clip1.get_children(True),
-                [clip1_child, clip2_child])
+                              [clip1_child, clip2_child])
         self.assertEqual(clip2.get_children(True), [])
 
         # can freely move children between the grouped clips
@@ -369,10 +370,10 @@ class TestTrackElements(common.GESSimpleTimelineTest):
         self.assertTrue(image_src.get_asset().is_image())
         self.assertTrue(isinstance(image_src, GES.VideoUriSource))
         imagefreeze, = [e for e in image_src.get_nleobject().iterate_recurse()
-            if e.get_factory().get_name() == "imagefreeze"]
+                        if e.get_factory().get_name() == "imagefreeze"]
 
         asset = GES.UriClipAsset.request_sync(common.get_asset_uri("audio_video.ogg"))
         clip = self.layer.add_asset(asset, Gst.SECOND, 0, Gst.SECOND, GES.TrackType.VIDEO)
         video_src, = clip.get_children(True)
         self.assertEqual([e for e in video_src.get_nleobject().iterate_recurse()
-            if e.get_factory().get_name() == "imagefreeze"], [])
+                          if e.get_factory().get_name() == "imagefreeze"], [])

@@ -26,7 +26,7 @@ gi.require_version('Gst', '1.0')
 gi.require_version('GES', '1.0')
 gi.require_version('GstController', '1.0')
 
-from gi.repository import Gst, GES, GLib, GstController # noqa
+from gi.repository import Gst, GES, GLib, GstController  # noqa
 
 Gst.init(None)
 GES.init()
@@ -43,6 +43,7 @@ def play_timeline(timeline):
 
     loop.run()
 
+
 def bus_message_cb(unused_bus, message, loop, pipeline):
     if message.type == Gst.MessageType.EOS:
         print("eos")
@@ -53,6 +54,7 @@ def bus_message_cb(unused_bus, message, loop, pipeline):
         pipeline.set_state(Gst.State.NULL)
         print("error %s" % error[1])
         loop.quit()
+
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:

@@ -31,11 +31,11 @@ DEFAULT_BROWSERS = ['firefox', 'chrome']
 # list of scenarios. These are the names of the actual scenario files stored
 # on disk.
 DEFAULT_SCENARIOS = [
-        "offer_answer",
-        "vp8_send_stream",
-        "open_data_channel",
-        "send_data_channel_string",
-    ]
+    "offer_answer",
+    "vp8_send_stream",
+    "open_data_channel",
+    "send_data_channel_string",
+]
 
 # various configuration changes that are included from other scenarios.
 # key is the name of the override used in the name of the test
@@ -47,23 +47,23 @@ SCENARIO_OVERRIDES = {
     # name : directory
 
     # who starts the negotiation
-    'local' : 'local_initiates_negotiation',
-    'remote' : 'remote_initiates_negotiation',
+    'local': 'local_initiates_negotiation',
+    'remote': 'remote_initiates_negotiation',
 
     # bundle-policy configuration
     # XXX: webrtcbin's bundle-policy=none is not part of the spec
-    'none_compat' : 'bundle_local_none_remote_max_compat',
-    'none_balanced' : 'bundle_local_none_remote_balanced',
-    'none_bundle' : 'bundle_local_none_remote_max_bundle',
-    'compat_compat' : 'bundle_local_max_compat_remote_max_compat',
-    'compat_balanced' : 'bundle_local_max_compat_remote_balanced',
-    'compat_bundle' : 'bundle_local_max_compat_remote_max_bundle',
-    'balanced_compat' : 'bundle_local_balanced_remote_max_compat',
-    'balanced_balanced' : 'bundle_local_balanced_remote_balanced',
-    'balanced_bundle' : 'bundle_local_balanced_remote_bundle',
-    'bundle_compat' : 'bundle_local_max_bundle_remote_max_compat',
-    'bundle_balanced' : 'bundle_local_max_bundle_remote_balanced',
-    'bundle_bundle' : 'bundle_local_max_bundle_remote_max_bundle',
+    'none_compat': 'bundle_local_none_remote_max_compat',
+    'none_balanced': 'bundle_local_none_remote_balanced',
+    'none_bundle': 'bundle_local_none_remote_max_bundle',
+    'compat_compat': 'bundle_local_max_compat_remote_max_compat',
+    'compat_balanced': 'bundle_local_max_compat_remote_balanced',
+    'compat_bundle': 'bundle_local_max_compat_remote_max_bundle',
+    'balanced_compat': 'bundle_local_balanced_remote_max_compat',
+    'balanced_balanced': 'bundle_local_balanced_remote_balanced',
+    'balanced_bundle': 'bundle_local_balanced_remote_bundle',
+    'bundle_compat': 'bundle_local_max_bundle_remote_max_compat',
+    'bundle_balanced': 'bundle_local_max_bundle_remote_balanced',
+    'bundle_bundle': 'bundle_local_max_bundle_remote_max_bundle',
 }
 
 bundle_options = ['compat', 'balanced', 'bundle']
@@ -71,16 +71,16 @@ bundle_options = ['compat', 'balanced', 'bundle']
 # Given an override, these are the choices to choose from.  Each choice is a
 # separate test
 OVERRIDE_CHOICES = {
-    'initiator' : ['local', 'remote'],
-    'bundle' : ['_'.join(opt) for opt in itertools.product(['none'] + bundle_options, bundle_options)],
+    'initiator': ['local', 'remote'],
+    'bundle': ['_'.join(opt) for opt in itertools.product(['none'] + bundle_options, bundle_options)],
 }
 
 # Which scenarios support which override.  All the overrides will be chosen
 SCENARIO_OVERRIDES_SUPPORTED = {
-    "offer_answer" : ['initiator', 'bundle'],
-    "vp8_send_stream" : ['initiator', 'bundle'],
-    "open_data_channel" : ['initiator', 'bundle'],
-    "send_data_channel_string" : ['initiator', 'bundle'],
+    "offer_answer": ['initiator', 'bundle'],
+    "vp8_send_stream": ['initiator', 'bundle'],
+    "open_data_channel": ['initiator', 'bundle'],
+    "send_data_channel_string": ['initiator', 'bundle'],
 }
 
 # Things that don't work for some reason or another.
@@ -95,9 +95,11 @@ DEFAULT_BLACKLIST = [
      "Browsers want a BUNDLE group if in max-bundle mode"),
 ]
 
+
 class MutableInt(object):
     def __init__(self, value):
         self.value = value
+
 
 class GstWebRTCTest(GstValidateTest):
     __used_ports = set()
@@ -127,14 +129,14 @@ class GstWebRTCTest(GstValidateTest):
 
     def __init__(self, classname, tests_manager, scenario, browser, scenario_override_includes=None, timeout=DEFAULT_TIMEOUT):
         super().__init__("python3",
-                        classname,
-                        tests_manager.options,
-                        tests_manager.reporter,
-                        timeout=timeout,
-                        scenario=scenario)
+                         classname,
+                         tests_manager.options,
+                         tests_manager.reporter,
+                         timeout=timeout,
+                         scenario=scenario)
         self.webrtc_server = None
-        filename = inspect.getframeinfo (inspect.currentframe ()).filename
-        self.current_file_path = os.path.dirname (os.path.abspath (filename))
+        filename = inspect.getframeinfo(inspect.currentframe()).filename
+        self.current_file_path = os.path.dirname(os.path.abspath(filename))
         self.certdir = None
         self.browser = browser
         self.scenario_override_includes = scenario_override_includes
@@ -148,16 +150,17 @@ class GstWebRTCTest(GstValidateTest):
             self.webrtcserver_logs = open(self.logfile + '_webrtcserver.log', 'w+')
             self.extra_logfiles.add(self.webrtcserver_logs.name)
 
-        generate_certs_location = os.path.join(self.current_file_path, "..", "..", "..", "signalling", "generate_cert.sh")
+        generate_certs_location = os.path.join(self.current_file_path, "..", "..",
+                                               "..", "signalling", "generate_cert.sh")
         self.certdir = tempfile.mkdtemp()
         command = [generate_certs_location, self.certdir]
 
         server_env = os.environ.copy()
 
         subprocess.run(command,
-                         stderr=self.webrtcserver_logs,
-                         stdout=self.webrtcserver_logs,
-                         env=server_env)
+                       stderr=self.webrtcserver_logs,
+                       stdout=self.webrtcserver_logs,
+                       env=server_env)
 
         self.server_port = self.__get_open_port()
 
@@ -227,11 +230,12 @@ class GstWebRTCTest(GstValidateTest):
             new_paths.append(p)
             for override_path in self.scenario_override_includes:
                 new_p = os.path.join(p, override_path)
-                if os.path.exists (new_p):
+                if os.path.exists(new_p):
                     new_paths.append(new_p)
         env['GST_VALIDATE_SCENARIOS_PATH'] = os.pathsep.join(new_paths)
 
         return env
+
 
 class GstWebRTCTestsManager(TestsManager):
     scenarios_manager = ScenarioManager()
@@ -258,7 +262,7 @@ class GstWebRTCTestsManager(TestsManager):
         return self._scenarios
 
     def populate_testsuite(self):
-        self.add_scenarios (DEFAULT_SCENARIOS)
+        self.add_scenarios(DEFAULT_SCENARIOS)
         self.set_default_blacklist(DEFAULT_BLACKLIST)
 
     def list_tests(self):
@@ -276,14 +280,14 @@ class GstWebRTCTestsManager(TestsManager):
                 if not SCENARIO_OVERRIDES_SUPPORTED[name]:
                     # no override choices supported
                     classname = browser + '.' + name
-                    print ("adding", classname)
+                    print("adding", classname)
                     self.add_test(GstWebRTCTest(classname, self, scenario, browser))
                 else:
                     for overrides in itertools.product(*[OVERRIDE_CHOICES[c] for c in SCENARIO_OVERRIDES_SUPPORTED[name]]):
-                        oname = '.'.join (overrides)
+                        oname = '.'.join(overrides)
                         opaths = [SCENARIO_OVERRIDES[p] for p in overrides]
                         classname = browser + '.' + oname + '.' + name
-                        print ("adding", classname)
+                        print("adding", classname)
                         self.add_test(GstWebRTCTest(classname, self, scenario, browser, opaths))
 
         return self.tests

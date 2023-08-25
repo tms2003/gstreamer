@@ -596,7 +596,7 @@ class GdbGstEvent:
             caps.print(indent, "caps (seqnum: %s):" % seqnum)
         elif typestr == "stream-start":
             stream_id = self.structure().value("stream-id").value()
-            _gdb_write(indent, "stream-start: (seqnum %s)"  % seqnum)
+            _gdb_write(indent, "stream-start: (seqnum %s)" % seqnum)
             _gdb_write(indent + 1, "stream-id: %s" % stream_id.string())
         elif typestr == "segment":
             segment = self.structure().value("segment").value()
@@ -852,10 +852,10 @@ class GdbGstPad(GdbGstObject):
                 other_pname = other.dot_name()
                 if direction == "GST_PAD_SRC":
                     s += "%s%s_%s -> %s_%s [style=dashed, minlen=0]\n" % \
-                       (spc, other_ename, other_pname, ename, pname)
+                        (spc, other_ename, other_pname, ename, pname)
                 else:
                     s += "%s%s_%s -> %s_%s [style=dashed, minlen=0]\n" % \
-                       (spc, ename, pname, other_ename, other_pname)
+                        (spc, ename, pname, other_ename, other_pname)
         else:
             if direction == "GST_PAD_SRC":
                 color = "#ffaaaa"
@@ -887,7 +887,7 @@ class GdbGstPad(GdbGstObject):
 
         if caps and peer_caps and caps == peer_caps:
             s = "%s%s_%s -> %s_%s [label=\"%s\"]\n" % \
-               (spc, ename, pname, peer_ename, peer_pname, caps.dot())
+                (spc, ename, pname, peer_ename, peer_pname, caps.dot())
         elif caps and peer_caps and caps != peer_caps:
             s = "%s%s_%s -> %s_%s [labeldistance=\"10\", labelangle=\"0\", " \
                 % (spc, ename, pname, peer_ename, peer_pname)
@@ -1097,6 +1097,7 @@ GST_DEBUG_BIN_TO_DOT_FILE. This command will find the top-level parent
 for the given gstreamer object and create the dot for that element.
 
 Usage: gst-dot <gst-object> <file-name>"""
+
     def __init__(self):
         super(GstDot, self).__init__("gst-dot", gdb.COMMAND_DATA)
 
@@ -1120,7 +1121,7 @@ Usage: gst-dot <gst-object> <file-name>"""
 
     def complete(self, text, word):
         cmd = gdb.string_to_argv(text)
-        if len(cmd) == 0 or(len(cmd) == 1 and len(word) > 0):
+        if len(cmd) == 0 or (len(cmd) == 1 and len(word) > 0):
             return gdb.COMPLETE_SYMBOL
         return gdb.COMPLETE_FILENAME
 
@@ -1130,6 +1131,7 @@ class GstPrint(gdb.Command):
 Print high-level information for GStreamer objects
 
 Usage gst-print <gstreamer-object>"""
+
     def __init__(self):
         super(GstPrint, self).__init__("gst-print", gdb.COMMAND_DATA,
                                        gdb.COMPLETE_SYMBOL)
@@ -1165,6 +1167,7 @@ Usage gst-print <gstreamer-object>"""
 class GstPipelineTree(gdb.Command):
     """\
 Usage: gst-pipeline-tree <gst-object>"""
+
     def __init__(self):
         super(GstPipelineTree, self).__init__("gst-pipeline-tree",
                                               gdb.COMPLETE_SYMBOL)

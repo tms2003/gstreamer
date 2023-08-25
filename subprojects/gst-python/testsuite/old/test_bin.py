@@ -28,6 +28,8 @@ import time
 
 # see
 # http://www.sicem.biz/personal/lgs/docs/gobject-python/gobject-tutorial.html
+
+
 class MyBin(gst.Bin):
     _state_changed = False
 
@@ -35,7 +37,7 @@ class MyBin(gst.Bin):
         # we need to call GObject's init to be able to do self.do_*
         gobject.GObject.__init__(self)
         # since we can't chain up to our parent's __init__, we set the
-        # name manually 
+        # name manually
         self.set_property('name', name)
 
     def do_change_state(self, state_change):
@@ -48,10 +50,13 @@ class MyBin(gst.Bin):
         # chain up to parent
         return gst.Bin.do_change_state(self, state_change)
 
+
 # we need to register the type for PyGTK < 2.8
 gobject.type_register(MyBin)
 
 # FIXME: fix leak in vmethods before removing overriding fixture
+
+
 class BinSubclassTest(TestCase):
     def setUp(self):
         pass
@@ -97,6 +102,7 @@ class BinSubclassTest(TestCase):
         # back to NULL
         bin.set_state(gst.STATE_NULL)
 
+
 class BinAddRemove(TestCase):
     def setUp(self):
         TestCase.setUp(self)
@@ -123,7 +129,7 @@ class BinAddRemove(TestCase):
         self.bin.remove(src)
         gst.info("removed")
         self.assertRaises(gst.RemoveError, self.bin.remove, src)
-        
+
     def testMany(self):
         src = gst.element_factory_make('fakesrc')
         sink = gst.element_factory_make('fakesink')
@@ -131,6 +137,7 @@ class BinAddRemove(TestCase):
         self.assertRaises(gst.AddError, self.bin.add, src, sink)
         self.bin.remove(src, sink)
         self.assertRaises(gst.RemoveError, self.bin.remove, src, sink)
+
 
 class Preroll(TestCase):
     def setUp(self):
@@ -177,20 +184,22 @@ class Preroll(TestCase):
 
         self.bin.set_state(gst.STATE_NULL)
         self.bin.get_state()
- 
+
+
 class ConstructorTest(TestCase):
     def testGood(self):
         bin = gst.Bin()
         bin = gst.Bin(None)
         bin = gst.Bin('')
         bin = gst.Bin('myname')
-        
+
     def testBad(self):
         # these are now valid. pygobject will take care of converting
         # the arguments to a string.
         #self.assertRaises(TypeError, gst.Bin, 0)
         #self.assertRaises(TypeError, gst.Bin, gst.Bin())
         pass
-        
+
+
 if __name__ == "__main__":
     unittest.main()

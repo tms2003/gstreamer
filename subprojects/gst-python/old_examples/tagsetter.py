@@ -21,57 +21,59 @@
 # Boston, MA 02110-1301, USA.
 #
 
+import gst
+import pygst
 import sys
 
 import gobject
 gobject.threads_init()
 
-import pygst
 pygst.require('0.10')
-import gst
 
 
 mainloop = gobject.MainLoop()
 
+
 def on_eos(bus, msg):
-   mainloop.quit()
+    mainloop.quit()
+
 
 def main(args):
-   "Tagsetter test, test result with:"
-   "gst-launch -t playbin uri=file://$PWD/test.avi"
+    "Tagsetter test, test result with:"
+    "gst-launch -t playbin uri=file://$PWD/test.avi"
 
-   # create a new bin to hold the elements
-   bin = gst.parse_launch('audiotestsrc num-buffers=100 ! ' +
-                          'lame ! ' +
-                          'avimux name=mux ! ' +
-                          'filesink location=test.avi')
+    # create a new bin to hold the elements
+    bin = gst.parse_launch('audiotestsrc num-buffers=100 ! ' +
+                           'lame ! ' +
+                           'avimux name=mux ! ' +
+                           'filesink location=test.avi')
 
-   mux = bin.get_by_name('mux')
+    mux = bin.get_by_name('mux')
 
-   bus = bin.get_bus()
-   bus.add_signal_watch()
-   bus.connect('message::eos', on_eos)
+    bus = bin.get_bus()
+    bus.add_signal_watch()
+    bus.connect('message::eos', on_eos)
 
-   # prepare
-   bin.set_state(gst.STATE_READY)
-   
-   # send tags
-   l = gst.TagList()
-   l[gst.TAG_ARTIST] = "Unknown Genius"
-   l[gst.TAG_TITLE] = "Unnamed Artwork"
-   mux.merge_tags(l, gst.TAG_MERGE_APPEND)
+    # prepare
+    bin.set_state(gst.STATE_READY)
 
-   # start playing
-   bin.set_state(gst.STATE_PLAYING)
+    # send tags
+    l = gst.TagList()
+    l[gst.TAG_ARTIST] = "Unknown Genius"
+    l[gst.TAG_TITLE] = "Unnamed Artwork"
+    mux.merge_tags(l, gst.TAG_MERGE_APPEND)
 
-   try:
-      mainloop.run()
-   except KeyboardInterrupt:
-      pass
+    # start playing
+    bin.set_state(gst.STATE_PLAYING)
 
-   # stop the bin
-   bin.set_state(gst.STATE_NULL)
+    try:
+        mainloop.run()
+    except KeyboardInterrupt:
+        pass
+
+    # stop the bin
+    bin.set_state(gst.STATE_NULL)
+
 
 if __name__ == '__main__':
-   sys.exit(main(sys.argv))
-
+    sys.exit(main(sys.argv))

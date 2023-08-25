@@ -24,21 +24,22 @@ import gobject
 import time
 import sys
 
+
 class BusSignalTest(TestCase):
     def testGoodConstructor(self):
         loop = gobject.MainLoop()
-        gst.info ("creating pipeline")
+        gst.info("creating pipeline")
         pipeline = gst.parse_launch("fakesrc ! fakesink")
-        gst.info ("getting bus")
+        gst.info("getting bus")
         bus = pipeline.get_bus()
-        gst.info ("got bus")
+        gst.info("got bus")
         gst.info("pipeliner:%d busr:%d" % (pipeline.__gstrefcount__, bus.__gstrefcount__))
         self.assertEquals(bus.__gstrefcount__, 2)
         self.assertEquals(pipeline.__gstrefcount__, 1)
-        gst.info ("about to add a watch on the bus")
+        gst.info("about to add a watch on the bus")
         watch_id = bus.connect("message", self._message_received, pipeline, loop, "one")
         bus.add_signal_watch()
-        gst.info ("added a watch on the bus")
+        gst.info("added a watch on the bus")
         gst.info("pipeliner:%d busr:%d" % (pipeline.__gstrefcount__, bus.__gstrefcount__))
         self.assertEquals(bus.__gstrefcount__, 3)
         self.assertEquals(pipeline.__gstrefcount__, 1)
@@ -85,7 +86,7 @@ class BusSignalTest(TestCase):
         gst.info("pipeliner:%d busr:%d" % (pipeline.__gstrefcount__, bus.__gstrefcount__))
         self.gccollect()
         gst.info("pipeliner:%d/%d busr:%d" % (pipeline.__gstrefcount__, pipeline.__grefcount__, bus.__gstrefcount__))
-        
+
         self.assertEquals(bus.__gstrefcount__, 2)
         self.assertEquals(pipeline.__gstrefcount__, 1)
 
@@ -141,6 +142,7 @@ class BusSignalTest(TestCase):
         bus.set_sync_handler(None)
         self.failUnless(sys.getrefcount(callback2), 2)
 
+
 class BusAddWatchTest(TestCase):
 
     def testADumbExample(self):
@@ -151,26 +153,25 @@ class BusAddWatchTest(TestCase):
         gst.info("got bus, pipeliner:%d, busr:%d" % (pipeline.__gstrefcount__,
                                                      bus.__gstrefcount__))
 ##         watch_id = bus.add_watch(self._message_received, pipeline)
-##         gst.info("added watch,  pipeliner:%d, busr:%d" % (pipeline.__gstrefcount__,
-##                                                      bus.__gstrefcount__))
-##         gobject.source_remove(watch_id)
-##         gst.info("removed watch,  pipeliner:%d, busr:%d" % (pipeline.__gstrefcount__,
-##                                                      bus.__gstrefcount__))
-        
-        
+# gst.info("added watch,  pipeliner:%d, busr:%d" % (pipeline.__gstrefcount__,
+# bus.__gstrefcount__))
+# gobject.source_remove(watch_id)
+# gst.info("removed watch,  pipeliner:%d, busr:%d" % (pipeline.__gstrefcount__,
+# bus.__gstrefcount__))
+
     def testGoodConstructor(self):
         loop = gobject.MainLoop()
-        gst.info ("creating pipeline")
+        gst.info("creating pipeline")
         pipeline = gst.parse_launch("fakesrc ! fakesink")
-        gst.info ("getting bus")
+        gst.info("getting bus")
         bus = pipeline.get_bus()
-        gst.info ("got bus")
+        gst.info("got bus")
         gst.info("pipeliner:%d busr:%d" % (pipeline.__gstrefcount__, bus.__gstrefcount__))
         self.assertEquals(bus.__gstrefcount__, 2)
         self.assertEquals(pipeline.__gstrefcount__, 1)
-        gst.info ("about to add a watch on the bus")
+        gst.info("about to add a watch on the bus")
         watch_id = bus.add_watch(self._message_received, pipeline, loop, "one")
-        gst.info ("added a watch on the bus")
+        gst.info("added a watch on the bus")
         gst.info("pipeliner:%d busr:%d" % (pipeline.__gstrefcount__, bus.__gstrefcount__))
         self.assertEquals(bus.__gstrefcount__, 3)
         self.assertEquals(pipeline.__gstrefcount__, 1)
@@ -211,7 +212,7 @@ class BusAddWatchTest(TestCase):
         gst.info("pipeliner:%d busr:%d" % (pipeline.__gstrefcount__, bus.__gstrefcount__))
         self.gccollect()
         gst.info("pipeliner:%d/%d busr:%d" % (pipeline.__gstrefcount__, pipeline.__grefcount__, bus.__gstrefcount__))
-        
+
         self.assertEquals(bus.__gstrefcount__, 2)
         self.assertEquals(pipeline.__gstrefcount__, 1)
 
@@ -237,6 +238,6 @@ class BusAddWatchTest(TestCase):
         loop.quit()
         return True
 
-        
+
 if __name__ == "__main__":
     unittest.main()
