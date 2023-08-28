@@ -4708,6 +4708,38 @@ gst_mxf_demux_chain (GstPad * pad, GstObject * parent, GstBuffer * inbuf)
   return ret;
 }
 
+/* Applies pts to dts position temporal offset if applicable
+ *
+ * Returns the dts position */
+static guint64
+pts_to_dts_position (GstMXFDemux * demux,
+    GstMXFDemuxEssenceTrack * etrack, guint64 pts)
+{
+  guint64 dts = pts;
+  GstMXFDemuxIndexTable *index_table = get_track_index_table (demux, etrack);
+
+  if (index_table && index_table->segments) {
+    guint segidx, start, entidx;
+    MXFIndexTableSegment *s;
+    for (segidx = 0; segidx < index_table->segments->len; segidx++) {
+      s = &g_array_index (index_table->segments, MXFIndexTableSegment, segidx);
+      start = s->index_start_position;
+      if (pts >= start) {
+        entidx = pts - start;
+        if (entidx < s->n_index_entries) {
+          dts = pts + s->index_entries[entidx].temporal_offset;
+          GST_LOG_OBJECT (demux,
+              "Applied temporal offset to pts: %"
+              G_GINT64_FORMAT " -> dts: %" G_GINT64_FORMAT, pts, dts);
+          break;
+        }
+      }
+    }
+  }
+
+  return dts;
+}
+
 /* Given a stream time for an output pad, figure out:
  * * The Essence track for that stream time
  * * The position on that track
@@ -4775,7 +4807,8 @@ gst_mxf_demux_pad_to_track_and_position (GstMXFDemux * demux,
           "Found matching essence track body_sid:%d index_sid:%d",
           track->body_sid, track->index_sid);
       *etrack = track;
-      *position = material_position - sum;
+      *position = pts_to_dts_position (demux, track, material_position - sum);
+
       return TRUE;
     }
   }
@@ -4899,6 +4932,8 @@ gst_mxf_demux_pad_set_position (GstMXFDemux * demux, GstMXFDemuxPad * p,
         p->current_essence_track->source_track->edit_rate.d * GST_SECOND);
 
     p->current_essence_track_position += essence_offset;
+    p->current_essence_track_position = pts_to_dts_position (demux,
+        p->current_essence_track, p->current_essence_track_position);
 
     p->position = gst_util_uint64_scale (sum,
         GST_SECOND * p->material_track->edit_rate.d,
