@@ -34,6 +34,7 @@
 #define GST_MATROSKA_DOCTYPE_MATROSKA              "matroska"
 #define GST_MATROSKA_DOCTYPE_WEBM                  "webm"
 
+#define WEBM_CENC_ENCRYPTION
 /*
  * Matroska element IDs. max. 32-bit.
  */
@@ -612,6 +613,12 @@ struct _GstMatroskaTrackContext {
    * encoding (compression/encryption) settings for this track, if any */
   GArray       *encodings;
 
+#ifdef WEBM_CENC_ENCRYPTION
+  /* A GArray of GstMatroskaTrackEncryption structures which contain the
+   * encryption (EncAlgo/EncKeyID/Signature/SigKeyID/SigAlgo/SigHashAlgo) settings for this track, if any */
+  GArray       *encryptions;
+#endif
+
   /* Whether the stream is EOS */
   gboolean      eos;
 
@@ -749,6 +756,21 @@ typedef struct _GstMatroskaTrackEncoding {
   guint   enc_algo  : 3;
   guint   enc_cipher_mode : 2;
 } GstMatroskaTrackEncoding;
+
+#ifdef WEBM_CENC_ENCRYPTION
+typedef struct _GstMatroskaTrackEncryption {
+  guint   algo;
+  guint8 *enc_kid;
+  guint   enc_kid_length;
+  guint8 *signature;
+  guint   signature_length;
+  guint8 *sig_keyid;
+  guint   sig_keyid_length;
+  guint   sig_algo;
+  guint   sig_hash_algo;
+  guint   cipher_mode;
+} GstMatroskaTrackEncryption;
+#endif
 
 gboolean gst_matroska_track_init_video_context    (GstMatroskaTrackContext ** p_context);
 gboolean gst_matroska_track_init_audio_context    (GstMatroskaTrackContext ** p_context);

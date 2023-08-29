@@ -352,6 +352,24 @@ gst_matroska_track_free (GstMatroskaTrackContext * track)
     g_array_unref (track->encodings);
   }
 
+#ifdef WEBM_CENC_ENCRYPTION
+    if (track->encryptions != NULL) {
+      int i;
+      for (i = 0; i < track->encryptions->len; ++i) {
+        GstMatroskaTrackEncryption *encryption = &g_array_index (track->encryptions,
+            GstMatroskaTrackEncryption,
+            i);
+        if (encryption->enc_kid)
+          g_free (encryption->enc_kid);
+        if (encryption->signature)
+          g_free (encryption->signature);
+        if (encryption->sig_keyid)
+          g_free (encryption->sig_keyid);
+      }
+      g_array_free (track->encryptions, TRUE);
+    }
+#endif
+
   if (track->tags)
     gst_tag_list_unref (track->tags);
 
