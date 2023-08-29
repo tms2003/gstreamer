@@ -17,16 +17,30 @@
  * Boston, MA 02110-1301, USA.
  */
 
+/**
+ * SECTION:element-subtitlemux
+ * @title: subtitlemux
+ *
+ * This element aggregates subtitle streams and attaches the aggregated subtitle
+ * on each video #GstBuffer as a #GstVideoSubtitleMeta
+ *
+ * Multiple subtitle streams can be linked to this element and but only
+ * selected stream via "active" property of the text pad will be activated
+ * and aggregated.
+ *
+ * Since: 1.24
+ */
+
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif
 
 #include <gst/video/video.h>
-#include "gstdwritesubtitlemux.h"
-#include "gstdwrite-utils.h"
+#include "gstsubtitlemux.h"
+#include "gstpangoparser.h"
 
-GST_DEBUG_CATEGORY_STATIC (dwrite_subtitle_mux_debug);
-#define GST_CAT_DEFAULT dwrite_subtitle_mux_debug
+GST_DEBUG_CATEGORY_STATIC (subtitle_mux_debug);
+#define GST_CAT_DEFAULT subtitle_mux_debug
 
 static GstStaticPadTemplate video_templ = GST_STATIC_PAD_TEMPLATE ("video",
     GST_PAD_SINK,
@@ -36,7 +50,7 @@ static GstStaticPadTemplate video_templ = GST_STATIC_PAD_TEMPLATE ("video",
 static GstStaticPadTemplate text_templ = GST_STATIC_PAD_TEMPLATE ("text_%u",
     GST_PAD_SINK,
     GST_PAD_REQUEST,
-    GST_STATIC_CAPS ("text/x-raw"));
+    GST_STATIC_CAPS ("text/x-raw, format= { pango-markup, utf8 }"));
 
 static GstStaticPadTemplate src_templ = GST_STATIC_PAD_TEMPLATE ("src",
     GST_PAD_SRC,
@@ -50,7 +64,7 @@ enum
   PROP_PAD_ACTIVE,
 };
 
-struct _GstDWriteSubtitleMuxPad
+struct _GstSubtitleMuxPad
 {
   GstAggregatorPad parent;
 
@@ -60,36 +74,37 @@ struct _GstDWriteSubtitleMuxPad
   GstBuffer *buffer;
   GstStream *stream;
   GstStream *pending_stream;
+  GstTextLayout *layout;
 
   GstClockTime start_time;
   GstClockTime end_time;
   gboolean active;
+  gboolean is_markup;
 };
 
-static void gst_dwrite_subtitle_mux_pad_set_property (GObject * object,
+static void gst_subtitle_mux_pad_set_property (GObject * object,
     guint prop_id, const GValue * value, GParamSpec * pspec);
-static void gst_dwrite_subtitle_mux_pad_get_property (GObject * object,
+static void gst_subtitle_mux_pad_get_property (GObject * object,
     guint prop_id, GValue * value, GParamSpec * pspec);
-static void gst_dwrite_subtitle_mux_pad_dispose (GObject * object);
-static void gst_dwrite_subtitle_mux_pad_finalize (GObject * object);
+static void gst_subtitle_mux_pad_dispose (GObject * object);
+static void gst_subtitle_mux_pad_finalize (GObject * object);
 static GstFlowReturn
-gst_dwrite_subtitle_mux_pad_flush (GstAggregatorPad * aggpad,
-    GstAggregator * agg);
+gst_subtitle_mux_pad_flush (GstAggregatorPad * aggpad, GstAggregator * agg);
 
-#define gst_dwrite_subtitle_mux_pad_parent_class pad_parent_class
-G_DEFINE_TYPE (GstDWriteSubtitleMuxPad, gst_dwrite_subtitle_mux_pad,
+#define gst_subtitle_mux_pad_parent_class pad_parent_class
+G_DEFINE_TYPE (GstSubtitleMuxPad, gst_subtitle_mux_pad,
     GST_TYPE_AGGREGATOR_PAD);
 
 static void
-gst_dwrite_subtitle_mux_pad_class_init (GstDWriteSubtitleMuxPadClass * klass)
+gst_subtitle_mux_pad_class_init (GstSubtitleMuxPadClass * klass)
 {
   GObjectClass *object_class = G_OBJECT_CLASS (klass);
   GstAggregatorPadClass *pad_class = GST_AGGREGATOR_PAD_CLASS (klass);
 
-  object_class->dispose = gst_dwrite_subtitle_mux_pad_dispose;
-  object_class->finalize = gst_dwrite_subtitle_mux_pad_finalize;
-  object_class->set_property = gst_dwrite_subtitle_mux_pad_set_property;
-  object_class->get_property = gst_dwrite_subtitle_mux_pad_get_property;
+  object_class->dispose = gst_subtitle_mux_pad_dispose;
+  object_class->finalize = gst_subtitle_mux_pad_finalize;
+  object_class->set_property = gst_subtitle_mux_pad_set_property;
+  object_class->get_property = gst_subtitle_mux_pad_get_property;
 
   g_object_class_install_property (object_class,
       PROP_PAD_ACTIVE, g_param_spec_boolean ("active", "Active",
@@ -97,11 +112,11 @@ gst_dwrite_subtitle_mux_pad_class_init (GstDWriteSubtitleMuxPadClass * klass)
           "be ignored", TRUE,
           (GParamFlags) (G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS)));
 
-  pad_class->flush = GST_DEBUG_FUNCPTR (gst_dwrite_subtitle_mux_pad_flush);
+  pad_class->flush = GST_DEBUG_FUNCPTR (gst_subtitle_mux_pad_flush);
 }
 
 static void
-gst_dwrite_subtitle_mux_pad_init (GstDWriteSubtitleMuxPad * self)
+gst_subtitle_mux_pad_init (GstSubtitleMuxPad * self)
 {
   self->start_time = GST_CLOCK_TIME_NONE;
   self->end_time = GST_CLOCK_TIME_NONE;
@@ -111,21 +126,22 @@ gst_dwrite_subtitle_mux_pad_init (GstDWriteSubtitleMuxPad * self)
 }
 
 static void
-gst_dwrite_subtitle_mux_pad_dispose (GObject * object)
+gst_subtitle_mux_pad_dispose (GObject * object)
 {
-  GstDWriteSubtitleMuxPad *self = GST_DWRITE_SUBTITLE_MUX_PAD (object);
+  GstSubtitleMuxPad *self = GST_SUBTITLE_MUX_PAD (object);
 
   gst_clear_buffer (&self->buffer);
   gst_clear_object (&self->stream);
   gst_clear_object (&self->pending_stream);
+  gst_clear_text_layout (&self->layout);
 
   G_OBJECT_CLASS (pad_parent_class)->dispose (object);
 }
 
 static void
-gst_dwrite_subtitle_mux_pad_finalize (GObject * object)
+gst_subtitle_mux_pad_finalize (GObject * object)
 {
-  GstDWriteSubtitleMuxPad *self = GST_DWRITE_SUBTITLE_MUX_PAD (object);
+  GstSubtitleMuxPad *self = GST_SUBTITLE_MUX_PAD (object);
 
   g_free (self->stream_id);
   g_mutex_clear (&self->lock);
@@ -134,10 +150,10 @@ gst_dwrite_subtitle_mux_pad_finalize (GObject * object)
 }
 
 static void
-gst_dwrite_subtitle_mux_pad_set_property (GObject * object, guint prop_id,
+gst_subtitle_mux_pad_set_property (GObject * object, guint prop_id,
     const GValue * value, GParamSpec * pspec)
 {
-  GstDWriteSubtitleMuxPad *self = GST_DWRITE_SUBTITLE_MUX_PAD (object);
+  GstSubtitleMuxPad *self = GST_SUBTITLE_MUX_PAD (object);
 
   g_mutex_lock (&self->lock);
   switch (prop_id) {
@@ -152,10 +168,10 @@ gst_dwrite_subtitle_mux_pad_set_property (GObject * object, guint prop_id,
 }
 
 static void
-gst_dwrite_subtitle_mux_pad_get_property (GObject * object, guint prop_id,
+gst_subtitle_mux_pad_get_property (GObject * object, guint prop_id,
     GValue * value, GParamSpec * pspec)
 {
-  GstDWriteSubtitleMuxPad *self = GST_DWRITE_SUBTITLE_MUX_PAD (object);
+  GstSubtitleMuxPad *self = GST_SUBTITLE_MUX_PAD (object);
 
   g_mutex_lock (&self->lock);
   switch (prop_id) {
@@ -170,10 +186,9 @@ gst_dwrite_subtitle_mux_pad_get_property (GObject * object, guint prop_id,
 }
 
 static GstFlowReturn
-gst_dwrite_subtitle_mux_pad_flush (GstAggregatorPad * aggpad,
-    GstAggregator * agg)
+gst_subtitle_mux_pad_flush (GstAggregatorPad * aggpad, GstAggregator * agg)
 {
-  GstDWriteSubtitleMuxPad *self = GST_DWRITE_SUBTITLE_MUX_PAD (aggpad);
+  GstSubtitleMuxPad *self = GST_SUBTITLE_MUX_PAD (aggpad);
 
   gst_clear_buffer (&self->buffer);
   self->start_time = GST_CLOCK_TIME_NONE;
@@ -182,68 +197,81 @@ gst_dwrite_subtitle_mux_pad_flush (GstAggregatorPad * aggpad,
   return GST_FLOW_OK;
 }
 
-struct _GstDWriteSubtitleMux
+struct _GstSubtitleMux
 {
   GstAggregator parent;
 
-  GstDWriteSubtitleMuxPad *video_pad;
+  GMutex lock;
+
+  GstAggregatorPad *video_pad;
+  GstClockTime start_time;
+  GstClockTime end_time;
+
+  GstBuffer *video_buf;
 };
 
-static GstPad *gst_dwrite_subtitle_mux_request_new_pad (GstElement * elem,
+static void gst_subtitle_mux_finalize (GObject * object);
+static GstPad *gst_subtitle_mux_request_new_pad (GstElement * elem,
     GstPadTemplate * templ, const gchar * name, const GstCaps * caps);
-static gboolean gst_dwrite_subtitle_mux_sink_query (GstAggregator * agg,
+static GstFlowReturn gst_subtitle_mux_flush (GstAggregator * agg);
+static gboolean gst_subtitle_mux_start (GstAggregator * agg);
+static gboolean gst_subtitle_mux_stop (GstAggregator * agg);
+static gboolean gst_subtitle_mux_sink_query (GstAggregator * agg,
     GstAggregatorPad * pad, GstQuery * query);
-static gboolean gst_dwrite_subtitle_mux_src_query (GstAggregator * agg,
+static gboolean gst_subtitle_mux_src_query (GstAggregator * agg,
     GstQuery * query);
-static gboolean gst_dwrite_subtitle_mux_sink_event (GstAggregator * agg,
+static gboolean gst_subtitle_mux_sink_event (GstAggregator * agg,
     GstAggregatorPad * pad, GstEvent * event);
-static GstFlowReturn gst_dwrite_subtitle_mux_aggregate (GstAggregator * agg,
+static GstFlowReturn gst_subtitle_mux_aggregate (GstAggregator * agg,
     gboolean timeout);
 
-#define gst_dwrite_subtitle_mux_parent_class parent_class
-G_DEFINE_TYPE (GstDWriteSubtitleMux, gst_dwrite_subtitle_mux,
-    GST_TYPE_AGGREGATOR);
+#define gst_subtitle_mux_parent_class parent_class
+G_DEFINE_TYPE (GstSubtitleMux, gst_subtitle_mux, GST_TYPE_AGGREGATOR);
+
+GST_ELEMENT_REGISTER_DEFINE (subtitlemux, "subtitlemux",
+    GST_RANK_NONE, GST_TYPE_SUBTITLE_MUX);
 
 static void
-gst_dwrite_subtitle_mux_class_init (GstDWriteSubtitleMuxClass * klass)
+gst_subtitle_mux_class_init (GstSubtitleMuxClass * klass)
 {
+  GObjectClass *object_class = G_OBJECT_CLASS (klass);
   GstElementClass *element_class = GST_ELEMENT_CLASS (klass);
   GstAggregatorClass *agg_class = GST_AGGREGATOR_CLASS (klass);
 
+  object_class->finalize = gst_subtitle_mux_finalize;
+
   element_class->request_new_pad =
-      GST_DEBUG_FUNCPTR (gst_dwrite_subtitle_mux_request_new_pad);
+      GST_DEBUG_FUNCPTR (gst_subtitle_mux_request_new_pad);
 
   gst_element_class_set_static_metadata (element_class,
-      "DirectWrite Subtitle Mux", "Generic",
-      "Attach subtitle metas on video buffers",
+      "Subtitle Mux", "Generic", "Attach subtitle metas on video buffers",
       "Seungha Yang <seungha@centricular.com>");
 
   gst_element_class_add_static_pad_template_with_gtype (element_class,
-      &video_templ, GST_TYPE_DWRITE_SUBTITLE_MUX_PAD);
+      &video_templ, GST_TYPE_AGGREGATOR_PAD);
   gst_element_class_add_static_pad_template_with_gtype (element_class,
-      &text_templ, GST_TYPE_DWRITE_SUBTITLE_MUX_PAD);
+      &text_templ, GST_TYPE_SUBTITLE_MUX_PAD);
   gst_element_class_add_static_pad_template_with_gtype (element_class,
       &src_templ, GST_TYPE_AGGREGATOR_PAD);
 
-  agg_class->sink_query =
-      GST_DEBUG_FUNCPTR (gst_dwrite_subtitle_mux_sink_query);
-  agg_class->src_query = GST_DEBUG_FUNCPTR (gst_dwrite_subtitle_mux_src_query);
-  agg_class->sink_event =
-      GST_DEBUG_FUNCPTR (gst_dwrite_subtitle_mux_sink_event);
-  agg_class->aggregate = GST_DEBUG_FUNCPTR (gst_dwrite_subtitle_mux_aggregate);
+  agg_class->flush = GST_DEBUG_FUNCPTR (gst_subtitle_mux_flush);
+  agg_class->start = GST_DEBUG_FUNCPTR (gst_subtitle_mux_start);
+  agg_class->stop = GST_DEBUG_FUNCPTR (gst_subtitle_mux_stop);
+  agg_class->sink_query = GST_DEBUG_FUNCPTR (gst_subtitle_mux_sink_query);
+  agg_class->src_query = GST_DEBUG_FUNCPTR (gst_subtitle_mux_src_query);
+  agg_class->sink_event = GST_DEBUG_FUNCPTR (gst_subtitle_mux_sink_event);
+  agg_class->aggregate = GST_DEBUG_FUNCPTR (gst_subtitle_mux_aggregate);
   agg_class->get_next_time =
       GST_DEBUG_FUNCPTR (gst_aggregator_simple_get_next_time);
   agg_class->negotiate = NULL;
 
-  gst_type_mark_as_plugin_api (GST_TYPE_DWRITE_SUBTITLE_MUX_PAD,
-      (GstPluginAPIFlags) 0);
+  gst_type_mark_as_plugin_api (GST_TYPE_SUBTITLE_MUX_PAD, 0);
 
-  GST_DEBUG_CATEGORY_INIT (dwrite_subtitle_mux_debug,
-      "dwritesubtitlemux", 0, "dwritesubtitlemux");
+  GST_DEBUG_CATEGORY_INIT (subtitle_mux_debug, "subtitlemux", 0, "subtitlemux");
 }
 
 static void
-gst_dwrite_subtitle_mux_init (GstDWriteSubtitleMux * self)
+gst_subtitle_mux_init (GstSubtitleMux * self)
 {
   GstElement *elem = GST_ELEMENT_CAST (self);
   GstElementClass *klass = GST_ELEMENT_GET_CLASS (elem);
@@ -251,17 +279,29 @@ gst_dwrite_subtitle_mux_init (GstDWriteSubtitleMux * self)
   GstPadTemplate *templ;
   GstPad *video_pad;
 
+  g_mutex_init (&self->lock);
+
   templ = gst_element_class_get_pad_template (klass, "video");
   video_pad = gst_pad_new_from_template (templ, "video");
 
   gst_element_add_pad (elem, video_pad);
-  self->video_pad = GST_DWRITE_SUBTITLE_MUX_PAD (video_pad);
+  self->video_pad = GST_AGGREGATOR_PAD (video_pad);
 
   gst_aggregator_set_force_live (agg, TRUE);
 }
 
+static void
+gst_subtitle_mux_finalize (GObject * object)
+{
+  GstSubtitleMux *self = GST_SUBTITLE_MUX (object);
+
+  g_mutex_clear (&self->lock);
+
+  G_OBJECT_CLASS (parent_class)->finalize (object);
+}
+
 static GstPad *
-gst_dwrite_subtitle_mux_request_new_pad (GstElement * elem,
+gst_subtitle_mux_request_new_pad (GstElement * elem,
     GstPadTemplate * templ, const gchar * name, const GstCaps * caps)
 {
   GstPad *pad;
@@ -278,16 +318,43 @@ gst_dwrite_subtitle_mux_request_new_pad (GstElement * elem,
   return pad;
 }
 
+static GstFlowReturn
+gst_subtitle_mux_flush (GstAggregator * agg)
+{
+  GstSubtitleMux *self = GST_SUBTITLE_MUX (agg);
+
+  gst_clear_buffer (&self->video_buf);
+  self->start_time = GST_CLOCK_TIME_NONE;
+  self->end_time = GST_CLOCK_TIME_NONE;
+
+  return GST_FLOW_OK;
+}
+
 static gboolean
-gst_dwrite_subtitle_mux_sink_query (GstAggregator * agg, GstAggregatorPad * pad,
+gst_subtitle_mux_start (GstAggregator * agg)
+{
+  gst_subtitle_mux_flush (agg);
+
+  return TRUE;
+}
+
+static gboolean
+gst_subtitle_mux_stop (GstAggregator * agg)
+{
+  gst_subtitle_mux_flush (agg);
+
+  return TRUE;
+}
+
+static gboolean
+gst_subtitle_mux_sink_query (GstAggregator * agg, GstAggregatorPad * pad,
     GstQuery * query)
 {
-  GstDWriteSubtitleMux *self = GST_DWRITE_SUBTITLE_MUX (agg);
-  GstDWriteSubtitleMuxPad *spad = GST_DWRITE_SUBTITLE_MUX_PAD (pad);
+  GstSubtitleMux *self = GST_SUBTITLE_MUX (agg);
 
   switch (GST_QUERY_TYPE (query)) {
     case GST_QUERY_ALLOCATION:
-      if (spad == self->video_pad) {
+      if (pad == self->video_pad) {
         guint i = 0;
         guint n_allocation;
         guint down_min = 0;
@@ -337,7 +404,7 @@ gst_dwrite_subtitle_mux_sink_query (GstAggregator * agg, GstAggregatorPad * pad,
       return FALSE;
     case GST_QUERY_CAPS:
     case GST_QUERY_ACCEPT_CAPS:
-      if (spad == self->video_pad)
+      if (pad == self->video_pad)
         return gst_pad_peer_query (agg->srcpad, query);
       break;
     default:
@@ -348,9 +415,9 @@ gst_dwrite_subtitle_mux_sink_query (GstAggregator * agg, GstAggregatorPad * pad,
 }
 
 static gboolean
-gst_dwrite_subtitle_mux_src_query (GstAggregator * agg, GstQuery * query)
+gst_subtitle_mux_src_query (GstAggregator * agg, GstQuery * query)
 {
-  GstDWriteSubtitleMux *self = GST_DWRITE_SUBTITLE_MUX (agg);
+  GstSubtitleMux *self = GST_SUBTITLE_MUX (agg);
 
   switch (GST_QUERY_TYPE (query)) {
     case GST_QUERY_CAPS:
@@ -362,8 +429,14 @@ gst_dwrite_subtitle_mux_src_query (GstAggregator * agg, GstQuery * query)
   return GST_AGGREGATOR_CLASS (parent_class)->src_query (agg, query);
 }
 
+static GstTextLayout *
+gst_subtitle_mux_create_layout (GstSubtitleMux * self, GstBuffer * buffer)
+{
+  return NULL;
+}
+
 static GstFlowReturn
-gst_dwrite_subtitle_mux_drain (GstDWriteSubtitleMux * self)
+gst_subtitle_mux_drain (GstSubtitleMux * self)
 {
   GstAggregator *agg = GST_AGGREGATOR_CAST (self);
   GstElement *elem = GST_ELEMENT_CAST (self);
@@ -372,11 +445,10 @@ gst_dwrite_subtitle_mux_drain (GstDWriteSubtitleMux * self)
   GList *iter;
   GstFlowReturn ret;
 
-  if (!self->video_pad->buffer)
+  if (!self->video_buf)
     return GST_FLOW_OK;
 
-  buffer = self->video_pad->buffer;
-  self->video_pad->buffer = NULL;
+  buffer = g_steal_pointer (&self->video_buf);
 
   srcpad->segment.position = GST_BUFFER_PTS (buffer);
   if (srcpad->segment.rate >= 0 && GST_BUFFER_DURATION_IS_VALID (buffer) &&
@@ -395,25 +467,22 @@ gst_dwrite_subtitle_mux_drain (GstDWriteSubtitleMux * self)
 
   GST_OBJECT_LOCK (self);
   for (iter = elem->sinkpads; iter; iter = g_list_next (iter)) {
-    GstDWriteSubtitleMuxPad *pad = (GstDWriteSubtitleMuxPad *) iter->data;
+    GstAggregatorPad *apad = (GstAggregatorPad *) iter->data;
+    GstSubtitleMuxPad *pad;
 
-    if (pad == self->video_pad)
+    if (apad == self->video_pad)
       continue;
+
+    pad = (GstSubtitleMuxPad *) apad;
 
     g_mutex_lock (&pad->lock);
-    if (!pad->buffer || !pad->active) {
-      g_mutex_unlock (&pad->lock);
-      continue;
-    }
-
-    if (GST_BUFFER_FLAG_IS_SET (pad->buffer, GST_BUFFER_FLAG_GAP) ||
-        gst_buffer_get_size (pad->buffer) == 0) {
+    if (!pad->layout || !pad->active) {
       g_mutex_unlock (&pad->lock);
       continue;
     }
 
     buffer = gst_buffer_make_writable (buffer);
-    gst_buffer_add_dwrite_subtitle_meta (buffer, pad->stream, pad->buffer);
+    gst_buffer_add_video_subtitle_meta (buffer, pad->stream, pad->layout);
     g_mutex_unlock (&pad->lock);
   }
   GST_OBJECT_UNLOCK (self);
@@ -425,29 +494,29 @@ gst_dwrite_subtitle_mux_drain (GstDWriteSubtitleMux * self)
 }
 
 static gboolean
-gst_dwrite_subtitle_mux_sink_event (GstAggregator * agg, GstAggregatorPad * pad,
+gst_subtitle_mux_sink_event (GstAggregator * agg, GstAggregatorPad * pad,
     GstEvent * event)
 {
-  GstDWriteSubtitleMux *self = GST_DWRITE_SUBTITLE_MUX (agg);
-  GstDWriteSubtitleMuxPad *spad = GST_DWRITE_SUBTITLE_MUX_PAD (pad);
+  GstSubtitleMux *self = GST_SUBTITLE_MUX (agg);
 
   GST_LOG_OBJECT (pad, "Got event %" GST_PTR_FORMAT, event);
 
   switch (GST_EVENT_TYPE (event)) {
     case GST_EVENT_STREAM_START:
-    {
-      const gchar *stream_id;
-      gst_event_parse_stream_start (event, &stream_id);
-      g_free (spad->stream_id);
-      spad->stream_id = g_strdup (stream_id);
+      if (pad != self->video_pad) {
+        GstSubtitleMuxPad *spad = GST_SUBTITLE_MUX_PAD (pad);
+        const gchar *stream_id;
+        gst_event_parse_stream_start (event, &stream_id);
+        g_free (spad->stream_id);
+        spad->stream_id = g_strdup (stream_id);
+      }
       break;
-    }
     case GST_EVENT_CAPS:
     {
       GstCaps *caps;
       gst_event_parse_caps (event, &caps);
 
-      if (spad == self->video_pad) {
+      if (pad == self->video_pad) {
         GstVideoInfo info;
         gint fps_n = 25;
         gint fps_d = 1;
@@ -463,9 +532,10 @@ gst_dwrite_subtitle_mux_sink_event (GstAggregator * agg, GstAggregatorPad * pad,
         latency = gst_util_uint64_scale (GST_SECOND, fps_d, fps_n);
         gst_aggregator_set_latency (agg, latency, latency);
 
-        gst_dwrite_subtitle_mux_drain (self);
+        gst_subtitle_mux_drain (self);
         gst_aggregator_set_src_caps (agg, caps);
       } else {
+        GstSubtitleMuxPad *spad = GST_SUBTITLE_MUX_PAD (pad);
         gst_clear_object (&spad->pending_stream);
         spad->pending_stream = gst_stream_new (spad->stream_id,
             caps, GST_STREAM_TYPE_TEXT, GST_STREAM_FLAG_SPARSE);
@@ -473,16 +543,18 @@ gst_dwrite_subtitle_mux_sink_event (GstAggregator * agg, GstAggregatorPad * pad,
       break;
     }
     case GST_EVENT_SEGMENT:
-      if (spad == self->video_pad) {
+      if (pad == self->video_pad) {
         const GstSegment *segment;
         gst_event_parse_segment (event, &segment);
-        gst_dwrite_subtitle_mux_drain (self);
+        gst_subtitle_mux_drain (self);
         gst_aggregator_update_segment (agg, segment);
       }
       break;
     case GST_EVENT_TAG:
-      if (spad != self->video_pad) {
+      if (pad != self->video_pad) {
+        GstSubtitleMuxPad *spad = GST_SUBTITLE_MUX_PAD (pad);
         GstTagList *tags;
+
         gst_event_parse_tag (event, &tags);
         if (spad->pending_stream)
           gst_stream_set_tags (spad->pending_stream, tags);
@@ -497,9 +569,74 @@ gst_dwrite_subtitle_mux_sink_event (GstAggregator * agg, GstAggregatorPad * pad,
   return GST_AGGREGATOR_CLASS (parent_class)->sink_event (agg, pad, event);
 }
 
+static void
+gst_subtitle_mux_update_stream (GstSubtitleMux * self, GstSubtitleMuxPad * pad)
+{
+  GstCaps *caps;
+  GstStructure *s;
+  const gchar *format;
+
+  if (!pad->pending_stream)
+    return;
+
+  gst_clear_object (&pad->stream);
+  pad->stream = g_steal_pointer (&pad->pending_stream);
+  pad->is_markup = FALSE;
+
+  caps = gst_stream_get_caps (pad->stream);
+  if (!caps)
+    return;
+
+  s = gst_caps_get_structure (caps, 0);
+  format = gst_structure_get_string (s, "format");
+  if (g_strcmp0 (format, "pango-markup") == 0)
+    pad->is_markup = TRUE;
+
+  gst_caps_unref (caps);
+}
+
+static void
+gst_subtitle_mux_set_buffer (GstSubtitleMux * self, GstSubtitleMuxPad * pad,
+    GstBuffer * buffer)
+{
+  GstMapInfo info;
+
+  gst_clear_buffer (&pad->buffer);
+  gst_clear_text_layout (&pad->layout);
+
+  if (!buffer)
+    return;
+
+  pad->buffer = gst_buffer_ref (buffer);
+  if (GST_BUFFER_FLAG_IS_SET (pad->buffer, GST_BUFFER_FLAG_GAP) ||
+      gst_buffer_get_size (pad->buffer) == 0) {
+    return;
+  }
+
+  if (!gst_buffer_map (buffer, &info, GST_MAP_READ)) {
+    GST_ERROR_OBJECT (pad, "Couldn't map buffer %" GST_PTR_FORMAT, buffer);
+    return;
+  }
+
+  if (info.size > 0) {
+    gchar *text;
+
+    text = g_strndup ((gchar *) info.data, info.size);
+    if (pad->is_markup) {
+      pad->layout = gst_text_layout_from_pango_markup (text);
+    } else {
+      pad->layout = gst_text_layout_new (text);
+    }
+
+    g_free (text);
+  }
+
+  gst_buffer_unmap (buffer, &info);
+}
+
 static GstFlowReturn
-gst_dwrite_subtitle_mux_fill_single_queue (GstDWriteSubtitleMux * self,
-    GstDWriteSubtitleMuxPad * pad, GstClockTime out_start_running_time,
+gst_subtitle_mux_fill_single_queue (GstSubtitleMux * self,
+    GstSubtitleMuxPad * pad, GstClockTime out_start_running_time,
     GstClockTime out_end_running_time, gboolean timeout)
 {
   GstAggregatorPad *apad = GST_AGGREGATOR_PAD_CAST (pad);
@@ -577,12 +714,10 @@ gst_dwrite_subtitle_mux_fill_single_queue (GstDWriteSubtitleMux * self,
   if (GST_CLOCK_TIME_IS_VALID (out_start_running_time) &&
       GST_CLOCK_TIME_IS_VALID (end_running_time) &&
       end_running_time <= out_start_running_time) {
-    if (pad->pending_stream) {
-      gst_clear_object (&pad->stream);
-      pad->stream = g_steal_pointer (&pad->pending_stream);
-    }
+    gst_subtitle_mux_update_stream (self, pad);
     GST_LOG_OBJECT (pad, "Discard old buffer %" GST_PTR_FORMAT, buf);
     gst_clear_buffer (&pad->buffer);
+    gst_clear_text_layout (&pad->layout);
     gst_aggregator_pad_drop_buffer (apad);
     ret = GST_AGGREGATOR_FLOW_NEED_DATA;
     goto out;
@@ -590,12 +725,8 @@ gst_dwrite_subtitle_mux_fill_single_queue (GstDWriteSubtitleMux * self,
 
   if (!pad->buffer) {
     GST_LOG_OBJECT (pad, "Queueing new buffer %" GST_PTR_FORMAT, buf);
-    if (pad->pending_stream) {
-      gst_clear_object (&pad->stream);
-      pad->stream = g_steal_pointer (&pad->pending_stream);
-    }
-
-    pad->buffer = gst_buffer_ref (buf);
+    gst_subtitle_mux_update_stream (self, pad);
+    gst_subtitle_mux_set_buffer (self, pad, buf);
     pad->start_time = start_running_time;
     pad->end_time = end_running_time;
     gst_aggregator_pad_drop_buffer (apad);
@@ -611,12 +742,8 @@ gst_dwrite_subtitle_mux_fill_single_queue (GstDWriteSubtitleMux * self,
       GST_LOG_OBJECT (pad, "Keep old buffer %" GST_PTR_FORMAT, pad->buffer);
     } else {
       GST_LOG_OBJECT (pad, "Replacing with new buffer %" GST_PTR_FORMAT, buf);
-      if (pad->pending_stream) {
-        gst_clear_object (&pad->stream);
-        pad->stream = g_steal_pointer (&pad->pending_stream);
-      }
-
-      gst_buffer_replace (&pad->buffer, buf);
+      gst_subtitle_mux_update_stream (self, pad);
+      gst_subtitle_mux_set_buffer (self, pad, buf);
       pad->start_time = start_running_time;
       pad->end_time = end_running_time;
       gst_aggregator_pad_drop_buffer (apad);
@@ -635,7 +762,7 @@ out:
 }
 
 static GstFlowReturn
-gst_dwrite_subtitle_mux_fill_queues (GstDWriteSubtitleMux * self,
+gst_subtitle_mux_fill_queues (GstSubtitleMux * self,
     GstClockTime start_running_time, GstClockTime end_running_time,
     gboolean timeout)
 {
@@ -646,12 +773,15 @@ gst_dwrite_subtitle_mux_fill_queues (GstDWriteSubtitleMux * self,
 
   GST_OBJECT_LOCK (self);
   for (iter = elem->sinkpads; iter; iter = g_list_next (iter)) {
-    GstDWriteSubtitleMuxPad *pad = (GstDWriteSubtitleMuxPad *) iter->data;
+    GstAggregatorPad *apad = (GstAggregatorPad *) iter->data;
+    GstSubtitleMuxPad *pad;
 
-    if (pad == self->video_pad)
+    if (apad == self->video_pad)
       continue;
 
-    ret = gst_dwrite_subtitle_mux_fill_single_queue (self, pad,
+    pad = GST_SUBTITLE_MUX_PAD (apad);
+
+    ret = gst_subtitle_mux_fill_single_queue (self, pad,
         start_running_time, end_running_time, timeout);
     if (ret == GST_FLOW_ERROR) {
       GST_OBJECT_UNLOCK (self);
@@ -670,10 +800,10 @@ gst_dwrite_subtitle_mux_fill_queues (GstDWriteSubtitleMux * self,
 }
 
 static GstFlowReturn
-gst_dwrite_subtitle_mux_aggregate (GstAggregator * agg, gboolean timeout)
+gst_subtitle_mux_aggregate (GstAggregator * agg, gboolean timeout)
 {
-  GstDWriteSubtitleMux *self = GST_DWRITE_SUBTITLE_MUX (agg);
-  GstAggregatorPad *video_pad = GST_AGGREGATOR_PAD_CAST (self->video_pad);
+  GstSubtitleMux *self = GST_SUBTITLE_MUX (agg);
+  GstAggregatorPad *video_pad = self->video_pad;
   GstSegment *agg_segment = &GST_AGGREGATOR_PAD_CAST (agg->srcpad)->segment;
   GstBuffer *video_buf = NULL;
   GstClockTime cur_running_time = GST_CLOCK_TIME_NONE;
@@ -682,7 +812,7 @@ gst_dwrite_subtitle_mux_aggregate (GstAggregator * agg, gboolean timeout)
   video_buf = gst_aggregator_pad_peek_buffer (video_pad);
   if (!video_buf) {
     if (gst_aggregator_pad_is_eos (video_pad)) {
-      if (!self->video_pad->buffer) {
+      if (!self->video_buf) {
         GST_DEBUG_OBJECT (self, "Video EOS");
         return GST_FLOW_EOS;
       }
@@ -695,15 +825,15 @@ gst_dwrite_subtitle_mux_aggregate (GstAggregator * agg, gboolean timeout)
     cur_running_time = gst_segment_to_running_time (&video_pad->segment,
         GST_FORMAT_TIME, GST_BUFFER_PTS (video_buf));
 
-    if (!self->video_pad->buffer) {
+    if (!self->video_buf) {
       GST_DEBUG_OBJECT (self,
           "Initial video buffer %" GST_PTR_FORMAT, video_buf);
 
-      self->video_pad->buffer = video_buf;
+      self->video_buf = video_buf;
       if (agg_segment->rate >= 0)
-        self->video_pad->start_time = cur_running_time;
+        self->start_time = cur_running_time;
       else
-        self->video_pad->end_time = cur_running_time;
+        self->end_time = cur_running_time;
       gst_aggregator_pad_drop_buffer (video_pad);
 
       return GST_AGGREGATOR_FLOW_NEED_DATA;
@@ -711,30 +841,29 @@ gst_dwrite_subtitle_mux_aggregate (GstAggregator * agg, gboolean timeout)
   }
 
   if (agg_segment->rate >= 0) {
-    self->video_pad->end_time = cur_running_time;
+    self->end_time = cur_running_time;
   } else {
-    self->video_pad->start_time = cur_running_time;
+    self->start_time = cur_running_time;
   }
 
   GST_LOG_OBJECT (self, "Fill subtitle queues for running time %"
       GST_TIME_FORMAT " - %" GST_TIME_FORMAT,
-      GST_TIME_ARGS (self->video_pad->start_time),
-      GST_TIME_ARGS (self->video_pad->end_time));
+      GST_TIME_ARGS (self->start_time), GST_TIME_ARGS (self->end_time));
 
-  ret = gst_dwrite_subtitle_mux_fill_queues (self, self->video_pad->start_time,
-      self->video_pad->end_time, timeout);
+  ret = gst_subtitle_mux_fill_queues (self, self->start_time,
+      self->end_time, timeout);
 
   if (ret == GST_FLOW_OK) {
-    ret = gst_dwrite_subtitle_mux_drain (self);
+    ret = gst_subtitle_mux_drain (self);
     gst_aggregator_pad_drop_buffer (video_pad);
 
     if (video_buf) {
-      self->video_pad->buffer = gst_buffer_ref (video_buf);
+      self->video_buf = gst_buffer_ref (video_buf);
 
       if (agg_segment->rate >= 0)
-        self->video_pad->start_time = cur_running_time;
+        self->start_time = cur_running_time;
       else
-        self->video_pad->end_time = cur_running_time;
+        self->end_time = cur_running_time;
     }
   } else if (ret == GST_AGGREGATOR_FLOW_NEED_DATA) {
     GST_DEBUG_OBJECT (self, "Need more data");

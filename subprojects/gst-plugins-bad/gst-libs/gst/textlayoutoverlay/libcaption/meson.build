@@ -13,7 +13,7 @@ libcaption_static = static_library('libcaption-static',
   override_options: ['werror=false'],
 )
 
-dwrite_libcaption_dep = declare_dependency(
+libcaption_dep = declare_dependency(
   link_with : libcaption_static,
   include_directories: include_directories('.')
 )

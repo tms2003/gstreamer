@@ -25,6 +25,7 @@ base_tests = [
   [ 'libs/rtsp.c' ],
   [ 'libs/sdp.c' ],
   [ 'libs/tag.c' ],
+  [ 'libs/textlayout.c' ],
   [ 'libs/video.c' ],
   [ 'libs/videoanc.c' ],
   [ 'libs/videoencoder.c' ],

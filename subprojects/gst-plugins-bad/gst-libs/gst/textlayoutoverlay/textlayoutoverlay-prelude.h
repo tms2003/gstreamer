@@ -19,12 +19,17 @@
 
 #pragma once
 
-#include <gst/textlayoutoverlay/gstbaseclockoverlay.h>
+#include <gst/gst.h>
 
-G_BEGIN_DECLS
+#ifndef GST_USE_UNSTABLE_API
+#pragma message ("The textlayoutoverlay library from gst-plugins-bad is unstable API and may change in future.")
+#pragma message ("You can define GST_USE_UNSTABLE_API to avoid this warning.")
+#endif
 
-#define GST_TYPE_DWRITE_CLOCK_OVERLAY (gst_dwrite_clock_overlay_get_type())
-G_DECLARE_FINAL_TYPE (GstDWriteClockOverlay,
-    gst_dwrite_clock_overlay, GST, DWRITE_CLOCK_OVERLAY, GstBaseClockOverlay);
-
-G_END_DECLS
+#ifndef GST_TEXT_LAYOUT_OVERLAY_API
+# ifdef BUILDING_GST_TEXT_LAYOUT_OVERLAY
+#  define GST_TEXT_LAYOUT_OVERLAY_API GST_API_EXPORT         /* from config.h */
+# else
+#  define GST_TEXT_LAYOUT_OVERLAY_API GST_API_IMPORT
+# endif
+#endif

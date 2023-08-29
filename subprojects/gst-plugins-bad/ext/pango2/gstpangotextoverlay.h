@@ -19,17 +19,12 @@
 
 #pragma once
 
-#include <gst/gst.h>
-#include <gst/base/base.h>
+#include <gst/textlayoutoverlay/gstbasesubtitleoverlay.h>
 
 G_BEGIN_DECLS
 
-#define GST_TYPE_DWRITE_SUBTITLE_MUX_PAD (gst_dwrite_subtitle_mux_pad_get_type())
-G_DECLARE_FINAL_TYPE (GstDWriteSubtitleMuxPad, gst_dwrite_subtitle_mux_pad,
-    GST, DWRITE_SUBTITLE_MUX_PAD, GstAggregatorPad)
-
-#define GST_TYPE_DWRITE_SUBTITLE_MUX (gst_dwrite_subtitle_mux_get_type())
-G_DECLARE_FINAL_TYPE (GstDWriteSubtitleMux, gst_dwrite_subtitle_mux,
-    GST, DWRITE_SUBTITLE_MUX, GstAggregator)
+#define GST_TYPE_PANGO_TEXT_OVERLAY (gst_pango_text_overlay_get_type())
+G_DECLARE_FINAL_TYPE (GstPangoTextOverlay,
+    gst_pango_text_overlay, GST, PANGO_TEXT_OVERLAY, GstBaseSubtitleOverlay);
 
 G_END_DECLS

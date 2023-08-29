@@ -19,12 +19,27 @@
 
 #pragma once
 
-#include <gst/textlayoutoverlay/gstbaseclockoverlay.h>
+#include <gst/gst.h>
 
 G_BEGIN_DECLS
 
-#define GST_TYPE_DWRITE_CLOCK_OVERLAY (gst_dwrite_clock_overlay_get_type())
-G_DECLARE_FINAL_TYPE (GstDWriteClockOverlay,
-    gst_dwrite_clock_overlay, GST, DWRITE_CLOCK_OVERLAY, GstBaseClockOverlay);
+#define GST_TYPE_BASE_SUBTITLE_OVERLAY_SOURCE (gst_base_subtitle_overlay_source_get_type())
+
+typedef enum
+{
+  GST_BASE_SUBTITLE_OVERLAY_SOURCE_SUBTITLE = (1 << 0),
+  GST_BASE_SUBTITLE_OVERLAY_SOURCE_CC = (1 << 1),
+  GST_BASE_SUBTITLE_OVERLAY_SOURCE_PREFER_CC = (1 << 2),
+} GstBaseSubtitleOverlaySource;
+
+GType gst_base_subtitle_overlay_source_get_type (void);
+
+void  gst_base_text_layout_overlay_install_properties (GObjectClass * object_class,
+                                                       guint last_prop_index,
+                                                       guint * prop_index);
+
+void  gst_base_subtitle_overlay_install_properties (GObjectClass * object_class,
+                                                    guint last_prop_index,
+                                                    guint * n_props);
 
 G_END_DECLS

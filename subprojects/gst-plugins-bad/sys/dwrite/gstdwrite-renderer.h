@@ -20,13 +20,13 @@
 #pragma once
 
 #include <gst/gst.h>
-#include "gstdwrite-enums.h"
 #include "gstdwrite-effect.h"
+#include "gstdwrite-utils.h"
 
 DEFINE_GUID (IID_IGstDWriteTextRenderer, 0xb969dc25, 0xf7d2,
     0x4cf8, 0x92, 0x0f, 0x5a, 0x27, 0xd1, 0x6d, 0x03, 0x6a);
 
-class IGstDWriteTextRenderer : public IDWriteTextRenderer
+class IGstDWriteTextRenderer : public IDWriteTextRenderer1
 {
 public:
   static STDMETHODIMP CreateInstance (IDWriteFactory * factory,
@@ -72,6 +72,36 @@ public:
                                   BOOL is_right_to_left,
                                   IUnknown * client_effect);
 
+  /* IDWriteTextRenderer1 */
+  STDMETHODIMP DrawGlyphRun      (void * context,
+                                  FLOAT origin_x,
+                                  FLOAT origin_y,
+                                  DWRITE_GLYPH_ORIENTATION_ANGLE angle,
+                                  DWRITE_MEASURING_MODE mode,
+                                  DWRITE_GLYPH_RUN const *glyph_run,
+                                  DWRITE_GLYPH_RUN_DESCRIPTION const *glyph_run_desc,
+                                  IUnknown * client_effect);
+  STDMETHODIMP DrawUnderline     (void * context,
+                                  FLOAT origin_x,
+                                  FLOAT origin_y,
+                                  DWRITE_GLYPH_ORIENTATION_ANGLE angle,
+                                  DWRITE_UNDERLINE const * underline,
+                                  IUnknown * client_effect);
+  STDMETHODIMP DrawStrikethrough (void * context,
+                                  FLOAT origin_x,
+                                  FLOAT origin_y,
+                                  DWRITE_GLYPH_ORIENTATION_ANGLE angle,
+                                  DWRITE_STRIKETHROUGH const * strikethrough,
+                                  IUnknown * client_effect);
+  STDMETHODIMP DrawInlineObject  (void * context,
+                                  FLOAT origin_x,
+                                  FLOAT origin_y,
+                                  DWRITE_GLYPH_ORIENTATION_ANGLE angle,
+                                  IDWriteInlineObject * inline_object,
+                                  BOOL is_sideways,
+                                  BOOL is_right_to_left,
+                                  IUnknown * client_effect);
+
   /* Entry point for drawing text */
   STDMETHODIMP Draw (const D2D1_POINT_2F & origin,
                      const RECT & client_rect,
@@ -84,5 +114,6 @@ private:
 
 private:
   IDWriteFactory *factory_;
+  IDWriteTextAnalyzer *analyzer_ = nullptr;
   ULONG ref_count_ = 1;
 };

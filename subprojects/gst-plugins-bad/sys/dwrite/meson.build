@@ -1,14 +1,11 @@
 dwrite_sources = [
   'gstdwrite-effect.cpp',
-  'gstdwrite-enums.cpp',
   'gstdwrite-renderer.cpp',
   'gstdwrite-utils.cpp',
-  'gstdwritebaseoverlay.cpp',
   'gstdwritebitmapmemory.cpp',
   'gstdwritebitmappool.cpp',
   'gstdwriteclockoverlay.cpp',
   'gstdwriteoverlayobject.cpp',
-  'gstdwritesubtitlemux.cpp',
   'gstdwritesubtitleoverlay.cpp',
   'gstdwritetextoverlay.cpp',
   'gstdwritetimeoverlay.cpp',
@@ -61,14 +58,12 @@ if cc.get_id() != 'msvc'
   extra_args += extra_mingw_args
 endif
 
-subdir('libcaption')
-
 gstdwrite = library('gstdwrite',
   dwrite_sources,
   c_args : gst_plugins_bad_args + extra_args,
   cpp_args: gst_plugins_bad_args + extra_args,
   include_directories : [configinc],
-  dependencies : [gstbase_dep, gstvideo_dep, gstd3d11_dep, d2d_dep, dwrite_lib, dwrite_libcaption_dep],
+  dependencies : [gstbase_dep, gstvideo_dep, gsttextlayoutoverlay_dep, gstd3d11_dep, d2d_dep, dwrite_lib],
   install : true,
   install_dir : plugins_install_dir,
 )

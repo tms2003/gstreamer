@@ -1234,3 +1234,116 @@ gst_buffer_add_video_time_code_meta_full (GstBuffer * buffer, guint fps_n,
 
   return meta;
 }
+
+GType
+gst_video_subtitle_meta_api_get_type (void)
+{
+  static GType type = 0;
+  static const gchar *tags[] = { NULL, };
+
+  if (g_once_init_enter (&type)) {
+    GType tmp = gst_meta_api_type_register ("GstVideoSubtitleMetaAPI", tags);
+    g_once_init_leave (&type, tmp);
+  }
+
+  return type;
+}
+
+static gboolean
+gst_video_subtitle_meta_init (GstMeta * meta, gpointer params,
+    GstBuffer * buffer)
+{
+  GstVideoSubtitleMeta *m = (GstVideoSubtitleMeta *) meta;
+
+  m->stream = NULL;
+  m->layout = NULL;
+
+  return TRUE;
+}
+
+static void
+gst_video_subtitle_meta_free (GstMeta * meta, GstBuffer * buffer)
+{
+  GstVideoSubtitleMeta *m = (GstVideoSubtitleMeta *) meta;
+
+  if (m->stream)
+    gst_object_unref (m->stream);
+
+  if (m->layout)
+    gst_text_layout_unref (m->layout);
+}
+
+static gboolean
+gst_video_subtitle_meta_transform (GstBuffer * dest, GstMeta * meta,
+    GstBuffer * buffer, GQuark type, gpointer data)
+{
+  GstVideoSubtitleMeta *dmeta, *smeta;
+
+  if (GST_META_TRANSFORM_IS_COPY (type)) {
+    smeta = (GstVideoSubtitleMeta *) meta;
+
+    dmeta = gst_buffer_add_video_subtitle_meta (dest,
+        smeta->stream, smeta->layout);
+    if (!dmeta)
+      return FALSE;
+  } else {
+    return FALSE;
+  }
+
+  return TRUE;
+}
+
+const GstMetaInfo *
+gst_video_subtitle_meta_get_info (void)
+{
+  static const GstMetaInfo *info = NULL;
+
+  if (g_once_init_enter ((GstMetaInfo **) & info)) {
+    const GstMetaInfo *tmp =
+        gst_meta_register (GST_VIDEO_SUBTITLE_META_API_TYPE,
+        "GstVideoSubtitleMeta",
+        sizeof (GstVideoSubtitleMeta),
+        gst_video_subtitle_meta_init,
+        gst_video_subtitle_meta_free,
+        gst_video_subtitle_meta_transform);
+    g_once_init_leave ((GstMetaInfo **) & info, (GstMetaInfo *) tmp);
+  }
+
+  return info;
+}
+
+/**
+ * gst_buffer_add_video_subtitle_meta:
+ * @buffer: (transfer none): a #GstBuffer
+ * @format: a #GstVideoSubtitleMetaFormat
+ * @stream: (transfer none) (nullable): a #GstStream
+ * @layout: (transfer none): a #GstTextLayout
+ *
+ * Attaches #GstVideoSubtitleMeta to @buffer
+ *
+ * Returns: (transfer none): the #GstVideoSubtitleMeta on @buffer
+ *
+ * Since: 1.24
+ */
+GstVideoSubtitleMeta *
+gst_buffer_add_video_subtitle_meta (GstBuffer * buffer,
+    GstStream * stream, GstTextLayout * layout)
+{
+  GstVideoSubtitleMeta *meta;
+
+  g_return_val_if_fail (GST_IS_BUFFER (buffer), NULL);
+  g_return_val_if_fail (stream == NULL || GST_IS_STREAM (stream), NULL);
+  g_return_val_if_fail (GST_IS_TEXT_LAYOUT (layout), NULL);
+
+  meta = (GstVideoSubtitleMeta *) gst_buffer_add_meta (buffer,
+      GST_VIDEO_SUBTITLE_META_INFO, NULL);
+
+  if (!meta)
+    return NULL;
+
+  if (stream)
+    meta->stream = gst_object_ref (stream);
+  meta->layout = gst_text_layout_ref (layout);
+
+  return meta;
+}

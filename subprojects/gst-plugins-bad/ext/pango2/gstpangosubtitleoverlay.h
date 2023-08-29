@@ -19,12 +19,13 @@
 
 #pragma once
 
-#include <gst/textlayoutoverlay/gstbaseclockoverlay.h>
+#include <gst/gst.h>
+#include <gst/textlayoutoverlay/gstbasesubtitleoverlaybin.h>
 
 G_BEGIN_DECLS
 
-#define GST_TYPE_DWRITE_CLOCK_OVERLAY (gst_dwrite_clock_overlay_get_type())
-G_DECLARE_FINAL_TYPE (GstDWriteClockOverlay,
-    gst_dwrite_clock_overlay, GST, DWRITE_CLOCK_OVERLAY, GstBaseClockOverlay);
+#define GST_TYPE_PANGO_SUBTITLE_OVERLAY (gst_pango_subtitle_overlay_get_type())
+G_DECLARE_FINAL_TYPE (GstPangoSubtitleOverlay, gst_pango_subtitle_overlay,
+    GST, PANGO_SUBTITLE_OVERLAY, GstBaseSubtitleOverlayBin)
 
 G_END_DECLS

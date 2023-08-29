@@ -18,7 +18,7 @@
  */
 
 /**
- * plugin-dwrite:
+ * plugin-pango2:
  *
  * Since: 1.24
  */
@@ -27,32 +27,29 @@
 #include "config.h"
 #endif
 
-#include "gstdwritetimeoverlay.h"
-#include "gstdwriteclockoverlay.h"
-#include "gstdwritetextoverlay.h"
-#include "gstdwritesubtitleoverlay.h"
-
-GST_DEBUG_CATEGORY (gst_dwrite_debug);
+#include <gst/gst.h>
+#include "gstpangoclockoverlay.h"
+#include "gstpangosubtitleoverlay.h"
+#include "gstpangotextoverlay.h"
+#include "gstpangotimeoverlay.h"
 
 static gboolean
 plugin_init (GstPlugin * plugin)
 {
-  GST_DEBUG_CATEGORY_INIT (gst_dwrite_debug, "dwrite", 0, "dwrite");
-
-  gst_element_register (plugin, "dwritetimeoverlay", GST_RANK_NONE,
-      GST_TYPE_DWRITE_TIME_OVERLAY);
-  gst_element_register (plugin, "dwriteclockoverlay", GST_RANK_NONE,
-      GST_TYPE_DWRITE_CLOCK_OVERLAY);
-  gst_element_register (plugin, "dwritetextoverlay", GST_RANK_NONE,
-      GST_TYPE_DWRITE_TEXT_OVERLAY);
-  gst_element_register (plugin, "dwritesubtitleoverlay", GST_RANK_NONE,
-      GST_TYPE_DWRITE_SUBTITLE_OVERLAY);
+  gst_element_register (plugin, "pangoclockoverlay", GST_RANK_NONE,
+      GST_TYPE_PANGO_CLOCK_OVERLAY);
+  gst_element_register (plugin, "pangosubtitleoverlay", GST_RANK_NONE,
+      GST_TYPE_PANGO_SUBTITLE_OVERLAY);
+  gst_element_register (plugin, "pangotextoverlay", GST_RANK_NONE,
+      GST_TYPE_PANGO_TEXT_OVERLAY);
+  gst_element_register (plugin, "pangotimeoverlay", GST_RANK_NONE,
+      GST_TYPE_PANGO_TIME_OVERLAY);
 
   return TRUE;
 }
 
 GST_PLUGIN_DEFINE (GST_VERSION_MAJOR,
     GST_VERSION_MINOR,
-    dwrite,
-    "dwrite",
+    pango2,
+    "pango2",
     plugin_init, VERSION, "LGPL", GST_PACKAGE_NAME, GST_PACKAGE_ORIGIN);

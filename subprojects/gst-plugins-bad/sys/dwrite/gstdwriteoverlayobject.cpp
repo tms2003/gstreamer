@@ -47,7 +47,6 @@ struct GstDWriteOverlayObjectPrivate
   ~GstDWriteOverlayObjectPrivate ()
   {
     ClearResource ();
-    gst_clear_caps (&outcaps);
     gst_clear_object (&device);
   }
 
@@ -57,6 +56,7 @@ struct GstDWriteOverlayObjectPrivate
 
     g_clear_pointer (&overlay_rect, gst_video_overlay_rectangle_unref);
     gst_clear_buffer (&layout_buf);
+    text_format = nullptr;
     layout = nullptr;
 
     if (layout_pool) {
@@ -79,10 +79,10 @@ struct GstDWriteOverlayObjectPrivate
   GstVideoInfo layout_info;
 
   GstD3D11Device *device = nullptr;
-  GstCaps *outcaps = nullptr;
 
   ComPtr<ID2D1Factory> d2d_factory;
   ComPtr<IDWriteFactory> dwrite_factory;
+  ComPtr<IDWriteTextFormat> text_format;
   ComPtr<IDWriteTextLayout> layout;
   ComPtr<IGstDWriteTextRenderer> renderer;
 
@@ -98,6 +98,7 @@ struct GstDWriteOverlayObjectPrivate
   /* Convert blended texture to original format */
   GstD3D11Converter *post_conv = nullptr;
   GstVideoOverlayRectangle *overlay_rect = nullptr;
+  GstTextLayout *prev_layout = nullptr;
 
   gboolean is_d3d11 = FALSE;
   gboolean attach_meta = FALSE;
@@ -479,12 +480,19 @@ gst_dwrite_overlay_object_new (void)
 }
 
 gboolean
-gst_dwrite_overlay_object_start (GstDWriteOverlayObject * object,
-    IDWriteFactory * dwrite_factory)
+gst_dwrite_overlay_object_start (GstDWriteOverlayObject * object)
 {
   GstDWriteOverlayObjectPrivate *priv = object->priv;
   HRESULT hr;
+  ComPtr < IDWriteFactory > dwrite_factory;
   ComPtr < ID2D1Factory > d2d_factory;
+
+  hr = DWriteCreateFactory (DWRITE_FACTORY_TYPE_SHARED,
+      __uuidof (IDWriteFactory), (IUnknown **) (&dwrite_factory));
+  if (FAILED (hr)) {
+    GST_ERROR_OBJECT (object, "Couldn't create dwrite factory");
+    return FALSE;
+  }
 
   hr = D2D1CreateFactory (D2D1_FACTORY_TYPE_MULTI_THREADED,
       IID_PPV_ARGS (&d2d_factory));
@@ -493,9 +501,10 @@ gst_dwrite_overlay_object_start (GstDWriteOverlayObject * object,
     return FALSE;
   }
 
-  priv->d2d_factory = d2d_factory;
   priv->dwrite_factory = dwrite_factory;
-  IGstDWriteTextRenderer::CreateInstance (dwrite_factory, &priv->renderer);
+  priv->d2d_factory = d2d_factory;
+  IGstDWriteTextRenderer::CreateInstance (dwrite_factory.Get (),
+      &priv->renderer);
 
   return TRUE;
 }
@@ -510,7 +519,6 @@ gst_dwrite_overlay_object_stop (GstDWriteOverlayObject * object)
   priv->d2d_factory = nullptr;
   priv->renderer = nullptr;
   gst_clear_object (&priv->device);
-  gst_clear_caps (&priv->outcaps);
 
   return TRUE;
 }
@@ -741,8 +749,7 @@ gst_dwrite_overlay_object_propose_allocation (GstDWriteOverlayObject * object,
 
 gboolean
 gst_dwrite_overlay_object_set_caps (GstDWriteOverlayObject * object,
-    GstElement * elem, GstCaps * in_caps, GstCaps * out_caps,
-    GstVideoInfo * info, GstDWriteBlendMode * selected_mode)
+    GstElement * elem, GstCaps * out_caps, GstDWriteBlendMode * selected_mode)
 {
   GstDWriteOverlayObjectPrivate *priv = object->priv;
   gboolean is_system;
@@ -751,12 +758,6 @@ gst_dwrite_overlay_object_set_caps (GstDWriteOverlayObject * object,
   *selected_mode = GstDWriteBlendMode::NOT_SUPPORTED;
 
   priv->ClearResource ();
-  gst_caps_replace (&priv->outcaps, out_caps);
-
-  if (!gst_video_info_from_caps (info, in_caps)) {
-    GST_WARNING_OBJECT (elem, "Invalid caps %" GST_PTR_FORMAT, in_caps);
-    return FALSE;
-  }
 
   if (!gst_video_info_from_caps (&priv->info, out_caps)) {
     GST_ERROR ("Invalid caps %" GST_PTR_FORMAT, out_caps);
@@ -1054,35 +1055,330 @@ gst_dwrite_overlay_object_get_target_from_bitmap (GstDWriteOverlayObject * self,
 }
 
 static gboolean
-gst_dwrite_overlay_object_draw_layout (GstDWriteOverlayObject * self,
-    IDWriteTextLayout * layout, gint x, gint y)
+gst_dwrite_overlay_object_create_layout (GstDWriteOverlayObject * self,
+    GstTextLayout * layout, gboolean enable_color_font, guint width,
+    guint height)
 {
   GstDWriteOverlayObjectPrivate *priv = self->priv;
-  gint width, height;
+  HRESULT hr;
+  const gchar *text;
+  std::wstring wtext;
+  DWRITE_TEXT_RANGE range;
+
+  priv->layout = nullptr;
+
+  if (!priv->text_format) {
+    hr = priv->dwrite_factory->CreateTextFormat (L"Arial", nullptr,
+        DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL,
+        DWRITE_FONT_STRETCH_NORMAL, 12, L"en-us", &priv->text_format);
+    if (FAILED (hr)) {
+      GST_ERROR_OBJECT (self, "Couldn't create text format");
+      return FALSE;
+    }
+  }
+
+  text = gst_text_layout_get_text (layout);
+  wtext = gst_dwrite_string_to_wstring (text);
+
+  hr = priv->dwrite_factory->CreateTextLayout (wtext.c_str (), wtext.length (),
+      priv->text_format.Get (), width, height, &priv->layout);
+  if (FAILED (hr)) {
+    GST_ERROR_OBJECT (self, "Couldn't create text layout");
+    return FALSE;
+  }
+
+  hr = S_OK;
+  auto word_wrap = gst_text_layout_get_word_wrap (layout);
+  switch (word_wrap) {
+    case GST_WORD_WRAP_WORD:
+      hr = priv->layout->SetWordWrapping (DWRITE_WORD_WRAPPING_WRAP);
+      break;
+    case GST_WORD_WRAP_CHAR:
+      if (gst_dwrite_is_windows_10_or_greater ())
+        hr = priv->layout->SetWordWrapping (DWRITE_WORD_WRAPPING_CHARACTER);
+      break;
+    case GST_WORD_WRAP_NO_WRAP:
+      hr = priv->layout->SetWordWrapping (DWRITE_WORD_WRAPPING_NO_WRAP);
+      break;
+    default:
+      break;
+  }
+
+  if (FAILED (hr)) {
+    GST_WARNING_OBJECT (self,
+        "Couldn't set word wrapping, hr: 0x%x", (guint) hr);
+  }
+
+  hr = S_OK;
+  auto text_align = gst_text_layout_get_text_alignment (layout);
+  switch (text_align) {
+    case GST_TEXT_ALIGNMENT_LEFT:
+      hr = priv->layout->SetTextAlignment (DWRITE_TEXT_ALIGNMENT_LEADING);
+      break;
+    case GST_TEXT_ALIGNMENT_CENTER:
+      hr = priv->layout->SetTextAlignment (DWRITE_TEXT_ALIGNMENT_CENTER);
+      break;
+    case GST_TEXT_ALIGNMENT_RIGHT:
+      hr = priv->layout->SetTextAlignment (DWRITE_TEXT_ALIGNMENT_TRAILING);
+      break;
+    case GST_TEXT_ALIGNMENT_JUSTIFIED:
+      hr = priv->layout->SetTextAlignment (DWRITE_TEXT_ALIGNMENT_JUSTIFIED);
+      break;
+    default:
+      break;
+  }
+
+  if (FAILED (hr)) {
+    GST_WARNING_OBJECT (self,
+        "Couldn't set text alignment, hr: 0x%x", (guint) hr);
+  }
+
+  hr = S_OK;
+  auto paragraph_align = gst_text_layout_get_paragraph_alignment (layout);
+  switch (paragraph_align) {
+    case GST_PARAGRAPH_ALIGNMENT_TOP:
+      priv->layout->SetParagraphAlignment (DWRITE_PARAGRAPH_ALIGNMENT_NEAR);
+      break;
+    case GST_PARAGRAPH_ALIGNMENT_CENTER:
+      priv->layout->SetParagraphAlignment (DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+      break;
+    case GST_PARAGRAPH_ALIGNMENT_BOTTOM:
+      priv->layout->SetParagraphAlignment (DWRITE_PARAGRAPH_ALIGNMENT_FAR);
+      break;
+    default:
+      break;
+  }
+
+  if (FAILED (hr)) {
+    GST_WARNING_OBJECT (self,
+        "Couldn't set paragraph alignment, hr: 0x%x", (guint) hr);
+  }
+
+  GstTextAttrIterator *iter = gst_text_layout_get_attr_iterator (layout);
+  do {
+    ComPtr < IGstDWriteTextEffect > effect;
+    guint size;
+    GstTextAttr *attr;
+
+    size = gst_text_attr_iterator_get_size (iter);
+    if (!size)
+      break;
+
+    IGstDWriteTextEffect::CreateInstance (&effect);
+    effect->SetEnableColorFont (enable_color_font);
+
+    for (guint i = 0; i < size; i++) {
+      GstTextAttrType attr_type;
+
+      attr = gst_text_attr_iterator_get_attr (iter, i);
+      attr_type = gst_text_attr_identify (attr, &range.startPosition,
+          &range.length);
+      switch (attr_type) {
+        case GST_TEXT_ATTR_FONT_FAMILY:
+        {
+          const gchar *family = nullptr;
+          if (gst_text_layout_attr_get_string (attr, &family) &&
+              family && family[0] != '\0') {
+            auto wfamily = gst_dwrite_string_to_wstring (family);
+            priv->layout->SetFontFamilyName (wfamily.c_str (), range);
+          }
+          break;
+        }
+        case GST_TEXT_ATTR_FONT_SIZE:
+        {
+          gdouble font_size;
+          if (gst_text_layout_attr_get_double (attr, &font_size)) {
+            /* For consistency with pango-cairo which assumes 72 dpi */
+            font_size = font_size * 96.0 / 72.0;
+            priv->layout->SetFontSize (font_size, range);
+          }
+          break;
+        }
+        case GST_TEXT_ATTR_FONT_WEIGHT:
+        {
+          gint weight;
+          if (gst_text_layout_attr_get_int (attr, &weight)) {
+            priv->layout->SetFontWeight ((DWRITE_FONT_WEIGHT) weight, range);
+          }
+          break;
+        }
+        case GST_TEXT_ATTR_FONT_STYLE:
+        {
+          gint style;
+          if (gst_text_layout_attr_get_int (attr, &style)) {
+            switch ((GstFontStyle) style) {
+              case GST_FONT_STYLE_NORMAL:
+                priv->layout->SetFontStyle (DWRITE_FONT_STYLE_NORMAL, range);
+                break;
+              case GST_FONT_STYLE_OBLIQUE:
+                priv->layout->SetFontStyle (DWRITE_FONT_STYLE_OBLIQUE, range);
+                break;
+              case GST_FONT_STYLE_ITALIC:
+                priv->layout->SetFontStyle (DWRITE_FONT_STYLE_ITALIC, range);
+                break;
+              default:
+                break;
+            }
+          }
+          break;
+        }
+        case GST_TEXT_ATTR_FONT_STRETCH:
+        {
+          gint stretch;
+          if (gst_text_layout_attr_get_int (attr, &stretch)) {
+            switch ((GstFontStretch) stretch) {
+              case GST_FONT_STRETCH_ULTRA_CONDENSED:
+                priv->
+                    layout->SetFontStretch (DWRITE_FONT_STRETCH_ULTRA_CONDENSED,
+                    range);
+                break;
+              case GST_FONT_STRETCH_EXTRA_CONDENSED:
+                priv->
+                    layout->SetFontStretch (DWRITE_FONT_STRETCH_EXTRA_CONDENSED,
+                    range);
+                break;
+              case GST_FONT_STRETCH_CONDENSED:
+                priv->layout->SetFontStretch (DWRITE_FONT_STRETCH_CONDENSED,
+                    range);
+                break;
+              case GST_FONT_STRETCH_SEMI_CONDENSED:
+                priv->
+                    layout->SetFontStretch (DWRITE_FONT_STRETCH_SEMI_CONDENSED,
+                    range);
+                break;
+              case GST_FONT_STRETCH_NORMAL:
+                priv->layout->SetFontStretch (DWRITE_FONT_STRETCH_NORMAL,
+                    range);
+                break;
+              case GST_FONT_STRETCH_SEMI_EXPANDED:
+                priv->layout->SetFontStretch (DWRITE_FONT_STRETCH_SEMI_EXPANDED,
+                    range);
+                break;
+              case GST_FONT_STRETCH_EXPANDED:
+                priv->layout->SetFontStretch (DWRITE_FONT_STRETCH_EXPANDED,
+                    range);
+                break;
+              case GST_FONT_STRETCH_EXTRA_EXPANDED:
+                priv->
+                    layout->SetFontStretch (DWRITE_FONT_STRETCH_EXTRA_EXPANDED,
+                    range);
+                break;
+              case GST_FONT_STRETCH_ULTRA_EXPANDED:
+                priv->
+                    layout->SetFontStretch (DWRITE_FONT_STRETCH_ULTRA_EXPANDED,
+                    range);
+                break;
+              default:
+                break;
+            }
+          }
+          break;
+        }
+        case GST_TEXT_ATTR_UNDERLINE:
+        {
+          gint underline;
+          if (gst_text_layout_attr_get_int (attr, &underline)) {
+            if ((GstTextUnderline) underline == GST_TEXT_UNDERLINE_NONE) {
+              priv->layout->SetUnderline (FALSE, range);
+            } else {
+              priv->layout->SetUnderline (TRUE, range);
+            }
+          }
+          break;
+        }
+        case GST_TEXT_ATTR_STRIKETHROUGH:
+        {
+          gint strikethrough;
+          if (gst_text_layout_attr_get_int (attr, &strikethrough)) {
+            if ((GstTextStrikethrough) strikethrough ==
+                GST_TEXT_STRIKETHROUGH_NONE) {
+              priv->layout->SetStrikethrough (FALSE, range);
+            } else {
+              priv->layout->SetStrikethrough (TRUE, range);
+            }
+          }
+          break;
+        }
+        case GST_TEXT_ATTR_FOREGROUND_COLOR:
+        case GST_TEXT_ATTR_BACKGROUND_COLOR:
+        case GST_TEXT_ATTR_OUTLINE_COLOR:
+        case GST_TEXT_ATTR_UNDERLINE_COLOR:
+        case GST_TEXT_ATTR_STRIKETHROUGH_COLOR:
+        case GST_TEXT_ATTR_SHADOW_COLOR:
+        {
+          GstTextColor color;
+
+          if (gst_text_layout_attr_get_color (attr, &color)) {
+            D2D1_COLOR_F d2d_color;
+            GST_DWRITE_BRUSH_TARGET target;
+            d2d_color.r = (gdouble) color.red / G_MAXUINT16;
+            d2d_color.g = (gdouble) color.green / G_MAXUINT16;
+            d2d_color.b = (gdouble) color.blue / G_MAXUINT16;
+            d2d_color.a = (gdouble) color.alpha / G_MAXUINT16;
+
+            if (attr_type == GST_TEXT_ATTR_FOREGROUND_COLOR)
+              target = GST_DWRITE_BRUSH_FORGROUND;
+            else if (attr_type == GST_TEXT_ATTR_BACKGROUND_COLOR)
+              target = GST_DWRITE_BRUSH_BACKGROUND;
+            else if (attr_type == GST_TEXT_ATTR_OUTLINE_COLOR)
+              target = GST_DWRITE_BRUSH_OUTLINE;
+            else if (attr_type == GST_TEXT_ATTR_UNDERLINE_COLOR)
+              target = GST_DWRITE_BRUSH_UNDERLINE;
+            else if (attr_type == GST_TEXT_ATTR_STRIKETHROUGH_COLOR)
+              target = GST_DWRITE_BRUSH_STRIKETHROUGH;
+            else if (attr_type == GST_TEXT_ATTR_SHADOW_COLOR)
+              target = GST_DWRITE_BRUSH_SHADOW;
+            else
+              g_assert_not_reached ();
+
+            effect->SetBrushColor (target, &d2d_color);
+          }
+          break;
+        }
+        default:
+          break;
+      }
+    }
+
+    priv->layout->SetDrawingEffect (effect.Get (), range);
+  } while (gst_text_attr_iterator_next (iter));
+  gst_text_attr_iterator_free (iter);
+
+  return TRUE;
+}
+
+static gboolean
+gst_dwrite_overlay_object_draw_layout (GstDWriteOverlayObject * self,
+    GstTextLayout * layout, gboolean enable_color_font, gint x, gint y)
+{
+  GstDWriteOverlayObjectPrivate *priv = self->priv;
   GstMemory *mem;
   ComPtr < ID2D1RenderTarget > target;
   GstMapInfo info;
+  guint width, height;
 
   if (priv->layout_buf) {
-    if (priv->layout && priv->layout.Get () == layout)
+    if (priv->prev_layout && priv->prev_layout == layout)
       return TRUE;
 
     gst_clear_buffer (&priv->layout_buf);
     g_clear_pointer (&priv->overlay_rect, gst_video_overlay_rectangle_unref);
   }
 
-  priv->layout = nullptr;
-  priv->layout = layout;
+  gst_clear_text_layout (&priv->prev_layout);
+  priv->prev_layout = gst_text_layout_ref (layout);
 
-  if (priv->layout_buf)
-    return TRUE;
+  width = gst_text_layout_get_width (layout);
+  height = gst_text_layout_get_height (layout);
 
-  width = (gint) layout->GetMaxWidth ();
-  height = (gint) layout->GetMaxHeight ();
+  if (!gst_dwrite_overlay_object_create_layout (self,
+          layout, enable_color_font, width, height)) {
+    return FALSE;
+  }
 
   if (priv->layout_pool &&
-      (priv->layout_info.width != width
-          || priv->layout_info.height != height)) {
+      (priv->layout_info.width != (gint) width
+          || priv->layout_info.height != (gint) height)) {
     gst_buffer_pool_set_active (priv->layout_pool, FALSE);
     gst_clear_object (&priv->layout_pool);
   }
@@ -1134,10 +1430,16 @@ gst_dwrite_overlay_object_draw_layout (GstDWriteOverlayObject * self,
     }
   }
 
+  RECT rect;
+  rect.left = 0;
+  rect.top = 0;
+  rect.right = width;
+  rect.bottom = height;
+
   target->BeginDraw ();
   target->Clear (D2D1::ColorF (D2D1::ColorF::Black, 0.0));
-  priv->renderer->Draw (D2D1::Point2F (),
-      D2D1::Rect (0, 0, width, height), layout, target.Get ());
+  priv->renderer->Draw (D2D1::Point2F (), rect, priv->layout.Get (),
+      target.Get ());
   target->EndDraw ();
 
   if (!priv->use_bitmap) {
@@ -1271,15 +1573,21 @@ error:
   return FALSE;
 }
 
-gboolean
+GstFlowReturn
 gst_dwrite_overlay_object_draw (GstDWriteOverlayObject * object,
-    GstBuffer * buffer, IDWriteTextLayout * layout, gint x, gint y)
+    GstTextLayout * layout, gboolean enable_color_font, GstBuffer * buffer)
 {
   GstDWriteOverlayObjectPrivate *priv = object->priv;
   gboolean ret = FALSE;
+  gint x, y;
 
-  if (!gst_dwrite_overlay_object_draw_layout (object, layout, x, y))
-    return FALSE;
+  x = gst_text_layout_get_xpos (layout);
+  y = gst_text_layout_get_ypos (layout);
+
+  if (!gst_dwrite_overlay_object_draw_layout (object,
+          layout, enable_color_font, x, y)) {
+    return GST_FLOW_ERROR;
+  }
 
   switch (priv->blend_mode) {
     case GstDWriteBlendMode::ATTACH_TEXTURE:
@@ -1298,8 +1606,11 @@ gst_dwrite_overlay_object_draw (GstDWriteOverlayObject * object,
       break;
     default:
       g_assert_not_reached ();
-      return FALSE;
+      return GST_FLOW_ERROR;
   }
 
-  return ret;
+  if (!ret)
+    return GST_FLOW_ERROR;
+
+  return GST_FLOW_OK;
 }

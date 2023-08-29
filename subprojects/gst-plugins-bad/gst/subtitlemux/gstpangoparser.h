@@ -20,30 +20,11 @@
 #pragma once
 
 #include <gst/gst.h>
-#include <gst/d3d11/gstd3d11.h>
-#include <d2d1_1.h>
-#include <dwrite.h>
-
-#ifdef HAVE_DWRITE_COLOR_FONT
-#include <d2d1_3.h>
-#include <dwrite_3.h>
-#endif
+#include <pango/pango.h>
+#include <gst/video/gsttextlayout.h>
 
 G_BEGIN_DECLS
 
-#define GST_TYPE_DWRITE_TEXT_ALIGNMENT            (gst_dwrite_text_alignment_get_type ())
-GType gst_dwrite_text_alignment_get_type (void);
-
-#define GST_TYPE_DWRITE_PARAGRAPH_ALIGNMENT       (gst_dwrite_paragraph_alignment_get_type ())
-GType gst_dwrite_paragraph_alignment_get_type (void);
-
-#define GST_TYPE_DWRITE_FONT_WEIGHT               (gst_dwrite_font_weight_get_type ())
-GType gst_dwrite_font_weight_get_type (void);
-
-#define GST_TYPE_DWRITE_FONT_STYLE                (gst_dwrite_font_style_get_type ())
-GType gst_dwrite_font_style_get_type (void);
-
-#define GST_TYPE_DWRITE_FONT_STRETCH              (gst_dwrite_font_stretch_get_type ())
-GType gst_dwrite_font_stretch_get_type (void);
+GstTextLayout * gst_text_layout_from_pango_markup (const gchar * markup);
 
 G_END_DECLS
