@@ -135,6 +135,11 @@ typedef struct _GstMatroskaDemux {
 
   /* Cached upstream length (default G_MAXUINT64) */
   guint64	           cached_length;
+
+  /* Drm info */
+  gchar                   *sysid_string;
+  GstBuffer               *pssh;
+  GstStructure            *crypto_info;
 } GstMatroskaDemux;
 
 typedef struct _GstMatroskaDemuxClass {
