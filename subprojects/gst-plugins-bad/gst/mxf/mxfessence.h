@@ -36,6 +36,8 @@ typedef enum
 
 typedef struct
 {
+  gboolean uses_temporal_offset;
+  gint8 temporal_offset;
   MXFIndexEntryFlags flags;
 } MXFEssenceElementParsedProperties;
 

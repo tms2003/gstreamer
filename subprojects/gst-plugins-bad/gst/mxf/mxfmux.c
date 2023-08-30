@@ -1437,16 +1437,18 @@ gst_mxf_mux_handle_buffer (GstMXFMux * mux, GstMXFMuxPad * pad)
         }
       }
       if (pts_index_pos != G_MAXUINT64) {
-        g_assert (index_pos_diff < 127 && index_pos_diff >= -127);
-        pts_segment =
-            &g_array_index (mux->index_table, MXFIndexTableSegment,
-            pts_index_pos);
-        pts_segment->index_entries[pts_segment_pos +
-            index_pos_diff].temporal_offset = -index_pos_diff;
+        if (index_pos_diff < 127 && index_pos_diff >= -127) {
+          pts_segment =
+              &g_array_index (mux->index_table, MXFIndexTableSegment,
+              pts_index_pos);
+          pts_segment->index_entries[pts_segment_pos +
+              index_pos_diff].temporal_offset = -index_pos_diff;
+        } else
+          MXF_INDEX_ENTRY_FLAGS_SET_OFFSET_OUT_OF_RANGE (eprops.flags);
       }
     }
 
-    /* Leave temporal offset initialized at 0, above code will set it as necessary */
+    /* Keep temporal offset as is, above code will set it as necessary */
     if (!MXF_INDEX_ENTRY_FLAGS_IS_SET_DELTA_UNIT (eprops.flags)) {
       mux->last_keyframe_pos = pad->pos;
 

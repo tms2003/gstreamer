@@ -433,6 +433,7 @@ mxf_mpeg_parse_mpeg2_pict_props (GstBuffer * buffer,
 
       if (type == GST_MPEG_VIDEO_PACKET_PICTURE) {
         GstMpegVideoPictureHdr pic_hdr;
+        gint64 temporal_offset;
 
         if (!gst_mpeg_video_packet_parse_picture_header (&packet, &pic_hdr)) {
           GST_ERROR ("Couldn't parse picture_header");
@@ -444,18 +445,33 @@ mxf_mpeg_parse_mpeg2_pict_props (GstBuffer * buffer,
         GST_DEBUG ("tsn: %d pic_type: %d", pic_hdr.tsn, pic_hdr.pic_type);
 
         if (pic_hdr.pic_type == GST_MPEG_VIDEO_PICTURE_TYPE_B) {
+          mapping_data->pict_seq_nb++;
+
           MXF_INDEX_ENTRY_FLAGS_UNSET_RANDOM_ACCESS (props->flags);
           MXF_INDEX_ENTRY_FLAGS_SET_BACKWARD_PREDICTION (props->flags);
 
           if (!mapping_data->only_b_picts || !mapping_data->closed_group)
             MXF_INDEX_ENTRY_FLAGS_SET_FORWARD_PREDICTION (props->flags);
         } else if (pic_hdr.pic_type == GST_MPEG_VIDEO_PICTURE_TYPE_P) {
+          mapping_data->pict_seq_nb++;
+
           MXF_INDEX_ENTRY_FLAGS_UNSET_RANDOM_ACCESS (props->flags);
           MXF_INDEX_ENTRY_FLAGS_SET_FORWARD_PREDICTION (props->flags);
 
           mapping_data->only_b_picts = FALSE;
         } else if (pic_hdr.pic_type == GST_MPEG_VIDEO_PICTURE_TYPE_I) {
+          mapping_data->pict_seq_nb = 0;
           mapping_data->only_b_picts = TRUE;
+        }
+
+        temporal_offset = mapping_data->pict_seq_nb - pic_hdr.tsn;
+        if (temporal_offset > G_MAXINT8 || temporal_offset < G_MININT8) {
+          MXF_INDEX_ENTRY_FLAGS_SET_OFFSET_OUT_OF_RANGE (props->flags);
+          GST_DEBUG ("temporal offset out of range");
+        } else {
+          props->temporal_offset = temporal_offset;
+          props->uses_temporal_offset = TRUE;
+          GST_DEBUG ("temporal offset: %d", props->temporal_offset);
         }
 
         goto done;
@@ -473,6 +489,7 @@ mxf_mpeg_parse_mpeg2_pict_props (GstBuffer * buffer,
         mapping_data->closed_group =
             MXF_INDEX_ENTRY_FLAGS_IS_SET_RANDOM_ACCESS (props->flags);
         mapping_data->only_b_picts = TRUE;
+        mapping_data->pict_seq_nb = G_MAXUINT64;
 
         MXF_INDEX_ENTRY_FLAGS_SET_SEQUENCE_HEADER (props->flags);
       } else if (type == GST_MPEG_VIDEO_PACKET_GOP) {
@@ -499,6 +516,7 @@ mxf_mpeg_parse_mpeg2_pict_props (GstBuffer * buffer,
         mapping_data->closed_group =
             MXF_INDEX_ENTRY_FLAGS_IS_SET_RANDOM_ACCESS (props->flags);
         mapping_data->only_b_picts = TRUE;
+        mapping_data->pict_seq_nb = G_MAXUINT64;
       }
     } else if (gst_byte_reader_skip (&reader, 1) == FALSE)
       break;
@@ -542,6 +560,7 @@ mxf_mpeg_parse_mpeg4_pict_props (GstBuffer * buffer,
         GstMpeg4VideoObjectPlane vop;
         GstMpeg4VideoObjectLayer *vol =
             (GstMpeg4VideoObjectLayer *) mapping_data->parser_context;
+        gint64 temporal_offset;
 
         if (gst_mpeg4_parse_video_object_plane (&vop, NULL, vol,
                 reader.data + reader.byte,
@@ -555,6 +574,8 @@ mxf_mpeg_parse_mpeg4_pict_props (GstBuffer * buffer,
             vop.coding_type, vop.modulo_time_base, vop.time_increment);
 
         if (vop.coding_type == GST_MPEG4_B_VOP) {
+          mapping_data->pict_seq_nb++;
+
           MXF_INDEX_ENTRY_FLAGS_UNSET_RANDOM_ACCESS (props->flags);
           MXF_INDEX_ENTRY_FLAGS_SET_BACKWARD_PREDICTION (props->flags);
 
@@ -562,6 +583,8 @@ mxf_mpeg_parse_mpeg4_pict_props (GstBuffer * buffer,
             MXF_INDEX_ENTRY_FLAGS_SET_FORWARD_PREDICTION (props->flags);
         } else if (vop.coding_type == GST_MPEG4_P_VOP
             || vop.coding_type == GST_MPEG4_S_VOP) {
+          mapping_data->pict_seq_nb++;
+
           MXF_INDEX_ENTRY_FLAGS_UNSET_RANDOM_ACCESS (props->flags);
           MXF_INDEX_ENTRY_FLAGS_SET_FORWARD_PREDICTION (props->flags);
 
@@ -570,7 +593,18 @@ mxf_mpeg_parse_mpeg4_pict_props (GstBuffer * buffer,
           if (assume_closed_gov)
             MXF_INDEX_ENTRY_FLAGS_SET_RANDOM_ACCESS (props->flags);
 
+          mapping_data->pict_seq_nb = vop.time_increment;
           mapping_data->only_b_picts = TRUE;
+        }
+
+        temporal_offset = mapping_data->pict_seq_nb - vop.time_increment;
+        if (temporal_offset > G_MAXINT8 || temporal_offset < G_MININT8) {
+          MXF_INDEX_ENTRY_FLAGS_SET_OFFSET_OUT_OF_RANGE (props->flags);
+          GST_DEBUG ("temporal offset out of range");
+        } else {
+          props->temporal_offset = temporal_offset;
+          props->uses_temporal_offset = TRUE;
+          GST_DEBUG ("temporal offset: %d", props->temporal_offset);
         }
 
         goto done;
@@ -627,6 +661,8 @@ mxf_mpeg_parse_mpeg4_pict_props (GstBuffer * buffer,
           GST_ERROR ("Couldn't parse group_of_vop");
           goto error;
         }
+
+        mapping_data->pict_seq_nb = G_MAXUINT64;
 
         if (assume_closed_gov) {
           GST_DEBUG ("assumed closed gov");
@@ -787,6 +823,7 @@ new_video_mapping_data (MXFMPEGEssenceType essence_type)
   ret->essence_type = essence_type;
   ret->closed_group = TRUE;
   ret->only_b_picts = FALSE;
+  ret->pict_seq_nb = G_MAXUINT64;
   ret->parser_context = NULL;
 
   return ret;

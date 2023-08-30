@@ -50,6 +50,7 @@ struct _MXFMPEGVideoMappingData
   MXFMPEGEssenceType essence_type;
   gboolean closed_group;
   gboolean only_b_picts;
+  guint64 pict_seq_nb;
   gpointer parser_context;
 };
 

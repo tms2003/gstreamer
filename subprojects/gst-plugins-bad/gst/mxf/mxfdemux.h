@@ -125,6 +125,23 @@ struct _GstMXFDemuxEssenceTrack
 
   GArray *offsets;
 
+  /* List of gint8 re-built temporal offsets.
+   *
+   * Contains the shift to apply to an entry PTS to get the DTS position
+   * when no index table is available for this essence.
+   *
+   * This is built on the fly, when the content doesn't come with an index
+   * table.
+   *
+   * Use the function `pts_to_dts_position`, which checks for the presence
+   * of the index table first and othewise pulls the essences until the PTS
+   * in known.
+   *
+   * Can be NULL if the content doesn't have temporal shifts (i.e. all present
+   * entries have a temporal offset of 0) or if the essence comes with an
+   * index table. */
+  GHashTable *built_temporal_offsets;
+
   MXFMetadataSourcePackage *source_package;
   MXFMetadataTimelineTrack *source_track;
 

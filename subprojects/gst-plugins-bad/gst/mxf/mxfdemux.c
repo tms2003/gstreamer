@@ -190,6 +190,11 @@ gst_mxf_demux_reset_mxf_state (GstMXFDemux * demux)
     if (t->offsets)
       g_array_free (t->offsets, TRUE);
 
+    if (t->built_temporal_offsets) {
+      g_hash_table_destroy (t->built_temporal_offsets);
+      t->built_temporal_offsets = NULL;
+    }
+
     if (t->mapping_data) {
       if (t->handler->free_mapping_data)
         t->handler->free_mapping_data (t->mapping_data);
@@ -2533,7 +2538,7 @@ find_entry_for_offset (GstMXFDemux * demux, GstMXFDemuxEssenceTrack * etrack,
 
   /* Actual index search */
   if (!index_table || !index_table->segments->len) {
-    GST_WARNING_OBJECT (demux, "No index table or entries to search in");
+    GST_DEBUG_OBJECT (demux, "No index table or entries to search in");
     return FALSE;
   }
 
@@ -2835,7 +2840,7 @@ gst_mxf_demux_handle_generic_container_essence_element (GstMXFDemux * demux,
     if (!find_entry_for_offset (demux, etrack, offset - demux->run_in,
             &index_entry)) {
       /* Non-fatal, fallback to legacy mode */
-      GST_WARNING_OBJECT (demux, "Essence track position not in index");
+      GST_DEBUG_OBJECT (demux, "Essence track position not in index");
     } else if (etrack->position != index_entry.dts) {
       GST_ERROR_OBJECT (demux,
           "track position doesn't match %" G_GINT64_FORMAT " entry dts %"
@@ -2957,13 +2962,31 @@ gst_mxf_demux_handle_generic_container_essence_element (GstMXFDemux * demux,
     index_entry.offset = demux->offset - demux->run_in;
     index_entry.flags = parsed_props.flags;
     index_entry.dts = etrack->position;
-    index_entry.pts = etrack->intra_only ? etrack->position : G_MAXUINT64;
+
+    if (parsed_props.uses_temporal_offset) {
+      index_entry.pts = etrack->position - parsed_props.temporal_offset;
+
+      GST_LOG_OBJECT (demux,
+          "Applied temporal offset. dts:%" G_GINT64_FORMAT " pts:%"
+          G_GINT64_FORMAT, etrack->position, index_entry.pts);
+
+      if (!etrack->built_temporal_offsets)
+        etrack->built_temporal_offsets =
+            g_hash_table_new (g_direct_hash, g_direct_equal);
+
+      g_hash_table_insert (etrack->built_temporal_offsets,
+          GINT_TO_POINTER (index_entry.pts),
+          GINT_TO_POINTER (parsed_props.temporal_offset));
+    } else
+      index_entry.pts = etrack->intra_only ? etrack->position : G_MAXUINT64;
+
     index_entry.initialized = TRUE;
     GST_DEBUG_OBJECT (demux,
         "Storing newly discovered information on track %d. dts: %"
         G_GINT64_FORMAT " offset:%" G_GUINT64_FORMAT
-        " random_access_point:%d keyframe:%d",
+        " temporal_offset:%d random_access_point:%d keyframe:%d",
         etrack->track_id, index_entry.dts, index_entry.offset,
+        parsed_props.temporal_offset,
         MXF_INDEX_ENTRY_FLAGS_IS_SET_RANDOM_ACCESS (index_entry.flags),
         !MXF_INDEX_ENTRY_FLAGS_IS_SET_DELTA_UNIT (index_entry.flags));
 
@@ -4735,6 +4758,30 @@ pts_to_dts_position (GstMXFDemux * demux,
         }
       }
     }
+  } else if (etrack->built_temporal_offsets) {
+    gint64 pull_pos = pts;
+    gint8 *offset;
+
+    while (!g_hash_table_lookup_extended (etrack->built_temporal_offsets,
+            GINT_TO_POINTER (pts), NULL, (gpointer *) & offset)) {
+      GST_LOG_OBJECT (demux,
+          "display position not found in built_temporal_offsets, trying to pull up to %"
+          G_GINT64_FORMAT, pull_pos);
+
+      if (!gst_mxf_demux_find_essence_element (demux, etrack, &pull_pos, FALSE)) {
+        GST_ERROR_OBJECT (demux,
+            "Failed to find display position %" G_GINT64_FORMAT
+            " in content", pts);
+        return pts;
+      }
+
+      pull_pos += 1;
+    }
+
+    dts = pts + GPOINTER_TO_INT (offset);
+    GST_LOG_OBJECT (demux,
+        "Applied temporal offset to pts: %"
+        G_GINT64_FORMAT " -> dts: %" G_GINT64_FORMAT, pts, dts);
   }
 
   return dts;
