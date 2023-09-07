@@ -395,7 +395,6 @@ gst_va_av1_dec_new_picture (GstAV1Decoder * decoder,
   GstVaAV1Dec *self = GST_VA_AV1_DEC (decoder);
   GstVaBaseDec *base = GST_VA_BASE_DEC (decoder);
   GstAV1FrameHeaderOBU *frame_hdr = &picture->frame_hdr;
-  GstVaDecodePicture *pic;
   GstVideoInfo *info = &base->output_info;
   GstFlowReturn ret;
 
@@ -442,21 +441,7 @@ gst_va_av1_dec_new_picture (GstAV1Decoder * decoder,
     }
   }
 
-  pic = gst_va_decode_picture_new (base->decoder, frame->output_buffer);
-
-  gst_av1_picture_set_user_data (picture, pic,
-      (GDestroyNotify) gst_va_decode_picture_free);
-
-  if (picture->apply_grain) {
-    GST_LOG_OBJECT (self, "New va decode picture %p - %#x(aux: %#x)", pic,
-        gst_va_decode_picture_get_surface (pic),
-        gst_va_decode_picture_get_aux_surface (pic));
-  } else {
-    GST_LOG_OBJECT (self, "New va decode picture %p - %#x", pic,
-        gst_va_decode_picture_get_surface (pic));
-  }
-
-  return GST_FLOW_OK;
+  return gst_va_base_dec_new_picture (base, frame, GST_CODEC_PICTURE (picture));
 }
 
 static GstAV1Picture *
@@ -464,26 +449,19 @@ gst_va_av1_dec_duplicate_picture (GstAV1Decoder * decoder,
     GstVideoCodecFrame * frame, GstAV1Picture * picture)
 {
   GstVaAV1Dec *self = GST_VA_AV1_DEC (decoder);
-  GstVaBaseDec *base = GST_VA_BASE_DEC (decoder);
-  GstVaDecodePicture *pic;
-  GstVaDecodePicture *new_pic;
   GstAV1Picture *new_picture;
+  GstBuffer *surface_buf;
 
-  pic = gst_av1_picture_get_user_data (picture);
-  if (!pic) {
+  surface_buf = gst_av1_picture_get_user_data (picture);
+  if (!surface_buf) {
     GST_ERROR_OBJECT (self, "Parent picture does not have a va picture");
     return NULL;
   }
 
   new_picture = gst_av1_picture_new ();
-  g_assert (pic->gstbuffer);
-  new_pic = gst_va_decode_picture_new (base->decoder, pic->gstbuffer);
 
-  GST_LOG_OBJECT (self, "Duplicate output with buffer %" GST_PTR_FORMAT
-      " (surface %#x)", pic, gst_va_decode_picture_get_surface (pic));
-
-  gst_av1_picture_set_user_data (new_picture, new_pic,
-      (GDestroyNotify) gst_va_decode_picture_free);
+  gst_av1_picture_set_user_data (new_picture, gst_buffer_ref (surface_buf),
+      (GDestroyNotify) gst_buffer_unref);
 
   return new_picture;
 }
@@ -685,11 +663,8 @@ gst_va_av1_dec_start_picture (GstAV1Decoder * decoder, GstAV1Picture * picture,
   GstAV1FrameHeaderOBU *frame_header = &picture->frame_hdr;
   GstAV1SequenceHeaderOBU *seq_header = &self->seq;
   VADecPictureParameterBufferAV1 pic_param = { 0, };
-  GstVaDecodePicture *va_pic;
+  GstCodecPicture *codec_pic = GST_CODEC_PICTURE (picture);
   guint i;
-
-  va_pic = gst_av1_picture_get_user_data (picture);
-  g_assert (va_pic);
 
   /* *INDENT-OFF* */
   pic_param = (VADecPictureParameterBufferAV1){
@@ -831,22 +806,22 @@ gst_va_av1_dec_start_picture (GstAV1Decoder * decoder, GstAV1Picture * picture,
   }
 
   if (frame_header->film_grain_params.apply_grain) {
-    pic_param.current_frame = gst_va_decode_picture_get_aux_surface (va_pic);
+    pic_param.current_frame = gst_va_codec_picture_get_aux_surface (codec_pic);
     pic_param.current_display_picture =
-        gst_va_decode_picture_get_surface (va_pic);
+        gst_va_codec_picture_get_surface (codec_pic);
   } else {
-    pic_param.current_frame = gst_va_decode_picture_get_surface (va_pic);
+    pic_param.current_frame = gst_va_codec_picture_get_surface (codec_pic);
     pic_param.current_display_picture = VA_INVALID_SURFACE;
   }
 
   for (i = 0; i < GST_AV1_NUM_REF_FRAMES; i++) {
     if (dpb->pic_list[i]) {
+      GstCodecPicture *ref_pic = GST_CODEC_PICTURE (dpb->pic_list[i]);
       if (dpb->pic_list[i]->apply_grain) {
-        pic_param.ref_frame_map[i] = gst_va_decode_picture_get_aux_surface
-            (gst_av1_picture_get_user_data (dpb->pic_list[i]));
+        pic_param.ref_frame_map[i] =
+            gst_va_codec_picture_get_aux_surface (ref_pic);
       } else {
-        pic_param.ref_frame_map[i] = gst_va_decode_picture_get_surface
-            (gst_av1_picture_get_user_data (dpb->pic_list[i]));
+        pic_param.ref_frame_map[i] = gst_va_codec_picture_get_surface (ref_pic);
       }
     } else {
       pic_param.ref_frame_map[i] = VA_INVALID_SURFACE;
@@ -872,7 +847,7 @@ gst_va_av1_dec_start_picture (GstAV1Decoder * decoder, GstAV1Picture * picture,
   _setup_cdef_info (&pic_param, frame_header, seq_header->num_planes);
   _setup_global_motion_info (&pic_param, frame_header);
 
-  if (!gst_va_decoder_add_param_buffer (base->decoder, va_pic,
+  if (!gst_va_decoder_add_param_buffer (base->decoder,
           VAPictureParameterBufferType, &pic_param, sizeof (pic_param)))
     return GST_FLOW_ERROR;
 
@@ -886,7 +861,6 @@ gst_va_av1_dec_decode_tile (GstAV1Decoder * decoder, GstAV1Picture * picture,
   GstVaAV1Dec *self = GST_VA_AV1_DEC (decoder);
   GstVaBaseDec *base = GST_VA_BASE_DEC (decoder);
   GstAV1TileGroupOBU *tile_group = &tile->tile_group;
-  GstVaDecodePicture *va_pic;
   guint i;
   VASliceParameterBufferAV1 slice_param[GST_AV1_MAX_TILE_COUNT] = { 0, };
 
@@ -904,9 +878,7 @@ gst_va_av1_dec_decode_tile (GstAV1Decoder * decoder, GstAV1Picture * picture,
     slice_param[i].slice_data_flag = 0;
   }
 
-  va_pic = gst_av1_picture_get_user_data (picture);
-
-  if (!gst_va_decoder_add_slice_buffer_with_n_params (base->decoder, va_pic,
+  if (!gst_va_decoder_add_slice_buffer_with_n_params (base->decoder,
           slice_param, sizeof (VASliceParameterBufferAV1), i, tile->obu.data,
           tile->obu.obu_size)) {
     return GST_FLOW_ERROR;
@@ -920,53 +892,29 @@ gst_va_av1_dec_end_picture (GstAV1Decoder * decoder, GstAV1Picture * picture)
 {
   GstVaAV1Dec *self = GST_VA_AV1_DEC (decoder);
   GstVaBaseDec *base = GST_VA_BASE_DEC (decoder);
-  GstVaDecodePicture *va_pic;
 
   GST_LOG_OBJECT (self, "end picture %p, (system_frame_number %d)",
       picture, GST_CODEC_PICTURE_FRAME_NUMBER (picture));
 
-  va_pic = gst_av1_picture_get_user_data (picture);
-
-  if (!gst_va_decoder_decode_with_aux_surface (base->decoder, va_pic,
-          picture->apply_grain)) {
-    return GST_FLOW_ERROR;
-  }
-
-  return GST_FLOW_OK;
+  return gst_va_decoder_decode_with_aux_surface (base->decoder,
+      GST_CODEC_PICTURE (picture), picture->apply_grain);
 }
 
 static GstFlowReturn
 gst_va_av1_dec_output_picture (GstAV1Decoder * decoder,
     GstVideoCodecFrame * frame, GstAV1Picture * picture)
 {
-  GstVaAV1Dec *self = GST_VA_AV1_DEC (decoder);
   GstVaBaseDec *base = GST_VA_BASE_DEC (decoder);
-  GstVideoDecoder *vdec = GST_VIDEO_DECODER (decoder);
   GstCodecPicture *codec_picture = GST_CODEC_PICTURE (picture);
-  gboolean ret;
 
   g_assert (picture->frame_hdr.show_frame ||
       picture->frame_hdr.show_existing_frame);
 
-  GST_LOG_OBJECT (self,
+  GST_LOG_OBJECT (base,
       "Outputting picture %p (system_frame_number %d)",
       picture, codec_picture->system_frame_number);
 
-  if (picture->frame_hdr.show_existing_frame) {
-    GstVaDecodePicture *pic;
-
-    g_assert (!frame->output_buffer);
-    pic = gst_av1_picture_get_user_data (picture);
-    frame->output_buffer = gst_buffer_ref (pic->gstbuffer);
-  }
-
-  ret = gst_va_base_dec_process_output (base,
-      frame, codec_picture->discont_state, 0);
-  gst_av1_picture_unref (picture);
-
-  if (ret)
-    return gst_video_decoder_finish_frame (vdec, frame);
-  return GST_FLOW_ERROR;
+  return gst_va_base_dec_output_picture (base, frame, codec_picture, 0);
 }
 
 static gboolean

@@ -241,51 +241,22 @@ static GstFlowReturn
 gst_va_mpeg2_dec_new_picture (GstMpeg2Decoder * decoder,
     GstVideoCodecFrame * frame, GstMpeg2Picture * picture)
 {
-  GstVaMpeg2Dec *self = GST_VA_MPEG2_DEC (decoder);
-  GstVaBaseDec *base = GST_VA_BASE_DEC (decoder);
-  GstVaDecodePicture *pic;
-  GstFlowReturn ret;
-
-  ret = gst_va_base_dec_prepare_output_frame (base, frame);
-  if (ret != GST_FLOW_OK)
-    goto error;
-
-  pic = gst_va_decode_picture_new (base->decoder, frame->output_buffer);
-
-  gst_mpeg2_picture_set_user_data (picture, pic,
-      (GDestroyNotify) gst_va_decode_picture_free);
-
-  GST_LOG_OBJECT (self, "New va decode picture %p - %#x", pic,
-      gst_va_decode_picture_get_surface (pic));
-
-  return GST_FLOW_OK;
-
-error:
-  {
-    GST_WARNING_OBJECT (self, "Failed to allocated output buffer, return %s",
-        gst_flow_get_name (ret));
-    return ret;
-  }
+  return gst_va_base_dec_new_picture (GST_VA_BASE_DEC (decoder),
+      frame, GST_CODEC_PICTURE (picture));
 }
 
 static GstFlowReturn
 gst_va_mpeg2_dec_new_field_picture (GstMpeg2Decoder * decoder,
     GstMpeg2Picture * first_field, GstMpeg2Picture * second_field)
 {
-  GstVaDecodePicture *first_pic, *second_pic;
-  GstVaMpeg2Dec *self = GST_VA_MPEG2_DEC (decoder);
-  GstVaBaseDec *base = GST_VA_BASE_DEC (decoder);
+  GstBuffer *surface_buf;
 
-  first_pic = gst_mpeg2_picture_get_user_data (first_field);
-  if (!first_pic)
+  surface_buf = gst_mpeg2_picture_get_user_data (first_field);
+  if (!surface_buf)
     return GST_FLOW_ERROR;
 
-  second_pic = gst_va_decode_picture_new (base->decoder, first_pic->gstbuffer);
-  gst_mpeg2_picture_set_user_data (second_field, second_pic,
-      (GDestroyNotify) gst_va_decode_picture_free);
-
-  GST_LOG_OBJECT (self, "New va decode picture %p - %#x", second_pic,
-      gst_va_decode_picture_get_surface (second_pic));
+  gst_mpeg2_picture_set_user_data (second_field, gst_buffer_ref (surface_buf),
+      (GDestroyNotify) gst_buffer_unref);
 
   return GST_FLOW_OK;
 }
@@ -317,7 +288,6 @@ gst_va_mpeg2_dec_add_quant_matrix (GstMpeg2Decoder * decoder,
   guint8 *chroma_intra_quant_matrix = NULL;
   guint8 *chroma_non_intra_quant_matrix = NULL;
   VAIQMatrixBufferMPEG2 iq_matrix = { 0 };
-  GstVaDecodePicture *va_pic;
 
   intra_quant_matrix = self->seq.intra_quantizer_matrix;
   non_intra_quant_matrix = self->seq.non_intra_quantizer_matrix;
@@ -355,8 +325,7 @@ gst_va_mpeg2_dec_add_quant_matrix (GstMpeg2Decoder * decoder,
     _copy_quant_matrix (iq_matrix.chroma_non_intra_quantiser_matrix,
         chroma_non_intra_quant_matrix);
 
-  va_pic = gst_mpeg2_picture_get_user_data (picture);
-  return gst_va_decoder_add_param_buffer (base->decoder, va_pic,
+  return gst_va_decoder_add_param_buffer (base->decoder,
       VAIQMatrixBufferType, &iq_matrix, sizeof (iq_matrix));
 }
 
@@ -371,17 +340,13 @@ _is_frame_start (GstMpeg2Picture * picture)
 static inline VASurfaceID
 _get_surface_id (GstMpeg2Picture * picture)
 {
-  GstVaDecodePicture *va_pic;
-
   if (!picture)
     return VA_INVALID_ID;
 
-  va_pic = gst_mpeg2_picture_get_user_data (picture);
-  if (!va_pic)
-    return VA_INVALID_ID;
-  return gst_va_decode_picture_get_surface (va_pic);
+  return gst_va_codec_picture_get_surface (GST_CODEC_PICTURE (picture));
 }
 
+/* *INDENT-OFF* */
 static GstFlowReturn
 gst_va_mpeg2_dec_start_picture (GstMpeg2Decoder * decoder,
     GstMpeg2Picture * picture, GstMpeg2Slice * slice,
@@ -389,12 +354,16 @@ gst_va_mpeg2_dec_start_picture (GstMpeg2Decoder * decoder,
 {
   GstVaBaseDec *base = GST_VA_BASE_DEC (decoder);
   GstVaMpeg2Dec *self = GST_VA_MPEG2_DEC (decoder);
-  GstVaDecodePicture *va_pic;
   VAPictureParameterBufferMPEG2 pic_param;
+  GstCodecPicture *codec_pic = GST_CODEC_PICTURE (picture);
+  GstFlowReturn ret;
 
-  va_pic = gst_mpeg2_picture_get_user_data (picture);
+  ret = gst_va_decoder_start_picture (base->decoder, codec_pic);
+  if (ret != GST_FLOW_OK) {
+    GST_ERROR_OBJECT (self, "Couldn't start picture");
+    return ret;
+  }
 
-  /* *INDENT-OFF* */
   pic_param = (VAPictureParameterBufferMPEG2) {
     .horizontal_size = base->width,
     .vertical_size = base->height,
@@ -416,7 +385,6 @@ gst_va_mpeg2_dec_start_picture (GstMpeg2Decoder * decoder,
       .progressive_frame = slice->pic_ext->progressive_frame,
     },
   };
-  /* *INDENT-ON* */
 
   switch (picture->type) {
     case GST_MPEG_VIDEO_PICTURE_TYPE_B:{
@@ -426,7 +394,7 @@ gst_va_mpeg2_dec_start_picture (GstMpeg2Decoder * decoder,
         if (GST_VA_DISPLAY_IS_IMPLEMENTATION (base->display, MESA_GALLIUM))
           return GST_FLOW_ERROR;
         else if (GST_VA_DISPLAY_IS_IMPLEMENTATION (base->display, INTEL_IHD))
-          surface = gst_va_decode_picture_get_surface (va_pic);
+          surface = gst_va_codec_picture_get_surface (codec_pic);
       }
       pic_param.backward_reference_picture = surface;
     }
@@ -438,7 +406,7 @@ gst_va_mpeg2_dec_start_picture (GstMpeg2Decoder * decoder,
         if (GST_VA_DISPLAY_IS_IMPLEMENTATION (base->display, MESA_GALLIUM))
           return GST_FLOW_ERROR;
         else if (GST_VA_DISPLAY_IS_IMPLEMENTATION (base->display, INTEL_IHD))
-          surface = gst_va_decode_picture_get_surface (va_pic);
+          surface = gst_va_codec_picture_get_surface (codec_pic);
       }
       pic_param.forward_reference_picture = surface;
     }
@@ -446,7 +414,7 @@ gst_va_mpeg2_dec_start_picture (GstMpeg2Decoder * decoder,
       break;
   }
 
-  if (!gst_va_decoder_add_param_buffer (base->decoder, va_pic,
+  if (!gst_va_decoder_add_param_buffer (base->decoder,
           VAPictureParameterBufferType, &pic_param, sizeof (pic_param)))
     return GST_FLOW_ERROR;
 
@@ -455,6 +423,7 @@ gst_va_mpeg2_dec_start_picture (GstMpeg2Decoder * decoder,
 
   return GST_FLOW_OK;
 }
+/* *INDENT-ON* */
 
 static GstFlowReturn
 gst_va_mpeg2_dec_decode_slice (GstMpeg2Decoder * decoder,
@@ -463,7 +432,6 @@ gst_va_mpeg2_dec_decode_slice (GstMpeg2Decoder * decoder,
   GstVaBaseDec *base = GST_VA_BASE_DEC (decoder);
   GstMpegVideoSliceHdr *header = &slice->header;
   GstMpegVideoPacket *packet = &slice->packet;
-  GstVaDecodePicture *va_pic;
   VASliceParameterBufferMPEG2 slice_param;
 
   /* *INDENT-OFF* */
@@ -479,8 +447,7 @@ gst_va_mpeg2_dec_decode_slice (GstMpeg2Decoder * decoder,
   };
   /* *INDENT-ON* */
 
-  va_pic = gst_mpeg2_picture_get_user_data (picture);
-  if (!gst_va_decoder_add_slice_buffer (base->decoder, va_pic,
+  if (!gst_va_decoder_add_slice_buffer (base->decoder,
           &slice_param, sizeof (slice_param),
           (guint8 *) (packet->data + slice->sc_offset), slice->size))
     return GST_FLOW_ERROR;
@@ -493,17 +460,11 @@ gst_va_mpeg2_dec_end_picture (GstMpeg2Decoder * decoder,
     GstMpeg2Picture * picture)
 {
   GstVaBaseDec *base = GST_VA_BASE_DEC (decoder);
-  GstVaDecodePicture *va_pic;
 
   GST_LOG_OBJECT (base, "end picture %p, (poc %d)",
       picture, picture->pic_order_cnt);
 
-  va_pic = gst_mpeg2_picture_get_user_data (picture);
-
-  if (!gst_va_decoder_decode (base->decoder, va_pic))
-    return GST_FLOW_ERROR;
-
-  return GST_FLOW_OK;
+  return gst_va_decoder_decode (base->decoder, GST_CODEC_PICTURE (picture));
 }
 
 static GstFlowReturn
@@ -511,20 +472,12 @@ gst_va_mpeg2_dec_output_picture (GstMpeg2Decoder * decoder,
     GstVideoCodecFrame * frame, GstMpeg2Picture * picture)
 {
   GstVaBaseDec *base = GST_VA_BASE_DEC (decoder);
-  GstVaMpeg2Dec *self = GST_VA_MPEG2_DEC (decoder);
-  GstVideoDecoder *vdec = GST_VIDEO_DECODER (decoder);
-  gboolean ret;
 
-  GST_LOG_OBJECT (self,
+  GST_LOG_OBJECT (base,
       "Outputting picture %p (poc %d)", picture, picture->pic_order_cnt);
 
-  ret = gst_va_base_dec_process_output (base, frame,
-      GST_CODEC_PICTURE (picture)->discont_state, picture->buffer_flags);
-  gst_mpeg2_picture_unref (picture);
-
-  if (ret)
-    return gst_video_decoder_finish_frame (vdec, frame);
-  return GST_FLOW_ERROR;
+  return gst_va_base_dec_output_picture (base, frame,
+      GST_CODEC_PICTURE (picture), picture->buffer_flags);
 }
 
 static void

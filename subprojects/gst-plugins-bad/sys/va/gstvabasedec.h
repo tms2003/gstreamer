@@ -122,6 +122,7 @@ struct CData
 
 void                  gst_va_base_dec_init                (GstVaBaseDec * base,
                                                            GstDebugCategory * cat);
+
 void                  gst_va_base_dec_class_init          (GstVaBaseDecClass * klass,
                                                            GstVaCodecs codec,
                                                            const gchar * render_device_path,
@@ -131,18 +132,24 @@ void                  gst_va_base_dec_class_init          (GstVaBaseDecClass * k
                                                            GstCaps * doc_sink_caps);
 
 gboolean              gst_va_base_dec_close               (GstVideoDecoder * decoder);
+
 void                  gst_va_base_dec_get_preferred_format_and_caps_features (GstVaBaseDec * base,
                                                            GstVideoFormat * format,
                                                            GstCapsFeatures ** capsfeatures,
                                                            guint64 * modifier);
-gboolean              gst_va_base_dec_copy_output_buffer  (GstVaBaseDec * base,
-                                                           GstVideoCodecFrame * codec_frame);
-gboolean              gst_va_base_dec_process_output      (GstVaBaseDec * base,
+
+GstFlowReturn         gst_va_base_dec_output_picture      (GstVaBaseDec * base,
                                                            GstVideoCodecFrame * frame,
-                                                           GstVideoCodecState * input_state,
+                                                           GstCodecPicture * picture,
                                                            GstVideoBufferFlags buffer_flags);
+
 GstFlowReturn         gst_va_base_dec_prepare_output_frame (GstVaBaseDec * base,
                                                             GstVideoCodecFrame * frame);
+
+GstFlowReturn         gst_va_base_dec_new_picture         (GstVaBaseDec * base,
+                                                           GstVideoCodecFrame * frame,
+                                                           GstCodecPicture * picture);
+
 gboolean              gst_va_base_dec_set_output_state    (GstVaBaseDec * base);
 
 G_END_DECLS

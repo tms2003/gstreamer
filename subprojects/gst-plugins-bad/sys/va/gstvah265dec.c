@@ -162,7 +162,7 @@ _replace_previous_slice (GstVaH265Dec * self, guint8 * data, guint size)
 }
 
 static gboolean
-_submit_previous_slice (GstVaBaseDec * base, GstVaDecodePicture * va_pic)
+_submit_previous_slice (GstVaBaseDec * base)
 {
   GstVaH265Dec *self = GST_VA_H265_DEC (base);
   struct slice *slice;
@@ -178,7 +178,7 @@ _submit_previous_slice (GstVaBaseDec * base, GstVaDecodePicture * va_pic)
   param_size = _is_range_extension_profile (self->parent.profile)
       || _is_screen_content_ext_profile (self->parent.profile) ?
       sizeof (slice->param) : sizeof (slice->param.base);
-  ret = gst_va_decoder_add_slice_buffer (base->decoder, va_pic, &slice->param,
+  ret = gst_va_decoder_add_slice_buffer (base->decoder, &slice->param,
       param_size, slice->data, slice->size);
 
   return ret;
@@ -189,16 +189,13 @@ gst_va_h265_dec_end_picture (GstH265Decoder * decoder, GstH265Picture * picture)
 {
   GstVaBaseDec *base = GST_VA_BASE_DEC (decoder);
   GstVaH265Dec *self = GST_VA_H265_DEC (decoder);
-  GstVaDecodePicture *va_pic;
   gboolean ret;
 
   GST_LOG_OBJECT (base, "end picture %p, (poc %d)",
       picture, picture->pic_order_cnt);
 
-  va_pic = gst_h265_picture_get_user_data (picture);
-
   _set_last_slice_flag (self);
-  ret = _submit_previous_slice (base, va_pic);
+  ret = _submit_previous_slice (base);
 
   /* TODO(victor): optimization: this could be done at decoder's
    * stop() vmethod */
@@ -209,14 +206,7 @@ gst_va_h265_dec_end_picture (GstH265Decoder * decoder, GstH265Picture * picture)
     return GST_FLOW_ERROR;
   }
 
-  ret = gst_va_decoder_decode (base->decoder, va_pic);
-  if (!ret) {
-    GST_ERROR_OBJECT (self, "Failed at end picture %p, (poc %d)",
-        picture, picture->pic_order_cnt);
-    return GST_FLOW_ERROR;
-  }
-
-  return GST_FLOW_OK;
+  return gst_va_decoder_decode (base->decoder, GST_CODEC_PICTURE (picture));
 }
 
 static GstFlowReturn
@@ -224,26 +214,12 @@ gst_va_h265_dec_output_picture (GstH265Decoder * decoder,
     GstVideoCodecFrame * frame, GstH265Picture * picture)
 {
   GstVaBaseDec *base = GST_VA_BASE_DEC (decoder);
-  GstVaH265Dec *self = GST_VA_H265_DEC (decoder);
-  GstVideoDecoder *vdec = GST_VIDEO_DECODER (decoder);
-  GstVaDecodePicture *va_pic;
-  gboolean ret;
 
-  va_pic = gst_h265_picture_get_user_data (picture);
-  g_assert (va_pic->gstbuffer);
-
-  GST_LOG_OBJECT (self,
+  GST_LOG_OBJECT (base,
       "Outputting picture %p (poc %d)", picture, picture->pic_order_cnt);
 
-  gst_buffer_replace (&frame->output_buffer, va_pic->gstbuffer);
-
-  ret = gst_va_base_dec_process_output (base, frame,
-      GST_CODEC_PICTURE (picture)->discont_state, picture->buffer_flags);
-  gst_h265_picture_unref (picture);
-
-  if (ret)
-    return gst_video_decoder_finish_frame (vdec, frame);
-  return GST_FLOW_ERROR;
+  return gst_va_base_dec_output_picture (base, frame,
+      GST_CODEC_PICTURE (picture), picture->buffer_flags);
 }
 
 static void
@@ -282,16 +258,14 @@ static void
 _fill_vaapi_pic (GstH265Decoder * decoder, VAPictureHEVC * va_picture,
     GstH265Picture * picture)
 {
-  GstVaDecodePicture *va_pic;
+  GstBuffer *surface_buf = gst_h265_picture_get_user_data (picture);
 
-  va_pic = gst_h265_picture_get_user_data (picture);
-
-  if (!va_pic) {
+  if (!surface_buf) {
     _init_vaapi_pic (va_picture);
     return;
   }
 
-  va_picture->picture_id = gst_va_decode_picture_get_surface (va_pic);
+  va_picture->picture_id = gst_va_buffer_get_surface (surface_buf);
   va_picture->pic_order_cnt = picture->pic_order_cnt;
   va_picture->flags = 0;
 
@@ -479,11 +453,9 @@ gst_va_h265_dec_decode_slice (GstH265Decoder * decoder,
   GstH265NalUnit *nalu = &slice->nalu;
   GstVaBaseDec *base = GST_VA_BASE_DEC (decoder);
   GstVaH265Dec *self = GST_VA_H265_DEC (decoder);
-  GstVaDecodePicture *va_pic;
   VASliceParameterBufferHEVCExtension *slice_param;
 
-  va_pic = gst_h265_picture_get_user_data (picture);
-  if (!_submit_previous_slice (base, va_pic)) {
+  if (!_submit_previous_slice (base)) {
     _replace_previous_slice (self, NULL, 0);
     GST_ERROR_OBJECT (base, "Failed to submit previous slice buffers");
     return GST_FLOW_ERROR;
@@ -652,14 +624,19 @@ gst_va_h265_dec_start_picture (GstH265Decoder * decoder,
   GstH265SPS *sps;
   GstVaH265Dec *self = GST_VA_H265_DEC (decoder);
   GstVaBaseDec *base = &self->parent;
-  GstVaDecodePicture *va_pic;
   GstH265ScalingList *scaling_list = NULL;
   VAIQMatrixBufferHEVC iq_matrix = { 0, };
   VAPictureParameterBufferHEVCExtension *pic_param = &self->pic_param;
   gsize pic_param_size;
   guint i;
+  GstFlowReturn ret;
+  GstCodecPicture *codec_pic = GST_CODEC_PICTURE (picture);
 
-  va_pic = gst_h265_picture_get_user_data (picture);
+  ret = gst_va_decoder_start_picture (base->decoder, codec_pic);
+  if (ret != GST_FLOW_OK) {
+    GST_ERROR_OBJECT (self, "Couldn't start picture");
+    return ret;
+  }
 
   pps = slice->header.pps;
   sps = pps->sps;
@@ -774,8 +751,7 @@ gst_va_h265_dec_start_picture (GstH265Decoder * decoder,
        long-term reference". Current picture is not in the DPB now. */
     if (pps->pps_scc_extension_params.pps_curr_pic_ref_enabled_flag && i < 15) {
       pic_param->base.ReferenceFrames[i].picture_id =
-          gst_va_decode_picture_get_surface (gst_h265_picture_get_user_data
-          (picture));
+          gst_va_codec_picture_get_surface (codec_pic);
       pic_param->base.ReferenceFrames[i].pic_order_cnt = picture->pic_order_cnt;
       pic_param->base.ReferenceFrames[i].flags |=
           VA_PICTURE_HEVC_LONG_TERM_REFERENCE;
@@ -791,7 +767,7 @@ gst_va_h265_dec_start_picture (GstH265Decoder * decoder,
   pic_param_size = _is_range_extension_profile (self->parent.profile)
       || _is_screen_content_ext_profile (self->parent.profile) ?
       sizeof (*pic_param) : sizeof (pic_param->base);
-  if (!gst_va_decoder_add_param_buffer (base->decoder, va_pic,
+  if (!gst_va_decoder_add_param_buffer (base->decoder,
           VAPictureParameterBufferType, pic_param, pic_param_size))
     return GST_FLOW_ERROR;
 
@@ -831,7 +807,7 @@ gst_va_h265_dec_start_picture (GstH265Decoder * decoder,
       iq_matrix.ScalingListDC32x32[i] =
           scaling_list->scaling_list_dc_coef_minus8_32x32[i] + 8;
 
-    if (!gst_va_decoder_add_param_buffer (base->decoder, va_pic,
+    if (!gst_va_decoder_add_param_buffer (base->decoder,
             VAIQMatrixBufferType, &iq_matrix, sizeof (iq_matrix))) {
       return GST_FLOW_ERROR;
     }
@@ -844,42 +820,8 @@ static GstFlowReturn
 gst_va_h265_dec_new_picture (GstH265Decoder * decoder,
     GstVideoCodecFrame * frame, GstH265Picture * picture)
 {
-  GstVaBaseDec *base = GST_VA_BASE_DEC (decoder);
-  GstVaH265Dec *self = GST_VA_H265_DEC (decoder);
-  GstVaDecodePicture *pic;
-  GstBuffer *output_buffer;
-  GstVideoDecoder *vdec = GST_VIDEO_DECODER (decoder);
-  GstFlowReturn ret = GST_FLOW_ERROR;
-
-  if (base->need_negotiation) {
-    if (!gst_video_decoder_negotiate (vdec)) {
-      GST_ERROR_OBJECT (self, "Failed to negotiate with downstream");
-      return GST_FLOW_NOT_NEGOTIATED;
-    }
-  }
-
-  output_buffer = gst_video_decoder_allocate_output_buffer (vdec);
-  if (!output_buffer)
-    goto error;
-
-  pic = gst_va_decode_picture_new (base->decoder, output_buffer);
-  gst_buffer_unref (output_buffer);
-
-  gst_h265_picture_set_user_data (picture, pic,
-      (GDestroyNotify) gst_va_decode_picture_free);
-
-  GST_LOG_OBJECT (self, "New va decode picture %p - %#x", pic,
-      gst_va_decode_picture_get_surface (pic));
-
-  return GST_FLOW_OK;
-
-error:
-  {
-    GST_WARNING_OBJECT (self,
-        "Failed to allocated output buffer, return %s",
-        gst_flow_get_name (ret));
-    return ret;
-  }
+  return gst_va_base_dec_new_picture (GST_VA_BASE_DEC (decoder),
+      frame, GST_CODEC_PICTURE (picture));
 }
 
 static guint

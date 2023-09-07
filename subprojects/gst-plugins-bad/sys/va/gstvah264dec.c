@@ -98,17 +98,11 @@ static GstFlowReturn
 gst_va_h264_dec_end_picture (GstH264Decoder * decoder, GstH264Picture * picture)
 {
   GstVaBaseDec *base = GST_VA_BASE_DEC (decoder);
-  GstVaDecodePicture *va_pic;
 
   GST_LOG_OBJECT (base, "end picture %p, (poc %d)",
       picture, picture->pic_order_cnt);
 
-  va_pic = gst_h264_picture_get_user_data (picture);
-
-  if (!gst_va_decoder_decode (base->decoder, va_pic))
-    return GST_FLOW_ERROR;
-
-  return GST_FLOW_OK;
+  return gst_va_decoder_decode (base->decoder, GST_CODEC_PICTURE (picture));
 }
 
 static GstFlowReturn
@@ -116,20 +110,12 @@ gst_va_h264_dec_output_picture (GstH264Decoder * decoder,
     GstVideoCodecFrame * frame, GstH264Picture * picture)
 {
   GstVaBaseDec *base = GST_VA_BASE_DEC (decoder);
-  GstVaH264Dec *self = GST_VA_H264_DEC (decoder);
-  GstVideoDecoder *vdec = GST_VIDEO_DECODER (decoder);
-  gboolean ret;
 
-  GST_LOG_OBJECT (self,
+  GST_LOG_OBJECT (base,
       "Outputting picture %p (poc %d)", picture, picture->pic_order_cnt);
 
-  ret = gst_va_base_dec_process_output (base, frame,
-      GST_CODEC_PICTURE (picture)->discont_state, picture->buffer_flags);
-  gst_h264_picture_unref (picture);
-
-  if (ret)
-    return gst_video_decoder_finish_frame (vdec, frame);
-  return GST_FLOW_ERROR;
+  return gst_va_base_dec_output_picture (base, frame,
+      GST_CODEC_PICTURE (picture), picture->buffer_flags);
 }
 
 static void
@@ -146,16 +132,15 @@ static void
 _fill_vaapi_pic (VAPictureH264 * va_picture, GstH264Picture * picture,
     gboolean merge_other_field)
 {
-  GstVaDecodePicture *va_pic;
+  GstBuffer *surface_buf;
 
-  va_pic = gst_h264_picture_get_user_data (picture);
-
-  if (!va_pic) {
+  surface_buf = gst_h264_picture_get_user_data (picture);
+  if (!surface_buf) {
     _init_vaapi_pic (va_picture);
     return;
   }
 
-  va_picture->picture_id = gst_va_decode_picture_get_surface (va_pic);
+  va_picture->picture_id = gst_va_buffer_get_surface (surface_buf);
   va_picture->flags = 0;
 
   if (GST_H264_PICTURE_IS_LONG_TERM_REF (picture)) {
@@ -313,7 +298,6 @@ gst_va_h264_dec_decode_slice (GstH264Decoder * decoder,
   GstH264SliceHdr *header = &slice->header;
   GstH264NalUnit *nalu = &slice->nalu;
   GstVaBaseDec *base = GST_VA_BASE_DEC (decoder);
-  GstVaDecodePicture *va_pic;
   VASliceParameterBufferH264 slice_param;
 
   /* *INDENT-OFF* */
@@ -341,9 +325,7 @@ gst_va_h264_dec_decode_slice (GstH264Decoder * decoder,
 
   _fill_pred_weight_table (header, &slice_param);
 
-  va_pic = gst_h264_picture_get_user_data (picture);
-
-  if (!gst_va_decoder_add_slice_buffer (base->decoder, va_pic, &slice_param,
+  if (!gst_va_decoder_add_slice_buffer (base->decoder, &slice_param,
           sizeof (slice_param), slice->nalu.data + slice->nalu.offset,
           slice->nalu.size)) {
     return GST_FLOW_ERROR;
@@ -360,13 +342,18 @@ gst_va_h264_dec_start_picture (GstH264Decoder * decoder,
   GstH264PPS *pps;
   GstH264SPS *sps;
   GstVaBaseDec *base = GST_VA_BASE_DEC (decoder);
-  GstVaDecodePicture *va_pic;
   VAIQMatrixBufferH264 iq_matrix = { 0, };
   VAPictureParameterBufferH264 pic_param;
   guint i;
   GArray *ref_list = self->ref_list;
+  GstFlowReturn ret;
 
-  va_pic = gst_h264_picture_get_user_data (picture);
+  ret = gst_va_decoder_start_picture (base->decoder,
+      GST_CODEC_PICTURE (picture));
+  if (ret != GST_FLOW_OK) {
+    GST_ERROR_OBJECT (self, "Couldn't start picture");
+    return ret;
+  }
 
   pps = slice->header.pps;
   sps = pps->sequence;
@@ -442,7 +429,7 @@ gst_va_h264_dec_start_picture (GstH264Decoder * decoder,
       _init_vaapi_pic (&pic_param.ReferenceFrames[ref_frame_idx]);
   }
 
-  if (!gst_va_decoder_add_param_buffer (base->decoder, va_pic,
+  if (!gst_va_decoder_add_param_buffer (base->decoder,
           VAPictureParameterBufferType, &pic_param, sizeof (pic_param)))
     return GST_FLOW_ERROR;
 
@@ -467,7 +454,7 @@ gst_va_h264_dec_start_picture (GstH264Decoder * decoder,
         [i], pps->scaling_lists_8x8[i]);
   }
 
-  if (!gst_va_decoder_add_param_buffer (base->decoder, va_pic,
+  if (!gst_va_decoder_add_param_buffer (base->decoder,
           VAIQMatrixBufferType, &iq_matrix, sizeof (iq_matrix)))
     return GST_FLOW_ERROR;
 
@@ -478,52 +465,22 @@ static GstFlowReturn
 gst_va_h264_dec_new_picture (GstH264Decoder * decoder,
     GstVideoCodecFrame * frame, GstH264Picture * picture)
 {
-  GstVaH264Dec *self = GST_VA_H264_DEC (decoder);
-  GstVaBaseDec *base = GST_VA_BASE_DEC (decoder);
-  GstVaDecodePicture *pic;
-  GstFlowReturn ret;
-
-  ret = gst_va_base_dec_prepare_output_frame (base, frame);
-  if (ret != GST_FLOW_OK)
-    goto error;
-
-  pic = gst_va_decode_picture_new (base->decoder, frame->output_buffer);
-
-  gst_h264_picture_set_user_data (picture, pic,
-      (GDestroyNotify) gst_va_decode_picture_free);
-
-  GST_LOG_OBJECT (self, "New va decode picture %p - %#x", pic,
-      gst_va_decode_picture_get_surface (pic));
-
-  return GST_FLOW_OK;
-
-error:
-  {
-    GST_WARNING_OBJECT (self,
-        "Failed to allocated output buffer, return %s",
-        gst_flow_get_name (ret));
-    return ret;
-  }
+  return gst_va_base_dec_new_picture (GST_VA_BASE_DEC (decoder),
+      frame, GST_CODEC_PICTURE (picture));
 }
 
 static GstFlowReturn
 gst_va_h264_dec_new_field_picture (GstH264Decoder * decoder,
     GstH264Picture * first_field, GstH264Picture * second_field)
 {
-  GstVaDecodePicture *first_pic, *second_pic;
-  GstVaH264Dec *self = GST_VA_H264_DEC (decoder);
-  GstVaBaseDec *base = GST_VA_BASE_DEC (decoder);
+  GstBuffer *surface_buf;
 
-  first_pic = gst_h264_picture_get_user_data (first_field);
-  if (!first_pic)
+  surface_buf = gst_h264_picture_get_user_data (first_field);
+  if (!surface_buf)
     return GST_FLOW_ERROR;
 
-  second_pic = gst_va_decode_picture_new (base->decoder, first_pic->gstbuffer);
-  gst_h264_picture_set_user_data (second_field, second_pic,
-      (GDestroyNotify) gst_va_decode_picture_free);
-
-  GST_LOG_OBJECT (self, "New va decode picture %p - %#x", second_pic,
-      gst_va_decode_picture_get_surface (second_pic));
+  gst_h264_picture_set_user_data (second_field, gst_buffer_ref (surface_buf),
+      (GDestroyNotify) gst_buffer_unref);
 
   return GST_FLOW_OK;
 }

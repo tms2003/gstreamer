@@ -141,32 +141,8 @@ static GstFlowReturn
 gst_va_vp8_dec_new_picture (GstVp8Decoder * decoder,
     GstVideoCodecFrame * frame, GstVp8Picture * picture)
 {
-  GstVaVp8Dec *self = GST_VA_VP8_DEC (decoder);
-  GstVaDecodePicture *pic;
-  GstVaBaseDec *base = GST_VA_BASE_DEC (decoder);
-  GstFlowReturn ret;
-
-  ret = gst_va_base_dec_prepare_output_frame (base, frame);
-  if (ret != GST_FLOW_OK)
-    goto error;
-
-  pic = gst_va_decode_picture_new (base->decoder, frame->output_buffer);
-
-  gst_vp8_picture_set_user_data (picture, pic,
-      (GDestroyNotify) gst_va_decode_picture_free);
-
-  GST_LOG_OBJECT (self, "New va decode picture %p - %#x", pic,
-      gst_va_decode_picture_get_surface (pic));
-
-  return GST_FLOW_OK;
-
-error:
-  {
-    GST_WARNING_OBJECT (self,
-        "Failed to allocated output buffer, return %s",
-        gst_flow_get_name (ret));
-    return ret;
-  }
+  return gst_va_base_dec_new_picture (GST_VA_BASE_DEC (decoder),
+      frame, GST_CODEC_PICTURE (picture));
 }
 
 static gboolean
@@ -205,8 +181,7 @@ _fill_quant_matrix (GstVp8Decoder * decoder, GstVp8Picture * picture,
   }
 
   return gst_va_decoder_add_param_buffer (base->decoder,
-      gst_vp8_picture_get_user_data (picture), VAIQMatrixBufferType, &iq_matrix,
-      sizeof (iq_matrix));
+      VAIQMatrixBufferType, &iq_matrix, sizeof (iq_matrix));
 }
 
 static gboolean
@@ -221,8 +196,7 @@ _fill_probability_table (GstVp8Decoder * decoder, GstVp8Picture * picture)
       sizeof (frame_hdr->token_probs.prob));
 
   return gst_va_decoder_add_param_buffer (base->decoder,
-      gst_vp8_picture_get_user_data (picture), VAProbabilityBufferType,
-      &prob_table, sizeof (prob_table));
+      VAProbabilityBufferType, &prob_table, sizeof (prob_table));
 }
 
 static gboolean
@@ -230,11 +204,11 @@ _fill_picture (GstVp8Decoder * decoder, GstVp8Picture * picture,
     GstVp8Parser * parser)
 {
   GstVaBaseDec *base = GST_VA_BASE_DEC (decoder);
-  GstVaDecodePicture *va_pic;
   VAPictureParameterBufferVP8 pic_param;
   GstVp8FrameHdr const *frame_hdr = &picture->frame_hdr;
   GstVp8Segmentation *const seg = &parser->segmentation;
   guint i;
+  GstCodecPicture *ref_pic;
 
   if (!_fill_quant_matrix (decoder, picture, parser))
     return FALSE;
@@ -281,16 +255,16 @@ _fill_picture (GstVp8Decoder * decoder, GstVp8Picture * picture,
 
   if (!frame_hdr->key_frame) {
     if (decoder->last_picture) {
-      va_pic = gst_vp8_picture_get_user_data (decoder->last_picture);
-      pic_param.last_ref_frame = gst_va_decode_picture_get_surface (va_pic);
+      ref_pic = GST_CODEC_PICTURE (decoder->last_picture);
+      pic_param.last_ref_frame = gst_va_codec_picture_get_surface (ref_pic);
     }
     if (decoder->golden_ref_picture) {
-      va_pic = gst_vp8_picture_get_user_data (decoder->golden_ref_picture);
-      pic_param.golden_ref_frame = gst_va_decode_picture_get_surface (va_pic);
+      ref_pic = GST_CODEC_PICTURE (decoder->golden_ref_picture);
+      pic_param.golden_ref_frame = gst_va_codec_picture_get_surface (ref_pic);
     }
     if (decoder->alt_ref_picture) {
-      va_pic = gst_vp8_picture_get_user_data (decoder->alt_ref_picture);
-      pic_param.alt_ref_frame = gst_va_decode_picture_get_surface (va_pic);
+      ref_pic = GST_CODEC_PICTURE (decoder->alt_ref_picture);
+      pic_param.alt_ref_frame = gst_va_codec_picture_get_surface (ref_pic);
     }
   }
 
@@ -321,8 +295,7 @@ _fill_picture (GstVp8Decoder * decoder, GstVp8Picture * picture,
   memcpy (pic_param.mv_probs, frame_hdr->mv_probs.prob,
       sizeof (frame_hdr->mv_probs));
 
-  va_pic = gst_vp8_picture_get_user_data (picture);
-  return gst_va_decoder_add_param_buffer (base->decoder, va_pic,
+  return gst_va_decoder_add_param_buffer (base->decoder,
       VAPictureParameterBufferType, &pic_param, sizeof (pic_param));
 }
 
@@ -333,7 +306,6 @@ _add_slice (GstVp8Decoder * decoder, GstVp8Picture * picture,
   GstVaBaseDec *base = GST_VA_BASE_DEC (decoder);
   GstVp8FrameHdr const *frame_hdr = &picture->frame_hdr;
   VASliceParameterBufferVP8 slice_param;
-  GstVaDecodePicture *va_pic;
   gint i;
 
   /* *INDENT-OFF* */
@@ -352,8 +324,7 @@ _add_slice (GstVp8Decoder * decoder, GstVp8Picture * picture,
   for (; i < G_N_ELEMENTS (slice_param.partition_size); i++)
     slice_param.partition_size[i] = 0;
 
-  va_pic = gst_vp8_picture_get_user_data (picture);
-  return gst_va_decoder_add_slice_buffer (base->decoder, va_pic, &slice_param,
+  return gst_va_decoder_add_slice_buffer (base->decoder, &slice_param,
       sizeof (slice_param), (gpointer) picture->data, picture->size);
 }
 
@@ -361,6 +332,16 @@ static GstFlowReturn
 gst_va_vp8_dec_decode_picture (GstVp8Decoder * decoder, GstVp8Picture * picture,
     GstVp8Parser * parser)
 {
+  GstVaBaseDec *base = GST_VA_BASE_DEC (decoder);
+  GstFlowReturn ret;
+
+  ret = gst_va_decoder_start_picture (base->decoder,
+      GST_CODEC_PICTURE (picture));
+  if (ret != GST_FLOW_OK) {
+    GST_ERROR_OBJECT (base, "Couldn't start picture");
+    return ret;
+  }
+
   if (_fill_picture (decoder, picture, parser) &&
       _add_slice (decoder, picture, parser))
     return GST_FLOW_OK;
@@ -372,17 +353,12 @@ static GstFlowReturn
 gst_va_vp8_dec_end_picture (GstVp8Decoder * decoder, GstVp8Picture * picture)
 {
   GstVaBaseDec *base = GST_VA_BASE_DEC (decoder);
-  GstVaDecodePicture *va_pic;
+  GstCodecPicture *codec_picture = GST_CODEC_PICTURE (picture);
 
   GST_LOG_OBJECT (base, "end picture %p, (system_frame_number %d)",
-      picture, GST_CODEC_PICTURE (picture)->system_frame_number);
+      picture, codec_picture->system_frame_number);
 
-  va_pic = gst_vp8_picture_get_user_data (picture);
-
-  if (!gst_va_decoder_decode (base->decoder, va_pic))
-    return GST_FLOW_ERROR;
-
-  return GST_FLOW_OK;
+  return gst_va_decoder_decode (base->decoder, codec_picture);
 }
 
 static GstFlowReturn
@@ -390,22 +366,13 @@ gst_va_vp8_dec_output_picture (GstVp8Decoder * decoder,
     GstVideoCodecFrame * frame, GstVp8Picture * picture)
 {
   GstVaBaseDec *base = GST_VA_BASE_DEC (decoder);
-  GstVaVp8Dec *self = GST_VA_VP8_DEC (decoder);
-  GstVideoDecoder *vdec = GST_VIDEO_DECODER (decoder);
   GstCodecPicture *codec_picture = GST_CODEC_PICTURE (picture);
-  gboolean ret;
 
-  GST_LOG_OBJECT (self,
+  GST_LOG_OBJECT (base,
       "Outputting picture %p (system_frame_number %d)",
       picture, codec_picture->system_frame_number);
 
-  ret = gst_va_base_dec_process_output (base, frame,
-      codec_picture->discont_state, 0);
-  gst_vp8_picture_unref (picture);
-
-  if (ret)
-    return gst_video_decoder_finish_frame (vdec, frame);
-  return GST_FLOW_ERROR;
+  return gst_va_base_dec_output_picture (base, frame, codec_picture, 0);
 }
 
 static void
