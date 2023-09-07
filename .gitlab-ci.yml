@@ -1,9 +1,9 @@
 include:
   - project: 'freedesktop/ci-templates'
-    ref: 43156194381eae95b2876a3eaeaba90190774687
+    ref: 7402203527f61d6473d55ad701172d1606508c52
     file: '/templates/fedora.yml'
   - project: 'freedesktop/ci-templates'
-    ref: 43156194381eae95b2876a3eaeaba90190774687
+    ref: 7402203527f61d6473d55ad701172d1606508c52
     file: '/templates/debian.yml'
   ###
   # IMPORTANT
@@ -136,7 +136,7 @@ fedora amd64 docker:
     FDO_DISTRIBUTION_VERSION: 'bookworm'
     FDO_REPO_SUFFIX: "$INDENT_AMD64_SUFFIX"
     FDO_DISTRIBUTION_TAG: "$INDENT_TAG-$GST_UPSTREAM_BRANCH"
-    FDO_DISTRIBUTION_PACKAGES: 'curl indent git findutils'
+    FDO_DISTRIBUTION_PACKAGES: 'curl indent git findutils ca-certificates'
     FDO_DISTRIBUTION_EXEC: 'ci/docker/indent/prepare.sh'
 
 gst-indent amd64 docker:
@@ -210,6 +210,18 @@ gst indent:
       when: 'manual'
     - if: '$CI_PROJECT_NAMESPACE != "gstreamer" || $CI_COMMIT_BRANCH != $GST_UPSTREAM_BRANCH'
       when: 'always'
+
+rustfmt:
+  extends:
+    - '.fedora image'
+    - '.fdo.suffixed-image@fedora'
+  stage: 'preparation'
+  needs:
+    - "fedora amd64 docker"
+  script:
+    - export RUSTUP_HOME="/usr/local/rustup"
+    - export PATH="/usr/local/cargo/bin:$PATH"
+    - ./scripts/format-rust --check
 
 commitlint:
   extends:
@@ -492,6 +504,9 @@ build vs2022 x86:
 
 build vs2022 arm64:
   extends: '.build windows cross'
+  rules:
+    - when: 'manual'
+      allow_failure: true
   variables:
     ARCH: 'arm64'
     # pango pulls in cairo which pulls in pixman which doesn't build because of
@@ -843,6 +858,7 @@ build documentation:
       when: never
     - changes:
       - .gitlab-ci.yml
+      - .gitlab-image-tags.yml
       - ci/gitlab/*.py
       - subprojects/*.wrap
       - subprojects/gst-docs/**/*

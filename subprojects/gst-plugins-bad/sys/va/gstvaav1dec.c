@@ -44,6 +44,7 @@
 #endif
 
 #include <gst/va/gstva.h>
+#include <gst/va/vasurfaceimage.h>
 
 #include "gstvaav1dec.h"
 #include "gstvabasedec.h"
@@ -255,6 +256,7 @@ _create_internal_pool (GstVaAV1Dec * self, gint width, gint height)
   GstAllocator *allocator;
   GstCaps *caps = NULL;
   GstBufferPool *pool;
+  guint usage_hint;
   GstAllocationParams params = { 0, };
 
   gst_allocation_params_init (&params);
@@ -265,7 +267,7 @@ _create_internal_pool (GstVaAV1Dec * self, gint width, gint height)
     GstVideoFormat format;
 
     gst_va_base_dec_get_preferred_format_and_caps_features (base,
-        &format, NULL);
+        &format, NULL, NULL);
     if (format == GST_VIDEO_FORMAT_UNKNOWN) {
       GST_WARNING_OBJECT (self, "Failed to get format for internal pool");
       return NULL;
@@ -288,9 +290,11 @@ _create_internal_pool (GstVaAV1Dec * self, gint width, gint height)
   surface_formats = gst_va_decoder_get_surface_formats (base->decoder);
   allocator = gst_va_allocator_new (base->display, surface_formats);
 
+  usage_hint = va_get_surface_usage_hint (base->display,
+      VAEntrypointVLD, GST_PAD_SRC, FALSE);
+
   pool = gst_va_pool_new_with_config (caps, GST_VIDEO_INFO_SIZE (&info),
-      1, 0, VA_SURFACE_ATTRIB_USAGE_HINT_DECODER, GST_VA_FEATURE_AUTO,
-      allocator, &params);
+      1, 0, usage_hint, GST_VA_FEATURE_AUTO, allocator, &params);
 
   gst_clear_caps (&caps);
   gst_object_unref (allocator);

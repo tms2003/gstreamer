@@ -88,10 +88,12 @@ struct _GstGLColorConvertClass
  */
 #if G_BYTE_ORDER == G_LITTLE_ENDIAN
 #define GST_GL_COLOR_CONVERT_EXT_FORMATS \
-    ", BGR10A2_LE, RGB10A2_LE, P010_10LE, P012_LE, P016_LE, Y212_LE, Y412_LE"
+    ", RGBA64_LE, BGR10A2_LE, RGB10A2_LE, P010_10LE, P012_LE, P016_LE, Y212_LE, Y412_LE" \
+    ", A444_16LE, A422_16LE, A420_16LE, A444_12LE, A422_12LE, A420_12LE, A420_10LE, A422_10LE, A444_10LE"
 #else
 #define GST_GL_COLOR_CONVERT_EXT_FORMATS \
-    ", P010_10BE, P012_BE, P016_BE, Y212_BE, Y412_BE"
+    ", RGBA64_BE, P010_10BE, P012_BE, P016_BE, Y212_BE, Y412_BE" \
+    ", A444_16BE, A422_16BE, A420_16BE, A444_12BE, A422_12BE, A420_12BE, A420_10BE, A422_10BE, A444_10BE"
 #endif
 
 /**
@@ -102,7 +104,7 @@ struct _GstGLColorConvertClass
 #define GST_GL_COLOR_CONVERT_FORMATS "{ RGBA, RGB, RGBx, BGR, BGRx, BGRA, xRGB, " \
                                "xBGR, ARGB, ABGR, GBRA, GBR, RGBP, BGRP, Y444, I420, YV12, Y42B, " \
                                "Y41B, NV12, NV21, NV16, NV61, YUY2, UYVY, Y210, AYUV, " \
-                               "VUYA, Y410, GRAY8, GRAY16_LE, GRAY16_BE, " \
+                               "VUYA, Y410, A444, A422, GRAY8, GRAY16_LE, GRAY16_BE, " \
                                "RGB16, BGR16, ARGB64, A420, AV12, NV12_16L32S, NV12_4L4" \
                                GST_GL_COLOR_CONVERT_EXT_FORMATS "}"
 
@@ -150,6 +152,12 @@ gboolean    gst_gl_color_convert_decide_allocation (GstGLColorConvert   * conver
 
 GST_GL_API
 GstBuffer * gst_gl_color_convert_perform    (GstGLColorConvert * convert, GstBuffer * inbuf);
+
+GST_GL_API
+gchar *     gst_gl_color_convert_swizzle_shader_string (GstGLContext * context);
+
+GST_GL_API
+gchar *     gst_gl_color_convert_yuv_to_rgb_shader_string (GstGLContext * context);
 
 G_END_DECLS
 

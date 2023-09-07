@@ -54,6 +54,7 @@ struct _GstWaylandSink
 
   gboolean video_info_changed;
   GstVideoInfo video_info;
+  GstVideoInfoDmaDrm drm_info;
   gboolean fullscreen;
   GstCaps *caps;
 
@@ -73,6 +74,11 @@ struct _GstWaylandSink
   gboolean skip_dumb_buffer_copy;
 
   gboolean last_rendered;
+  GThread *callback_thread;
+  GMutex callback_lock;
+  GCond callback_cond;
+  gboolean redraw_cb;
+  gboolean wait_cb;
 };
 
 struct _GstWaylandSinkClass

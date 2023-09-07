@@ -3641,7 +3641,9 @@ gst_sdp_media_get_caps_from_media (const GstSDPMedia * media, gint pt)
 
   /* check if we have a rate, if not, we need to look up the rate from the
    * default rates based on the payload types. */
-  if (rate == -1) {
+  /* Some broken RTSP server puts a rate of 0, also use the default in that
+   * case */
+  if (rate <= 0) {
     const GstRTPPayloadInfo *info;
 
     if (GST_RTP_PAYLOAD_IS_DYNAMIC (pt)) {
@@ -3849,7 +3851,7 @@ gst_sdp_media_set_media_from_caps (const GstCaps * caps, GstSDPMedia * media)
 
   /* get clock-rate, media type and params for the rtpmap attribute */
   if (!gst_structure_get_int (s, "clock-rate", &caps_rate)) {
-    GST_ERROR ("ignoring stream without payload type");
+    GST_ERROR ("ignoring stream without clock rate");
     goto error;
   }
   caps_enc = gst_structure_get_string (s, "encoding-name");

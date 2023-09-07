@@ -22,8 +22,10 @@
 
 #include <gst/va/gstva.h>
 #include <gst/va/vasurfaceimage.h>
+#include <gst/va/gstvavideoformat.h>
 
 #include "vacompat.h"
+#include "gstvabase.h"
 #include "gstvacaps.h"
 #include "gstvapluginutils.h"
 
@@ -58,6 +60,8 @@ G_DEFINE_ABSTRACT_TYPE_WITH_CODE (GstVaBaseEnc, gst_va_base_enc,
     GST_DEBUG_CATEGORY_INIT (gst_va_base_enc_debug,
         "vabaseenc", 0, "vabaseenc element"););
 /* *INDENT-ON* */
+
+extern GRecMutex GST_VA_SHARED_LOCK;
 
 static void
 gst_va_base_enc_reset_state_default (GstVaBaseEnc * base)
@@ -192,11 +196,12 @@ gst_va_base_enc_get_caps (GstVideoEncoder * venc, GstCaps * filter)
 }
 
 static GstBufferPool *
-_get_sinkpad_pool (GstVaBaseEnc * base)
+_get_sinkpad_pool (GstElement * element, gpointer data)
 {
+  GstVaBaseEnc *base = GST_VA_BASE_ENC (element);
   GstAllocator *allocator;
   GstAllocationParams params = { 0, };
-  guint size, usage_hint = 0;
+  guint size, usage_hint;
   GArray *surface_formats = NULL;
   GstCaps *caps = NULL;
 
@@ -205,16 +210,23 @@ _get_sinkpad_pool (GstVaBaseEnc * base)
 
   g_assert (base->input_state);
   caps = gst_caps_copy (base->input_state->caps);
-  gst_caps_set_features_simple (caps,
-      gst_caps_features_from_string (GST_CAPS_FEATURE_MEMORY_VA));
+
+  if (!gst_va_base_convert_caps_to_va (caps)) {
+    GST_ERROR_OBJECT (base, "Invalid caps %" GST_PTR_FORMAT, caps);
+    gst_caps_unref (caps);
+    return NULL;
+  }
 
   gst_allocation_params_init (&params);
 
-  size = GST_VIDEO_INFO_SIZE (&base->input_state->info);
+  size = GST_VIDEO_INFO_SIZE (&base->in_info);
 
   surface_formats = gst_va_encoder_get_surface_formats (base->encoder);
 
   allocator = gst_va_allocator_new (base->display, surface_formats);
+
+  usage_hint = va_get_surface_usage_hint (base->display,
+      VAEntrypointEncSlice, GST_PAD_SINK, FALSE);
 
   base->priv->raw_pool = gst_va_pool_new_with_config (caps, size, 1, 0,
       usage_hint, GST_VA_FEATURE_AUTO, allocator, &params);
@@ -238,84 +250,25 @@ _get_sinkpad_pool (GstVaBaseEnc * base)
   return base->priv->raw_pool;
 }
 
-static gboolean
-_try_import_buffer (GstVaBaseEnc * base, GstBuffer * inbuf)
-{
-  VASurfaceID surface;
-
-  /* The VA buffer. */
-  surface = gst_va_buffer_get_surface (inbuf);
-  if (surface != VA_INVALID_ID &&
-      (gst_va_buffer_peek_display (inbuf) == base->display))
-    return TRUE;
-
-  /* TODO: DMA buffer. */
-
-  return FALSE;
-}
-
 static GstFlowReturn
 gst_va_base_enc_import_input_buffer (GstVaBaseEnc * base,
     GstBuffer * inbuf, GstBuffer ** buf)
 {
-  GstBuffer *buffer = NULL;
-  GstBufferPool *pool;
-  GstFlowReturn ret;
-  GstVideoFrame in_frame, out_frame;
-  gboolean imported, copied;
+  GstVaBufferImporter importer = {
+    .element = GST_ELEMENT_CAST (base),
+#ifndef GST_DISABLE_GST_DEBUG
+    .debug_category = GST_CAT_DEFAULT,
+#endif
+    .display = base->display,
+    .entrypoint = GST_VA_BASE_ENC_ENTRYPOINT (base),
+    .in_info = &base->in_info,
+    .sinkpad_info = &base->priv->sinkpad_info,
+    .get_sinkpad_pool = _get_sinkpad_pool,
+  };
 
-  imported = _try_import_buffer (base, inbuf);
-  if (imported) {
-    *buf = gst_buffer_ref (inbuf);
-    return GST_FLOW_OK;
-  }
+  g_return_val_if_fail (GST_IS_VA_BASE_ENC (base), GST_FLOW_ERROR);
 
-  /* input buffer doesn't come from a vapool, thus it is required to
-   * have a pool, grab from it a new buffer and copy the input
-   * buffer to the new one */
-  if (!(pool = _get_sinkpad_pool (base)))
-    return GST_FLOW_ERROR;
-
-  ret = gst_buffer_pool_acquire_buffer (pool, &buffer, NULL);
-  if (ret != GST_FLOW_OK)
-    return ret;
-
-  GST_LOG_OBJECT (base, "copying input frame");
-
-  if (!gst_video_frame_map (&in_frame, &base->input_state->info,
-          inbuf, GST_MAP_READ))
-    goto invalid_buffer;
-  if (!gst_video_frame_map (&out_frame, &base->priv->sinkpad_info, buffer,
-          GST_MAP_WRITE)) {
-    gst_video_frame_unmap (&in_frame);
-    goto invalid_buffer;
-  }
-
-  copied = gst_video_frame_copy (&out_frame, &in_frame);
-
-  gst_video_frame_unmap (&out_frame);
-  gst_video_frame_unmap (&in_frame);
-
-  if (!copied)
-    goto invalid_buffer;
-
-  /* strictly speaking this is not needed but let's play safe */
-  if (!gst_buffer_copy_into (buffer, inbuf, GST_BUFFER_COPY_FLAGS |
-          GST_BUFFER_COPY_TIMESTAMPS, 0, -1))
-    return GST_FLOW_ERROR;
-
-  *buf = buffer;
-
-  return GST_FLOW_OK;
-
-invalid_buffer:
-  {
-    GST_ELEMENT_WARNING (base, CORE, NOT_IMPLEMENTED, (NULL),
-        ("invalid video buffer received"));
-    if (buffer)
-      gst_buffer_unref (buffer);
-    return GST_FLOW_ERROR;
-  }
+  return gst_va_buffer_importer_import (&importer, inbuf, buf);
 }
 
 static GstBuffer *
@@ -405,7 +358,7 @@ gst_va_base_enc_propose_allocation (GstVideoEncoder * venc, GstQuery * query)
   GstCaps *caps;
   GstVideoInfo info;
   gboolean need_pool = FALSE;
-  guint size, usage_hint = 0;
+  guint size, usage_hint;
 
   gst_query_parse_allocation (query, &caps, &need_pool);
   if (!caps)
@@ -415,6 +368,9 @@ gst_va_base_enc_propose_allocation (GstVideoEncoder * venc, GstQuery * query)
     GST_ERROR_OBJECT (base, "Cannot parse caps %" GST_PTR_FORMAT, caps);
     return FALSE;
   }
+
+  usage_hint = va_get_surface_usage_hint (base->display,
+      VAEntrypointEncSlice, GST_PAD_SINK, gst_video_is_dma_drm_caps (caps));
 
   size = GST_VIDEO_INFO_SIZE (&info);
 
@@ -723,6 +679,9 @@ gst_va_base_enc_set_format (GstVideoEncoder * venc, GstVideoCodecState * state)
 
   g_return_val_if_fail (state->caps != NULL, FALSE);
 
+  if (!gst_va_video_info_from_caps (&base->in_info, NULL, state->caps))
+    return FALSE;
+
   if (base->input_state)
     gst_video_codec_state_unref (base->input_state);
   base->input_state = gst_video_codec_state_ref (state);
@@ -873,6 +832,7 @@ gst_va_base_enc_init (GstVaBaseEnc * self)
   g_queue_init (&self->reorder_list);
   g_queue_init (&self->ref_list);
   g_queue_init (&self->output_list);
+  gst_video_info_init (&self->in_info);
 
   self->priv = gst_va_base_enc_get_instance_private (self);
 }
@@ -1015,8 +975,8 @@ gst_va_base_enc_add_frame_rate_parameter (GstVaBaseEnc * base,
     /* denominator = framerate >> 16 & 0xffff;
      * numerator   = framerate & 0xffff; */
     .fr.framerate =
-        (GST_VIDEO_INFO_FPS_N (&base->input_state->info) & 0xffff) |
-        ((GST_VIDEO_INFO_FPS_D (&base->input_state->info) & 0xffff) << 16)
+        (GST_VIDEO_INFO_FPS_N (&base->in_info) & 0xffff) |
+        ((GST_VIDEO_INFO_FPS_D (&base->in_info) & 0xffff) << 16)
   };
   /* *INDENT-ON* */
 

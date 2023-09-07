@@ -33,12 +33,12 @@ endif
 # Install gst-indent pre-commit hook
 run_command(python3, '-c', 'import shutil; shutil.copy("scripts/git-hooks/multi-pre-commit.hook", ".git/hooks/pre-commit")', check: false)
 
-
-gitlint = find_program('gitlint', required: false)
+gitlint_req = '>= 0.18'
+gitlint = find_program('gitlint', version: gitlint_req, required: false)
 if gitlint.found()
   run_command(gitlint, 'install-hook', check: false)
 else
-  message('gitlint not found, please install it with your package manager or `python3 -m pip install gitlint` to enable the commit message hook')
+  message('gitlint not found or too old, please install it with your package manager or `python3 -m pip install gitlint` to enable the commit message hook')
 endif
 
 # On macOS, you have to run "Install Certificates.command" otherwise Python
@@ -400,6 +400,10 @@ if building_full
   # glib and gobject are part of our public API. If we are using glib from the
   # system then our pkg-config file must require it. If we built it as
   # subproject then we need to link_whole it.
+  # Note that link_whole dependencies aren't exposed transitively in
+  # Windows/Cygwin, because symbols from static libraries must
+  # be manually marked as exported through a module definition file.
+  # See e.g. https://github.com/FFmpeg/FFmpeg/blob/3057ce797f6e1348b978f5ffe9e2afd2224544f0/configure#L5726
   glib_deps = []
   glib_dep = dependency('glib-2.0')
   gobject_dep = dependency('gobject-2.0')
@@ -437,6 +441,7 @@ if building_full
   # Build shared library
   gstfull = build_target('gstreamer-full-1.0',
     init_static_plugins_c,
+    c_args: ['-DBUILDING_GST'],
     target_type: get_option('gst-full-target-type'),
     link_args: gstfull_link_args,
     link_whole : exposed_libs,
@@ -445,11 +450,18 @@ if building_full
     install : true,
   )
   gst_full_c_flags =  []
-  if building_full_static
+  if building_full_static or get_option('default_library') == 'static'
     gst_full_c_flags += ['-DGST_STATIC_COMPILATION']
   endif
 
-  gst_full_dep = declare_dependency(link_with: gstfull,
+  gst_full_libs = [gstfull]
+
+  # See above re: symbol exports in Win32
+  if ['windows', 'cygwin'].contains(host_machine.system())
+    gst_full_libs += exposed_libs
+  endif
+
+  gst_full_dep = declare_dependency(link_with: gst_full_libs,
     compile_args: gst_full_c_flags,
     dependencies : incdir_deps + glib_deps,
     include_directories: include_directories('.')

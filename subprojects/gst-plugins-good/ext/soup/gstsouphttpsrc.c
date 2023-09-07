@@ -84,6 +84,8 @@
 
 #include <gst/tag/tag.h>
 
+#include <gst/glib-compat-private.h>
+
 /* this is a simple wrapper class around SoupSession; it exists in order to
  * have a refcountable owner for the actual SoupSession + the thread it runs
  * in and its main loop (we cannot inverse the ownership hierarchy, because
@@ -206,7 +208,7 @@ enum
 
 static guint gst_soup_http_src_signals[LAST_SIGNAL] = { 0 };
 
-#define DEFAULT_USER_AGENT           "GStreamer souphttpsrc " PACKAGE_VERSION " "
+#define DEFAULT_USER_AGENT           "GStreamer souphttpsrc {VERSION} "
 #define DEFAULT_IRADIO_MODE          TRUE
 #define DEFAULT_SOUP_LOG_LEVEL       SOUP_LOGGER_LOG_HEADERS
 #define DEFAULT_COMPRESS             FALSE
@@ -432,7 +434,8 @@ gst_soup_http_src_class_init (GstSoupHTTPSrcClass * klass)
   g_object_class_install_property (gobject_class, PROP_SSL_CA_FILE,
       g_param_spec_string ("ssl-ca-file", "SSL CA File",
           "Location of a SSL anchor CA file to use", DEFAULT_SSL_CA_FILE,
-          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS
+          | GST_PARAM_DOC_SHOW_DEFAULT));
 
   /**
    * GstSoupHTTPSrc::ssl-use-system-ca-file:
@@ -448,7 +451,8 @@ gst_soup_http_src_class_init (GstSoupHTTPSrcClass * klass)
   g_object_class_install_property (gobject_class, PROP_SSL_USE_SYSTEM_CA_FILE,
       g_param_spec_boolean ("ssl-use-system-ca-file", "Use System CA File",
           "Use system CA file", DEFAULT_SSL_USE_SYSTEM_CA_FILE,
-          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS
+          | GST_PARAM_DOC_SHOW_DEFAULT));
 
   /**
    * GstSoupHTTPSrc::tls-database:
@@ -1762,22 +1766,16 @@ gst_soup_http_src_build_message (GstSoupHTTPSrc * src, const gchar * method)
   /* Duplicating the defaults of libsoup here. We don't want to set a
    * User-Agent in the session as each source might have its own User-Agent
    * set */
-  if (!src->user_agent || !*src->user_agent) {
-    gchar *user_agent =
-        g_strdup_printf ("libsoup/%u.%u.%u", _soup_get_major_version (),
-        _soup_get_minor_version (), _soup_get_micro_version ());
-    _soup_message_headers_append (request_headers, "User-Agent", user_agent);
-    g_free (user_agent);
-  } else if (g_str_has_suffix (src->user_agent, " ")) {
-    gchar *user_agent = g_strdup_printf ("%slibsoup/%u.%u.%u", src->user_agent,
-        _soup_get_major_version (),
-        _soup_get_minor_version (), _soup_get_micro_version ());
-    _soup_message_headers_append (request_headers, "User-Agent", user_agent);
-    g_free (user_agent);
-  } else {
-    _soup_message_headers_append (request_headers, "User-Agent",
-        src->user_agent);
+  GString *user_agent = g_string_new (src->user_agent);
+  g_string_replace (user_agent, "{VERSION}", PACKAGE_VERSION, 0);
+  if (user_agent->len == 0 || g_str_has_suffix (user_agent->str, " ")) {
+    g_string_append_printf (user_agent, "libsoup/%u.%u.%u",
+        _soup_get_major_version (), _soup_get_minor_version (),
+        _soup_get_micro_version ());
   }
+  _soup_message_headers_append (request_headers, "User-Agent", user_agent->str);
+  g_string_free (user_agent, TRUE);
+  user_agent = NULL;
 
   if (!src->keep_alive) {
     _soup_message_headers_append (request_headers, "Connection", "close");

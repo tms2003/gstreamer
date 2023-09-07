@@ -6530,13 +6530,22 @@ gst_qtdemux_push_buffer (GstQTDemux * qtdemux, QtDemuxStream * stream,
 
     if (info->crypto_info == NULL) {
       if (stream->protection_scheme_type == FOURCC_cbcs) {
-        crypto_info = qtdemux_get_cenc_sample_properties (qtdemux, stream, 0);
-        if (!crypto_info || !gst_buffer_add_protection_meta (buf, crypto_info)) {
-          GST_ERROR_OBJECT (qtdemux,
-              "failed to attach cbcs metadata to buffer");
-          qtdemux_gst_structure_free (crypto_info);
+        if (CUR_STREAM (stream)->fourcc == FOURCC_enca ||
+            CUR_STREAM (stream)->fourcc == FOURCC_encs ||
+            CUR_STREAM (stream)->fourcc == FOURCC_enct ||
+            CUR_STREAM (stream)->fourcc == FOURCC_encv) {
+          crypto_info = qtdemux_get_cenc_sample_properties (qtdemux, stream, 0);
+          if (!crypto_info
+              || !gst_buffer_add_protection_meta (buf, crypto_info)) {
+            GST_ERROR_OBJECT (qtdemux,
+                "failed to attach cbcs metadata to buffer");
+            qtdemux_gst_structure_free (crypto_info);
+          } else {
+            GST_TRACE_OBJECT (qtdemux, "added cbcs protection metadata");
+          }
         } else {
-          GST_TRACE_OBJECT (qtdemux, "added cbcs protection metadata");
+          GST_TRACE_OBJECT (qtdemux,
+              "cbcs stream is not encrypted yet, not adding protection metadata");
         }
       } else {
         GST_DEBUG_OBJECT (qtdemux,
@@ -7873,6 +7882,42 @@ gst_qtdemux_chain (GstPad * sinkpad, GstObject * parent, GstBuffer * inbuf)
   return gst_qtdemux_process_adapter (demux, FALSE);
 }
 
+static guint64
+gst_segment_to_stream_time_clamped (const GstSegment * segment,
+    guint64 position)
+{
+  guint64 segment_stream_time_start;
+  guint64 segment_stream_time_stop = GST_CLOCK_TIME_NONE;
+  guint64 stream_pts_unsigned;
+  int ret;
+
+  g_return_val_if_fail (segment != NULL, GST_CLOCK_TIME_NONE);
+  g_return_val_if_fail (segment->format == GST_FORMAT_TIME,
+      GST_CLOCK_TIME_NONE);
+
+  segment_stream_time_start = segment->time;
+  if (segment->stop != GST_CLOCK_TIME_NONE)
+    segment_stream_time_stop =
+        gst_segment_to_stream_time (segment, GST_FORMAT_TIME, segment->stop);
+
+  ret =
+      gst_segment_to_stream_time_full (segment, GST_FORMAT_TIME, position,
+      &stream_pts_unsigned);
+  /* ret == 0 if the segment is invalid (either position, segment->time or the segment start are -1). */
+  g_return_val_if_fail (ret != 0, GST_CLOCK_TIME_NONE);
+
+  if (ret == -1 || stream_pts_unsigned < segment_stream_time_start) {
+    /* Negative or prior to segment start stream time, clamp to segment start. */
+    return segment_stream_time_start;
+  } else if (segment_stream_time_stop != GST_CLOCK_TIME_NONE
+      && stream_pts_unsigned > segment_stream_time_stop) {
+    /* Clamp to segment end. */
+    return segment_stream_time_stop;
+  } else {
+    return stream_pts_unsigned;
+  }
+}
+
 static GstFlowReturn
 gst_qtdemux_process_adapter (GstQTDemux * demux, gboolean force)
 {
@@ -8281,7 +8326,7 @@ gst_qtdemux_process_adapter (GstQTDemux * demux, gboolean force)
       case QTDEMUX_STATE_MOVIE:{
         QtDemuxStream *stream = NULL;
         QtDemuxSample *sample;
-        GstClockTime dts, pts, duration;
+        GstClockTime dts, pts, stream_pts, duration;
         gboolean keyframe;
         gint i;
 
@@ -8393,12 +8438,14 @@ gst_qtdemux_process_adapter (GstQTDemux * demux, gboolean force)
 
           dts = QTSAMPLE_DTS (stream, sample);
           pts = QTSAMPLE_PTS (stream, sample);
+          stream_pts =
+              gst_segment_to_stream_time_clamped (&stream->segment, pts);
           duration = QTSAMPLE_DUR_DTS (stream, sample, dts);
           keyframe = QTSAMPLE_KEYFRAME (stream, sample);
 
           /* check for segment end */
           if (G_UNLIKELY (demux->segment.stop != -1
-                  && demux->segment.stop <= pts && stream->on_keyframe)
+                  && demux->segment.stop <= stream_pts && keyframe)
               && !(demux->upstream_format_is_time && demux->segment.rate < 0)) {
             GST_DEBUG_OBJECT (demux, "we reached the end of our segment.");
             stream->time_position = GST_CLOCK_TIME_NONE;        /* this means EOS */

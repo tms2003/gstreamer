@@ -8776,7 +8776,7 @@ gst_webrtc_bin_class_init (GstWebRTCBinClass * klass)
    * GstWebRTCBin:http-proxy:
    *
    * A HTTP proxy for use with TURN/TCP of the form
-   * http://[username:password@]hostname[:port]
+   * http://[username:password@]hostname[:port][?alpn=<alpn>]
    *
    * Since: 1.22
    */
@@ -8784,7 +8784,7 @@ gst_webrtc_bin_class_init (GstWebRTCBinClass * klass)
       PROP_HTTP_PROXY,
       g_param_spec_string ("http-proxy", "HTTP Proxy",
           "A HTTP proxy for use with TURN/TCP of the form "
-          "http://[username:password@]hostname[:port]",
+          "http://[username:password@]hostname[:port][?alpn=<alpn>]",
           NULL, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   /**
@@ -9113,7 +9113,7 @@ gst_webrtc_bin_class_init (GstWebRTCBinClass * klass)
       G_CALLBACK (gst_webrtc_bin_add_turn_server), NULL, NULL, NULL,
       G_TYPE_BOOLEAN, 1, G_TYPE_STRING);
 
-  /*
+  /**
    * GstWebRTCBin::create-data-channel:
    * @object: the #GstWebRTCBin
    * @label: the label for the data channel

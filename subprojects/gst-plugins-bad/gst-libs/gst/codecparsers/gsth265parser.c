@@ -1242,6 +1242,47 @@ error:
   }
 }
 
+static GstH265ParserResult
+gst_h265_parser_parse_user_data_unregistered (GstH265Parser * parser,
+    GstH265UserDataUnregistered * urud, NalReader * nr, guint payload_size)
+{
+  guint8 *data = NULL;
+  gint i;
+
+  if (payload_size < 16) {
+    GST_WARNING ("Too small payload size %d", payload_size);
+    return GST_H265_PARSER_BROKEN_DATA;
+  }
+
+  for (int i = 0; i < 16; i++) {
+    READ_UINT8 (nr, urud->uuid[i], 8);
+  }
+  payload_size -= 16;
+
+  urud->size = payload_size;
+
+  data = g_malloc0 (payload_size);
+  for (i = 0; i < payload_size; ++i) {
+    READ_UINT8 (nr, data[i], 8);
+  }
+
+  if (payload_size < 1) {
+    GST_WARNING ("No more remaining payload data to store");
+    g_clear_pointer (&data, g_free);
+    return GST_H265_PARSER_BROKEN_DATA;
+  }
+
+  urud->data = data;
+  GST_MEMDUMP ("SEI user data unregistered", data, payload_size);
+  return GST_H265_PARSER_OK;
+
+error:
+  {
+    GST_WARNING ("error parsing \"User Data Unregistered\"");
+    g_clear_pointer (&data, g_free);
+    return GST_H265_PARSER_ERROR;
+  }
+}
 
 static GstH265ParserResult
 gst_h265_parser_parse_time_code (GstH265Parser * parser,
@@ -3067,6 +3108,10 @@ gst_h265_parser_parse_sei_message (GstH265Parser * parser,
         res = gst_h265_parser_parse_registered_user_data (parser,
             &sei->payload.registered_user_data, nr, payload_size >> 3);
         break;
+      case GST_H265_SEI_USER_DATA_UNREGISTERED:
+        res = gst_h265_parser_parse_user_data_unregistered (parser,
+            &sei->payload.user_data_unregistered, nr, payload_size >> 3);
+        break;
       case GST_H265_SEI_RECOVERY_POINT:
         res = gst_h265_parser_parse_recovery_point (parser,
             &sei->payload.recovery_point, nr);
@@ -3228,6 +3273,16 @@ gst_h265_sei_copy (GstH265SEIMessage * dst_sei,
       dst_rud->data = g_malloc (src_rud->size);
       memcpy ((guint8 *) dst_rud->data, src_rud->data, src_rud->size);
     }
+  } else if (dst_sei->payloadType == GST_H265_SEI_USER_DATA_UNREGISTERED) {
+    GstH265UserDataUnregistered *dst_udu =
+        &dst_sei->payload.user_data_unregistered;
+    const GstH265UserDataUnregistered *src_udu =
+        &src_sei->payload.user_data_unregistered;
+
+    if (src_udu->size) {
+      dst_udu->data = g_malloc (src_udu->size);
+      memcpy ((guint8 *) dst_udu->data, src_udu->data, src_udu->size);
+    }
   }
 
   return TRUE;
@@ -3256,6 +3311,10 @@ gst_h265_sei_free (GstH265SEIMessage * sei)
     GstH265RegisteredUserData *rud = &sei->payload.registered_user_data;
     g_free ((guint8 *) rud->data);
     rud->data = NULL;
+  } else if (sei->payloadType == GST_H265_SEI_USER_DATA_UNREGISTERED) {
+    GstH265UserDataUnregistered *udu = &sei->payload.user_data_unregistered;
+    g_free ((guint8 *) udu->data);
+    udu->data = NULL;
   }
 }
 
@@ -4086,6 +4145,19 @@ error:
 }
 
 static gboolean
+gst_h265_write_sei_user_data_unregistered (NalWriter * nw,
+    GstH265UserDataUnregistered * udu)
+{
+  WRITE_BYTES (nw, udu->uuid, 16);
+  WRITE_BYTES (nw, udu->data, udu->size);
+
+  return TRUE;
+
+error:
+  return FALSE;
+}
+
+static gboolean
 gst_h265_write_sei_time_code (NalWriter * nw, GstH265TimeCode * tc)
 {
   gint i;
@@ -4215,6 +4287,12 @@ gst_h265_create_sei_memory_internal (guint8 layer_id, guint8 temporal_id_plus1,
         payload_size_data += rud->size;
         break;
       }
+      case GST_H265_SEI_USER_DATA_UNREGISTERED:{
+        GstH265UserDataUnregistered *udu = &msg->payload.user_data_unregistered;
+
+        payload_size_data = 16 + udu->size;
+        break;
+      }
       case GST_H265_SEI_TIME_CODE:{
         gint j;
         GstH265TimeCode *tc = &msg->payload.time_code;
@@ -4324,6 +4402,15 @@ gst_h265_create_sei_memory_internal (guint8 layer_id, guint8 temporal_id_plus1,
         if (!gst_h265_write_sei_registered_user_data (&nw,
                 &msg->payload.registered_user_data)) {
           GST_WARNING ("Failed to write \"Registered user data\"");
+          goto error;
+        }
+        have_written_data = TRUE;
+        break;
+      case GST_H265_SEI_USER_DATA_UNREGISTERED:
+        GST_DEBUG ("Writing \"Unregistered user data\" done");
+        if (!gst_h265_write_sei_user_data_unregistered (&nw,
+                &msg->payload.user_data_unregistered)) {
+          GST_WARNING ("Failed to write \"Unregistered user data\"");
           goto error;
         }
         have_written_data = TRUE;
@@ -4985,13 +5072,15 @@ gst_h265_parser_parse_decoder_config_record (GstH265Parser * parser,
   g_assert (gst_bit_reader_get_pos (&br) == 23 * 8);
   for (i = 0; i < num_of_arrays; i++) {
     GstH265DecoderConfigRecordNalUnitArray array;
+    guint8 nalu_type;
     GstH265NalUnit nalu;
     guint16 num_nalu, j;
     guint offset;
 
     READ_CONFIG_UINT8 (array.array_completeness, 1);
     SKIP_CONFIG_BITS (1);
-    READ_CONFIG_UINT8 (array.nal_unit_type, 6);
+    READ_CONFIG_UINT8 (nalu_type, 6);
+    array.nal_unit_type = nalu_type;
 
     READ_CONFIG_UINT16 (num_nalu, 16);
 
@@ -5003,6 +5092,15 @@ gst_h265_parser_parse_decoder_config_record (GstH265Parser * parser,
           2, &nalu);
       if (result != GST_H265_PARSER_OK) {
         g_array_unref (array.nalu);
+        /* Ignores parsing error if this is the last nalu and not an essential
+         * nalu for decoding */
+        if (i + 1 == num_of_arrays && j + 1 == num_nalu &&
+            nalu_type != GST_H265_NAL_VPS && nalu_type != GST_H265_NAL_SPS &&
+            nalu_type != GST_H265_NAL_PPS) {
+          GST_WARNING ("Couldn't parse the last nalu, type %d at array %d / %d",
+              nalu_type, i, j);
+          goto out;
+        }
         goto error;
       }
 
@@ -5019,6 +5117,7 @@ gst_h265_parser_parse_decoder_config_record (GstH265Parser * parser,
     }
   }
 
+out:
   *config = ret;
   return GST_H265_PARSER_OK;
 

@@ -7235,6 +7235,8 @@ get_scale_format (GstVideoFormat format, gint plane)
     case GST_VIDEO_FORMAT_Y444:
     case GST_VIDEO_FORMAT_GRAY8:
     case GST_VIDEO_FORMAT_A420:
+    case GST_VIDEO_FORMAT_A422:
+    case GST_VIDEO_FORMAT_A444:
     case GST_VIDEO_FORMAT_YUV9:
     case GST_VIDEO_FORMAT_YVU9:
     case GST_VIDEO_FORMAT_GBR:
@@ -7334,6 +7336,18 @@ get_scale_format (GstVideoFormat format, gint plane)
     case GST_VIDEO_FORMAT_A422_10LE:
     case GST_VIDEO_FORMAT_A444_10BE:
     case GST_VIDEO_FORMAT_A444_10LE:
+    case GST_VIDEO_FORMAT_A444_12BE:
+    case GST_VIDEO_FORMAT_A444_12LE:
+    case GST_VIDEO_FORMAT_A422_12BE:
+    case GST_VIDEO_FORMAT_A422_12LE:
+    case GST_VIDEO_FORMAT_A420_12BE:
+    case GST_VIDEO_FORMAT_A420_12LE:
+    case GST_VIDEO_FORMAT_A444_16BE:
+    case GST_VIDEO_FORMAT_A444_16LE:
+    case GST_VIDEO_FORMAT_A422_16BE:
+    case GST_VIDEO_FORMAT_A422_16LE:
+    case GST_VIDEO_FORMAT_A420_16BE:
+    case GST_VIDEO_FORMAT_A420_16LE:
     case GST_VIDEO_FORMAT_P010_10BE:
     case GST_VIDEO_FORMAT_P010_10LE:
     case GST_VIDEO_FORMAT_GRAY10_LE32:
@@ -7356,6 +7370,8 @@ get_scale_format (GstVideoFormat format, gint plane)
     case GST_VIDEO_FORMAT_NV12_10BE_8L128:
     case GST_VIDEO_FORMAT_NV12_10LE40_4L4:
     case GST_VIDEO_FORMAT_DMA_DRM:
+    case GST_VIDEO_FORMAT_MT2110T:
+    case GST_VIDEO_FORMAT_MT2110R:
       res = format;
       g_assert_not_reached ();
       break;

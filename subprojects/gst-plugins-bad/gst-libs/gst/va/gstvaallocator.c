@@ -40,10 +40,6 @@
 #ifndef G_OS_WIN32
 #include <sys/types.h>
 #include <unistd.h>
-#include <libdrm/drm_fourcc.h>
-#else
-#define DRM_FORMAT_MOD_LINEAR  0ULL
-#define DRM_FORMAT_MOD_INVALID 0xffffffffffffff
 #endif
 
 #include "gstvasurfacecopy.h"
@@ -449,6 +445,8 @@ gst_va_dmabuf_allocator_init (GstVaDmabufAllocator * self)
   self->parent_copy = allocator->mem_copy;
   allocator->mem_copy = gst_va_dmabuf_mem_copy;
 
+  gst_video_info_dma_drm_init (&self->info);
+
   gst_va_memory_pool_init (&self->pool);
 }
 
@@ -550,7 +548,7 @@ _va_create_surface_and_export_to_dmabuf (GstVaDisplay * display,
   VASurfaceAttribExternalBuffers *extbuf = NULL, ext_buf;
   GstVideoFormat format;
   VASurfaceID surface;
-  guint64 prev_modifier;
+  guint64 prev_modifier = DRM_FORMAT_MOD_INVALID;
 
   _init_debug_category ();
 
@@ -695,7 +693,7 @@ gst_va_dmabuf_allocator_setup_buffer_full (GstAllocator * allocator,
   g_return_val_if_fail (GST_IS_VA_DMABUF_ALLOCATOR (allocator), FALSE);
 
   if (!_va_create_surface_and_export_to_dmabuf (self->display, self->usage_hint,
-          NULL, 0, &self->info.vinfo, &surface, &desc))
+          &self->info.drm_modifier, 1, &self->info.vinfo, &surface, &desc))
     return FALSE;
 
   buf = gst_va_buffer_surface_new (surface);
@@ -960,16 +958,16 @@ gst_va_dmabuf_allocator_try (GstAllocator * allocator)
 /**
  * gst_va_dmabuf_allocator_set_format:
  * @allocator: a #GstAllocator
- * @info: (in) (out caller-allocates) (not nullable): a #GstVideoInfo
+ * @info: (in) (out caller-allocates) (not nullable): a #GstVideoInfoDmaDrm
  * @usage_hint: VA usage hint
  *
  * Sets the configuration defined by @info and @usage_hint for
  * @allocator, and it tries the configuration, if @allocator has not
  * allocated memories yet.
  *
- * If @allocator has memory allocated already, and frame size and
- * format in @info are the same as currently configured in @allocator,
- * the rest of @info parameters are updated internally.
+ * If @allocator has memory allocated already, and frame size, format
+ * and modifier in @info are the same as currently configured in
+ * @allocator, the rest of @info parameters are updated internally.
  *
  * Returns: %TRUE if the configuration is valid or updated; %FALSE if
  * configuration is not valid or not updated.
@@ -978,14 +976,10 @@ gst_va_dmabuf_allocator_try (GstAllocator * allocator)
  */
 gboolean
 gst_va_dmabuf_allocator_set_format (GstAllocator * allocator,
-    GstVideoInfo * info, guint usage_hint)
+    GstVideoInfoDmaDrm * info, guint usage_hint)
 {
   GstVaDmabufAllocator *self;
   gboolean ret;
-
-  /* TODO: change API to pass GstVideoInfoDmaDrm, though ignoring the drm
-   * modifier since that's set by the driver. Still we might want to pass the
-   * list of available modifiers by upstream for the negotiated format */
 
   g_return_val_if_fail (GST_IS_VA_DMABUF_ALLOCATOR (allocator), FALSE);
   g_return_val_if_fail (info, FALSE);
@@ -993,28 +987,29 @@ gst_va_dmabuf_allocator_set_format (GstAllocator * allocator,
   self = GST_VA_DMABUF_ALLOCATOR (allocator);
 
   if (gst_va_memory_pool_surface_count (&self->pool) != 0) {
-    if (GST_VIDEO_INFO_FORMAT (info)
+    if (info->drm_modifier == self->info.drm_modifier
+        && GST_VIDEO_INFO_FORMAT (&info->vinfo)
         == GST_VIDEO_INFO_FORMAT (&self->info.vinfo)
-        && GST_VIDEO_INFO_WIDTH (info)
+        && GST_VIDEO_INFO_WIDTH (&info->vinfo)
         == GST_VIDEO_INFO_WIDTH (&self->info.vinfo)
-        && GST_VIDEO_INFO_HEIGHT (info)
+        && GST_VIDEO_INFO_HEIGHT (&info->vinfo)
         == GST_VIDEO_INFO_HEIGHT (&self->info.vinfo)
         && usage_hint == self->usage_hint) {
-      *info = self->info.vinfo; /* update callee info (offset & stride) */
+      *info = self->info;       /* update callee info (offset & stride) */
       return TRUE;
     }
     return FALSE;
   }
 
   self->usage_hint = usage_hint;
-  self->info.vinfo = *info;
+  self->info = *info;
 
   g_clear_pointer (&self->copy, gst_va_surface_copy_free);
 
   ret = gst_va_dmabuf_allocator_try (allocator);
 
   if (ret)
-    *info = self->info.vinfo;
+    *info = self->info;
 
   return ret;
 }
@@ -1022,7 +1017,7 @@ gst_va_dmabuf_allocator_set_format (GstAllocator * allocator,
 /**
  * gst_va_dmabuf_allocator_get_format:
  * @allocator: a #GstAllocator
- * @info: (out) (optional): a #GstVideoInfo
+ * @info: (out) (optional): a #GstVideoInfoDmaDrm
  * @usage_hint: (out) (optional): VA usage hint
  *
  * Gets current internal configuration of @allocator.
@@ -1034,7 +1029,7 @@ gst_va_dmabuf_allocator_set_format (GstAllocator * allocator,
  */
 gboolean
 gst_va_dmabuf_allocator_get_format (GstAllocator * allocator,
-    GstVideoInfo * info, guint * usage_hint)
+    GstVideoInfoDmaDrm * info, guint * usage_hint)
 {
   GstVaDmabufAllocator *self = GST_VA_DMABUF_ALLOCATOR (allocator);
 
@@ -1042,7 +1037,7 @@ gst_va_dmabuf_allocator_get_format (GstAllocator * allocator,
     return FALSE;
 
   if (info)
-    *info = self->info.vinfo;
+    *info = self->info;
   if (usage_hint)
     *usage_hint = self->usage_hint;
 
@@ -1169,7 +1164,6 @@ struct _GstVaAllocator
   guint32 fourcc;
   guint32 rt_format;
 
-  GstVideoInfo derived_info;
   GstVideoInfo info;
   guint usage_hint;
 
@@ -1329,9 +1323,7 @@ _update_image_info (GstVaAllocator * va_allocator)
       && va_allocator->surface_format == va_allocator->img_format) {
     if (va_get_derive_image (va_allocator->display, surface, &image)) {
       va_allocator->use_derived = TRUE;
-      va_allocator->derived_info = va_allocator->info;
-      _update_info (&va_allocator->derived_info, &image);
-      va_destroy_image (va_allocator->display, image.image_id);
+      goto done;
     }
     image.image_id = VA_INVALID_ID;     /* reset it */
   }
@@ -1350,6 +1342,7 @@ _update_image_info (GstVaAllocator * va_allocator)
     return FALSE;
   }
 
+done:
   _update_info (&va_allocator->info, &image);
   va_destroy_image (va_allocator->display, image.image_id);
   va_destroy_surfaces (va_allocator->display, &surface, 1);
@@ -1389,47 +1382,34 @@ _va_map_unlocked (GstVaMemory * mem, GstMapFlags flags)
     mem->mapped_data = &mem->surface;
     goto success;
   }
-
-  if (va_allocator->feat_use_derived == GST_VA_FEATURE_ENABLED) {
-    use_derived = TRUE;
-  } else if (va_allocator->feat_use_derived == GST_VA_FEATURE_DISABLED) {
-    use_derived = FALSE;
-  } else {
 #ifdef G_OS_WIN32
-    /* XXX: Derived image doesn't seem to work for D3D backend */
-    use_derived = FALSE;
+  /* XXX: Derived image doesn't seem to work for D3D backend */
+  use_derived = FALSE;
 #else
+  if (va_allocator->feat_use_derived == GST_VA_FEATURE_AUTO) {
     switch (gst_va_display_get_implementation (display)) {
-      case GST_VA_IMPLEMENTATION_INTEL_IHD:
-        /* On Gen7+ Intel graphics the memory is mappable but not
-         * cached, so normal memcpy() access is very slow to read, but
-         * it's ok for writing. So let's assume that users won't prefer
-         * direct-mapped memory if they request read access. */
-        use_derived = va_allocator->use_derived && !(flags & GST_MAP_READ);
-        break;
       case GST_VA_IMPLEMENTATION_INTEL_I965:
         /* YUV derived images are tiled, so writing them is also
          * problematic */
         use_derived = va_allocator->use_derived && !((flags & GST_MAP_READ)
             || ((flags & GST_MAP_WRITE)
-                && GST_VIDEO_INFO_IS_YUV (&va_allocator->derived_info)));
+                && GST_VIDEO_INFO_IS_YUV (&va_allocator->info)));
         break;
       case GST_VA_IMPLEMENTATION_MESA_GALLIUM:
         /* Reading RGB derived images, with non-standard resolutions,
          * looks like tiled too. TODO(victor): fill a bug in Mesa. */
         use_derived = va_allocator->use_derived && !((flags & GST_MAP_READ)
-            && GST_VIDEO_INFO_IS_RGB (&va_allocator->derived_info));
+            && GST_VIDEO_INFO_IS_RGB (&va_allocator->info));
         break;
       default:
         use_derived = va_allocator->use_derived;
         break;
     }
-#endif
+  } else {
+    use_derived = va_allocator->use_derived;
   }
-  if (use_derived)
-    info = &va_allocator->derived_info;
-  else
-    info = &va_allocator->info;
+#endif
+  info = &va_allocator->info;
 
   if (!va_ensure_image (display, mem->surface, info, &mem->image, use_derived))
     return NULL;

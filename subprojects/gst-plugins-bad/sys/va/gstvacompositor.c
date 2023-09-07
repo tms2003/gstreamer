@@ -47,9 +47,11 @@
 #include "gstvacompositor.h"
 
 #include <gst/va/gstva.h>
+#include <gst/va/vasurfaceimage.h>
 #include <gst/video/video.h>
 #include <va/va_drmcommon.h>
 
+#include "gstvabase.h"
 #include "gstvacaps.h"
 #include "gstvadisplay_priv.h"
 #include "gstvafilter.h"
@@ -562,7 +564,7 @@ gst_va_compositor_propose_allocation (GstAggregator * agg,
   GstCaps *caps;
   GstVideoInfo info;
   gboolean update_allocator = FALSE;
-  guint size, usage_hint = VA_SURFACE_ATTRIB_USAGE_HINT_GENERIC;
+  guint size, usage_hint;
 
   gst_query_parse_allocation (query, &caps, NULL);
 
@@ -574,6 +576,9 @@ gst_va_compositor_propose_allocation (GstAggregator * agg,
 
   if (gst_query_get_n_allocation_pools (query) > 0)
     return TRUE;
+
+  usage_hint = va_get_surface_usage_hint (self->display,
+      VAEntrypointVideoProc, GST_PAD_SINK, gst_video_is_dma_drm_caps (caps));
 
   size = GST_VIDEO_INFO_SIZE (&info);
 
@@ -658,7 +663,7 @@ gst_va_compositor_decide_allocation (GstAggregator * agg, GstQuery * query)
   GstCaps *caps = NULL;
   GstStructure *config;
   GstVideoInfo info;
-  guint min, max, size = 0, usage_hint = VA_SURFACE_ATTRIB_USAGE_HINT_VPP_WRITE;
+  guint min, max, size = 0, usage_hint;
   gboolean update_pool, update_allocator, has_videometa, copy_frames;
   gboolean dont_use_other_pool = FALSE;
 
@@ -724,6 +729,9 @@ gst_va_compositor_decide_allocation (GstAggregator * agg, GstQuery * query)
   if (!pool)
     pool = gst_va_pool_new ();
 
+  usage_hint = va_get_surface_usage_hint (self->display,
+      VAEntrypointVideoProc, GST_PAD_SRC, gst_video_is_dma_drm_caps (caps));
+
   config = gst_buffer_pool_get_config (pool);
   gst_buffer_pool_config_set_allocator (config, allocator, &params);
   gst_buffer_pool_config_add_option (config, GST_BUFFER_POOL_OPTION_VIDEO_META);
@@ -737,7 +745,10 @@ gst_va_compositor_decide_allocation (GstAggregator * agg, GstQuery * query)
   }
 
   if (GST_IS_VA_DMABUF_ALLOCATOR (allocator)) {
-    gst_va_dmabuf_allocator_get_format (allocator, &vagg->info, NULL);
+    GstVideoInfoDmaDrm dma_info;
+
+    gst_va_dmabuf_allocator_get_format (allocator, &dma_info, NULL);
+    vagg->info = dma_info.vinfo;
   } else if (GST_IS_VA_ALLOCATOR (allocator)) {
     gst_va_allocator_get_format (allocator, &vagg->info, NULL, NULL);
   }
@@ -784,13 +795,15 @@ gst_va_compositor_decide_allocation (GstAggregator * agg, GstQuery * query)
 }
 
 static GstBufferPool *
-_get_sinkpad_pool (GstVaCompositor * self, GstVaCompositorPad * pad)
+_get_sinkpad_pool (GstElement * element, gpointer data)
 {
+  GstVaCompositor *self = GST_VA_COMPOSITOR (element);
+  GstVaCompositorPad *pad = GST_VA_COMPOSITOR_PAD (data);
   GstAllocator *allocator;
   GstAllocationParams params = { 0, };
   GstCaps *caps;
   GstVideoInfo info;
-  guint size, usage_hint = VA_SURFACE_ATTRIB_USAGE_HINT_VPP_READ;
+  guint size, usage_hint;
 
   if (pad->pool)
     return pad->pool;
@@ -806,6 +819,9 @@ _get_sinkpad_pool (GstVaCompositor * self, GstVaCompositorPad * pad)
     return NULL;
   }
 
+  usage_hint = va_get_surface_usage_hint (self->display,
+      VAEntrypointVideoProc, GST_PAD_SINK, FALSE);
+
   size = GST_VIDEO_INFO_SIZE (&info);
 
   allocator = gst_va_compositor_allocator_from_caps (self, caps);
@@ -819,7 +835,10 @@ _get_sinkpad_pool (GstVaCompositor * self, GstVaCompositorPad * pad)
   }
 
   if (GST_IS_VA_DMABUF_ALLOCATOR (allocator)) {
-    gst_va_dmabuf_allocator_get_format (allocator, &info, NULL);
+    GstVideoInfoDmaDrm dma_info;
+
+    gst_va_dmabuf_allocator_get_format (allocator, &dma_info, NULL);
+    info = dma_info.vinfo;
   } else if (GST_IS_VA_ALLOCATOR (allocator)) {
     gst_va_allocator_get_format (allocator, &info, NULL, NULL);
   }
@@ -835,118 +854,22 @@ _get_sinkpad_pool (GstVaCompositor * self, GstVaCompositorPad * pad)
   return pad->pool;
 }
 
-static inline gsize
-_get_plane_data_size (GstVideoInfo * info, guint plane)
-{
-  gint comp[GST_VIDEO_MAX_COMPONENTS];
-  gint height, padded_height;
-
-  gst_video_format_info_component (info->finfo, plane, comp);
-
-  height = GST_VIDEO_INFO_HEIGHT (info);
-  padded_height =
-      GST_VIDEO_FORMAT_INFO_SCALE_HEIGHT (info->finfo, comp[0], height);
-
-  return GST_VIDEO_INFO_PLANE_STRIDE (info, plane) * padded_height;
-}
-
-static gboolean
-_try_import_dmabuf_unlocked (GstVaCompositor * self, GstVideoInfo * info,
-    GstBuffer * inbuf)
-{
-  GstVideoMeta *meta;
-  GstMemory *mems[GST_VIDEO_MAX_PLANES];
-  guint i, n_mem, n_planes;
-  gsize offset[GST_VIDEO_MAX_PLANES];
-  uintptr_t fd[GST_VIDEO_MAX_PLANES];
-
-  n_planes = GST_VIDEO_INFO_N_PLANES (info);
-  n_mem = gst_buffer_n_memory (inbuf);
-  meta = gst_buffer_get_video_meta (inbuf);
-
-  /* This will eliminate most non-dmabuf out there */
-  if (!gst_is_dmabuf_memory (gst_buffer_peek_memory (inbuf, 0)))
-    return FALSE;
-
-  /* We cannot have multiple dmabuf per plane */
-  if (n_mem > n_planes)
-    return FALSE;
-
-  /* Update video info based on video meta */
-  if (meta) {
-    GST_VIDEO_INFO_WIDTH (info) = meta->width;
-    GST_VIDEO_INFO_HEIGHT (info) = meta->height;
-
-    for (i = 0; i < meta->n_planes; i++) {
-      GST_VIDEO_INFO_PLANE_OFFSET (info, i) = meta->offset[i];
-      GST_VIDEO_INFO_PLANE_STRIDE (info, i) = meta->stride[i];
-    }
-  }
-
-  /* Find and validate all memories */
-  for (i = 0; i < n_planes; i++) {
-    guint plane_size;
-    guint length;
-    guint mem_idx;
-    gsize mem_skip;
-
-    plane_size = _get_plane_data_size (info, i);
-
-    if (!gst_buffer_find_memory (inbuf, info->offset[i], plane_size,
-            &mem_idx, &length, &mem_skip))
-      return FALSE;
-
-    /* We can't have more then one dmabuf per plane */
-    if (length != 1)
-      return FALSE;
-
-    mems[i] = gst_buffer_peek_memory (inbuf, mem_idx);
-
-    /* And all memory found must be dmabuf */
-    if (!gst_is_dmabuf_memory (mems[i]))
-      return FALSE;
-
-    offset[i] = mems[i]->offset + mem_skip;
-    fd[i] = gst_dmabuf_memory_get_fd (mems[i]);
-  }
-
-  /* Now create a VASurfaceID for the buffer */
-  return gst_va_dmabuf_memories_setup (self->display, info, n_planes,
-      mems, fd, offset, VA_SURFACE_ATTRIB_USAGE_HINT_VPP_READ);
-}
-
-extern GRecMutex GST_VA_SHARED_LOCK;
-
-static gboolean
-_try_import_buffer (GstVaCompositor * self, GstVideoInfo * info,
-    GstBuffer * inbuf)
-{
-  VASurfaceID surface;
-  gboolean ret;
-
-  surface = gst_va_buffer_get_surface (inbuf);
-  if (surface != VA_INVALID_ID &&
-      (gst_va_buffer_peek_display (inbuf) == self->display))
-    return TRUE;
-
-  g_rec_mutex_lock (&GST_VA_SHARED_LOCK);
-  ret = _try_import_dmabuf_unlocked (self, info, inbuf);
-  g_rec_mutex_unlock (&GST_VA_SHARED_LOCK);
-
-  return ret;
-}
-
 static GstFlowReturn
 gst_va_compositor_import_buffer (GstVaCompositor * self,
     GstVaCompositorPad * pad, GstBuffer * inbuf, GstBuffer ** buf)
 {
-  GstBuffer *buffer = NULL;
-  GstBufferPool *pool;
-  GstFlowReturn ret;
+  GstVaBufferImporter importer = {
+    .element = GST_ELEMENT_CAST (self),
+#ifndef GST_DISABLE_GST_DEBUG
+    .debug_category = GST_CAT_DEFAULT,
+#endif
+    .display = self->display,
+    .entrypoint = VAEntrypointVideoProc,
+    .get_sinkpad_pool = _get_sinkpad_pool,
+    .pool_data = pad,
+  };
   GstCaps *caps;
   GstVideoInfo info;
-  GstVideoFrame in_frame, out_frame;
-  gboolean imported, copied;
 
   caps = gst_pad_get_current_caps (GST_PAD (pad));
   if (!caps)
@@ -958,52 +881,9 @@ gst_va_compositor_import_buffer (GstVaCompositor * self,
   }
   gst_caps_unref (caps);
 
-  imported = _try_import_buffer (self, &info, inbuf);
-  if (imported) {
-    *buf = gst_buffer_ref (inbuf);
-    return GST_FLOW_OK;
-  }
+  importer.in_info = importer.sinkpad_info = &info;
 
-  GST_LOG_OBJECT (self, "copying input frame");
-
-  /* input buffer doesn't come from a vapool, thus it is required to
-   * have a pool, grab from it a new buffer and copy the input
-   * buffer to the new one */
-  if (!(pool = _get_sinkpad_pool (self, pad)))
-    return GST_FLOW_ERROR;
-
-  ret = gst_buffer_pool_acquire_buffer (pool, &buffer, NULL);
-  if (ret != GST_FLOW_OK)
-    return ret;
-
-  if (!gst_video_frame_map (&in_frame, &info, inbuf, GST_MAP_READ))
-    goto invalid_buffer;
-
-  if (!gst_video_frame_map (&out_frame, &info, buffer, GST_MAP_WRITE)) {
-    gst_video_frame_unmap (&in_frame);
-    goto invalid_buffer;
-  }
-
-  copied = gst_video_frame_copy (&out_frame, &in_frame);
-
-  gst_video_frame_unmap (&out_frame);
-  gst_video_frame_unmap (&in_frame);
-
-  if (!copied)
-    goto invalid_buffer;
-
-  *buf = buffer;
-
-  return GST_FLOW_OK;
-
-invalid_buffer:
-  {
-    GST_ELEMENT_WARNING (self, CORE, NOT_IMPLEMENTED, (NULL),
-        ("invalid video buffer received"));
-    if (buffer)
-      gst_buffer_unref (buffer);
-    return GST_FLOW_OK;
-  }
+  return gst_va_buffer_importer_import (&importer, inbuf, buf);
 }
 
 typedef struct _GstVaCompositorSampleGenerator GstVaCompositorSampleGenerator;

@@ -219,7 +219,7 @@ rm -f *.rpm
 
 # Install Rust
 RUSTUP_VERSION=1.26.0
-RUST_VERSION=1.71.0
+RUST_VERSION=1.72.0
 RUST_ARCH="x86_64-unknown-linux-gnu"
 
 dnf install -y wget
@@ -232,9 +232,12 @@ export CARGO_HOME="/usr/local/cargo"
 export PATH="/usr/local/cargo/bin:$PATH"
 
 chmod +x rustup-init;
-./rustup-init -y --no-modify-path --profile minimal --default-toolchain $RUST_VERSION;
+./rustup-init -y --no-modify-path --default-toolchain $RUST_VERSION;
 rm rustup-init;
 chmod -R a+w $RUSTUP_HOME $CARGO_HOME
+
+# Apparently rustup did not do that, and it fails now
+cargo install cargo-c --version 0.9.23+cargo-0.72.2
 
 rustup --version
 cargo --version
