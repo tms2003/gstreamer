@@ -116,4 +116,8 @@ guint32              gst_video_dma_drm_fourcc_from_format (GstVideoFormat format
 GST_VIDEO_API
 GstVideoFormat       gst_video_dma_drm_fourcc_to_format   (guint32 fourcc);
 
+GST_VIDEO_API
+gboolean             gst_video_info_dma_drm_is_equal      (const GstVideoInfoDmaDrm * drm_info,
+                                                           const GstVideoInfoDmaDrm * other);
+
 G_END_DECLS

@@ -716,3 +716,25 @@ gst_video_dma_drm_fourcc_to_format (guint32 fourcc)
       GST_FOURCC_ARGS (fourcc));
   return GST_VIDEO_FORMAT_UNKNOWN;
 }
+
+/**
+ * gst_video_info_dma_drm_is_equal:
+ * @drm_info: a #GstVideoInfoDmaDrm
+ * @other: a #GstVideoInfoDmaDrm
+ *
+ * Compares two #GstVideoInfoDmaDrm and returns whether they are equal or not
+ *
+ * Returns: %TRUE if @drm_info and @other are equal, else %FALSE.
+ */
+gboolean
+gst_video_info_dma_drm_is_equal (const GstVideoInfoDmaDrm * drm_info,
+    const GstVideoInfoDmaDrm * other)
+{
+  g_return_val_if_fail (drm_info && other, FALSE);
+
+  if (drm_info->drm_fourcc != other->drm_fourcc)
+    return FALSE;
+  if (drm_info->drm_modifier != other->drm_modifier)
+    return FALSE;
+  return gst_video_info_is_equal (&drm_info->vinfo, &other->vinfo);
+}

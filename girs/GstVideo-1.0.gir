@@ -11456,6 +11456,24 @@ gst_video_info_dma_drm_new()</doc>
           </instance-parameter>
         </parameters>
       </method>
+      <method name="is_equal" c:identifier="gst_video_info_dma_drm_is_equal">
+        <doc xml:space="preserve" filename="../subprojects/gst-plugins-base/gst-libs/gst/video/video-info-dma.c">Compares two #GstVideoInfoDmaDrm and returns whether they are equal or not</doc>
+        <source-position filename="../subprojects/gst-plugins-base/gst-libs/gst/video/video-info-dma.h"/>
+        <return-value transfer-ownership="none">
+          <doc xml:space="preserve" filename="../subprojects/gst-plugins-base/gst-libs/gst/video/video-info-dma.c">%TRUE if @drm_info and @other are equal, else %FALSE.</doc>
+          <type name="gboolean" c:type="gboolean"/>
+        </return-value>
+        <parameters>
+          <instance-parameter name="drm_info" transfer-ownership="none">
+            <doc xml:space="preserve" filename="../subprojects/gst-plugins-base/gst-libs/gst/video/video-info-dma.c">a #GstVideoInfoDmaDrm</doc>
+            <type name="VideoInfoDmaDrm" c:type="const GstVideoInfoDmaDrm*"/>
+          </instance-parameter>
+          <parameter name="other" transfer-ownership="none">
+            <doc xml:space="preserve" filename="../subprojects/gst-plugins-base/gst-libs/gst/video/video-info-dma.c">a #GstVideoInfoDmaDrm</doc>
+            <type name="VideoInfoDmaDrm" c:type="const GstVideoInfoDmaDrm*"/>
+          </parameter>
+        </parameters>
+      </method>
       <method name="to_caps" c:identifier="gst_video_info_dma_drm_to_caps" version="1.24">
         <doc xml:space="preserve" filename="../subprojects/gst-plugins-base/gst-libs/gst/video/video-info-dma.c">Convert the values of @drm_info into a #GstCaps. Please note that the
 @caps returned will be a dma drm caps which sets format field to DMA_DRM,
