@@ -4718,6 +4718,18 @@ and can be used as a binary.</doc>
       <field name="size" readable="0" private="1">
         <type name="gsize" c:type="gsize"/>
       </field>
+      <field name="discont_state" readable="0" private="1">
+        <type name="GstVideo.VideoCodecState" c:type="GstVideoCodecState*"/>
+      </field>
+      <field name="user_data" readable="0" private="1">
+        <type name="gpointer" c:type="gpointer"/>
+      </field>
+      <field name="notify" readable="0" private="1">
+        <type name="GLib.DestroyNotify" c:type="GDestroyNotify"/>
+      </field>
+      <field name="check_strides" readable="0" private="1">
+        <type name="gboolean" c:type="gboolean"/>
+      </field>
       <constructor name="new" c:identifier="gst_vp9_picture_new">
         <doc xml:space="preserve" filename="../subprojects/gst-plugins-bad/gst-libs/gst/codecs/gstvp9picture.c">Create new #GstVp9Picture</doc>
         <source-position filename="../subprojects/gst-plugins-bad/gst-libs/gst/codecs/gstvp9picture.h"/>

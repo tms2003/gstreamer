@@ -7161,6 +7161,20 @@ This method does not preserve the original order of @caps.</doc>
           </instance-parameter>
         </parameters>
       </method>
+      <method name="sort" c:identifier="gst_caps_sort" introspectable="0">
+        <source-position filename="../subprojects/gstreamer/gst/gstcaps.h"/>
+        <return-value transfer-ownership="full">
+          <type name="Caps" c:type="GstCaps*"/>
+        </return-value>
+        <parameters>
+          <instance-parameter name="caps" transfer-ownership="none">
+            <type name="Caps" c:type="GstCaps*"/>
+          </instance-parameter>
+          <parameter name="func" transfer-ownership="none">
+            <type name="CapsSortFunc" c:type="GstCapsSortFunc"/>
+          </parameter>
+        </parameters>
+      </method>
       <method name="steal_structure" c:identifier="gst_caps_steal_structure">
         <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstcaps.c">Retrieves the structure with the given index from the list of structures
 contained in @caps. The caller becomes the owner of the returned structure.</doc>
@@ -7834,6 +7848,25 @@ the map operation should stop with %FALSE.</doc>
         <parameter name="user_data" transfer-ownership="none" nullable="1" allow-none="1" closure="2">
           <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstcaps.h">user data</doc>
           <type name="gpointer" c:type="gpointer"/>
+        </parameter>
+      </parameters>
+    </callback>
+    <callback name="CapsSortFunc" c:type="GstCapsSortFunc">
+      <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstcaps.h">Returns; negative value if a &lt; b; zero if a = b; positive value if a &gt; b.4
+
+Since 1.24</doc>
+      <source-position filename="../subprojects/gstreamer/gst/gstcaps.h"/>
+      <return-value transfer-ownership="none">
+        <type name="gint" c:type="int"/>
+      </return-value>
+      <parameters>
+        <parameter name="a" transfer-ownership="none">
+          <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstcaps.h">a structure.</doc>
+          <type name="Structure" c:type="const GstStructure*"/>
+        </parameter>
+        <parameter name="b" transfer-ownership="none">
+          <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstcaps.h">a structure to compare with.</doc>
+          <type name="Structure" c:type="const GstStructure*"/>
         </parameter>
       </parameters>
     </callback>
