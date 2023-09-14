@@ -400,9 +400,7 @@ gst_v4l2_codec_vp9_dec_open (GstVideoDecoder * decoder)
       gst_v4l2_decoder_query_control_size (self->decoder,
       V4L2_CID_STATELESS_VP9_COMPRESSED_HDR, NULL);
 
-  /* V4L2 does not support non-keyframe resolution change, this will ask the
-   * base class to drop frame until the next keyframe as a workaround. */
-  gst_vp9_decoder_set_non_keyframe_format_change_support (vp9dec, FALSE);
+  gst_vp9_decoder_set_non_keyframe_format_change_support (vp9dec, TRUE);
 
   return TRUE;
 }
@@ -476,10 +474,6 @@ gst_v4l2_codec_vp9_dec_negotiate (GstVideoDecoder * decoder)
   GstCaps *peer_caps, *filter, *caps;
   GstStaticCaps *static_filter;
 
-  /* Ignore downstream renegotiation request. */
-  if (self->streaming)
-    goto done;
-
   GST_DEBUG_OBJECT (self, "Negotiate");
 
   gst_v4l2_codec_vp9_dec_reset_allocation (self);
@@ -528,13 +522,17 @@ gst_v4l2_codec_vp9_dec_negotiate (GstVideoDecoder * decoder)
   }
   gst_caps_unref (caps);
 
-done:
-  if (self->output_state)
-    gst_video_codec_state_unref (self->output_state);
+  if (!self->streaming) {
+    if (self->output_state)
+      gst_video_codec_state_unref (self->output_state);
 
-  self->output_state =
+    self->output_state =
       gst_v4l2_decoder_set_output_state (GST_VIDEO_DECODER (self), &self->vinfo,
       &self->vinfo_drm, self->width, self->height, vp9dec->input_state);
+
+    self->output_state->caps =
+       gst_video_info_to_caps (&self->output_state->info);
+  }
 
   if (GST_VIDEO_DECODER_CLASS (parent_class)->negotiate (decoder)) {
     if (self->streaming)
@@ -570,11 +568,6 @@ gst_v4l2_codec_vp9_dec_decide_allocation (GstVideoDecoder * decoder,
   GstCaps *caps = NULL;
   guint min = 0;
   guint num_bitstream;
-
-  /* If we are streaming here, then it means there is nothing allocation
-   * related in the new state and allocation can be ignored */
-  if (self->streaming)
-    goto no_internal_changes;
 
   g_clear_object (&self->src_pool);
   g_clear_object (&self->src_allocator);
@@ -622,12 +615,71 @@ gst_v4l2_codec_vp9_dec_decide_allocation (GstVideoDecoder * decoder,
 
   self->src_pool = gst_v4l2_codec_pool_new (self->src_allocator, &self->vinfo);
 
-no_internal_changes:
   /* Our buffer pool is internal, we will let the base class create a video
    * pool, and use it if we are running out of buffers or if downstream does
    * not support GstVideoMeta */
   return GST_VIDEO_DECODER_CLASS (parent_class)->decide_allocation
       (decoder, query);
+}
+
+static gboolean
+_check_strides (GstV4l2CodecVp9Dec * self, GstVp9Picture * picture)
+{
+  GstVideoInfo ref_vinfo;
+  gint i;
+
+  gst_video_info_set_format (&ref_vinfo, GST_VIDEO_INFO_FORMAT (&self->vinfo),
+      self->width, self->height);
+
+  for (i = 0; i < GST_VIDEO_INFO_N_PLANES (&self->vinfo); i++) {
+    if (self->vinfo.stride[i] != ref_vinfo.stride[i] ||
+        self->vinfo.offset[i] != ref_vinfo.offset[i]) {
+      /* Strides are differents we need to copy the frame */
+      return TRUE;
+    }
+  }
+
+  return FALSE;
+}
+
+static GstFlowReturn
+_check_resolution_change (GstV4l2CodecVp9Dec * self, GstVp9Picture * picture)
+{
+  const GstVp9FrameHeader *frame_hdr = &picture->frame_hdr;
+
+  if ((self->width == frame_hdr->width) && self->height == frame_hdr->height)
+    return GST_FLOW_OK;
+
+  GST_VIDEO_INFO_WIDTH (&self->vinfo) = self->width = frame_hdr->width;
+  GST_VIDEO_INFO_HEIGHT (&self->vinfo) = self->height = frame_hdr->height;
+
+  GST_INFO_OBJECT (self, "Negotiate new resolution %dx%d",
+      self->width, self->height);
+
+  if (!gst_video_decoder_negotiate (GST_VIDEO_DECODER (self))) {
+    GST_ERROR_OBJECT (self,
+        "Resolution changed, but failed to negotiate with downstream");
+    return GST_FLOW_NOT_NEGOTIATED;
+  }
+
+  GST_INFO_OBJECT (self, "Resolution changed to %dx%d for frame %d",
+      self->width, self->height, picture->parent.system_frame_number);
+
+  /* Because the resolution has changed strides need to be checked */
+  picture->check_strides = TRUE;
+
+  return GST_FLOW_OK;
+}
+
+static GstFlowReturn
+gst_v4l2_codec_vp9_dec_new_picture (GstVp9Decoder * decoder,
+    GstVideoCodecFrame * frame, GstVp9Picture * picture)
+{
+  GstV4l2CodecVp9Dec *self = GST_V4L2_CODEC_VP9_DEC (decoder);
+
+  GST_INFO_OBJECT (self, "gst_v4l2_codec_vp9_dec_new_picture");
+
+  return _check_resolution_change (self, picture);
 }
 
 static GstFlowReturn
@@ -946,6 +998,11 @@ gst_v4l2_codec_vp9_dec_duplicate_picture (GstVp9Decoder * decoder,
   GST_DEBUG_OBJECT (decoder, "Duplicate picture %u",
       GST_CODEC_PICTURE_FRAME_NUMBER (picture));
 
+  if (_check_resolution_change (GST_V4L2_CODEC_VP9_DEC (decoder), picture) !=
+      GST_FLOW_OK) {
+    return NULL;
+  }
+
   new_picture = gst_vp9_picture_new ();
   new_picture->frame_hdr = picture->frame_hdr;
   GST_CODEC_PICTURE_FRAME_NUMBER (new_picture) = frame->system_frame_number;
@@ -982,6 +1039,7 @@ gst_v4l2_codec_vp9_dec_output_picture (GstVp9Decoder * decoder,
 {
   GstV4l2CodecVp9Dec *self = GST_V4L2_CODEC_VP9_DEC (decoder);
   GstVideoDecoder *vdec = GST_VIDEO_DECODER (decoder);
+  GstVp9Decoder *vp9dec = GST_VP9_DECODER (vdec);
   GstV4l2Request *request = NULL;
   GstCodecPicture *codec_picture = GST_CODEC_PICTURE (picture);
   gint ret;
@@ -1033,6 +1091,21 @@ gst_v4l2_codec_vp9_dec_output_picture (GstVp9Decoder * decoder,
         ("Failed to decode frame %u", codec_picture->system_frame_number),
         (NULL));
     goto error;
+  }
+
+  if (picture->check_strides) {
+    self->copy_frames = _check_strides (self, picture);
+
+    if (self->output_state)
+      gst_video_codec_state_unref (self->output_state);
+
+    self->output_state =
+        gst_video_decoder_set_output_state (GST_VIDEO_DECODER (self),
+        self->vinfo.finfo->format, self->width,
+        self->height, vp9dec->input_state);
+
+    self->output_state->caps =
+        gst_video_info_to_caps (&self->output_state->info);
   }
 
   if (self->copy_frames)
@@ -1195,6 +1268,8 @@ gst_v4l2_codec_vp9_dec_subclass_init (GstV4l2CodecVp9DecClass * klass,
 
   vp9decoder_class->new_sequence =
       GST_DEBUG_FUNCPTR (gst_v4l2_codec_vp9_dec_new_sequence);
+  vp9decoder_class->new_picture =
+      GST_DEBUG_FUNCPTR (gst_v4l2_codec_vp9_dec_new_picture);
   vp9decoder_class->start_picture =
       GST_DEBUG_FUNCPTR (gst_v4l2_codec_vp9_dec_start_picture);
   vp9decoder_class->decode_picture =
