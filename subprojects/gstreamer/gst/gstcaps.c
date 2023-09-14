@@ -2809,3 +2809,45 @@ gst_caps_take (GstCaps ** old_caps, GstCaps * new_caps)
   return gst_mini_object_take ((GstMiniObject **) old_caps,
       (GstMiniObject *) new_caps);
 }
+
+static gint
+gst_caps_sort_structures (gconstpointer one, gconstpointer two,
+    gpointer user_data)
+{
+  const GstStructure *struct1 = ((const GstCapsArrayElement *) one)->structure;
+  const GstStructure *struct2 = ((const GstCapsArrayElement *) two)->structure;
+  GstCapsSortFunc sort_func = (GstCapsSortFunc) user_data;
+
+  return sort_func (struct1, struct2);
+}
+
+/**
+ * gst_caps_sort: sorts caps using compare function
+ * @caps: caps to be sorted
+ * @func: compare function
+ *
+ * Returns: sorted caps.
+ *
+ * Since: 1.26
+ */
+GstCaps *
+gst_caps_sort (GstCaps * caps, GstCapsSortFunc func)
+{
+  if (!func)
+    return caps;
+
+  /* empty/any caps, nothing to sort */
+  if (GST_CAPS_LEN (caps) == 0)
+    return caps;
+
+  /* one caps, nothing to sort */
+  if (GST_CAPS_LEN (caps) == 1)
+    return caps;
+
+  caps = gst_caps_make_writable (caps);
+
+  g_array_sort_with_data (GST_CAPS_ARRAY (caps), gst_caps_sort_structures,
+      func);
+
+  return caps;
+}
