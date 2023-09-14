@@ -657,6 +657,10 @@ gst_v4l2_decoder_select_src_format (GstV4l2Decoder * self, GstCaps * caps,
       gst_video_format_to_string (vinfo->finfo->format),
       vinfo->width, vinfo->height);
 
+  if (self->info)
+    gst_video_info_free (self->info);
+  self->info = gst_video_info_copy (vinfo);
+
   return TRUE;
 }
 
