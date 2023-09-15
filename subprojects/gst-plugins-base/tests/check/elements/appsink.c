@@ -292,6 +292,37 @@ callback_function_sample (GstAppSink * appsink, gpointer p_counter)
   return GST_FLOW_OK;
 }
 
+static GstFlowReturn
+callback_function_merged_sample (GstAppSink * appsink, gpointer p_counter)
+{
+  GstSample *sample;
+  GstBufferList *list;
+  gint *p_int_counter = p_counter;
+  guint len;
+  gint i;
+
+  if ((*p_int_counter)-- > 0) {
+    // Do not pull sample yet
+    return GST_FLOW_OK;
+  }
+
+  sample = gst_app_sink_pull_sample (appsink);
+  list = gst_sample_get_buffer_list (sample);
+  fail_unless (GST_IS_BUFFER_LIST (list));
+  len = gst_buffer_list_length (list);
+  fail_unless_equals_int (len, 4);
+
+  for (i = 0; i < len; i++) {
+    GstBuffer *buf = gst_buffer_list_get (list, i);
+    fail_unless_equals_int (gst_buffer_get_size (buf), sizeof (gint));
+    gst_check_buffer_data (buf, &values[i], sizeof (gint));
+  }
+
+  gst_sample_unref (sample);
+
+  return GST_FLOW_OK;
+}
+
 GST_START_TEST (test_buffer_list_fallback)
 {
   GstElement *sink;
@@ -346,6 +377,39 @@ GST_START_TEST (test_buffer_list_support)
   fail_unless (gst_pad_push_list (mysrcpad, list) == GST_FLOW_OK);
 
   fail_unless_equals_int (counter, 1);
+
+  ASSERT_SET_STATE (sink, GST_STATE_NULL, GST_STATE_CHANGE_SUCCESS);
+  cleanup_appsink (sink);
+}
+
+GST_END_TEST;
+
+GST_START_TEST (test_merge_buffer_list)
+{
+  GstElement *sink;
+  GstBufferList *list;
+  GstBuffer *buffer;
+  GstAppSinkCallbacks callbacks = { NULL };
+  gint counter = 2;
+
+  sink = setup_appsink ();
+
+  /* enable buffer list support */
+  g_object_set (sink, "buffer-list", TRUE, NULL);
+
+  callbacks.new_sample = callback_function_merged_sample;
+
+  gst_app_sink_set_callbacks (GST_APP_SINK (sink), &callbacks, &counter, NULL);
+
+  ASSERT_SET_STATE (sink, GST_STATE_PLAYING, GST_STATE_CHANGE_ASYNC);
+
+  list = create_buffer_list ();
+  fail_unless (gst_pad_push_list (mysrcpad, list) == GST_FLOW_OK);
+
+  buffer = gst_buffer_new_and_alloc (4);
+  fail_unless (gst_pad_push (mysrcpad, buffer) == GST_FLOW_OK);
+
+  fail_unless_equals_int (counter, 0);
 
   ASSERT_SET_STATE (sink, GST_STATE_NULL, GST_STATE_CHANGE_SUCCESS);
   cleanup_appsink (sink);
@@ -1168,6 +1232,7 @@ appsink_suite (void)
   tcase_add_test (tc_chain, test_notify1);
   tcase_add_test (tc_chain, test_buffer_list_fallback);
   tcase_add_test (tc_chain, test_buffer_list_support);
+  tcase_add_test (tc_chain, test_merge_buffer_list);
   tcase_add_test (tc_chain, test_buffer_list_fallback_signal);
   tcase_add_test (tc_chain, test_buffer_list_signal);
   tcase_add_test (tc_chain, test_segment);

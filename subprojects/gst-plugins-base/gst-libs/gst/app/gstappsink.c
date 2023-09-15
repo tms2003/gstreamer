@@ -988,6 +988,53 @@ flushing:
   }
 }
 
+static gboolean
+add_to_list (GstBuffer ** buffer, guint idx, gpointer data)
+{
+  gst_buffer_list_add (data, gst_buffer_ref (*buffer));
+
+  return TRUE;
+}
+
+static GstMiniObject *
+merge_buffers (GstAppSink * appsink, GstMiniObject * first)
+{
+  GstAppSinkPrivate *priv = appsink->priv;
+  GstMiniObject *next = gst_queue_array_peek_head (priv->queue);
+  GstBufferList *list = NULL;
+
+  if (!(GST_IS_BUFFER (next) || GST_IS_BUFFER_LIST (next))) {
+    return first;
+  }
+
+  if (GST_IS_BUFFER_LIST (first)) {
+    list = gst_buffer_list_make_writable (GST_BUFFER_LIST_CAST (first));
+  } else {
+    list = gst_buffer_list_new ();
+    gst_buffer_list_add (list, GST_BUFFER_CAST (first));
+  }
+
+  do {
+    // Next element is either a Buffer or a BufferList
+    // we can move it out of the queue
+    next = gst_queue_array_pop_head (priv->queue);
+    priv->num_buffers--;
+
+    if (GST_IS_BUFFER_LIST (next)) {
+      GstBufferList *l = GST_BUFFER_LIST_CAST (next);
+      gst_buffer_list_foreach (l, add_to_list, list);
+      gst_buffer_list_unref (l);
+    } else {
+      gst_buffer_list_add (list, GST_BUFFER_CAST (next));
+    }
+
+    // Check next element in the queue
+    next = gst_queue_array_peek_head (priv->queue);
+  } while (GST_IS_BUFFER (next) || GST_IS_BUFFER_LIST (next));
+
+  return GST_MINI_OBJECT_CAST (list);
+}
+
 static GstMiniObject *
 dequeue_object (GstAppSink * appsink)
 {
@@ -999,6 +1046,9 @@ dequeue_object (GstAppSink * appsink)
   if (GST_IS_BUFFER (obj) || GST_IS_BUFFER_LIST (obj)) {
     GST_DEBUG_OBJECT (appsink, "dequeued buffer/list %p", obj);
     priv->num_buffers--;
+    if (!priv->drop && priv->buffer_lists_supported) {
+      obj = merge_buffers (appsink, obj);
+    }
   } else if (GST_IS_EVENT (obj)) {
     GstEvent *event = GST_EVENT_CAST (obj);
 
