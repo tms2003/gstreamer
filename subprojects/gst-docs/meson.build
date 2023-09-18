@@ -127,7 +127,7 @@ gstreamer_doc = hotdoc.generate_doc('GStreamer',
     devhelp_activate: true,
     devhelp_online: 'https://gstreamer.freedesktop.org/documentation/',
     build_always_stale: true,
-    edit_on_github_repository: 'https://gitlab.freedesktop.org/gstreamer/gst-docs/',
+    edit_on_github_repository: 'https://gitlab.freedesktop.org/gstreamer/gstreamer/-/tree/main/subprojects/gst-docs',
     previous_symbol_index: join_paths(meson.current_source_dir(), 'symbols', 'symbol_index.json'),
     fatal_warnings: get_option('fatal_warnings')
 )
