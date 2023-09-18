@@ -298,6 +298,14 @@ gst_v4l2_codec_vp8_enc_set_format (GstVideoEncoder * encoder,
 
   gst_v4l2_codec_vp8_enc_reset_allocation (self);
 
+  if (!gst_v4l2_encoder_set_src_fmt (self->encoder, &state->info,
+          V4L2_PIX_FMT_VP8_FRAME)) {
+    GST_ELEMENT_ERROR (self, CORE, NEGOTIATION, ("Unsupported pixel format"),
+        ("No support for %ux%u format VP8", state->info.width,
+            state->info.height));
+    return FALSE;
+  }
+
   if (!gst_v4l2_encoder_select_sink_format (self->encoder, &state->info,
           &self->vinfo)) {
     GST_ELEMENT_ERROR (self, CORE, NEGOTIATION,
@@ -305,14 +313,6 @@ gst_v4l2_codec_vp8_enc_set_format (GstVideoEncoder * encoder,
         ("gst_v4l2_encoder_select_sink_format() failed: %s",
             g_strerror (errno)));
     gst_v4l2_encoder_close (self->encoder);
-    return FALSE;
-  }
-
-  if (!gst_v4l2_encoder_set_src_fmt (self->encoder, &self->vinfo,
-          V4L2_PIX_FMT_VP8_FRAME)) {
-    GST_ELEMENT_ERROR (self, CORE, NEGOTIATION, ("Unsupported pixel format"),
-        ("No support for %ux%u format VP8", state->info.width,
-            state->info.height));
     return FALSE;
   }
 
