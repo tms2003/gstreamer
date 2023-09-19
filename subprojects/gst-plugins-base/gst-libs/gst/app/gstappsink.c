@@ -996,9 +996,13 @@ dequeue_object (GstAppSink * appsink)
 
   obj = gst_queue_array_pop_head (priv->queue);
 
-  if (GST_IS_BUFFER (obj) || GST_IS_BUFFER_LIST (obj)) {
-    GST_DEBUG_OBJECT (appsink, "dequeued buffer/list %p", obj);
+  if (GST_IS_BUFFER (obj)) {
+    GST_DEBUG_OBJECT (appsink, "dequeued buffer %p", obj);
     priv->num_buffers--;
+  } else if (GST_IS_BUFFER_LIST (obj)) {
+    GST_DEBUG_OBJECT (appsink, "dequeued buffer list %p", obj);
+    priv->num_buffers =
+        priv->num_buffers - gst_buffer_list_length (GST_BUFFER_LIST_CAST (obj));
   } else if (GST_IS_EVENT (obj)) {
     GstEvent *event = GST_EVENT_CAST (obj);
 
@@ -1034,12 +1038,38 @@ dequeue_object (GstAppSink * appsink)
 static GstMiniObject *
 dequeue_buffer (GstAppSink * appsink)
 {
+  GstAppSinkPrivate *priv = appsink->priv;
   GstMiniObject *obj;
 
   do {
-    obj = dequeue_object (appsink);
+    obj = gst_queue_array_peek_head (priv->queue);
 
-    if (GST_IS_BUFFER (obj) || GST_IS_BUFFER_LIST (obj)) {
+    if (GST_IS_BUFFER_LIST (obj)) {
+      GstBufferList *l =
+          gst_buffer_list_make_writable (GST_BUFFER_LIST_CAST (obj));
+      GstBuffer *oldest = NULL;
+      if (gst_buffer_list_length (l) > 0) {
+        oldest = gst_buffer_ref (gst_buffer_list_get (l, 0));
+        gst_buffer_list_remove (l, 0, 1);
+        priv->num_buffers--;
+      }
+
+      if (gst_buffer_list_length (l) == 0) {
+        // Remove the empty list from the queue
+        gst_queue_array_pop_head (priv->queue);
+        gst_buffer_list_unref (l);
+      }
+
+      if (oldest == NULL) {
+        continue;
+      }
+
+      obj = GST_MINI_OBJECT_CAST (oldest);
+    } else {
+      obj = dequeue_object (appsink);
+    }
+
+    if (GST_IS_BUFFER (obj)) {
       break;
     }
 
@@ -1112,7 +1142,14 @@ restart:
   }
   /* we need to ref the buffer/list when pushing it in the queue */
   gst_queue_array_push_tail (priv->queue, gst_mini_object_ref (data));
-  priv->num_buffers++;
+
+  if (GST_IS_BUFFER (data)) {
+    priv->num_buffers++;
+  } else if (GST_IS_BUFFER_LIST (data)) {
+    priv->num_buffers =
+        priv->num_buffers +
+        gst_buffer_list_length (GST_BUFFER_LIST_CAST (data));
+  }
 
   if ((priv->wait_status & APP_WAITING))
     g_cond_signal (&priv->cond);
