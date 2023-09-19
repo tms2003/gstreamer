@@ -23,6 +23,7 @@
 #endif
 
 #include "gstwldisplay.h"
+#include "gstwllinuxdmabuffeedback.h"
 
 #include "fullscreen-shell-unstable-v1-client-protocol.h"
 #include "linux-dmabuf-unstable-v1-client-protocol.h"
@@ -52,18 +53,26 @@ typedef struct _GstWlDisplayPrivate
   struct wp_viewporter *viewporter;
   struct zwp_linux_dmabuf_v1 *dmabuf;
   GArray *shm_formats;
-  GArray *dmabuf_formats;
-  GArray *dmabuf_modifiers;
 
   /* private */
   gboolean own_display;
   GThread *thread;
   GstPoll *wl_fd_poll;
 
+  GstWlDmaBufFeedback *dmabuf_feedback;
+
   GMutex buffers_mutex;
   GHashTable *buffers;
   gboolean shutting_down;
 } GstWlDisplayPrivate;
+
+enum
+{
+  DMABUF_FEEDBACK_CHANGED,
+  LAST_SIGNAL
+};
+
+static guint signals[LAST_SIGNAL] = { 0 };
 
 G_DEFINE_TYPE_WITH_CODE (GstWlDisplay, gst_wl_display, G_TYPE_OBJECT,
     G_ADD_PRIVATE (GstWlDisplay)
@@ -78,6 +87,10 @@ gst_wl_display_class_init (GstWlDisplayClass * klass)
 {
   GObjectClass *gobject_class = G_OBJECT_CLASS (klass);
   gobject_class->finalize = gst_wl_display_finalize;
+
+  signals[DMABUF_FEEDBACK_CHANGED] = g_signal_new ("dmabuf-feedback-changed",
+      G_TYPE_FROM_CLASS (gobject_class), G_SIGNAL_RUN_LAST, 0, NULL, NULL, NULL,
+      G_TYPE_NONE, 0);
 }
 
 static void
@@ -86,8 +99,6 @@ gst_wl_display_init (GstWlDisplay * self)
   GstWlDisplayPrivate *priv = gst_wl_display_get_instance_private (self);
 
   priv->shm_formats = g_array_new (FALSE, FALSE, sizeof (uint32_t));
-  priv->dmabuf_formats = g_array_new (FALSE, FALSE, sizeof (uint32_t));
-  priv->dmabuf_modifiers = g_array_new (FALSE, FALSE, sizeof (guint64));
   priv->wl_fd_poll = gst_poll_new (TRUE);
   priv->buffers = g_hash_table_new (g_direct_hash, g_direct_equal);
   g_mutex_init (&priv->buffers_mutex);
@@ -125,11 +136,10 @@ gst_wl_display_finalize (GObject * gobject)
   g_hash_table_remove_all (priv->buffers);
 
   g_array_unref (priv->shm_formats);
-  g_array_unref (priv->dmabuf_formats);
-  g_array_unref (priv->dmabuf_modifiers);
   gst_poll_free (priv->wl_fd_poll);
   g_hash_table_unref (priv->buffers);
   g_mutex_clear (&priv->buffers_mutex);
+  g_clear_object (&priv->dmabuf_feedback);
 
   if (priv->viewporter)
     wp_viewporter_destroy (priv->viewporter);
@@ -182,57 +192,6 @@ static const struct wl_shm_listener shm_listener = {
   shm_format
 };
 
-static void
-dmabuf_format (void *data, struct zwp_linux_dmabuf_v1 *zwp_linux_dmabuf,
-    uint32_t format)
-{
-}
-
-static void
-dmabuf_modifier (void *data, struct zwp_linux_dmabuf_v1 *zwp_linux_dmabuf,
-    uint32_t format, uint32_t modifier_hi, uint32_t modifier_lo)
-{
-  GstWlDisplay *self = data;
-  guint64 modifier = (guint64) modifier_hi << 32 | modifier_lo;
-  static gboolean table_header = TRUE;
-
-  GstWlDisplayPrivate *priv = gst_wl_display_get_instance_private (self);
-
-  if (gst_wl_dmabuf_format_to_video_format (format) != GST_VIDEO_FORMAT_UNKNOWN) {
-    GstVideoFormat gst_format = gst_wl_dmabuf_format_to_video_format (format);
-    const guint32 fourcc = gst_video_dma_drm_fourcc_from_format (gst_format);
-
-    /*
-     * Ignore unsupported formats along with implicit modifiers. Implicit
-     * modifiers have been source of garbled output for many many years and it
-     * was decided that we prefer disabling zero-copy over risking a bad output.
-     */
-    if (fourcc == DRM_FORMAT_INVALID || modifier == DRM_FORMAT_MOD_INVALID)
-      return;
-
-    if (table_header == TRUE) {
-      GST_INFO ("===== All DMA Formats With Modifiers =====");
-      GST_INFO ("| Gst Format   | DRM Format              |");
-      table_header = FALSE;
-    }
-
-    if (modifier == 0)
-      GST_INFO ("|-----------------------------------------");
-
-    GST_INFO ("| %-12s | %-23s |",
-        (modifier == 0) ? gst_video_format_to_string (gst_format) : "",
-        gst_video_dma_drm_fourcc_to_string (fourcc, modifier));
-
-    g_array_append_val (priv->dmabuf_formats, format);
-    g_array_append_val (priv->dmabuf_modifiers, modifier);
-  }
-}
-
-static const struct zwp_linux_dmabuf_v1_listener dmabuf_listener = {
-  dmabuf_format,
-  dmabuf_modifier,
-};
-
 gboolean
 gst_wl_display_check_format_for_shm (GstWlDisplay * self,
     const GstVideoInfo * video_info)
@@ -257,29 +216,95 @@ gst_wl_display_check_format_for_shm (GstWlDisplay * self,
 }
 
 gboolean
-gst_wl_display_check_format_for_dmabuf (GstWlDisplay * self,
-    const GstVideoInfoDmaDrm * drm_info)
+gst_wl_display_check_format_for_dmabuf (GstWlDisplay *self,
+    const GstVideoInfoDmaDrm *drm_info)
 {
   GstWlDisplayPrivate *priv = gst_wl_display_get_instance_private (self);
-  guint64 modifier = drm_info->drm_modifier;
-  guint fourcc = drm_info->drm_fourcc;
-  GArray *formats, *modifiers;
-  guint i;
+  gboolean is_modifier = FALSE;
 
-  if (!priv->dmabuf)
-    return FALSE;
+  return gst_wl_dmabuf_feedback_query_format_support (priv->dmabuf_feedback,
+      drm_info->drm_fourcc, drm_info->drm_modifier,
+      &is_modifier, NULL, NULL) && is_modifier;
+}
 
-  formats = priv->dmabuf_formats;
-  modifiers = priv->dmabuf_modifiers;
-  for (i = 0; i < formats->len; i++) {
-    if (g_array_index (formats, uint32_t, i) == fourcc) {
-      if (g_array_index (modifiers, guint64, i) == modifier) {
-        return TRUE;
-      }
-    }
-  }
+/**
+ * gst_wl_display_query_drm_format_support:
+ * @display: (nullable): a #GstWlDisplay to query
+ * @fourcc: the DRM format being queried
+ * @modifier: the DRM format modifier being queried
+ * @is_modifier: (nullable) (out): set %TRUE if @fourcc @modifier pair is
+ *     supported otherwise %FALSE
+ * @is_implicit: (nullable) (out): set %TRUE if @fourcc %DRM_FORMAT_MOD_INVALID
+ *     pair is supported otherwise %FALSE
+ * @is_linear: (nullable) (out): set %TRUE if @fourcc %DRM_FORMAT_MOD_LINEAR
+ *     pair is supported otherwise %FALSE
+ *
+ * Sets the value pointed to by @is_modifier, @is_implicit and @is_linear based
+ *     on DMABuf support
+ *
+ * See also gst_wl_window_query_drm_format_support() for the same query on a
+ *     #GstWlWindow
+ *
+ * Returns: (nullable): %TRUE if query succeeded or %FALSE if support
+ *     information was unavailable.
+ *
+ * Since: 1.24
+ */
+gboolean
+gst_wl_display_query_dmabuf_format_support (GstWlDisplay *self,
+    guint32 fourcc, guint64 modifier,
+    gboolean *is_modifier, gboolean *is_implicit, gboolean *is_linear)
+{
+  GstWlDisplayPrivate *priv = gst_wl_display_get_instance_private (self);
 
-  return FALSE;
+  return gst_wl_dmabuf_feedback_query_format_support (priv->dmabuf_feedback,
+      fourcc, modifier, is_modifier, is_implicit, is_linear);
+}
+
+/**
+ * gst_wl_display_fill_drm_format_list:
+ * @self: The #GstWlDisplay
+ * @format_list: (out): Location of a list on which to append fourcc:modifier
+ *     pairs.
+ *
+ * Appends a list with DRM fourcc:modifier pairs that the display supports,
+ *     for use with the caps "format" field.
+ *
+ * Returns: %TRUE if formats were added to the list otherwise %FALSE
+ *
+ * Since: 1.24
+ */
+gboolean
+gst_wl_display_fill_drm_format_list (GstWlDisplay *self, GValue *format_list)
+{
+  GstWlDisplayPrivate *priv = gst_wl_display_get_instance_private (self);
+
+  return gst_wl_dmabuf_feedback_fill_drm_format_list (priv->dmabuf_feedback,
+      format_list);
+}
+
+/**
+ * gst_wl_display_get_drm_device:
+ * @self: The #GstWlDisplay
+ *
+ * Returns: (nullable): a newly allocated string containing the path to the
+ *     primary node for the DRM device provided by the compositor or
+ *     %NULL if information is unavailable.
+ *
+ * Since: 1.24
+ */
+gchar *
+gst_wl_display_get_drm_device (GstWlDisplay *self)
+{
+  GstWlDisplayPrivate *priv = gst_wl_display_get_instance_private (self);
+
+  return gst_wl_dmabuf_feedback_get_main_device (priv->dmabuf_feedback);
+}
+
+static void
+on_dmabuf_feedback_changed (GstWlDmaBufFeedback *feedback, GstWlWindow *self)
+{
+  g_signal_emit (self, signals[DMABUF_FEEDBACK_CHANGED], 0);
 }
 
 static void
@@ -321,8 +346,18 @@ registry_handle_global (void *data, struct wl_registry *registry,
         wl_registry_bind (registry, id, &wp_viewporter_interface, 1);
   } else if (g_strcmp0 (interface, "zwp_linux_dmabuf_v1") == 0) {
     priv->dmabuf =
-        wl_registry_bind (registry, id, &zwp_linux_dmabuf_v1_interface, 3);
-    zwp_linux_dmabuf_v1_add_listener (priv->dmabuf, &dmabuf_listener, self);
+        wl_registry_bind (registry, id, &zwp_linux_dmabuf_v1_interface,
+        MIN (version, 4));
+
+    if (version >= ZWP_LINUX_DMABUF_V1_GET_DEFAULT_FEEDBACK_SINCE_VERSION) {
+      priv->dmabuf_feedback = gst_wl_dmabuf_feedback_new_for_display (self);
+    } else {
+      priv->dmabuf_feedback =
+          gst_wl_dmabuf_feedback_new_for_display_legacy (self);
+    }
+    if (priv->dmabuf_feedback)
+      g_signal_connect_object (priv->dmabuf_feedback, "changed",
+          (GCallback) on_dmabuf_feedback_changed, self, 0);
   }
 }
 
@@ -592,22 +627,6 @@ gst_wl_display_get_dmabuf_v1 (GstWlDisplay * self)
   GstWlDisplayPrivate *priv = gst_wl_display_get_instance_private (self);
 
   return priv->dmabuf;
-}
-
-GArray *
-gst_wl_display_get_dmabuf_modifiers (GstWlDisplay * self)
-{
-  GstWlDisplayPrivate *priv = gst_wl_display_get_instance_private (self);
-
-  return priv->dmabuf_modifiers;
-}
-
-GArray *
-gst_wl_display_get_dmabuf_formats (GstWlDisplay * self)
-{
-  GstWlDisplayPrivate *priv = gst_wl_display_get_instance_private (self);
-
-  return priv->dmabuf_formats;
 }
 
 gboolean

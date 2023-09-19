@@ -130,8 +130,9 @@ gst_wl_linux_dmabuf_construct_wl_buffer (GstBuffer * buf,
 
   GST_DEBUG_OBJECT (display,
       "Creating wl_buffer from DMABuf of size %" G_GSSIZE_FORMAT
-      " (%d x %d), DRM fourcc %" GST_FOURCC_FORMAT, gst_buffer_get_size (buf),
-      width, height, GST_FOURCC_ARGS (fourcc));
+      " (%d x %d), DRM fourcc %" GST_FOURCC_FORMAT
+      ":0x%016" G_GINT64_MODIFIER "x", gst_buffer_get_size (buf), width, height,
+      GST_FOURCC_ARGS (fourcc), modifier);
 
   /* Creation and configuration of planes  */
   params = zwp_linux_dmabuf_v1_create_params (gst_wl_display_get_dmabuf_v1

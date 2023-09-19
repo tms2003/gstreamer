@@ -71,6 +71,7 @@ struct _GstWaylandSink
   struct wl_callback *callback;
 
   gchar *drm_device;
+  gboolean dumb_buffer_copy;
   gboolean skip_dumb_buffer_copy;
 };
 

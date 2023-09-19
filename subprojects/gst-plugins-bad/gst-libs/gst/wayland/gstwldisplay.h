@@ -91,10 +91,15 @@ GST_WL_API
 GArray *gst_wl_display_get_shm_formats (GstWlDisplay * self);
 
 GST_WL_API
-GArray *gst_wl_display_get_dmabuf_formats (GstWlDisplay * self);
+gboolean gst_wl_display_fill_drm_format_list (GstWlDisplay * self, GValue *format_list);
 
 GST_WL_API
-GArray *gst_wl_display_get_dmabuf_modifiers (GstWlDisplay * self);
+gchar *gst_wl_display_get_drm_device (GstWlDisplay *self);
+
+GST_WL_API
+gboolean gst_wl_display_query_dmabuf_format_support (GstWlDisplay * self,
+    guint32 fourcc, guint64 modifier,
+    gboolean *is_modifier, gboolean *is_implicit, gboolean *is_linear);
 
 GST_WL_API
 struct zwp_linux_dmabuf_v1 *gst_wl_display_get_dmabuf_v1 (GstWlDisplay * self);
