@@ -15794,6 +15794,32 @@
                 "properties": {},
                 "rank": "secondary"
             },
+            "rtpmxpegdepay": {
+                "author": "Chris Wiggins <chris@safercities.com>",
+                "description": "Extracts MXPEG video from RTP packets",
+                "hierarchy": [
+                    "GstRtpMxpegDepay",
+                    "GstRTPBaseDepayload",
+                    "GstElement",
+                    "GstObject",
+                    "GInitiallyUnowned",
+                    "GObject"
+                ],
+                "klass": "Codec/Depayloader/Network/RTP",
+                "pad-templates": {
+                    "sink": {
+                        "caps": "application/x-rtp:\n          media: video\n     clock-rate: [ 1, 2147483647 ]\n  encoding-name: X-MXPEG\n",
+                        "direction": "sink",
+                        "presence": "always"
+                    },
+                    "src": {
+                        "caps": "video/x-mxpeg:\n",
+                        "direction": "src",
+                        "presence": "always"
+                    }
+                },
+                "rank": "secondary"
+            },
             "rtpopusdepay": {
                 "author": "Danilo Cesar Lemes de Paula <danilo.cesar@collabora.co.uk>",
                 "description": "Extracts Opus audio from RTP packets",

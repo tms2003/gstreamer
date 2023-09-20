@@ -75,6 +75,7 @@ rtp_sources = [
   'gstrtpmp4gpay.c',
   'gstrtpmp4adepay.c',
   'gstrtpmp4apay.c',
+  'gstrtpmxpegdepay.c',
   'gstrtpqcelpdepay.c',
   'gstrtpqdmdepay.c',
   'gstrtpsbcdepay.c',
