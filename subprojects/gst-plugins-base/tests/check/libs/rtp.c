@@ -1238,7 +1238,63 @@ GST_START_TEST (test_rtcp_buffer_app)
 
 GST_END_TEST;
 
-GST_START_TEST (test_rtcp_buffer_xr)
+GST_START_TEST (test_rtcp_buffer_xr_write)
+{
+  GstBuffer *buf;
+  GstRTCPBuffer rtcp = GST_RTCP_BUFFER_INIT;
+  GstRTCPPacket packet;
+  guint mtu = 50;
+
+  fail_unless ((buf = gst_rtcp_buffer_new (mtu)) != NULL);
+  gst_rtcp_buffer_map (buf, GST_MAP_READWRITE, &rtcp);
+
+  /* Add XR packet */
+  fail_unless (gst_rtcp_buffer_add_packet (&rtcp, GST_RTCP_TYPE_XR, &packet));
+
+  guint32 expected_sender_ssrc = 0x01234567;
+  gst_rtcp_packet_xr_set_ssrc (&packet, expected_sender_ssrc);
+
+  guint32 expected_ssrc = 0xAAAAAAAA;
+  guint32 expected_lrr = 0xBBBBBBBB;
+  guint32 expected_dlrr = 0xCCCCCCCC;
+
+  gst_rtcp_packet_xr_add_dlrr (&packet, expected_ssrc, expected_lrr,
+      expected_dlrr);
+
+  gst_rtcp_buffer_unmap (&rtcp);        // Finished writing
+
+  // Now read
+  gst_rtcp_buffer_map (buf, GST_MAP_READ, &rtcp);
+
+  fail_unless (gst_rtcp_buffer_get_first_packet (&rtcp, &packet));
+  fail_unless (gst_rtcp_packet_get_type (&packet) == GST_RTCP_TYPE_XR);
+
+  fail_unless (gst_rtcp_packet_xr_get_ssrc (&packet) == expected_sender_ssrc);
+
+  fail_unless (gst_rtcp_packet_xr_first_rb (&packet));
+  fail_unless (gst_rtcp_packet_xr_get_block_type (&packet) ==
+      GST_RTCP_XR_TYPE_DLRR);
+
+  guint32 retrieved_ssrc;
+  guint32 retrieved_lrr;
+  guint32 retrieved_dlrr;
+  fail_unless (gst_rtcp_packet_xr_get_dlrr_block (&packet, 0, &retrieved_ssrc,
+          &retrieved_lrr, &retrieved_dlrr));
+
+  fail_unless (retrieved_ssrc == expected_ssrc);
+  fail_unless (retrieved_lrr == expected_lrr);
+  fail_unless (retrieved_dlrr == expected_dlrr);
+
+  fail_unless (gst_rtcp_packet_move_to_next (&packet) == FALSE);
+
+  gst_rtcp_buffer_unmap (&rtcp);
+
+  gst_buffer_unref (buf);
+}
+
+GST_END_TEST;
+
+GST_START_TEST (test_rtcp_buffer_xr_read)
 {
   GstBuffer *buffer;
   GstRTCPPacket packet;
@@ -2350,7 +2406,8 @@ rtp_suite (void)
   tcase_add_test (tc_chain, test_rtcp_validate_reduced_with_padding);
   tcase_add_test (tc_chain, test_rtcp_buffer_profile_specific_extension);
   tcase_add_test (tc_chain, test_rtcp_buffer_app);
-  tcase_add_test (tc_chain, test_rtcp_buffer_xr);
+  tcase_add_test (tc_chain, test_rtcp_buffer_xr_write);
+  tcase_add_test (tc_chain, test_rtcp_buffer_xr_read);
   tcase_add_test (tc_chain, test_rtcp_buffer_xr_rle);
   tcase_add_test (tc_chain, test_rtcp_buffer_xr_prt);
   tcase_add_test (tc_chain, test_rtcp_buffer_xr_rrt);

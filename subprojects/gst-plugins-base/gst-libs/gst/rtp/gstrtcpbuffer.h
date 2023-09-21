@@ -306,9 +306,9 @@ struct _GstRTCPPacket
   GstRTCPType    type;         /* type of current packet */
   guint16        length;       /* length of current packet in 32-bits words minus one, this is validated when doing _get_first_packet() and _move_to_next() */
 
-  guint          item_offset;  /* current item offset for navigating SDES */
+  guint          item_offset;  /* current item offset for navigating SDES or XR */
   guint          item_count;   /* current item count */
-  guint          entry_offset; /* current entry offset for navigating SDES items */
+  guint          entry_offset; /* current entry offset for navigating SDES or XR items */
 };
 
 /* creating buffers */
@@ -572,6 +572,9 @@ GST_RTP_API
 guint32         gst_rtcp_packet_xr_get_ssrc           (GstRTCPPacket *packet);
 
 GST_RTP_API
+void            gst_rtcp_packet_xr_set_ssrc           (GstRTCPPacket *packet, guint32 ssrc);
+
+GST_RTP_API
 gboolean        gst_rtcp_packet_xr_first_rb           (GstRTCPPacket *packet);
 
 GST_RTP_API
@@ -609,6 +612,10 @@ GST_RTP_API
 gboolean        gst_rtcp_packet_xr_get_dlrr_block     (GstRTCPPacket * packet,
                                                        guint nth, guint32 * ssrc,
                                                        guint32 * last_rr, guint32 * delay);
+
+GST_RTP_API
+gboolean        gst_rtcp_packet_xr_add_dlrr           (GstRTCPPacket *packet, guint32 ssrc,
+                                                       guint32 lrr, guint32 dlrr);
 
 GST_RTP_API
 gboolean        gst_rtcp_packet_xr_get_summary_info   (GstRTCPPacket * packet, guint32 * ssrc,

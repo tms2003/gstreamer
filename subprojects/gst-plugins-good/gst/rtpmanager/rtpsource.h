@@ -255,6 +255,7 @@ void            rtp_source_process_sr          (RTPSource *src, GstClockTime tim
 void            rtp_source_process_rb          (RTPSource *src, guint32 ssrc, guint64 ntpnstime, guint8 fractionlost,
                                                 gint32 packetslost, guint32 exthighestseq, guint32 jitter,
                                                 guint32 lsr, guint32 dlsr);
+void            rtp_source_process_xr_rrt      (RTPSource *src, GstClockTime time, guint64 ntptime);                                                
 
 gboolean        rtp_source_get_new_sr          (RTPSource *src, guint64 ntpnstime, GstClockTime running_time,
                                                 guint64 *ntptime, guint32 *rtptime, guint32 *packet_count,
@@ -262,6 +263,7 @@ gboolean        rtp_source_get_new_sr          (RTPSource *src, guint64 ntpnstim
 gboolean        rtp_source_get_new_rb          (RTPSource *src, GstClockTime time, guint8 *fractionlost,
                                                 gint32 *packetslost, guint32 *exthighestseq, guint32 *jitter,
                                                 guint32 *lsr, guint32 *dlsr);
+gboolean        rtp_source_get_new_xr_dlrr     (RTPSource *source, GstClockTime time, guint32 *lrr, guint32 *dlrr);
 
 gboolean        rtp_source_get_last_sr         (RTPSource *src, GstClockTime *time, guint64 *ntptime,
                                                 guint32 *rtptime, guint32 *packet_count,
