@@ -162,6 +162,13 @@ struct _GstH264DecoderPrivate
   guint32 last_reorder_frame_number;
   gint fps_n;
   gint fps_d;
+
+  gboolean have_idr;
+  guint32 missing_idr_count;
+  guint32 max_corrupted_count;
+  gboolean keyframe_requested;
+  gboolean recovery_point;
+  gboolean inter_predicted;
 };
 
 typedef struct
@@ -418,7 +425,7 @@ gst_h264_decoder_finalize (GObject * object)
 }
 
 static void
-gst_h264_decoder_reset_latency_infos (GstH264Decoder * self)
+gst_h264_decoder_reset_latency_state (GstH264Decoder * self)
 {
   GstH264DecoderPrivate *priv = self->priv;
 
@@ -426,6 +433,27 @@ gst_h264_decoder_reset_latency_infos (GstH264Decoder * self)
   priv->last_reorder_frame_number = 0;
   priv->fps_n = 25;
   priv->fps_d = 1;
+}
+
+static void
+gst_h264_decoder_reset_idr_state (GstH264Decoder * self)
+{
+  GstH264DecoderPrivate *priv = self->priv;
+
+  priv->have_idr = FALSE;
+  priv->max_corrupted_count = 0;
+  priv->missing_idr_count = 0;
+  priv->keyframe_requested = FALSE;
+}
+
+static void
+gst_h264_decoder_reset_frame_state (GstH264Decoder * self)
+{
+  GstH264DecoderPrivate *priv = self->priv;
+
+  priv->recovery_point = FALSE;
+  priv->inter_predicted = FALSE;
+  priv->last_flow = GST_FLOW_OK;
 }
 
 static void
@@ -442,9 +470,10 @@ gst_h264_decoder_reset (GstH264Decoder * self)
   priv->width = 0;
   priv->height = 0;
   priv->nal_length_size = 4;
-  priv->last_flow = GST_FLOW_OK;
 
-  gst_h264_decoder_reset_latency_infos (self);
+  gst_h264_decoder_reset_latency_state (self);
+  gst_h264_decoder_reset_idr_state (self);
+  gst_h264_decoder_reset_frame_state (self);
 }
 
 static gboolean
@@ -554,8 +583,9 @@ gst_h264_decoder_handle_frame (GstVideoDecoder * decoder,
       GST_TIME_FORMAT, GST_TIME_ARGS (GST_BUFFER_PTS (in_buf)),
       GST_TIME_ARGS (GST_BUFFER_DTS (in_buf)));
 
+  gst_h264_decoder_reset_frame_state (self);
+
   priv->current_frame = frame;
-  priv->last_flow = GST_FLOW_OK;
 
   gst_buffer_map (in_buf, &map, GST_MAP_READ);
   if (priv->in_format == GST_H264_DECODER_FORMAT_AVC) {
@@ -1292,6 +1322,20 @@ gst_h264_decoder_parse_slice (GstH264Decoder * self, GstH264NalUnit * nalu)
     }
   }
 
+  if (!priv->have_idr) {
+    if (priv->current_slice.nalu.idr_pic_flag) {
+      GST_DEBUG_OBJECT (self, "Found IDR picture");
+      priv->have_idr = TRUE;
+    } else if (priv->recovery_point) {
+      GST_DEBUG_OBJECT (self, "Found recovery point SEI");
+      priv->have_idr = TRUE;
+    } else if (!GST_H264_IS_I_SLICE (&priv->current_slice.header) &&
+        !GST_H264_IS_SI_SLICE (&priv->current_slice.header)) {
+      GST_DEBUG_OBJECT (self, "Current picture requires reference frames");
+      priv->inter_predicted = TRUE;
+    }
+  }
+
   if (!priv->current_picture) {
     GstH264DecoderClass *klass = GST_H264_DECODER_GET_CLASS (self);
     GstH264Picture *picture = NULL;
@@ -1346,6 +1390,28 @@ gst_h264_decoder_parse_slice (GstH264Decoder * self, GstH264NalUnit * nalu)
   return gst_h264_decoder_decode_slice (self);
 }
 
+static void
+gst_h264_decoder_parse_sei (GstH264Decoder * self, GstH264NalUnit * nalu)
+{
+  GstH264DecoderPrivate *priv = self->priv;
+  GArray *sei_array;
+  guint i;
+
+  /* Ignore error, it should not be critical from decoder point of view */
+  gst_h264_parser_parse_sei (priv->parser, nalu, &sei_array);
+
+  for (i = 0; i < sei_array->len; i++) {
+    GstH264SEIMessage *sei = &g_array_index (sei_array, GstH264SEIMessage, i);
+    if (sei->payloadType == GST_H264_SEI_RECOVERY_POINT) {
+      GST_DEBUG_OBJECT (self, "Found recovery point");
+      priv->recovery_point = TRUE;
+      break;
+    }
+  }
+
+  g_array_free (sei_array, TRUE);
+}
+
 static GstFlowReturn
 gst_h264_decoder_decode_nal (GstH264Decoder * self, GstH264NalUnit * nalu)
 {
@@ -1368,6 +1434,9 @@ gst_h264_decoder_decode_nal (GstH264Decoder * self, GstH264NalUnit * nalu)
     case GST_H264_NAL_SLICE_IDR:
     case GST_H264_NAL_SLICE_EXT:
       ret = gst_h264_decoder_parse_slice (self, nalu);
+      break;
+    case GST_H264_NAL_SEI:
+      gst_h264_decoder_parse_sei (self, nalu);
       break;
     default:
       break;
@@ -1906,6 +1975,25 @@ gst_h264_decoder_finish_current_picture (GstH264Decoder * self,
     return;
   }
 
+  if (!priv->have_idr && priv->inter_predicted) {
+    GST_DEBUG_OBJECT (self,
+        "IDR frame has not been observed yet, marking corrupted");
+    GST_CODEC_PICTURE (priv->current_picture)->corrupted = TRUE;
+    if (!priv->keyframe_requested) {
+      /* Don't spam keyframe request */
+      priv->keyframe_requested = TRUE;
+      gst_video_decoder_request_sync_point (GST_VIDEO_DECODER (self),
+          priv->current_frame, 0);
+    }
+
+    priv->missing_idr_count++;
+    if (priv->missing_idr_count > priv->max_corrupted_count) {
+      GST_DEBUG_OBJECT (self, "Missing IDR count %u > threshold %u",
+          priv->missing_idr_count, priv->max_corrupted_count);
+      priv->have_idr = TRUE;
+    }
+  }
+
   klass = GST_H264_DECODER_GET_CLASS (self);
 
   if (klass->end_picture) {
@@ -1922,6 +2010,14 @@ gst_h264_decoder_finish_current_picture (GstH264Decoder * self,
       gst_video_decoder_release_frame (GST_VIDEO_DECODER (self),
           gst_video_codec_frame_ref (priv->current_frame));
     }
+  }
+
+  if (flow_ret == GST_FLOW_OK &&
+      GST_CODEC_PICTURE (priv->current_picture)->corrupted) {
+    /* If subclass didn't revert the corrupted flag, set codec frame flag
+     * accordingly */
+    GST_VIDEO_CODEC_FRAME_FLAG_SET (priv->current_frame,
+        GST_VIDEO_CODEC_FRAME_FLAG_CORRUPTED);
   }
 
   /* We no longer need the per frame reference lists */
@@ -2500,7 +2596,15 @@ gst_h264_decoder_process_sps (GstH264Decoder * self, GstH264SPS * sps)
     if (ret != GST_FLOW_OK)
       return ret;
 
-    gst_h264_decoder_reset_latency_infos (self);
+    gst_h264_decoder_reset_latency_state (self);
+    gst_h264_decoder_reset_idr_state (self);
+
+    /* Gussing GOP size to decide max corrupted frame count, with hardcoded
+     * upper bound 64 frames */
+    priv->max_corrupted_count = MIN (64, sps->max_frame_num);
+    GST_DEBUG_OBJECT (self,
+        "Configured max-corrupted-frame-count: %u, MaxFrameNum: %u",
+        priv->max_corrupted_count, sps->max_frame_num);
 
     g_assert (klass->new_sequence);
 

@@ -68,6 +68,8 @@ struct _GstCodecPicture
   guint32 system_frame_number;
   GstVideoCodecState *discont_state;
 
+  gboolean corrupted;
+
   gpointer user_data;
   GDestroyNotify notify;
 
