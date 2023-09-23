@@ -80,6 +80,8 @@ struct _GstVp9DecoderPrivate
   gboolean support_non_kf_change;
 
   gboolean wait_keyframe;
+  gboolean keyframe_requested;
+
   /* controls how many frames to delay when calling output_picture() */
   guint preferred_output_delay;
   GstQueueArray *output_queue;
@@ -157,6 +159,7 @@ gst_vp9_decoder_start (GstVideoDecoder * decoder)
   priv->parser = gst_vp9_stateful_parser_new ();
   priv->dpb = gst_vp9_dpb_new ();
   priv->wait_keyframe = TRUE;
+  priv->keyframe_requested = FALSE;
   priv->profile = GST_VP9_PROFILE_UNDEFINED;
   priv->frame_width = 0;
   priv->frame_height = 0;
@@ -305,6 +308,7 @@ gst_vp9_decoder_reset (GstVp9Decoder * self)
     gst_vp9_dpb_clear (priv->dpb);
 
   priv->wait_keyframe = TRUE;
+  priv->keyframe_requested = FALSE;
   gst_queue_array_clear (priv->output_queue);
 }
 
@@ -434,7 +438,12 @@ gst_vp9_decoder_handle_frame (GstVideoDecoder * decoder,
     GST_DEBUG_OBJECT (self, "Drop frame before initial keyframe");
     gst_buffer_unmap (in_buf, &map);
 
-    gst_video_decoder_release_frame (decoder, frame);;
+    if (!priv->keyframe_requested) {
+      gst_video_decoder_request_sync_point (decoder, frame, 0);
+      priv->keyframe_requested = TRUE;
+    }
+
+    gst_video_decoder_release_frame (decoder, frame);
 
     return GST_FLOW_OK;
   }
@@ -450,6 +459,12 @@ gst_vp9_decoder_handle_frame (GstVideoDecoder * decoder,
     GST_DEBUG_OBJECT (self, "Drop frame on non-keyframe format change");
 
     gst_buffer_unmap (in_buf, &map);
+
+    if (!priv->keyframe_requested) {
+      gst_video_decoder_request_sync_point (decoder, frame, 0);
+      priv->keyframe_requested = TRUE;
+    }
+
     gst_video_decoder_release_frame (decoder, frame);
 
     /* Drains frames if any and waits for keyframe again */
@@ -462,6 +477,7 @@ gst_vp9_decoder_handle_frame (GstVideoDecoder * decoder,
   }
 
   priv->wait_keyframe = FALSE;
+  priv->keyframe_requested = FALSE;
 
   if (frame_hdr.show_existing_frame) {
     GstVp9Picture *pic_to_dup;
