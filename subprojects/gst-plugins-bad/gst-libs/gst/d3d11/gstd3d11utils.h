@@ -20,6 +20,7 @@
 #pragma once
 
 #include <gst/gst.h>
+#include <gst/video/video.h>
 #include <gst/d3d11/gstd3d11_fwd.h>
 
 G_BEGIN_DECLS
@@ -59,6 +60,10 @@ gint64          gst_d3d11_luid_to_int64             (const LUID * luid);
 
 GST_D3D11_API
 gint64          gst_d3d11_create_user_token         (void);
+
+GST_D3D11_API
+GstBuffer *     gst_d3d11_dynamic_buffer_new         (GstD3D11Device * device,
+                                                     const GstVideoInfo * info);
 
 GST_D3D11_API
 gboolean       _gst_d3d11_result                    (HRESULT hr,
