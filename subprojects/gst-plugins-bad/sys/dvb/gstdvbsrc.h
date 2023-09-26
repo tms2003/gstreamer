@@ -69,6 +69,8 @@ struct _GstDvbSrc
 
   int adapter_number;
   int frontend_number;
+  int demuxer_number;
+  int dvr_number;
 
   int fd_frontend;
   int fd_dvr;

@@ -155,6 +155,8 @@ enum
   ARG_0,
   ARG_DVBSRC_ADAPTER,
   ARG_DVBSRC_FRONTEND,
+  ARG_DVBSRC_DEMUXER,
+  ARG_DVBSRC_DVR,
   ARG_DVBSRC_DISEQC_SRC,
   ARG_DVBSRC_FREQUENCY,
   ARG_DVBSRC_POLARITY,
@@ -204,6 +206,8 @@ enum
 
 #define DEFAULT_ADAPTER 0
 #define DEFAULT_FRONTEND 0
+#define DEFAULT_DEMUXER 0
+#define DEFAULT_DVR 0
 #define DEFAULT_DISEQC_SRC -1   /* disabled */
 #define DEFAULT_FREQUENCY 0
 #define DEFAULT_POLARITY "H"
@@ -662,6 +666,16 @@ gst_dvbsrc_class_init (GstDvbSrcClass * klass)
           "The frontend device number (eg. 0 for frontend0)",
           0, 16, DEFAULT_FRONTEND, G_PARAM_READWRITE));
 
+  g_object_class_install_property (gobject_class, ARG_DVBSRC_DEMUXER,
+      g_param_spec_int ("demuxer", "The demuxer device number",
+          "The demuxer device number (eg. 0 for demux0)",
+          0, 16, DEFAULT_DEMUXER, G_PARAM_READWRITE));
+
+  g_object_class_install_property (gobject_class, ARG_DVBSRC_DVR,
+      g_param_spec_int ("dvr", "The dvr device number",
+          "The dvr device number (eg. 0 for dvr0)",
+          0, 16, DEFAULT_DVR, G_PARAM_READWRITE));
+
   g_object_class_install_property (gobject_class, ARG_DVBSRC_FREQUENCY,
       g_param_spec_uint ("frequency", "Center frequency",
           "Center frequency to tune into. Measured in kHz for the satellite "
@@ -1071,6 +1085,8 @@ gst_dvbsrc_init (GstDvbSrc * object)
     object->adapter_number = DEFAULT_ADAPTER;
 
   object->frontend_number = DEFAULT_FRONTEND;
+  object->demuxer_number = DEFAULT_DEMUXER;
+  object->dvr_number = DEFAULT_DVR;
   object->diseqc_src = DEFAULT_DISEQC_SRC;
   object->send_diseqc = (DEFAULT_DISEQC_SRC != -1);
   object->tone = SEC_TONE_OFF;
@@ -1183,6 +1199,12 @@ gst_dvbsrc_set_property (GObject * _object, guint prop_id,
       break;
     case ARG_DVBSRC_FRONTEND:
       object->frontend_number = g_value_get_int (value);
+      break;
+    case ARG_DVBSRC_DEMUXER:
+      object->demuxer_number = g_value_get_int (value);
+      break;
+    case ARG_DVBSRC_DVR:
+      object->dvr_number = g_value_get_int (value);
       break;
     case ARG_DVBSRC_DISEQC_SRC:
       if (object->diseqc_src != g_value_get_int (value)) {
@@ -1389,6 +1411,12 @@ gst_dvbsrc_get_property (GObject * _object, guint prop_id,
       break;
     case ARG_DVBSRC_FRONTEND:
       g_value_set_int (value, object->frontend_number);
+      break;
+    case ARG_DVBSRC_DEMUXER:
+      g_value_set_int (value, object->demuxer_number);
+      break;
+    case ARG_DVBSRC_DVR:
+      g_value_set_int (value, object->dvr_number);
       break;
     case ARG_DVBSRC_FREQUENCY:
       g_value_set_uint (value, object->freq);
@@ -1800,7 +1828,7 @@ gst_dvbsrc_open_dvr (GstDvbSrc * object)
   gint err;
 
   dvr_dev = g_strdup_printf ("/dev/dvb/adapter%d/dvr%d",
-      object->adapter_number, object->frontend_number);
+      object->adapter_number, object->dvr_number);
   GST_INFO_OBJECT (object, "Using DVR device: %s", dvr_dev);
 
   /* open DVR */
@@ -1903,7 +1931,7 @@ gst_dvbsrc_read_device (GstDvbSrc * object, int size, GstBuffer ** buffer)
         GST_WARNING_OBJECT
             (object,
             "Unable to read from device: /dev/dvb/adapter%d/dvr%d (%d)",
-            object->adapter_number, object->frontend_number, errno);
+            object->adapter_number, object->dvr_number, errno);
         gst_element_post_message (GST_ELEMENT_CAST (object),
             gst_message_new_element (GST_OBJECT (object),
                 gst_structure_new_empty ("dvb-read-failure")));
@@ -2777,7 +2805,7 @@ gst_dvbsrc_set_pes_filters (GstDvbSrc * object)
   struct dmx_pes_filter_params pes_filter;
   gint err;
   gchar *demux_dev = g_strdup_printf ("/dev/dvb/adapter%d/demux%d",
-      object->adapter_number, object->frontend_number);
+      object->adapter_number, object->demuxer_number);
 
   GST_INFO_OBJECT (object, "Setting PES filter");
 
