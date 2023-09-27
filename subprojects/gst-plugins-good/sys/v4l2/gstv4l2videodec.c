@@ -1150,8 +1150,15 @@ gst_v4l2_video_dec_sink_getcaps (GstVideoDecoder * decoder, GstCaps * filter)
   GstV4l2VideoDec *self = GST_V4L2_VIDEO_DEC (decoder);
   GstCaps *result;
 
-  result = gst_video_decoder_proxy_getcaps (decoder, self->probed_sinkcaps,
-      filter);
+  if (self->probed_sinkcaps) {
+    if (filter)
+      result = gst_caps_intersect_full (filter, self->probed_sinkcaps,
+          GST_CAPS_INTERSECT_FIRST);
+    else
+      result = gst_caps_ref (self->probed_sinkcaps);
+  } else {
+    result = gst_video_decoder_proxy_getcaps (decoder, NULL, filter);
+  }
 
   GST_DEBUG_OBJECT (self, "Returning sink caps %" GST_PTR_FORMAT, result);
 
