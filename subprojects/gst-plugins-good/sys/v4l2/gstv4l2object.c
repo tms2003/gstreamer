@@ -3925,6 +3925,12 @@ gst_v4l2_object_set_format_full (GstV4l2Object * v4l2object, GstCaps * caps,
     }
   }
 
+  /* This is to ensure that source change event is reported. */
+  if (V4L2_TYPE_IS_OUTPUT (v4l2object->type)
+      && v4l2object->fmtdesc->flags & V4L2_FMT_FLAG_DYN_RESOLUTION) {
+    width = height = 0;
+  }
+
   GST_DEBUG_OBJECT (v4l2object->dbg_obj, "Desired format %dx%d, format "
       "%" GST_FOURCC_FORMAT " stride: %d", width, height,
       GST_FOURCC_ARGS (pixelformat), GST_VIDEO_INFO_PLANE_STRIDE (&info, 0));
