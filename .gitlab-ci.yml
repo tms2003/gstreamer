@@ -753,6 +753,54 @@ gstreamer-full-minimal static build:
   - strip build/libgstreamer-full-1.0.so
   - ls -l build/libgstreamer-full-1.0.so
 
+.fluster:
+  stage: 'test'
+  extends:
+    - '.build_ccache_vars'
+  needs:
+    - "trigger"
+  variables:
+    GST_WERROR: "true"
+    MESON_ARGS: "${SIMPLE_BUILD}"
+    SUBPROJECTS_CACHE_DIR: "/subprojects"
+
+    # Disable colored output to avoid weird rendering issues
+    GST_DEBUG_NO_COLOR: "true"
+    CI_ARTIFACTS_URL: "${CI_PROJECT_URL}/-/jobs/${CI_JOB_ID}/artifacts/raw/validate-logs/"
+    TIMEOUT_FACTOR: "2"
+    CARGO_HOME: "/cache/gstreamer/cargo"
+    # Enable the fault handler so we get backtraces on segfaults.
+    # any non-empty string will do
+    PYTHONFAULTHANDLER: "enabled"
+  rules:
+    - changes:
+        *modules_changes
+  script:
+    - *build
+
+    - export XDG_RUNTIME_DIR="$(mktemp -p $(pwd) -d xdg-runtime-XXXXXX)"
+    - echo "-> Running Fluster"
+    - ./gst-env.py /fluster/fluster.py list -c
+    - ./gst-env.py /fluster/fluster.py run -s -ts AV1-TEST-VECTORS -d libaom-AV1
+
+.fluster fedora x86_64:
+  extends:
+    - '.fedora image'
+    - '.fdo.suffixed-image@fedora'
+    - '.fluster'
+  needs:
+    - "trigger"
+    - "fedora amd64 docker"
+  tags: ['gstreamer']
+
+check fluster fedora:
+  extends: '.fluster fedora x86_64'
+  rules:
+    - changes:
+        *modules_changes
+    - changes:
+        - subprojects/gstreamer-vaapi/**/*
+
 # Valgrind
 .valgrind fedora x86_64:
   extends: '.test fedora x86_64'
