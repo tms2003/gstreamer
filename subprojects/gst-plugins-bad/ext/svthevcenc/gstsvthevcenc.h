@@ -42,6 +42,18 @@ typedef enum svt_eos_status
   EOS_TOTRIGGER
 } SVT_EOS_STATUS;
 
+/**
+ * GstSvtHevcEncBPyramid:
+ *
+ * @GST_SVTHEVC_ENC_B_PYRAMID_FLAT: foo
+ * @GST_SVTHEVC_ENC_B_PYRAMID_2LEVEL_HIERARCHY: foo
+ * @GST_SVTHEVC_ENC_B_PYRAMID_3LEVEL_HIERARCHY: foo
+ * @GST_SVTHEVC_ENC_B_PYRAMID_4LEVEL_HIERARCHY: foo
+ *
+ * Something Something .
+ *
+ * Since: 1.18
+ */
 typedef enum
 {
   GST_SVTHEVC_ENC_B_PYRAMID_FLAT,
@@ -50,18 +62,43 @@ typedef enum
   GST_SVTHEVC_ENC_B_PYRAMID_4LEVEL_HIERARCHY,
 } GstSvtHevcEncBPyramid;
 
+/**
+ * GstSvtHevcEncBaseLayerMode:
+ *
+ * @GST_SVTHEVC_ENC_BASE_LAYER_MODE_BFRAME: foo
+ * @GST_SVTHEVC_ENC_BASE_LAYER_MODE_PFRAME: foo
+ *
+ * Since: 1.18
+ */
 typedef enum
 {
   GST_SVTHEVC_ENC_BASE_LAYER_MODE_BFRAME,
   GST_SVTHEVC_ENC_BASE_LAYER_MODE_PFRAME,
 } GstSvtHevcEncBaseLayerMode;
 
+/**
+ * GstSvtHevcEncRC:
+ *
+ * @GST_SVTHEVC_ENC_RC_CQP: foo
+ * @GST_SVTHEVC_ENC_RC_VBR: foo
+ *
+ * Since: 1.18
+ */
 typedef enum
 {
   GST_SVTHEVC_ENC_RC_CQP,
   GST_SVTHEVC_ENC_RC_VBR,
 } GstSvtHevcEncRC;
 
+/**
+ * GstSvtHevcEncTune:
+ *
+ * @GST_SVTHEVC_ENC_TUNE_SQ: foo
+ * @GST_SVTHEVC_ENC_TUNE_OQ: foo
+ * @GST_SVTHEVC_ENC_TUNE_VMAF: foo
+ *
+ * Since: 1.18
+ */
 typedef enum
 {
   GST_SVTHEVC_ENC_TUNE_SQ,
@@ -69,6 +106,15 @@ typedef enum
   GST_SVTHEVC_ENC_TUNE_VMAF,
 } GstSvtHevcEncTune;
 
+/**
+ * GstSvtHevcEncPredStruct:
+ *
+ * @GST_SVTHEVC_ENC_PRED_STRUCT_LOW_DELAY_P: fooo
+ * @GST_SVTHEVC_ENC_PRED_STRUCT_LOW_DELAY_B: foo
+ * @GST_SVTHEVC_ENC_PRED_STRUCT_RANDOM_ACCESS: foo
+ *
+ * Since: 1.18
+ */
 typedef enum
 {
   GST_SVTHEVC_ENC_PRED_STRUCT_LOW_DELAY_P,

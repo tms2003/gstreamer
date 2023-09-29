@@ -23,6 +23,7 @@
  *
  * This element encodes raw video into H265 compressed data.
  *
+ * Since: 1.18
  **/
 
 #ifdef HAVE_CONFIG_H
