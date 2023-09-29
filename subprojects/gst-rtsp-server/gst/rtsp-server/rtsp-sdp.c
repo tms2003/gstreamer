@@ -299,7 +299,7 @@ gst_rtsp_sdp_make_media (GstSDPMessage * sdp, GstSDPInfo * info,
   /* RFC 7273 clock signalling */
   if (gst_rtsp_stream_is_sender (stream)) {
     GstBin *joined_bin = gst_rtsp_stream_get_joined_bin (stream);
-    GstClock *clock = gst_element_get_clock (GST_ELEMENT_CAST (joined_bin));
+    GstClock *clock = gst_rtsp_stream_get_clock (stream);
     gchar *ts_refclk = NULL;
     gchar *mediaclk = NULL;
     guint rtptime, clock_rate;

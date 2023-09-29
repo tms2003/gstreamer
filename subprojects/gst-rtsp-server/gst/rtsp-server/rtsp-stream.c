@@ -212,6 +212,7 @@ struct _GstRTSPStreamPrivate
   /* pt->caps map for RECORD streams */
   GHashTable *ptmap;
 
+  GstClock *clock;
   GstRTSPPublishClockMode publish_clock_mode;
   GThreadPool *send_pool;
 
@@ -452,6 +453,9 @@ gst_rtsp_stream_finalize (GObject * obj)
         (priv->block_early_rtcp_pad_ipv6, priv->block_early_rtcp_probe_ipv6);
     gst_object_unref (priv->block_early_rtcp_pad_ipv6);
   }
+
+  if (priv->clock)
+    gst_object_unref (priv->clock);
 
   G_OBJECT_CLASS (gst_rtsp_stream_parent_class)->finalize (obj);
 }
@@ -3162,6 +3166,52 @@ gst_rtsp_stream_get_publish_clock_mode (GstRTSPStream * stream)
   priv = stream->priv;
   g_mutex_lock (&priv->lock);
   ret = priv->publish_clock_mode;
+  g_mutex_unlock (&priv->lock);
+
+  return ret;
+}
+
+/**
+ * gst_rtsp_stream_set_clock:
+ * @stream: a #GstRTSPStream
+ * @clock: the clock to set mode
+ *
+ * Sets the clock that should be published according to RFC7273.
+ *
+ * Since: 1.22
+ */
+void
+gst_rtsp_stream_set_clock (GstRTSPStream * stream, GstClock * clock)
+{
+  GstRTSPStreamPrivate *priv;
+
+  priv = stream->priv;
+  g_mutex_lock (&priv->lock);
+  gst_object_replace ((GstObject **) & priv->clock, (GstObject *) clock);
+  g_mutex_unlock (&priv->lock);
+}
+
+/**
+ * gst_rtsp_stream_get_clock:
+ * @stream: a #GstRTSPStream
+ *
+ * Gets the clock that should be published according to RFC7273.
+ *
+ * Returns: (transfer full): The #GstClock
+ *
+ * Since: 1.22
+ */
+GstClock *
+gst_rtsp_stream_get_clock (GstRTSPStream * stream)
+{
+  GstRTSPStreamPrivate *priv;
+  GstClock *ret;
+
+  priv = stream->priv;
+  g_mutex_lock (&priv->lock);
+  ret = priv->clock;
+  if (ret)
+    gst_object_ref (ret);
   g_mutex_unlock (&priv->lock);
 
   return ret;
