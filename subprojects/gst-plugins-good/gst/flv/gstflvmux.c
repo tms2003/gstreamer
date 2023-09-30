@@ -42,6 +42,7 @@
 #include <string.h>
 
 #include <gst/audio/audio.h>
+#include <gst/video/video.h>
 
 #include "gstflvelements.h"
 #include "gstflvmux.h"
@@ -52,6 +53,10 @@
 GST_DEBUG_CATEGORY_STATIC (flvmux_debug);
 #define GST_CAT_DEFAULT flvmux_debug
 
+
+#define AV1_FOURCC ((guint32)'a' << 24 | (guint32)'v' << 16 | (guint32)'0' << 8 | (guint32)'1')
+
+
 enum
 {
   PROP_0,
@@ -61,6 +66,16 @@ enum
   PROP_SKIP_BACKWARDS_STREAMS,
   PROP_ENFORCE_INCREASING_TIMESTAMPS,
 };
+
+typedef enum
+{
+  PacketTypeSequenceStart,
+  PacketTypeCodecFrames,
+  PacketTypeSequenceEnd,
+  PacketTypeCodecFramesX,
+  PacketTypeMetadata,
+  PacketTypeMPEG2TSSequenceStart,
+} ExHeaderPacketType;
 
 #define DEFAULT_STREAMABLE FALSE
 #define MAX_INDEX_ENTRIES 128
@@ -80,7 +95,8 @@ static GstStaticPadTemplate videosink_templ = GST_STATIC_PAD_TEMPLATE ("video",
     GST_STATIC_CAPS ("video/x-flash-video; "
         "video/x-flash-screen; "
         "video/x-vp6-flash; " "video/x-vp6-alpha; "
-        "video/x-h264, stream-format=avc;")
+        "video/x-h264, stream-format=avc; "
+        "video/x-av1, stream-format=obu-stream; ")
     );
 
 static GstStaticPadTemplate audiosink_templ = GST_STATIC_PAD_TEMPLATE ("audio",
@@ -353,6 +369,8 @@ gst_flv_mux_init (GstFlvMux * mux)
 
   mux->new_metadata = FALSE;
 
+  mux->parser = gst_av1_parser_new ();
+
   gst_flv_mux_reset (GST_ELEMENT (mux));
 }
 
@@ -364,6 +382,10 @@ gst_flv_mux_finalize (GObject * object)
   gst_flv_mux_reset (GST_ELEMENT (object));
   g_free (mux->metadatacreator);
   g_free (mux->encoder);
+
+  if (mux->parser)
+    gst_av1_parser_free (mux->parser);
+  mux->parser = NULL;
 
   G_OBJECT_CLASS (gst_flv_mux_parent_class)->finalize (object);
 }
@@ -412,6 +434,8 @@ gst_flv_mux_reset (GstElement * element)
 
   mux->state = GST_FLV_MUX_STATE_HEADER;
   mux->sent_header = FALSE;
+
+  gst_av1_parser_reset (mux->parser, FALSE);
 
   /* tags */
   gst_tag_setter_reset_tags (GST_TAG_SETTER (mux));
@@ -506,6 +530,11 @@ gst_flv_mux_video_pad_setcaps (GstFlvMuxPad * pad, GstCaps * caps)
     pad->codec = 5;
   } else if (strcmp (gst_structure_get_name (s), "video/x-h264") == 0) {
     pad->codec = 7;
+  } else if (strcmp (gst_structure_get_name (s), "video/x-av1") == 0) {
+    pad->is_ex_header = TRUE;
+    pad->fourcc = AV1_FOURCC;
+
+    pad->codec = 7;             /* Matches OBS, */
   } else {
     ret = FALSE;
   }
@@ -756,6 +785,10 @@ gst_flv_mux_reset_pad (GstFlvMuxPad * pad)
   pad->channels = G_MAXUINT;
   pad->info_changed = FALSE;
   pad->drop_deltas = FALSE;
+  pad->is_ex_header = FALSE;
+
+  memset (&pad->av1_codec_config, 0, sizeof (pad->av1_codec_config));
+  pad->seq_header_sent = FALSE;
 
   gst_flv_mux_pad_flush (GST_AGGREGATOR_PAD_CAST (pad), NULL);
 }
@@ -1244,16 +1277,212 @@ exit:
   return script_tag;
 }
 
+static const gchar *
+get_obu_name (GstAV1OBUType type)
+{
+  switch (type) {
+    case GST_AV1_OBU_SEQUENCE_HEADER:
+      return "sequence header";
+    case GST_AV1_OBU_TEMPORAL_DELIMITER:
+      return "temporal delimiter";
+    case GST_AV1_OBU_FRAME_HEADER:
+      return "frame header";
+    case GST_AV1_OBU_TILE_GROUP:
+      return "tile group";
+    case GST_AV1_OBU_METADATA:
+      return "metadata";
+    case GST_AV1_OBU_FRAME:
+      return "frame";
+    case GST_AV1_OBU_REDUNDANT_FRAME_HEADER:
+      return "redundant frame header";
+    case GST_AV1_OBU_TILE_LIST:
+      return "tile list";
+    case GST_AV1_OBU_PADDING:
+      return "padding";
+    default:
+      return "unknown";
+  }
+
+  return NULL;
+}
+
+static GstBuffer *
+gst_flv_mux_av1_buffer_to_tag (GstFlvMux * mux, GstBuffer * buffer,
+    GstFlvMuxPad * pad, gboolean is_codec_data, guint64 dts, guint64 cts)
+{
+  GstBuffer *tag;
+  GstMapInfo map;
+  guint size;
+  guint8 *data, *bdata = NULL;
+  gsize bsize = 0;
+
+  if (buffer != NULL) {
+    gst_buffer_map (buffer, &map, GST_MAP_READ);
+    bdata = map.data;
+    bsize = map.size;
+  }
+
+  size = 11;
+  size += 1;
+  if (is_codec_data)
+    size += 4 + sizeof (AV1CodecConfigurationRecord) + bsize;
+  else
+    size += 4 + bsize;
+  size += 4;
+
+  _gst_buffer_new_and_alloc (size, &tag, &data);
+  memset (data, 0, size);
+
+  data[0] = (mux->video_pad == pad) ? 9 : 8;
+  data[1] = ((size - 11 - 4) >> 16) & 0xff;
+  data[2] = ((size - 11 - 4) >> 8) & 0xff;
+  data[3] = ((size - 11 - 4) >> 0) & 0xff;
+
+  GST_WRITE_UINT24_BE (data + 4, dts);
+  data[7] = (((guint) dts) >> 24) & 0xff;
+
+  /* Stream ID */
+  data[8] = data[9] = data[10] = 0;
+
+  if (buffer && GST_BUFFER_FLAG_IS_SET (buffer, GST_BUFFER_FLAG_DELTA_UNIT))
+    data[11] |= 2 << 4;
+  else
+    data[11] |= 1 << 4;
+
+  data[11] |= 0x8 << 4;
+
+  if (is_codec_data) {
+    data[11] |= PacketTypeSequenceStart & 0x0f;
+  } else if (bsize == 0) {
+    data[11] |= PacketTypeSequenceEnd & 0x0f;
+  } else {
+    data[11] |= PacketTypeCodecFrames & 0x0f;
+  }
+  GST_WRITE_UINT32_BE (data + 12, pad->fourcc);
+
+  if (is_codec_data) {
+    memcpy (data + 11 + 1 + 4, &pad->av1_codec_config,
+        sizeof (AV1CodecConfigurationRecord));
+
+    memcpy (data + 11 + 1 + 4 + sizeof (AV1CodecConfigurationRecord), bdata,
+        bsize);
+  } else {
+    memcpy (data + 11 + 1 + 4, bdata, bsize);
+  }
+
+  if (buffer)
+    gst_buffer_unmap (buffer, &map);
+
+  GST_WRITE_UINT32_BE (data + size - 4, size - 4);
+
+  return tag;
+
+}
+
+
+static GstBuffer *
+gst_flv_mux_default_buffer_to_tag (GstFlvMux * mux, GstBuffer * buffer,
+    GstFlvMuxPad * pad, gboolean is_codec_data, guint64 dts, guint64 cts)
+{
+  GstBuffer *tag;
+  GstMapInfo map;
+  guint size;
+  guint8 *data, *bdata = NULL;
+  gsize bsize = 0;
+
+  if (buffer != NULL) {
+    gst_buffer_map (buffer, &map, GST_MAP_READ);
+    bdata = map.data;
+    bsize = map.size;
+  }
+
+  size = 11;
+  if (mux->video_pad == pad) {
+    size += 1;
+    if (pad->codec == 7)
+      size += 4 + bsize;
+    else
+      size += bsize;
+  } else {
+    size += 1;
+    if (pad->codec == 10)
+      size += 1 + bsize;
+    else
+      size += bsize;
+  }
+  size += 4;
+
+  _gst_buffer_new_and_alloc (size, &tag, &data);
+  memset (data, 0, size);
+
+  data[0] = (mux->video_pad == pad) ? 9 : 8;
+  data[1] = ((size - 11 - 4) >> 16) & 0xff;
+  data[2] = ((size - 11 - 4) >> 8) & 0xff;
+  data[3] = ((size - 11 - 4) >> 0) & 0xff;
+
+  GST_WRITE_UINT24_BE (data + 4, dts);
+  data[7] = (((guint) dts) >> 24) & 0xff;
+
+  data[8] = data[9] = data[10] = 0;
+
+  if (mux->video_pad == pad) {
+    if (buffer && GST_BUFFER_FLAG_IS_SET (buffer, GST_BUFFER_FLAG_DELTA_UNIT))
+      data[11] |= 2 << 4;
+    else
+      data[11] |= 1 << 4;
+
+    data[11] |= pad->codec & 0x0f;
+
+    if (pad->codec == 7) {
+      if (is_codec_data) {
+        data[12] = 0;
+        GST_WRITE_UINT24_BE (data + 13, 0);
+      } else if (bsize == 0) {
+        /* AVC end of sequence */
+        data[12] = 2;
+        GST_WRITE_UINT24_BE (data + 13, 0);
+      } else {
+        /* ACV NALU */
+        data[12] = 1;
+        GST_WRITE_UINT24_BE (data + 13, cts);
+      }
+      memcpy (data + 11 + 1 + 4, bdata, bsize);
+    } else {
+      memcpy (data + 11 + 1, bdata, bsize);
+    }
+  } else {
+    data[11] |= (pad->codec << 4) & 0xf0;
+    data[11] |= (pad->rate << 2) & 0x0c;
+    data[11] |= (pad->width << 1) & 0x02;
+    data[11] |= (pad->channels << 0) & 0x01;
+
+    GST_LOG_OBJECT (mux, "Creating byte %02x with "
+        "codec:%d, rate:%d, width:%d, channels:%d",
+        data[11], pad->codec, pad->rate, pad->width, pad->channels);
+
+    if (pad->codec == 10) {
+      data[12] = is_codec_data ? 0 : 1;
+
+      memcpy (data + 11 + 1 + 1, bdata, bsize);
+    } else {
+      memcpy (data + 11 + 1, bdata, bsize);
+    }
+  }
+
+  if (buffer)
+    gst_buffer_unmap (buffer, &map);
+
+  GST_WRITE_UINT32_BE (data + size - 4, size - 4);
+
+  return tag;
+}
+
 static GstBuffer *
 gst_flv_mux_buffer_to_tag_internal (GstFlvMux * mux, GstBuffer * buffer,
     GstFlvMuxPad * pad, gboolean is_codec_data)
 {
   GstBuffer *tag;
-  GstMapInfo map;
-  guint size;
   guint64 pts, dts, cts;
-  guint8 *data, *bdata = NULL;
-  gsize bsize = 0;
 
   if (GST_CLOCK_TIME_IS_VALID (pad->dts)) {
     pts = pad->pts / GST_MSECOND;
@@ -1313,90 +1542,15 @@ gst_flv_mux_buffer_to_tag_internal (GstFlvMux * mux, GstBuffer * buffer,
         G_GUINT64_FORMAT ", new:%u)", dts, (guint32) dts);
   }
 
-  if (buffer != NULL) {
-    gst_buffer_map (buffer, &map, GST_MAP_READ);
-    bdata = map.data;
-    bsize = map.size;
-  }
-
-  size = 11;
-  if (mux->video_pad == pad) {
-    size += 1;
-    if (pad->codec == 7)
-      size += 4 + bsize;
-    else
-      size += bsize;
+  if (pad->is_ex_header) {
+    tag =
+        gst_flv_mux_av1_buffer_to_tag (mux, buffer, pad, is_codec_data, dts,
+        cts);
   } else {
-    size += 1;
-    if (pad->codec == 10)
-      size += 1 + bsize;
-    else
-      size += bsize;
+    tag =
+        gst_flv_mux_default_buffer_to_tag (mux, buffer, pad, is_codec_data, dts,
+        cts);
   }
-  size += 4;
-
-  _gst_buffer_new_and_alloc (size, &tag, &data);
-  memset (data, 0, size);
-
-  data[0] = (mux->video_pad == pad) ? 9 : 8;
-
-  data[1] = ((size - 11 - 4) >> 16) & 0xff;
-  data[2] = ((size - 11 - 4) >> 8) & 0xff;
-  data[3] = ((size - 11 - 4) >> 0) & 0xff;
-
-  GST_WRITE_UINT24_BE (data + 4, dts);
-  data[7] = (((guint) dts) >> 24) & 0xff;
-
-  data[8] = data[9] = data[10] = 0;
-
-  if (mux->video_pad == pad) {
-    if (buffer && GST_BUFFER_FLAG_IS_SET (buffer, GST_BUFFER_FLAG_DELTA_UNIT))
-      data[11] |= 2 << 4;
-    else
-      data[11] |= 1 << 4;
-
-    data[11] |= pad->codec & 0x0f;
-
-    if (pad->codec == 7) {
-      if (is_codec_data) {
-        data[12] = 0;
-        GST_WRITE_UINT24_BE (data + 13, 0);
-      } else if (bsize == 0) {
-        /* AVC end of sequence */
-        data[12] = 2;
-        GST_WRITE_UINT24_BE (data + 13, 0);
-      } else {
-        /* ACV NALU */
-        data[12] = 1;
-        GST_WRITE_UINT24_BE (data + 13, cts);
-      }
-      memcpy (data + 11 + 1 + 4, bdata, bsize);
-    } else {
-      memcpy (data + 11 + 1, bdata, bsize);
-    }
-  } else {
-    data[11] |= (pad->codec << 4) & 0xf0;
-    data[11] |= (pad->rate << 2) & 0x0c;
-    data[11] |= (pad->width << 1) & 0x02;
-    data[11] |= (pad->channels << 0) & 0x01;
-
-    GST_LOG_OBJECT (mux, "Creating byte %02x with "
-        "codec:%d, rate:%d, width:%d, channels:%d",
-        data[11], pad->codec, pad->rate, pad->width, pad->channels);
-
-    if (pad->codec == 10) {
-      data[12] = is_codec_data ? 0 : 1;
-
-      memcpy (data + 11 + 1 + 1, bdata, bsize);
-    } else {
-      memcpy (data + 11 + 1, bdata, bsize);
-    }
-  }
-
-  if (buffer)
-    gst_buffer_unmap (buffer, &map);
-
-  GST_WRITE_UINT32_BE (data + size - 4, size - 4);
 
   GST_BUFFER_PTS (tag) = GST_CLOCK_TIME_NONE;
   GST_BUFFER_DTS (tag) = GST_CLOCK_TIME_NONE;
@@ -1492,7 +1646,8 @@ gst_flv_mux_prepare_src_caps (GstFlvMux * mux, GstBuffer ** header_buf,
     GstFlvMuxPad *pad = l->data;
 
     /* Get H.264 and AAC codec data, if present */
-    if (pad && mux->video_pad == pad && pad->codec == 7) {
+    if (pad && mux->video_pad == pad && pad->codec == 7
+        && pad->is_ex_header == FALSE) {
       if (pad->codec_data == NULL)
         GST_WARNING_OBJECT (mux, "Codec data for video stream not found, "
             "output might not be playable");
@@ -1694,12 +1849,57 @@ gst_flv_mux_update_index (GstFlvMux * mux, GstBuffer * buffer,
   }
 }
 
+static void
+gst_flv_mux_parse_obu_sequence_header (GstFlvMux * mux, GstFlvMuxPad * pad,
+    GstAV1OBU * obu)
+{
+  GstAV1SequenceHeaderOBU seq_header;
+  GstAV1ParserResult res;
+
+  res =
+      gst_av1_parser_parse_sequence_header_obu (mux->parser, obu, &seq_header);
+  if (res != GST_AV1_PARSER_OK) {
+    GST_ERROR_OBJECT (mux, "Cannot parse OBU header");
+    return;
+  }
+
+  memset (&pad->av1_codec_config, 0, sizeof (pad->av1_codec_config));
+
+  pad->av1_codec_config.marker_version = 0x81;  /* Marker and version shall be 1 */
+  pad->av1_codec_config.seq_profile_level |= seq_header.seq_profile & 0x70;
+  pad->av1_codec_config.seq_profile_level |=
+      seq_header.operating_points[0].seq_level_idx & 0x3F;
+
+  pad->av1_codec_config.seq_tier_bitdepth_twelve_monochrome_chroma |=
+      seq_header.operating_points[0].seq_tier & 0x80;
+  pad->av1_codec_config.seq_tier_bitdepth_twelve_monochrome_chroma |=
+      seq_header.color_config.high_bitdepth & 0x40;
+  pad->av1_codec_config.seq_tier_bitdepth_twelve_monochrome_chroma |=
+      seq_header.color_config.twelve_bit & 0x20;
+  pad->av1_codec_config.seq_tier_bitdepth_twelve_monochrome_chroma |=
+      seq_header.color_config.mono_chrome & 0x10;
+  pad->av1_codec_config.seq_tier_bitdepth_twelve_monochrome_chroma |=
+      seq_header.color_config.subsampling_x & 0x08;
+  pad->av1_codec_config.seq_tier_bitdepth_twelve_monochrome_chroma |=
+      seq_header.color_config.subsampling_y & 0x04;
+  pad->av1_codec_config.seq_tier_bitdepth_twelve_monochrome_chroma |=
+      seq_header.color_config.chroma_sample_position & 0x03;
+
+  pad->av1_codec_config.initial_presentation |= 0 & 0x70;
+  pad->av1_codec_config.initial_presentation |=
+      seq_header.
+      operating_points[0].initial_display_delay_present_for_this_op & 0x10;
+  if (seq_header.operating_points[0].initial_display_delay_present_for_this_op) {
+    pad->av1_codec_config.initial_presentation |= 0 & 0x0F;
+  }
+}
+
 static GstFlowReturn
 gst_flv_mux_write_buffer (GstFlvMux * mux, GstFlvMuxPad * pad,
     GstBuffer * buffer)
 {
   GstBuffer *tag;
-  GstFlowReturn ret;
+  GstFlowReturn ret = GST_FLOW_OK;
   GstClockTime pts = GST_BUFFER_PTS (buffer);
   GstClockTime duration = GST_BUFFER_DURATION (buffer);
   GstClockTime dts =
@@ -1711,11 +1911,77 @@ gst_flv_mux_write_buffer (GstFlvMux * mux, GstFlvMuxPad * pad,
   if (!mux->streamable)
     gst_flv_mux_update_index (mux, buffer, pad);
 
-  tag = gst_flv_mux_buffer_to_tag (mux, buffer, pad);
+  if (pad->fourcc != AV1_FOURCC) {
+    tag = gst_flv_mux_buffer_to_tag (mux, buffer, pad);
 
-  gst_buffer_unref (buffer);
+    gst_buffer_unref (buffer);
 
-  ret = gst_flv_mux_push (mux, tag);
+    ret = gst_flv_mux_push (mux, tag);
+  } else {
+    GstMapInfo map;
+    guint32 total_consumed, consumed;
+    GstAV1OBU obu;
+    GstAV1ParserResult res;
+    gboolean obu_seq_header_found = FALSE;
+    GstBuffer *partial_buffer = NULL;
+
+    if (!gst_buffer_map (buffer, &map, GST_MAP_READ)) {
+      GST_ERROR_OBJECT (mux, "can not map input buffer");
+    }
+
+    total_consumed = 0;
+    while (total_consumed < map.size) {
+      res = gst_av1_parser_identify_one_obu (mux->parser,
+          map.data + total_consumed, map.size, &obu, &consumed);
+      if (res == GST_AV1_PARSER_DROP) {
+        total_consumed += consumed;
+        continue;
+      }
+
+      if (res != GST_AV1_PARSER_OK) {
+        ret = GST_FLOW_ERROR;
+        GST_ERROR_OBJECT (mux, "can not parse input buffer");
+        break;
+      }
+
+      switch (obu.obu_type) {
+        case GST_AV1_OBU_SEQUENCE_HEADER:
+          gst_flv_mux_parse_obu_sequence_header (mux, pad, &obu);
+          partial_buffer =
+              gst_buffer_new_wrapped_full (GST_MEMORY_FLAG_READONLY |
+              GST_MEMORY_FLAG_PHYSICALLY_CONTIGUOUS, map.data + total_consumed,
+              map.size - total_consumed, 0, map.size - total_consumed, NULL,
+              NULL);
+
+          if (!pad->seq_header_sent) {
+            tag =
+                gst_flv_mux_buffer_to_tag_internal (mux, partial_buffer, pad,
+                TRUE);
+            pad->seq_header_sent = TRUE;
+
+          } else {
+            tag = gst_flv_mux_buffer_to_tag (mux, partial_buffer, pad);
+          }
+          ret |= gst_flv_mux_push (mux, tag);
+          gst_buffer_unref (partial_buffer);
+          goto buffer_unmap;
+          break;
+        default:
+          break;
+      }
+
+      total_consumed += consumed;
+    }
+
+    tag = gst_flv_mux_buffer_to_tag (mux, buffer, pad);
+
+    ret |= gst_flv_mux_push (mux, tag);
+
+  buffer_unmap:
+    gst_buffer_unmap (buffer, &map);
+    gst_buffer_unref (buffer);
+  }
+
 
   if (ret == GST_FLOW_OK && GST_CLOCK_TIME_IS_VALID (dts))
     pad->last_timestamp = dts;
@@ -2090,7 +2356,6 @@ gst_flv_mux_aggregate (GstAggregator * aggregator, gboolean timeout)
       gst_flv_mux_push (mux, buf);
     mux->new_metadata = FALSE;
   }
-
   if (best) {
     best->dts =
         gst_flv_mux_segment_to_running_time (&GST_AGGREGATOR_PAD

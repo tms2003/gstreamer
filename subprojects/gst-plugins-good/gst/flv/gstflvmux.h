@@ -26,6 +26,7 @@
 
 #include <gst/gst.h>
 #include <gst/base/gstaggregator.h>
+#include <gst/codecparsers/gstav1parser.h>
 
 G_BEGIN_DECLS
 
@@ -53,6 +54,14 @@ typedef struct _GstFlvMuxClass GstFlvMuxClass;
 #define GST_IS_FLV_MUX_CLASS(klass) \
   (G_TYPE_CHECK_CLASS_TYPE ((klass), GST_TYPE_FLV_MUX))
 
+typedef struct _AV1CodecConfigurationRecord {
+  guint8 marker_version; /* (1) marker, (7) version */
+  guint8 seq_profile_level; /* (3) seq_profile, (5) seq_level_idx_0  */
+  guint8 seq_tier_bitdepth_twelve_monochrome_chroma; /* (1) seq_tier_0, (1) high_bitdepth, (1) twelve_bit, (1) monochrome, (1) chroma_subsampling_x, (1) chroma_subsampling_y, (2) chroma_sample_position */
+  guint8 initial_presentation; /* (3) reserved (1) initial_presentation_delay_present (4) initial_presentation_delay_minus_one */
+} AV1CodecConfigurationRecord;
+
+
 struct _GstFlvMuxPad
 {
   GstAggregatorPad aggregator_pad;
@@ -71,6 +80,12 @@ struct _GstFlvMuxPad
 
   gboolean info_changed;
   gboolean drop_deltas;
+
+  gboolean is_ex_header;
+  guint32 fourcc;
+
+  AV1CodecConfigurationRecord av1_codec_config;
+  gboolean seq_header_sent;
 };
 
 struct _GstFlvMuxPadClass {
@@ -107,6 +122,8 @@ struct _GstFlvMux {
   guint64 last_dts;
 
   gboolean sent_header;
+
+  GstAV1Parser *parser;
 };
 
 struct _GstFlvMuxClass {
