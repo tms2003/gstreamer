@@ -882,7 +882,8 @@ rtp_session_set_property (GObject * object, guint prop_id,
       RTP_SESSION_LOCK (sess);
       sess->suggested_ssrc = g_value_get_uint (value);
       sess->internal_ssrc_set = TRUE;
-      sess->internal_ssrc_from_caps_or_property = TRUE;
+      sess->internal_ssrc_from_property = TRUE;
+      sess->internal_ssrc_from_caps = FALSE;
       RTP_SESSION_UNLOCK (sess);
       if (sess->callbacks.reconfigure)
         sess->callbacks.reconfigure (sess, sess->reconfigure_user_data);
@@ -1242,6 +1243,13 @@ rtp_session_reset (RTPSession * sess)
   g_list_free_full (sess->conflicting_addresses,
       (GDestroyNotify) rtp_conflicting_address_free);
   sess->conflicting_addresses = NULL;
+
+  /* set a new random SSRC if none was set via the property */
+  if (!sess->internal_ssrc_from_property) {
+    sess->suggested_ssrc = rtp_session_create_new_ssrc (sess);
+    sess->internal_ssrc_set = FALSE;
+    sess->internal_ssrc_from_caps = FALSE;
+  }
   RTP_SESSION_UNLOCK (sess);
 }
 
@@ -1673,6 +1681,8 @@ rtp_session_have_conflict (RTPSession * sess, RTPSource * source,
   if (sess->suggested_ssrc == ssrc) {
     sess->suggested_ssrc = rtp_session_create_new_ssrc (sess);
     sess->internal_ssrc_set = TRUE;
+    sess->internal_ssrc_from_caps = FALSE;
+    sess->internal_ssrc_from_property = FALSE;
   }
 
   on_ssrc_collision (sess, source);
@@ -1880,7 +1890,7 @@ add_source (RTPSession * sess, RTPSource * src)
     sess->stats.active_sources++;
   if (src->internal) {
     sess->stats.internal_sources++;
-    if (!sess->internal_ssrc_from_caps_or_property
+    if (!sess->internal_ssrc_from_caps && !sess->internal_ssrc_from_property
         && sess->suggested_ssrc != src->ssrc) {
       sess->suggested_ssrc = src->ssrc;
       sess->internal_ssrc_set = TRUE;
@@ -3264,9 +3274,11 @@ rtp_session_update_send_caps (RTPSession * sess, GstCaps * caps)
 
     RTP_SESSION_LOCK (sess);
     source = obtain_internal_source (sess, ssrc, &created, GST_CLOCK_TIME_NONE);
-    sess->suggested_ssrc = ssrc;
     sess->internal_ssrc_set = TRUE;
-    sess->internal_ssrc_from_caps_or_property = TRUE;
+    sess->internal_ssrc_from_caps = TRUE;
+    sess->internal_ssrc_from_property = (sess->internal_ssrc_from_property
+        && sess->suggested_ssrc == ssrc);
+    sess->suggested_ssrc = ssrc;
     if (source) {
       rtp_source_update_send_caps (source, caps);
 
@@ -3290,7 +3302,7 @@ rtp_session_update_send_caps (RTPSession * sess, GstCaps * caps)
     }
     RTP_SESSION_UNLOCK (sess);
   } else {
-    sess->internal_ssrc_from_caps_or_property = FALSE;
+    sess->internal_ssrc_from_caps = FALSE;
   }
 
   sess->send_ntp64_ext_id =
