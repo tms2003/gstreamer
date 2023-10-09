@@ -1107,3 +1107,12 @@ gst_d3d11_window_set_orientation (GstD3D11Window * window,
     }
   }
 }
+
+void
+gst_d3d11_window_set_alpha (GstD3D11Window * window, guint alpha)
+{
+  GstD3D11WindowClass *klass = GST_D3D11_WINDOW_GET_CLASS (window);
+
+  if (klass->set_alpha)
+    klass->set_alpha (window, alpha);
+}

@@ -45,6 +45,7 @@ G_LOCK_DEFINE_STATIC (get_instance_lock);
 #define WM_GST_D3D11_DESTROY_INTERNAL_WINDOW (WM_USER + 3)
 #define WM_GST_D3D11_MOVE_WINDOW (WM_USER + 4)
 #define WM_GST_D3D11_SHOW_WINDOW (WM_USER + 5)
+#define WM_GST_D3D11_UPDATE_ALPHA (WM_USER + 6)
 #define WS_GST_D3D11 (WS_CLIPSIBLINGS | WS_CLIPCHILDREN | WS_OVERLAPPEDWINDOW)
 
 static LRESULT CALLBACK window_proc (HWND hWnd, UINT uMsg, WPARAM wParam,
@@ -97,6 +98,8 @@ struct _GstD3D11WindowWin32
 
   gboolean flushing;
   gboolean setup_external_hwnd;
+  gboolean is_layered;
+  guint window_alpha;
 };
 
 #define gst_d3d11_window_win32_parent_class parent_class
@@ -119,7 +122,8 @@ static GstFlowReturn gst_d3d11_window_win32_present (GstD3D11Window * window,
 
 static gpointer gst_d3d11_window_win32_thread_func (gpointer data);
 static gboolean
-gst_d3d11_window_win32_create_internal_window (GstD3D11WindowWin32 * self);
+gst_d3d11_window_win32_create_internal_window (GstD3D11WindowWin32 * self,
+    gboolean is_top_level);
 static void gst_d3d11_window_win32_destroy_internal_window (HWND hwnd);
 static void
 gst_d3d11_window_win32_release_external_handle (GstD3D11WindowWin32 * self);
@@ -137,6 +141,8 @@ static void gst_d3d11_window_win32_set_title (GstD3D11Window * window,
     const gchar * title);
 static gboolean gst_d3d11_window_win32_unlock (GstD3D11Window * window);
 static gboolean gst_d3d11_window_win32_unlock_stop (GstD3D11Window * window);
+static void gst_d3d11_window_win32_set_alpha (GstD3D11Window * window,
+    guint alpha);
 static GstFlowReturn
 gst_d3d11_window_win32_set_external_handle (GstD3D11WindowWin32 * self,
     HWND hwnd);
@@ -170,12 +176,15 @@ gst_d3d11_window_win32_class_init (GstD3D11WindowWin32Class * klass)
   window_class->unlock = GST_DEBUG_FUNCPTR (gst_d3d11_window_win32_unlock);
   window_class->unlock_stop =
       GST_DEBUG_FUNCPTR (gst_d3d11_window_win32_unlock_stop);
+  window_class->set_alpha =
+      GST_DEBUG_FUNCPTR (gst_d3d11_window_win32_set_alpha);
 }
 
 static void
 gst_d3d11_window_win32_init (GstD3D11WindowWin32 * self)
 {
   self->main_context = g_main_context_new ();
+  self->window_alpha = 255;
 }
 
 static void
@@ -432,7 +441,8 @@ gst_d3d11_window_win32_thread_func (gpointer data)
   GST_DEBUG_OBJECT (self, "Enter loop");
   g_main_context_push_thread_default (self->main_context);
 
-  window->initialized = gst_d3d11_window_win32_create_internal_window (self);
+  window->initialized = gst_d3d11_window_win32_create_internal_window (self,
+      TRUE);
 
   /* Watching and dispatching all messages on this thread */
   self->msg_io_channel = g_io_channel_win32_new_messages (0);
@@ -560,11 +570,21 @@ gst_d3d11_window_win32_release_external_handle (GstD3D11WindowWin32 * self)
 }
 
 static gboolean
-gst_d3d11_window_win32_create_internal_window (GstD3D11WindowWin32 * self)
+gst_d3d11_window_win32_create_internal_window (GstD3D11WindowWin32 * self,
+    gboolean is_top_level)
 {
   WNDCLASSEXA wc;
   ATOM atom = 0;
   HINSTANCE hinstance = GetModuleHandleA (NULL);
+  DWORD ex_style = 0;
+
+  /* Before Windows 8, only top level window is allowed to be layered */
+  if (is_top_level || gst_d3d11_is_windows_8_or_greater ()) {
+    ex_style = WS_EX_LAYERED;
+    self->is_layered = TRUE;
+  } else {
+    self->is_layered = FALSE;
+  }
 
   GST_LOG_OBJECT (self, "Attempting to create a win32 window");
 
@@ -598,7 +618,7 @@ gst_d3d11_window_win32_create_internal_window (GstD3D11WindowWin32 * self)
   self->internal_hwnd = 0;
   self->visible = FALSE;
 
-  self->internal_hwnd = CreateWindowExA (0,
+  self->internal_hwnd = CreateWindowExA (ex_style,
       "GSTD3D11",
       "Direct3D11 renderer", WS_GST_D3D11,
       CW_USEDEFAULT, CW_USEDEFAULT,
@@ -616,6 +636,11 @@ gst_d3d11_window_win32_create_internal_window (GstD3D11WindowWin32 * self)
 
   GST_LOG_OBJECT (self,
       "Created a internal d3d11 window %p", self->internal_hwnd);
+
+  if (self->is_layered) {
+    SetLayeredWindowAttributes (self->internal_hwnd,
+        RGB (0, 0, 0), self->window_alpha, LWA_ALPHA);
+  }
 
   self->internal_hwnd_thread = g_thread_self ();
 
@@ -840,6 +865,11 @@ gst_d3d11_window_win32_handle_window_proc (GstD3D11WindowWin32 * self,
     case WM_GST_D3D11_SHOW_WINDOW:
       ShowWindow (self->internal_hwnd, SW_SHOW);
       break;
+    case WM_GST_D3D11_UPDATE_ALPHA:
+      GST_DEBUG_OBJECT (self, "Updating alpha to %d", self->window_alpha);
+      SetLayeredWindowAttributes (self->internal_hwnd,
+          RGB (0, 0, 0), (BYTE) self->window_alpha, LWA_ALPHA);
+      break;
     default:
       break;
   }
@@ -931,7 +961,7 @@ sub_class_proc (HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
       }
 
       window->initialized =
-          gst_d3d11_window_win32_create_internal_window (self);
+          gst_d3d11_window_win32_create_internal_window (self, FALSE);
 
       SetWindowLongPtrA (self->internal_hwnd, GWL_STYLE,
           WS_CHILD | WS_MAXIMIZE);
@@ -1284,6 +1314,27 @@ gst_d3d11_window_win32_change_fullscreen_mode (GstD3D11Window * window)
   if (self->internal_hwnd) {
     g_atomic_int_add (&self->pending_fullscreen_count, 1);
     PostMessageA (self->internal_hwnd, WM_GST_D3D11_FULLSCREEN, 0, 0);
+  }
+}
+
+static void
+gst_d3d11_window_win32_set_alpha (GstD3D11Window * window, guint alpha)
+{
+  GstD3D11WindowWin32 *self = GST_D3D11_WINDOW_WIN32 (window);
+
+  AcquireSRWLockExclusive (&self->lock);
+  self->window_alpha = alpha;
+  if (self->internal_hwnd && self->is_layered) {
+    ReleaseSRWLockExclusive (&self->lock);
+    if (self->internal_hwnd_thread == g_thread_self ()) {
+      GST_DEBUG_OBJECT (self, "Updating alpha to %d", self->window_alpha);
+      SetLayeredWindowAttributes (self->internal_hwnd,
+          RGB (0, 0, 0), (BYTE) self->window_alpha, LWA_ALPHA);
+    } else {
+      PostMessageA (self->internal_hwnd, WM_GST_D3D11_UPDATE_ALPHA, 0, 0);
+    }
+  } else {
+    ReleaseSRWLockExclusive (&self->lock);
   }
 }
 

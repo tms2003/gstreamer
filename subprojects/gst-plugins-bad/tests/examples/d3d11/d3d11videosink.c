@@ -33,6 +33,7 @@ static GMainLoop *loop = NULL;
 static gboolean visible = FALSE;
 static gboolean test_reuse = FALSE;
 static HWND hwnd = NULL;
+static gint alpha = 255;
 
 typedef struct
 {
@@ -63,8 +64,22 @@ window_proc (HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 static void
 keyboard_cb (gchar input, gboolean is_ascii, CallbackData * data)
 {
-  if (!is_ascii)
+  if (!is_ascii) {
+    if (input == KB_ARROW_UP) {
+      alpha += 5;
+      alpha = MIN (alpha, 255);
+    } else if (input == KB_ARROW_DOWN) {
+      alpha -= 5;
+      alpha = MAX (alpha, 0);
+    } else {
+      return;
+    }
+
+    gst_println ("Set window alpha %d", alpha);
+    g_object_set (data->sink, "window-alpha", alpha, NULL);
+
     return;
+  }
 
   switch (input) {
     case 'q':
@@ -192,7 +207,9 @@ print_keyboard_help (void)
     {
         "q or ESC", "Quit"}, {
         "SPACE", "Toggle fullscreen mode"}, {
-        "f", "Toggle force-aspect-ratio"}
+        "f", "Toggle force-aspect-ratio"}, {
+        "up arrow", "Increase window alpha"}, {
+        "down arrow", "Decrease window alpha"},
   };
   guint i, chars_to_pad, desc_len, max_desc_len = 0;
 

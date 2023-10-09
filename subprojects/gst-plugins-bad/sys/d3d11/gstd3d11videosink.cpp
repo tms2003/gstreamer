@@ -66,6 +66,7 @@ enum
   PROP_DISPLAY_FORMAT,
   PROP_EMIT_PRESENT,
   PROP_RENDER_RECTANGE,
+  PROP_WINDOW_ALPHA,
 };
 
 #define DEFAULT_ADAPTER                   -1
@@ -78,6 +79,7 @@ enum
 #define DEFAULT_PRIMARIES_MODE            GST_VIDEO_PRIMARIES_MODE_NONE
 #define DEFAULT_DISPLAY_FORMAT            DXGI_FORMAT_UNKNOWN
 #define DEFAULT_EMIT_PRESENT              FALSE
+#define DEFAULT_WINDOW_ALPHA              255
 
 /**
  * GstD3D11VideoSinkDisplayFormat:
@@ -188,6 +190,7 @@ struct _GstD3D11VideoSink
   GstVideoPrimariesMode primaries_mode;
   DXGI_FORMAT display_format;
   gboolean emit_present;
+  guint window_alpha;
 
   /* saved render rectangle until we have a window */
   GstVideoRectangle render_rect;
@@ -407,6 +410,19 @@ gst_d3d11_video_sink_class_init (GstD3D11VideoSinkClass * klass)
   gst_video_overlay_install_properties (gobject_class, PROP_RENDER_RECTANGE);
 
   /**
+   * GstD3D11VideoSink:window-alpha:
+   *
+   * Since: 1.24
+   */
+  g_object_class_install_property (gobject_class, PROP_WINDOW_ALPHA,
+      g_param_spec_uint ("window-alpha", "Window Alpha",
+          "Alpha value applied to window for transparent window. "
+          "When \"window-alpha\" is 0, window will be completely transparent",
+          0, 255, DEFAULT_WINDOW_ALPHA,
+          (GParamFlags) (G_PARAM_READWRITE | GST_PARAM_MUTABLE_PLAYING |
+              G_PARAM_STATIC_STRINGS)));
+
+  /**
    * GstD3D11VideoSink::begin-draw:
    * @videosink: the #d3d11videosink
    *
@@ -518,6 +534,7 @@ gst_d3d11_video_sink_init (GstD3D11VideoSink * self)
   self->primaries_mode = DEFAULT_PRIMARIES_MODE;
   self->display_format = DEFAULT_DISPLAY_FORMAT;
   self->emit_present = DEFAULT_EMIT_PRESENT;
+  self->window_alpha = DEFAULT_WINDOW_ALPHA;
 
   InitializeCriticalSection (&self->lock);
 }
@@ -583,6 +600,11 @@ gst_d3d11_videosink_set_property (GObject * object, guint prop_id,
       gst_video_overlay_set_property (object, PROP_RENDER_RECTANGE,
           PROP_RENDER_RECTANGE, value);
       break;
+    case PROP_WINDOW_ALPHA:
+      self->window_alpha = g_value_get_uint (value);
+      if (self->window)
+        gst_d3d11_window_set_alpha (self->window, self->window_alpha);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -633,6 +655,9 @@ gst_d3d11_videosink_get_property (GObject * object, guint prop_id,
       break;
     case PROP_EMIT_PRESENT:
       g_value_set_boolean (value, self->emit_present);
+      break;
+    case PROP_WINDOW_ALPHA:
+      g_value_set_uint (value, self->window_alpha);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -1049,6 +1074,7 @@ done:
       "emit-present", self->emit_present, nullptr);
 
   gst_d3d11_window_set_orientation (self->window, self->selected_method);
+  gst_d3d11_window_set_alpha (self->window, self->window_alpha);
 
   g_signal_connect (self->window, "key-event",
       G_CALLBACK (gst_d3d11_video_sink_key_event), self);
