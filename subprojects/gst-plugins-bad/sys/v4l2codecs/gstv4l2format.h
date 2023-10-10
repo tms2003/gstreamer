@@ -26,7 +26,8 @@
 
 #define GST_V4L2_DEFAULT_VIDEO_FORMATS "{ " \
   "P010_10LE, NV12_10LE40_4L4, MT2110T, MT2110R," \
-  "NV12, YUY2, NV12_4L4, NV12_32L32, NV12_16L32S, I420" \
+  "NV12, YUY2, NV12_4L4, NV12_32L32, NV12_16L32S, I420," \
+  "RGB16, BGRx, RGBx, xBGR, xRGB" \
   "}"
 
 gboolean   gst_v4l2_format_to_video_info (struct v4l2_format * fmt,
