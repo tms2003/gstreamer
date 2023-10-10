@@ -62,7 +62,12 @@ if vulkan_conf.get('GST_VULKAN_HAVE_VIDEO_EXTENSIONS') == 1
   vulkan_sources += files('vkh264dec.c', 'vkh265dec.c')
   extra_deps += gstcodecs_dep
   extra_args += ['-DGST_USE_UNSTABLE_API']
-  vulkan_sources += files('encoderbase/gsth264encoder.c', 'encoderbase/gsth264frame.c')
+  vulkan_sources += files(
+    'encoderbase/gsth264encoder.c',
+    'encoderbase/gsth264frame.c',
+    'encoderbase/gsth265encoder.c',
+    'encoderbase/gsth265frame.c',
+  )
 endif
 
 gstvulkan_plugin = library(
