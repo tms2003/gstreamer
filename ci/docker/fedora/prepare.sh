@@ -249,6 +249,10 @@ git -C /gstreamer submodule update --init --depth=1
 meson subprojects download --sourcedir /gstreamer
 /gstreamer/ci/scripts/handle-subprojects-cache.py --build --cache-dir /subprojects /gstreamer/subprojects/
 
+# get fluster and decoder test suites (conformance test)
+git clone --branch gstconf2023 --depth 1 https://github.com/fluendo/fluster.git /fluster
+/fluster/fluster.py download
+
 # Run git gc to prune unwanted refs and reduce the size of the image
 for i in $(find /subprojects/ -mindepth 1 -maxdepth 1 -type d);
 do
