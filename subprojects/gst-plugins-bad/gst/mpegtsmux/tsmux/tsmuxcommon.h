@@ -111,6 +111,8 @@ G_BEGIN_DECLS
 #define TSMUX_DEFAULT_SCTE_35_NULL_INTERVAL (TSMUX_CLOCK_FREQ * 300)
 /* Bitrate (bits per second) */
 #define TSMUX_DEFAULT_BITRATE      0
+/* Sparse bitrate mode */
+#define TSMUX_DEFAULT_BITRATE_SPARSE FALSE
 
 typedef struct TsMuxPacketInfo TsMuxPacketInfo;
 typedef struct TsMuxProgram TsMuxProgram;
