@@ -255,7 +255,8 @@ enum
   PROP_BITRATE,
   PROP_PCR_INTERVAL,
   PROP_SCTE_35_PID,
-  PROP_SCTE_35_NULL_INTERVAL
+  PROP_SCTE_35_NULL_INTERVAL,
+  PROP_BITRATE_SPARSE,
 };
 
 #define DEFAULT_SCTE_35_PID 0
@@ -2672,6 +2673,12 @@ gst_base_ts_mux_set_property (GObject * object, guint prop_id,
     case PROP_SCTE_35_NULL_INTERVAL:
       mux->scte35_null_interval = g_value_get_uint (value);
       break;
+    case PROP_BITRATE_SPARSE:
+      g_mutex_lock (&mux->lock);
+      mux->bitrate_sparse = g_value_get_boolean (value);
+      tsmux_set_bitrate_sparse (mux->tsmux, mux->bitrate_sparse);
+      g_mutex_unlock (&mux->lock);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -2712,6 +2719,9 @@ gst_base_ts_mux_get_property (GObject * object, guint prop_id,
     case PROP_SCTE_35_NULL_INTERVAL:
       g_value_set_uint (value, mux->scte35_null_interval);
       break;
+    case PROP_BITRATE_SPARSE:
+      g_value_set_boolean (value, mux->bitrate_sparse);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -2729,6 +2739,7 @@ gst_base_ts_mux_default_create_ts_mux (GstBaseTsMux * mux)
   tsmux_set_pat_interval (tsmux, mux->pat_interval);
   tsmux_set_si_interval (tsmux, mux->si_interval);
   tsmux_set_bitrate (tsmux, mux->bitrate);
+  tsmux_set_bitrate_sparse (tsmux, mux->bitrate_sparse);
   tsmux_set_pcr_interval (tsmux, mux->pcr_interval);
 
   return tsmux;
@@ -2865,6 +2876,23 @@ gst_base_ts_mux_class_init (GstBaseTsMuxClass * klass)
           TSMUX_DEFAULT_SCTE_35_NULL_INTERVAL,
           (GParamFlags) (G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS)));
 
+  /**
+   * GstBaseTsMux:bitrate-sparse:
+   *
+   * When `TRUE` and #GstBaseTsMux:bitrate is nonzero, generates PCR values
+   * according to bitrate mode logic without inserting null packets into the
+   * stream
+   *
+   * Since: 1.24
+   */
+  g_object_class_install_property (G_OBJECT_CLASS (klass),
+      PROP_BITRATE_SPARSE, g_param_spec_boolean ("bitrate-sparse",
+          "Sparse bitrate output",
+          "When TRUE and bitrate is nonzero, generates PCR values according to "
+          "bitrate mode logic without inserting null packets into the stream",
+          TSMUX_DEFAULT_BITRATE_SPARSE,
+          (GParamFlags) (G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS)));
+
   gst_element_class_add_static_pad_template_with_gtype (gstelement_class,
       &gst_base_ts_mux_src_factory, GST_TYPE_AGGREGATOR_PAD);
 
@@ -2886,6 +2914,7 @@ gst_base_ts_mux_init (GstBaseTsMux * mux)
   mux->bitrate = TSMUX_DEFAULT_BITRATE;
   mux->scte35_pid = DEFAULT_SCTE_35_PID;
   mux->scte35_null_interval = TSMUX_DEFAULT_SCTE_35_NULL_INTERVAL;
+  mux->bitrate_sparse = TSMUX_DEFAULT_BITRATE_SPARSE;
 
   mux->packet_size = GST_BASE_TS_MUX_NORMAL_PACKET_LENGTH;
   mux->automatic_alignment = 0;
