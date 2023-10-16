@@ -65,6 +65,7 @@ enum
   PROP_PRIMARIES_MODE,
   PROP_DISPLAY_FORMAT,
   PROP_EMIT_PRESENT,
+  PROP_GDI_COMPATIBLE,
   PROP_RENDER_RECTANGE,
 };
 
@@ -78,6 +79,7 @@ enum
 #define DEFAULT_PRIMARIES_MODE            GST_VIDEO_PRIMARIES_MODE_NONE
 #define DEFAULT_DISPLAY_FORMAT            DXGI_FORMAT_UNKNOWN
 #define DEFAULT_EMIT_PRESENT              FALSE
+#define DEFAULT_GDI_COMPATIBLE            FALSE
 
 /**
  * GstD3D11VideoSinkDisplayFormat:
@@ -188,6 +190,7 @@ struct _GstD3D11VideoSink
   GstVideoPrimariesMode primaries_mode;
   DXGI_FORMAT display_format;
   gboolean emit_present;
+  gboolean gdi_compatible;
 
   /* saved render rectangle until we have a window */
   GstVideoRectangle render_rect;
@@ -400,6 +403,19 @@ gst_d3d11_video_sink_class_init (GstD3D11VideoSinkClass * klass)
               G_PARAM_STATIC_STRINGS)));
 
   /**
+   * GstD3D11VideoSink:gdi-compatible:
+   *
+   * Creates GDI compatible swapchain
+   *
+   * Since: 1.24
+   */
+  g_object_class_install_property (gobject_class, PROP_GDI_COMPATIBLE,
+      g_param_spec_boolean ("gdi-compatible", "GDI compatible",
+          "Creates GDI compatible swapchain", DEFAULT_GDI_COMPATIBLE,
+          (GParamFlags) (G_PARAM_READWRITE | GST_PARAM_MUTABLE_READY |
+              G_PARAM_STATIC_STRINGS)));
+
+  /**
    * GstD3D11VideoSink:render-rectangle:
    *
    * Since: 1.24
@@ -518,6 +534,7 @@ gst_d3d11_video_sink_init (GstD3D11VideoSink * self)
   self->primaries_mode = DEFAULT_PRIMARIES_MODE;
   self->display_format = DEFAULT_DISPLAY_FORMAT;
   self->emit_present = DEFAULT_EMIT_PRESENT;
+  self->gdi_compatible = DEFAULT_GDI_COMPATIBLE;
 
   InitializeCriticalSection (&self->lock);
 }
@@ -579,6 +596,9 @@ gst_d3d11_videosink_set_property (GObject * object, guint prop_id,
     case PROP_EMIT_PRESENT:
       self->emit_present = g_value_get_boolean (value);
       break;
+    case PROP_GDI_COMPATIBLE:
+      self->gdi_compatible = g_value_get_boolean (value);
+      break;
     case PROP_RENDER_RECTANGE:
       gst_video_overlay_set_property (object, PROP_RENDER_RECTANGE,
           PROP_RENDER_RECTANGE, value);
@@ -633,6 +653,9 @@ gst_d3d11_videosink_get_property (GObject * object, guint prop_id,
       break;
     case PROP_EMIT_PRESENT:
       g_value_set_boolean (value, self->emit_present);
+      break;
+    case PROP_GDI_COMPATIBLE:
+      g_value_set_boolean (value, self->gdi_compatible);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -1018,7 +1041,8 @@ gst_d3d11_video_sink_prepare_window (GstD3D11VideoSink * self)
   switch (window_type) {
 #if (!GST_D3D11_WINAPI_ONLY_APP)
     case GST_D3D11_WINDOW_NATIVE_TYPE_HWND:
-      self->window = gst_d3d11_window_win32_new (self->device, self->window_id);
+      self->window = gst_d3d11_window_win32_new (self->device, self->window_id,
+          self->gdi_compatible);
       break;
 #endif
 #if GST_D3D11_WINAPI_APP

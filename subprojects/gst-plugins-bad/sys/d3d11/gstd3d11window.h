@@ -79,6 +79,7 @@ struct _GstD3D11Window
   gboolean initialized;
   GstD3D11Device *device;
   guintptr external_handle;
+  gboolean gdi_compatible;
 
   /* properties */
   gboolean force_aspect_ratio;
