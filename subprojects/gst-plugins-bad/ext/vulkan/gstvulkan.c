@@ -47,6 +47,7 @@
 #include "vkh264dec.h"
 #include "vkh265dec.h"
 # include "vkh264enc.h"
+# include "vkh265enc.h"
 #endif
 
 static gboolean
@@ -76,6 +77,7 @@ plugin_init (GstPlugin * plugin)
   ret |= GST_ELEMENT_REGISTER (vulkanh264dec, plugin);
   ret |= GST_ELEMENT_REGISTER (vulkanh265dec, plugin);
   ret |= GST_ELEMENT_REGISTER (vulkanh264enc, plugin);
+  ret |= GST_ELEMENT_REGISTER (vulkanh265enc, plugin);
 #endif
 
   return ret;

@@ -59,7 +59,7 @@ else
 endif
 
 if vulkan_conf.get('GST_VULKAN_HAVE_VIDEO_EXTENSIONS') == 1
-  vulkan_sources += files('vkh264dec.c', 'vkh265dec.c', 'vkh264enc.c')
+  vulkan_sources += files('vkh264dec.c', 'vkh264enc.c', 'vkh265dec.c', 'vkh265enc.c')
   extra_deps += gstcodecs_dep
   extra_args += ['-DGST_USE_UNSTABLE_API']
   vulkan_sources += files(
