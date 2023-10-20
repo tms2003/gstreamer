@@ -535,6 +535,7 @@ libsinc = include_directories('libs')
 privinc = include_directories('gst')
 
 glib_req = '>= 2.62.0'
+gi_req = '>= 1.66'
 
 # Find dependencies
 glib_dep = dependency('glib-2.0', version: glib_req,
@@ -553,7 +554,7 @@ mathlib = cc.find_library('m', required : false)
 # Also provides clock_gettime in glibc < 2.17
 rt_lib = cc.find_library('rt', required : false)
 
-gir = find_program('g-ir-scanner', required : get_option('introspection'))
+gir = find_program('g-ir-scanner', required : get_option('introspection'), version: gi_req)
 gnome = import('gnome')
 
 build_gir = gir.found() and (not meson.is_cross_build() or get_option('introspection').enabled())

@@ -28,6 +28,7 @@ else
 endif
 
 glib_req = '>= 2.62.0'
+gi_req = '>= 1.66'
 orc_req = '>= 0.4.24'
 
 if gst_version_is_stable
@@ -442,7 +443,7 @@ if cc.has_member('struct tcp_info', 'tcpi_reordering', prefix: '#include <netine
   core_conf.set('HAVE_LINUX_TCP_INFO', true)
 endif
 
-gir = find_program('g-ir-scanner', required : get_option('introspection'))
+gir = find_program('g-ir-scanner', required : get_option('introspection'), version: gi_req)
 gnome = import('gnome')
 build_gir = gir.found() and (not meson.is_cross_build() or get_option('introspection').enabled())
 gir_init_section = [ '--add-init-section=extern void gst_init(gint*,gchar**);' + \
