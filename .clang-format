@@ -1,0 +1,23 @@
+﻿---
+Language: Cpp
+BasedOnStyle: Google
+IndentWidth: 2
+ColumnLimit: 80
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: False
+AllowShortFunctionsOnASingleLine: None
+AlwaysBreakAfterReturnType: TopLevelDefinitions
+AlignAfterOpenBracket: DontAlign
+SpaceBeforeParens: Always
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterEnum: true
+  AfterStruct: true
+  AfterFunction: true
+BreakBeforeBinaryOperators: NonAssignment
+SpaceAfterCStyleCast: true
+AllowAllParametersOfDeclarationOnNextLine: false
+AllowAllArgumentsOnNextLine: false
+PointerAlignment: Right
+DerivePointerAlignment: false
+SortIncludes: false

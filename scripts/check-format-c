@@ -1,16 +1,25 @@
 #!/bin/bash
-set -e
 
-CUR_DIR="$( cd -P "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+# Check coding style only on merge requests
+if [ -z "${CI_MERGE_REQUEST_IID}" ]; then
+  exit 0
+fi
 
-indent --version || true
+# We Cannot use git-clang-format here because we have a shallow clone.
+# It's faster to download the diff than unshallowing.
+DIFF_FILE=${CI_MERGE_REQUEST_IID}.diff
+curl -O ${CI_MERGE_REQUEST_PROJECT_URL}/-/merge_requests/$DIFF_FILE || exit $?
 
-$CUR_DIR/gst-indent-all
+# GitLab gives us a plain diff with lines of context that we don't want to
+# reformat. This reverse the diff and regenerate it without context.
+git apply --reverse $DIFF_FILE
+git diff -R -U0 > $DIFF_FILE
+git reset --hard HEAD
 
-if git diff --quiet -- ':!subprojects/gst-integration-testsuites/medias' .; then
-    echo "Code is properly formatted"
-else
-    git diff --color=always -- ':!subprojects/gst-integration-testsuites/medias' .
-echo 'style diverges, please run gst-indent first'
-    exit 1
+DIFF=$(cat $DIFF_FILE | clang-format-diff.py -p1 -regex ".*\.(c|cpp)") || exit $?
+if [ -n "$DIFF" ]; then
+  echo "$DIFF"
+  echo "-- code style errors --"
+  clang-format --version
+  exit 1
 fi

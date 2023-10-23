@@ -1,45 +1,15 @@
 #!/bin/sh
 
-for execname in gnuindent gindent indent; do
-  version=`$execname --version 2>/dev/null`
-  if test "x$version" != "x"; then
-    INDENT=$execname
-    break
-  fi
-done
-
-if test -z $INDENT; then
-  echo "GStreamer git pre-commit hook:"
-  echo "Did not find GNU indent, please install it before continuing."
-  exit 1
+GIT_CLANG_FORMAT=$(command -v git-clang-format)
+if [ -z "$GIT_CLANG_FORMAT" ]; then
+  echo "WARNING: git-clang-format not found."
+  echo "It is recommended to install clang-format or use an IDE that bundles it (e.g. vscode)."
+  echo "Coding style check might fail on CI otherwise."
+  echo "It is recommended to use latest version:"
+  echo "- pip install clang-format"
+  exit 0
 fi
 
-case `$INDENT --version` in
-  GNU*)
-      ;;
-  default)
-      echo "Did not find GNU indent, please install it before continuing."
-      echo "(Found $INDENT, but it doesn't seem to be GNU indent)"
-      exit 1
-      ;;
-esac
-
-# Run twice. GNU indent isn't idempotent
-# when run once
-for i in 1 2; do
-$INDENT \
-  --braces-on-if-line \
-  --case-brace-indentation0 \
-  --case-indentation2 \
-  --braces-after-struct-decl-line \
-  --line-length80 \
-  --no-tabs \
-  --cuddle-else \
-  --dont-line-up-parentheses \
-  --continuation-indentation4 \
-  --honour-newlines \
-  --tab-size8 \
-  --indent-level2 \
-  --leave-preprocessor-space \
-  $* || exit $?
-done
+# Quote $GIT_CLANG_FORMAT because it could contain spaces (e.g. "C:\Program Files\").
+"$GIT_CLANG_FORMAT" -f --extensions c,cpp $@
+exit $?

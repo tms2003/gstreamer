@@ -380,7 +380,7 @@ generate_header | sed \
   -e "s/prefixreplace/$prefixreplace/g" \
   -e "s/replace/$replace/g" >$gstreplace.h
 
-gst-indent $gstreplace.c
+clang-format -i $gstreplace.c
 
 echo pkg is $pkg
 
