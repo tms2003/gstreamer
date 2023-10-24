@@ -1567,10 +1567,13 @@ void
 gst_v4l2_codec_av1_dec_register (GstPlugin * plugin, GstV4l2Decoder * decoder,
     GstV4l2CodecDevice * device, guint rank)
 {
-  GstCaps *src_caps;
+  GstCaps *src_caps = NULL;
 
   GST_DEBUG_CATEGORY_INIT (v4l2_av1dec_debug, "v4l2codecs-av1dec", 0,
       "V4L2 stateless AV1 decoder");
+
+  if (gst_v4l2_decoder_in_doc_mode (decoder))
+    goto register_element;
 
   if (!gst_v4l2_decoder_set_sink_fmt (decoder, V4L2_PIX_FMT_AV1_FRAME,
           320, 240, 8))
@@ -1597,7 +1600,7 @@ gst_v4l2_codec_av1_dec_register (GstPlugin * plugin, GstV4l2Decoder * decoder,
     GST_WARNING ("Not registering AV1 decoder as it failed ABI check.");
     goto done;
   }
-
+register_element:
   gst_v4l2_decoder_register (plugin, GST_TYPE_V4L2_CODEC_AV1_DEC,
       (GClassInitFunc) gst_v4l2_codec_av1_dec_subclass_init,
       gst_mini_object_ref (GST_MINI_OBJECT (device)),
@@ -1605,5 +1608,6 @@ gst_v4l2_codec_av1_dec_register (GstPlugin * plugin, GstV4l2Decoder * decoder,
       "v4l2sl%sav1dec", device, rank, NULL);
 
 done:
-  gst_caps_unref (src_caps);
+  if (src_caps)
+    gst_caps_unref (src_caps);
 }

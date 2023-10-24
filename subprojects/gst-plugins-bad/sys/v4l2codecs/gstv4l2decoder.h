@@ -132,6 +132,8 @@ void              gst_v4l2_decoder_set_render_delay (GstV4l2Decoder * self,
 
 guint             gst_v4l2_decoder_get_render_delay (GstV4l2Decoder * self);
 
+gboolean          gst_v4l2_decoder_in_doc_mode (GstV4l2Decoder * self);
+
 
 GstV4l2Request *  gst_v4l2_request_ref (GstV4l2Request * request);
 

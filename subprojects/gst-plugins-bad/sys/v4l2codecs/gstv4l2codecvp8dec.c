@@ -957,10 +957,13 @@ gst_v4l2_codec_vp8_dec_register (GstPlugin * plugin, GstV4l2Decoder * decoder,
     GstV4l2CodecDevice * device, guint rank)
 {
   gchar *element_name;
-  GstCaps *src_caps, *alpha_caps;
+  GstCaps *src_caps = NULL, *alpha_caps;
 
   GST_DEBUG_CATEGORY_INIT (v4l2_vp8dec_debug, "v4l2codecs-vp8dec", 0,
       "V4L2 stateless VP8 decoder");
+
+  if (gst_v4l2_decoder_in_doc_mode (decoder))
+    goto register_element;
 
   if (!gst_v4l2_decoder_set_sink_fmt (decoder, V4L2_PIX_FMT_VP8_FRAME,
           320, 240, 8))
@@ -973,6 +976,7 @@ gst_v4l2_codec_vp8_dec_register (GstPlugin * plugin, GstV4l2Decoder * decoder,
     goto done;
   }
 
+register_element:
   gst_v4l2_decoder_register (plugin, GST_TYPE_V4L2_CODEC_VP8_DEC,
       (GClassInitFunc) gst_v4l2_codec_vp8_dec_subclass_init,
       gst_mini_object_ref (GST_MINI_OBJECT (device)),
@@ -984,7 +988,8 @@ gst_v4l2_codec_vp8_dec_register (GstPlugin * plugin, GstV4l2Decoder * decoder,
 
   alpha_caps = gst_caps_from_string ("video/x-raw,format={I420, NV12}");
 
-  if (gst_caps_can_intersect (src_caps, alpha_caps))
+  if (gst_v4l2_decoder_in_doc_mode (decoder) ||
+      gst_caps_can_intersect (src_caps, alpha_caps))
     gst_v4l2_codec_alpha_decode_bin_register (plugin,
         (GClassInitFunc) gst_v4l2_codec_vp8_alpha_decode_bin_subclass_init,
         element_name, "v4l2slvp8%salphadecodebin", device, rank);
@@ -992,5 +997,6 @@ gst_v4l2_codec_vp8_dec_register (GstPlugin * plugin, GstV4l2Decoder * decoder,
   gst_caps_unref (alpha_caps);
 
 done:
-  gst_caps_unref (src_caps);
+  if (src_caps)
+    gst_caps_unref (src_caps);
 }
