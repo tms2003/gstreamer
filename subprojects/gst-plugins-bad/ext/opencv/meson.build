@@ -83,29 +83,52 @@ if not opencv_found
   endif
 endif
 
-if opencv_found
-  opencv_prefix = opencv_dep.get_variable('prefix')
-  gstopencv_cargs += ['-DOPENCV_PREFIX="' + opencv_prefix + '"']
-
-  # Check the data dir used by opencv for its xml data files
-  # Use prefix from pkg-config to be compatible with cross-compilation
-  r = run_command('test', '-d', opencv_prefix + '/share/opencv', check: false)
-  if r.returncode() == 0
-    gstopencv_cargs += '-DOPENCV_PATH_NAME="opencv"'
-  else
-    r = run_command('test', '-d', opencv_prefix + '/share/OpenCV', check: false)
-    if r.returncode() == 0
-      gstopencv_cargs += '-DOPENCV_PATH_NAME="OpenCV"'
-    else
-      r = run_command('test', '-d', opencv_prefix + '/share/opencv4', check: false)
-      if r.returncode() == 0
-        gstopencv_cargs += '-DOPENCV_PATH_NAME="opencv4"'
-      else
-        message('Unable to detect OpenCV data directory')
-        opencv_found = false
-      endif
+if build_machine.system() == 'windows'
+  WIN_INSTALL_DIR = run_command(python3, '-c', 'import os; print(os.environ.get("OPENCV_DIR"))', check: false).stdout().strip()
+  if not opencv_dep.found()
+    opencv_dep = dependency('opencv', version : '>= 4.0.0', required : false,method: 'cmake', modules: 'opencv_core')
+    opencv_found = opencv_dep.found()
+    if opencv_found
+      foreach h : libopencv_headers
+        h = WIN_INSTALL_DIR + '/include/' + h
+        if not cxx.has_header(h)
+          message('Needed header "' + h + '" not found')
+          opencv_found = false
+        endif
+      endforeach
     endif
   endif
+endif
+
+if opencv_found
+  opencv_prefix = ''
+  if build_machine.system() == 'linux'
+    opencv_prefix = opencv_dep.get_variable('prefix') + '/share/opencv'
+    # Check the data dir used by opencv for its xml data files
+    # Use prefix from pkg-config to be compatible with cross-compilation
+    r = run_command('test', '-d', opencv_prefix, check: false)
+    if r.returncode() == 0
+      gstopencv_cargs += '-DOPENCV_PATH_NAME="opencv"'
+    else
+      r = run_command('test', '-d', opencv_prefix, check: false)
+      if r.returncode() == 0
+        gstopencv_cargs += '-DOPENCV_PATH_NAME="OpenCV"'
+      else
+        r = run_command('test', '-d', opencv_prefix, check: false)
+        if r.returncode() == 0
+          gstopencv_cargs += '-DOPENCV_PATH_NAME="opencv4"'
+        else
+          message('Unable to detect OpenCV data directory')
+          opencv_found = false
+        endif
+      endif
+    endif
+  elif( build_machine.system() == 'windows')
+    opencv_prefix = WIN_INSTALL_DIR + '/etc'
+    gstopencv_cargs += '-DOPENCV_PATH_NAME="opencv"'
+  endif
+
+  gstopencv_cargs += ['-DOPENCV_PREFIX="' + opencv_prefix + '"']
 endif
 
 if opencv_found
@@ -118,7 +141,7 @@ if opencv_found
   gstopencv = library('gstopencv',
     gstopencv_sources,
     cpp_args : gst_plugins_bad_args + gstopencv_cargs + [ '-DGST_USE_UNSTABLE_API' ],
-    link_args : [noseh_link_args, '-lopencv_tracking'],
+    link_args : [noseh_link_args],
     include_directories : [configinc, libsinc],
     dependencies : [gstbase_dep, gstvideo_dep, opencv_dep, gstopencv_dep],
     install : true,

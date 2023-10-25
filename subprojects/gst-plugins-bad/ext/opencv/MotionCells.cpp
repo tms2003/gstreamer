@@ -47,6 +47,9 @@
 #endif
 
 #include <errno.h>
+#ifdef _WIN32
+#include <stdio.h>
+#endif
 #include "MotionCells.h"
 #include <opencv2/imgproc.hpp>
 
@@ -329,7 +332,12 @@ MotionCells::saveMotionCells (gint64 timestamp_millisec)
   if (mc_savefile == NULL)
     return 0;
 
+
+#ifdef _WIN32
+  if (ftell (mc_savefile) == 0) {
+#else
   if (ftello (mc_savefile) == 0) {
+#endif
     //cerr << "Writing out file header"<< m_header.headersize <<":" << sizeof(MotionCellHeader) << " itemsize:"
     //<< m_header.itemsize << endl;
     if (fwrite (&m_header, sizeof (MotionCellHeader), 1, mc_savefile) != 1) {
