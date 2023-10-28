@@ -4,10 +4,10 @@ tmpdir=`mktemp --tmpdir -d gst.XXXXXXXXXX`
 workdir=$PWD
 cd $tmpdir
 res=0
+elements="audiodecoder audioencoder audiofilter audiosink audiosrc baseparse basesink basesrc basetransform element videodecoder videoencoder videofilter videosink"
 
-for file in $TEMPLATE_FILES; do
-  name=`basename $file element-templates`
-  $SRC_DIR/gst-element-maker gst$name $name
+for element in $elements; do
+  ${workdir}/gst-element-maker gst$element $element
   if test $? -ne 0; then
     res=1
     break
