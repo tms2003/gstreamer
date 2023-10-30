@@ -167,6 +167,22 @@ typedef void (*RTPSessionNotifyTWCC) (RTPSession *sess,
     GstStructure * twcc_packets, GstStructure * twcc_stats, gpointer user_data);
 
 /**
+ * RTPSessionNotifyRPSI:
+ * @sess: an #RTPSession
+ * @sender_ssrc: SSRC of receiver notifying us
+ * @media_ssrc: SSRC of our sender stream
+ * @pt: Media payload type
+ * @data: rpsi data
+ * @length_in_bits: Data length in bits
+ * @user_data: user data specified when registering
+ *
+ * Notifies of RPSI messages
+ */
+typedef void (*RTPSessionNotifyRPSI) (RTPSession *sess,
+    guint32 sender_ssrc, guint32 media_ssrc, guint8 pt, guint8 * data,
+    guint32 length_in_bits, gpointer user_data);
+
+/**
  * RTPSessionReconfigure:
  * @sess: an #RTPSession
  * @user_data: user data specified when registering
@@ -197,6 +213,7 @@ typedef void (*RTPSessionNotifyEarlyRTCP) (RTPSession *sess,
  * @RTPSessionRequestTime: callback for requesting the current time
  * @RTPSessionNotifyNACK: callback for notifying NACK
  * @RTPSessionNotifyTWCC: callback for notifying TWCC
+ * @RTPSessionNotifyRPSI: callback for notifying RPSI
  * @RTPSessionReconfigure: callback for requesting reconfiguration
  * @RTPSessionNotifyEarlyRTCP: callback for notifying early RTCP
  *
@@ -215,6 +232,7 @@ typedef struct {
   RTPSessionRequestTime request_time;
   RTPSessionNotifyNACK  notify_nack;
   RTPSessionNotifyTWCC  notify_twcc;
+  RTPSessionNotifyRPSI  notify_rpsi;
   RTPSessionReconfigure reconfigure;
   RTPSessionNotifyEarlyRTCP notify_early_rtcp;
 } RTPSessionCallbacks;
@@ -293,6 +311,7 @@ struct _RTPSession {
   gpointer              request_time_user_data;
   gpointer              notify_nack_user_data;
   gpointer              notify_twcc_user_data;
+  gpointer              notify_rpsi_user_data;
   gpointer              reconfigure_user_data;
   gpointer              notify_early_rtcp_user_data;
 
