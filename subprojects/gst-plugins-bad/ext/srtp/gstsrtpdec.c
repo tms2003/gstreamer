@@ -811,27 +811,33 @@ validate_buffer (GstSrtpDec * filter, GstBuffer * buf, guint32 * ssrc,
   GstSrtpDecSsrcStream *stream = NULL;
   GstRTPBuffer rtpbuf = GST_RTP_BUFFER_INIT;
 
-  if (gst_rtp_buffer_map (buf,
-          GST_MAP_READ | GST_RTP_BUFFER_MAP_FLAG_SKIP_PADDING, &rtpbuf)) {
-    if (gst_rtp_buffer_get_payload_type (&rtpbuf) < 64
-        || gst_rtp_buffer_get_payload_type (&rtpbuf) > 80) {
-      *ssrc = gst_rtp_buffer_get_ssrc (&rtpbuf);
+  if (*is_rtcp == FALSE) {
+    if (gst_rtp_buffer_map (buf,
+        GST_MAP_READ | GST_RTP_BUFFER_MAP_FLAG_SKIP_PADDING, &rtpbuf)) {
+      if (gst_rtp_buffer_get_payload_type (&rtpbuf) < 64
+          || gst_rtp_buffer_get_payload_type (&rtpbuf) > 80) {
 
-      gst_rtp_buffer_unmap (&rtpbuf);
-      *is_rtcp = FALSE;
-      goto have_ssrc;
+        *ssrc = gst_rtp_buffer_get_ssrc (&rtpbuf);
+
+        gst_rtp_buffer_unmap (&rtpbuf);
+      } else {
+        GST_WARNING_OBJECT (filter,
+            "[RTP] Bad buffer: is_rtcp == FALSE but payload type %u",
+            (unsigned) gst_rtp_buffer_get_payload_type (&rtpbuf));
+        gst_rtp_buffer_unmap (&rtpbuf);
+        return NULL;
+      }
+    } else {
+      GST_WARNING_OBJECT (filter,
+          "[RTP] Bad buffer: is_rtcp == FALSE but could not map");
+      return NULL;
     }
-    gst_rtp_buffer_unmap (&rtpbuf);
-  }
-
-  if (rtcp_buffer_get_ssrc (buf, ssrc)) {
-    *is_rtcp = TRUE;
   } else {
-    GST_WARNING_OBJECT (filter, "No SSRC found in buffer");
-    return NULL;
+    if (!rtcp_buffer_get_ssrc (GST_ELEMENT (filter), buf, ssrc)) {
+      GST_WARNING_OBJECT (filter, "[RTCP] No SSRC found in buffer");
+      return NULL;
+    }
   }
-
-have_ssrc:
 
   stream = find_stream_by_ssrc (filter, *ssrc);
 
