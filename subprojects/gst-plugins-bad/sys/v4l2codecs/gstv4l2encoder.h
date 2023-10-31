@@ -64,7 +64,8 @@ gboolean          gst_v4l2_encoder_set_src_fmt (GstV4l2Encoder * self, GstVideoI
 
 gint              gst_v4l2_encoder_request_buffers (GstV4l2Encoder * self,
                                                     GstPadDirection direction,
-                                                    guint num_buffers);
+                                                    guint num_buffers,
+                                                    guint mem_type);
 
 gboolean          gst_v4l2_encoder_export_buffer (GstV4l2Encoder * self,
                                                   GstPadDirection directon,
@@ -130,11 +131,14 @@ gboolean          gst_v4l2_encoder_request_queue (GstV4l2Request * request,
 
 gint              gst_v4l2_encoder_request_set_done (GstV4l2Request * request, guint32 * bytesused, guint32 * flags);
 
-gboolean          gst_v4l2_encoder_request_failed (GstV4l2Request * request);
+void              gst_v4l2_encoder_request_replace_pic_buf (GstV4l2Request * request,
+                                                            GstBuffer * pic_buf);
 
 gboolean	  gst_v4l2_codec_vp8_enc_get_qp_range (GstV4l2Encoder * self, guint * qp_min, guint * qp_max);
 
 gboolean	  gst_v4l2_codec_h264_enc_get_qp_range (GstV4l2Encoder * self, guint * qp_min, guint * qp_max);
+
+gboolean      gst_v4l2_encoder_uses_zero_copy (GstV4l2Encoder * self);
 
 G_END_DECLS
 

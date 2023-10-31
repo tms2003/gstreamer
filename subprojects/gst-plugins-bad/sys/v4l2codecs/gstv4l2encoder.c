@@ -66,6 +66,12 @@ struct _GstV4l2Request
   gboolean sub_request;
 };
 
+struct BufState
+{
+  gboolean queued;
+  gint dmabuf_fd;
+};
+
 struct _GstV4l2Encoder
 {
   GstObject parent;
@@ -81,6 +87,9 @@ struct _GstV4l2Encoder
   struct v4l2_format sink_fmt;
   enum v4l2_buf_type src_buf_type;
   gboolean mplane;
+
+  /* Rember which FD was used with which index */
+  struct BufState buffer_state[VIDEO_MAX_FRAME];
 
   /* properties */
   gchar *media_device;
@@ -107,6 +116,67 @@ direction_to_buffer_type (GstV4l2Encoder * self, GstPadDirection direction)
 }
 
 static void
+buffer_state_init (GstV4l2Encoder * self)
+{
+  gint i;
+
+  for (i = 0; i < VIDEO_MAX_FRAME; i++)
+    self->buffer_state[i].dmabuf_fd = -1;
+}
+
+static void
+buffer_state_streamoff (GstV4l2Encoder * self)
+{
+  gint i;
+
+  for (i = 0; i < VIDEO_MAX_FRAME; i++)
+    self->buffer_state[i].queued = FALSE;
+}
+
+static gint
+buffer_state_find_buffer (GstV4l2Encoder * self, gint dmabuf_fd)
+{
+  gint outstanding_index = -1;
+  gint i;
+
+  for (i = 0; i < VIDEO_MAX_FRAME; i++) {
+    if (self->buffer_state[i].queued)
+      continue;
+
+    if (outstanding_index == -1)
+      outstanding_index = i;
+
+    if (self->buffer_state[i].dmabuf_fd == dmabuf_fd)
+      break;
+  }
+
+  if (i == VIDEO_MAX_FRAME) {
+    if (outstanding_index == -1) {
+      return -1;
+    }
+
+    i = outstanding_index;
+  }
+
+  return i;
+}
+
+static void
+buffer_state_queue (GstV4l2Encoder * self, gint index, gint dmabuf_fd)
+{
+  g_assert (!self->buffer_state[index].queued);
+
+  self->buffer_state[index].queued = TRUE;
+  self->buffer_state[index].dmabuf_fd = dmabuf_fd;
+}
+
+static void
+buffer_state_dequeue (GstV4l2Encoder * self, gint index)
+{
+  self->buffer_state[index].queued = FALSE;
+}
+
+static void
 gst_v4l2_encoder_finalize (GObject * obj)
 {
   GstV4l2Encoder *self = GST_V4L2_ENCODER (obj);
@@ -126,6 +196,8 @@ gst_v4l2_encoder_init (GstV4l2Encoder * self)
 {
   self->request_pool = gst_queue_array_new (16);
   self->pending_requests = gst_queue_array_new (16);
+
+  buffer_state_init (self);
 }
 
 static void
@@ -268,6 +340,8 @@ gst_v4l2_encoder_streamoff (GstV4l2Encoder * self, GstPadDirection direction)
       pending_req->pending = FALSE;
       gst_v4l2_encoder_request_unref (pending_req);
     }
+  } else {
+    buffer_state_streamoff (self);
   }
 
   ret = ioctl (self->video_fd, VIDIOC_STREAMOFF, &type);
@@ -401,8 +475,8 @@ gst_v4l2_encoder_select_sink_format (GstV4l2Encoder * self, GstVideoInfo * in,
     return FALSE;
   }
 
-  if (!gst_v4l2_format_equivalent (pix_fmt, fmt.fmt.pix_mp.pixelformat)
-      || fmt.fmt.pix_mp.width != width || fmt.fmt.pix_mp.height != height) {
+  if (pix_fmt != fmt.fmt.pix_mp.pixelformat || fmt.fmt.pix_mp.width != width
+      || fmt.fmt.pix_mp.height != height) {
     GST_DEBUG_OBJECT (self,
         "Trying to use peer format: %" GST_FOURCC_FORMAT " %ix%i",
         GST_FOURCC_ARGS (pix_fmt), width, height);
@@ -476,6 +550,7 @@ gst_v4l2_encoder_set_src_fmt (GstV4l2Encoder * self, GstVideoInfo * info,
     fmt.fmt.pix_mp.pixelformat = pix_fmt;
     fmt.fmt.pix_mp.width = width;
     fmt.fmt.pix_mp.height = height;
+    fmt.fmt.pix_mp.plane_fmt[0].sizeimage = 4 * 1024 * 1024;
 
     ret = ioctl (self->video_fd, VIDIOC_S_FMT, &fmt);
     if (ret < 0) {
@@ -496,12 +571,12 @@ gst_v4l2_encoder_set_src_fmt (GstV4l2Encoder * self, GstVideoInfo * info,
 
 gint
 gst_v4l2_encoder_request_buffers (GstV4l2Encoder * self,
-    GstPadDirection direction, guint num_buffers)
+    GstPadDirection direction, guint num_buffers, guint mem_type)
 {
   gint ret;
   struct v4l2_requestbuffers reqbufs = {
     .count = num_buffers,
-    .memory = V4L2_MEMORY_MMAP,
+    .memory = mem_type,
     .type = direction_to_buffer_type (self, direction),
   };
 
@@ -628,43 +703,112 @@ gst_v4l2_encoder_queue_src_buffer (GstV4l2Encoder * self,
 }
 
 static gboolean
+gst_v4l2_encoder_import_buffer (GstV4l2Encoder * self, GstBuffer * buffer,
+    struct v4l2_buffer *v4l2_buffer)
+{
+  GstVideoMeta *vmeta = NULL;
+  gint i;
+
+  if (!self->mplane) {
+    GST_INFO_OBJECT (self,
+        "zero copy is only support on MPLANE drivers implementation.");
+    return FALSE;
+  }
+
+  vmeta = gst_buffer_get_video_meta (buffer);
+  if (!vmeta) {
+    GST_INFO_OBJECT (self, "a GstVideoMeta is required for zero copy.");
+    return FALSE;
+  }
+
+  if (self->sink_fmt.fmt.pix_mp.num_planes != vmeta->n_planes) {
+    GST_INFO_OBJECT (self,
+        "planar format into single plane is not support in zero copy.");
+    return FALSE;
+  }
+
+  for (i = 0; i < vmeta->n_planes; i++) {
+    struct v4l2_plane *planes = v4l2_buffer->m.planes;
+    struct v4l2_plane_pix_format *plane_fmt =
+        self->sink_fmt.fmt.pix_mp.plane_fmt;
+    gsize size, offset, maxsize;
+    guint length, mem_idx;
+    gsize mem_skip;
+    GstMemory *mem;
+
+    if (vmeta->stride[i] != plane_fmt[i].bytesperline) {
+      GST_INFO_OBJECT (self,
+          "Stride miss-match at plane %i: got %i but expect %u",
+          i, vmeta->stride[i], plane_fmt[i].bytesperline);
+      return FALSE;
+    }
+
+    if (!gst_buffer_find_memory (buffer, vmeta->offset[i], 1, &mem_idx,
+            &length, &mem_skip)) {
+      GST_INFO_OBJECT (self, "no memory found for plane %i at offset %"
+          G_GSIZE_FORMAT ".", i, vmeta->offset[i]);
+      return FALSE;
+    }
+
+    mem = gst_buffer_peek_memory (buffer, mem_idx);
+    if (!gst_is_dmabuf_memory (mem)) {
+      GST_INFO_OBJECT (self, "cannot import non-dmabuf memory");
+      return FALSE;
+    }
+
+    size = gst_memory_get_sizes (mem, &offset, &maxsize);
+
+    /* *INDENT-OFF* */
+    planes[i] = (struct v4l2_plane) {
+      .bytesused = offset + size,
+        .length = offset + maxsize,
+        .data_offset = offset + mem_skip,
+        .m.fd = gst_dmabuf_memory_get_fd (mem),
+    };
+    /* *INDENT-ON* */
+  }
+
+  v4l2_buffer->length = vmeta->n_planes;
+  v4l2_buffer->index = buffer_state_find_buffer (self,
+      v4l2_buffer->m.planes[0].m.fd);
+
+  if (v4l2_buffer->index < 0) {
+    GST_INFO_OBJECT (self, "no more free buffer to queue the picture.");
+    return FALSE;
+  }
+
+  return TRUE;
+}
+
+static gboolean
 gst_v4l2_encoder_queue_sink_buffer (GstV4l2Encoder * self,
     GstV4l2Request * request, GstBuffer * buffer, guint32 frame_num,
     guint flags)
 {
-  gint i, ret;
+  gint ret;
   struct v4l2_plane planes[GST_VIDEO_MAX_PLANES];
   struct v4l2_buffer buf = {
     .type = self->sink_buf_type,
-    .memory = V4L2_MEMORY_MMAP,
-    .index = gst_v4l2_codec_buffer_get_index (buffer),
+    .memory = V4L2_MEMORY_DMABUF,
     .timestamp.tv_usec = frame_num,
     .request_fd = request->fd,
     .flags = V4L2_BUF_FLAG_REQUEST_FD | flags,
+    .m.planes = planes,
   };
 
   GST_TRACE_OBJECT (self, "Queuing bitstream buffer %i", buf.index);
 
-  if (self->mplane) {
-    buf.length = gst_buffer_n_memory (buffer);
-    buf.m.planes = planes;
-    for (i = 0; i < buf.length; i++) {
-      GstMemory *mem = gst_buffer_peek_memory (buffer, i);
-      /* *INDENT-OFF* */
-      planes[i] = (struct v4l2_plane) {
-        .bytesused = gst_memory_get_sizes (mem, NULL, NULL),
-      };
-      /* *INDENT-ON* */
-    }
-  } else {
-    buf.bytesused = gst_buffer_get_size (buffer);
-  }
+  if (!gst_v4l2_encoder_import_buffer (self, buffer, &buf))
+    return FALSE;
 
   ret = ioctl (self->video_fd, VIDIOC_QBUF, &buf);
   if (ret < 0) {
     GST_ERROR_OBJECT (self, "VIDIOC_QBUF failed: %s", g_strerror (errno));
     return FALSE;
   }
+
+  buffer_state_queue (self, buf.index,
+      gst_dmabuf_memory_get_fd (gst_buffer_peek_memory (buffer, 0)));
 
   return TRUE;
 }
@@ -676,7 +820,7 @@ gst_v4l2_encoder_dequeue_sink (GstV4l2Encoder * self)
   struct v4l2_plane planes[GST_VIDEO_MAX_PLANES] = { {0} };
   struct v4l2_buffer buf = {
     .type = self->sink_buf_type,
-    .memory = V4L2_MEMORY_MMAP,
+    .memory = V4L2_MEMORY_DMABUF,
   };
 
   if (self->mplane) {
@@ -691,6 +835,7 @@ gst_v4l2_encoder_dequeue_sink (GstV4l2Encoder * self)
   }
 
   GST_TRACE_OBJECT (self, "Dequeued picture buffer %i", buf.index);
+  buffer_state_dequeue (self, buf.index);
 
   return TRUE;
 }
@@ -1104,7 +1249,7 @@ gst_v4l2_encoder_request_queue (GstV4l2Request * request, guint flags)
 
   if (!gst_v4l2_encoder_queue_sink_buffer (encoder, request,
           request->pic_buf, request->frame_num, flags)) {
-    GST_ERROR_OBJECT (encoder, "Driver did not accept the picture buffer.");
+    GST_INFO_OBJECT (encoder, "Driver did not accept the picture buffer.");
     return FALSE;
   }
 
@@ -1190,6 +1335,13 @@ gst_v4l2_encoder_request_set_done (GstV4l2Request * request,
   g_assert (pending_req == request);
 
   return ret;
+}
+
+void
+gst_v4l2_encoder_request_replace_pic_buf (GstV4l2Request * request,
+    GstBuffer * pic_buf)
+{
+  gst_buffer_replace (&request->pic_buf, pic_buf);
 }
 
 gboolean

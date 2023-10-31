@@ -270,8 +270,16 @@ gst_v4l2_codec_h264_enc_propose_allocation (GstVideoEncoder * encoder,
     GstQuery * query)
 {
   GstV4l2CodecH264Enc *self = GST_V4L2_CODEC_H264_ENC (encoder);
+  GstV4l2CodecPool *pool = NULL;
+  gboolean need_pool;
 
-  gst_query_add_allocation_pool (query, NULL, self->vinfo.size, 2, 0);
+  gst_query_parse_allocation (query, NULL, &need_pool);
+
+  if (need_pool)
+    pool = gst_v4l2_codec_pool_new (self->sink_allocator, &self->vinfo);
+
+  gst_query_add_allocation_pool (query, GST_BUFFER_POOL (pool),
+      self->vinfo.size, 2, 0);
   gst_query_add_allocation_meta (query, GST_VIDEO_META_API_TYPE, NULL);
 
   return GST_VIDEO_ENCODER_CLASS (parent_class)->propose_allocation (encoder,
@@ -964,12 +972,6 @@ gst_v4l2_codec_h264_enc_encode_frame (GstH264Encoder * encoder,
     goto done;
   }
 
-  if (!gst_v4l2_codec_h264_enc_copy_input_buffer (self, frame)) {
-    GST_ELEMENT_ERROR (self, RESOURCE, NO_SPACE_LEFT,
-        ("Failed to allocate/copy input buffer."), (NULL));
-    goto done;
-  }
-
   request = gst_v4l2_encoder_alloc_request (self->encoder,
       frame->system_frame_number, frame->input_buffer, frame->output_buffer);
 
@@ -991,13 +993,22 @@ gst_v4l2_codec_h264_enc_encode_frame (GstH264Encoder * encoder,
   }
 
   if (!gst_v4l2_encoder_request_queue (request, 0)) {
-    GST_ELEMENT_ERROR (self, RESOURCE, WRITE,
-        ("Driver did not accept the encode request."), (NULL));
-    goto done;
+    if (!gst_v4l2_codec_h264_enc_copy_input_buffer (self, frame)) {
+      GST_ELEMENT_ERROR (self, RESOURCE, NO_SPACE_LEFT,
+          ("Failed to allocate/copy input buffer."), (NULL));
+      goto done;
+    }
+
+    gst_v4l2_encoder_request_replace_pic_buf (request, frame->input_buffer);
+
+    if (!gst_v4l2_encoder_request_queue (request, 0)) {
+      GST_ELEMENT_ERROR (self, RESOURCE, WRITE,
+          ("Driver did not accept the encode request."), (NULL));
+      goto done;
+    }
   }
 
-  if (!gst_v4l2_encoder_request_set_done(request, &bytesused, &flags))
-  {
+  if (!gst_v4l2_encoder_request_set_done(request, &bytesused, &flags)) {
     GST_ELEMENT_ERROR (self, RESOURCE, WRITE,
         ("Driver did not ack the request."), (NULL));
     goto done;

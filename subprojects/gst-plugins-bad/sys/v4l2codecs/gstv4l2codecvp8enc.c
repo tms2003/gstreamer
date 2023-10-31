@@ -580,11 +580,6 @@ gst_v4l2_codec_vp8_enc_encode_frame (GstVp8Encoder * encoder,
     goto done;
   }
 
-  if (!gst_v4l2_codec_vp8_enc_copy_input_buffer (self, frame)) {
-    GST_ELEMENT_ERROR (self, RESOURCE, NO_SPACE_LEFT,
-        ("Failed to allocate/copy input buffer."), (NULL));
-    goto done;
-  }
 
   request = gst_v4l2_encoder_alloc_request (self->encoder,
       frame->system_frame_number, frame->input_buffer, frame->output_buffer);
@@ -605,9 +600,19 @@ gst_v4l2_codec_vp8_enc_encode_frame (GstVp8Encoder * encoder,
   }
 
   if (!gst_v4l2_encoder_request_queue (request, 0)) {
-    GST_ELEMENT_ERROR (self, RESOURCE, WRITE,
-        ("Driver did not accept the encode request."), (NULL));
-    goto done;
+    if (!gst_v4l2_codec_vp8_enc_copy_input_buffer (self, frame)) {
+      GST_ELEMENT_ERROR (self, RESOURCE, NO_SPACE_LEFT,
+          ("Failed to allocate/copy input buffer."), (NULL));
+      goto done;
+    }
+
+    gst_v4l2_encoder_request_replace_pic_buf (request, frame->input_buffer);
+
+    if (!gst_v4l2_encoder_request_queue (request, 0)) {
+      GST_ELEMENT_ERROR (self, RESOURCE, WRITE,
+          ("Driver did not accept the encode request."), (NULL));
+      goto done;
+    }
   }
 
   if (!gst_v4l2_encoder_request_set_done (request, &bytesused, &flags)) {

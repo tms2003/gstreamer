@@ -245,7 +245,8 @@ gst_v4l2_codec_encoder_allocator_prepare (GstV4l2CodecAllocator * self)
   gint ret;
   guint i;
 
-  ret = gst_v4l2_encoder_request_buffers (encoder, direction, self->pool_size);
+  ret = gst_v4l2_encoder_request_buffers (encoder, direction, self->pool_size,
+      V4L2_MEMORY_MMAP);
   if (ret < self->pool_size) {
     if (ret >= 0)
       GST_ERROR_OBJECT (self,
@@ -261,10 +262,16 @@ gst_v4l2_codec_encoder_allocator_prepare (GstV4l2CodecAllocator * self)
     g_queue_push_tail (&self->pool, buf);
   }
 
+  if (direction == GST_PAD_SINK) {
+    gst_v4l2_codec_allocator_detach (self);
+    gst_v4l2_encoder_request_buffers (encoder, direction,
+        VIDEO_MAX_FRAME, V4L2_MEMORY_DMABUF);
+  }
+
   return TRUE;
 
 failed:
-  gst_v4l2_encoder_request_buffers (encoder, direction, 0);
+  gst_v4l2_encoder_request_buffers (encoder, direction, 0, V4L2_MEMORY_MMAP);
   return FALSE;
 }
 
@@ -446,7 +453,8 @@ gst_v4l2_codec_allocator_detach (GstV4l2CodecAllocator * self)
       gst_v4l2_decoder_request_buffers (self->decoder, self->direction, 0);
     }
     if (self->encoder) {
-      gst_v4l2_encoder_request_buffers (self->encoder, self->direction, 0);
+      gst_v4l2_encoder_request_buffers (self->encoder, self->direction, 0,
+          V4L2_MEMORY_MMAP);
     }
   }
   GST_OBJECT_UNLOCK (self);
