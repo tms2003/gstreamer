@@ -20,10 +20,21 @@
 #pragma once
 
 #include "gstamfencoder.h"
+#ifdef G_OS_WIN32
 #include <gst/d3d11/gstd3d11.h>
+#else
+#include "gst/vulkan/vulkan_fwd.h"
+#endif // G_OS_WIN32
+
+#ifdef G_OS_WIN32
+typedef GstD3D11Device GST_AMF_PLATFORM_DEVICE;
+#else
+typedef GstVulkanDevice GST_AMF_PLATFORM_DEVICE;
+#endif // G_OS_WIN32
 
 G_BEGIN_DECLS
-    void gst_amf_av1_enc_register_d3d11 (GstPlugin * plugin,
-    GstD3D11Device * device, gpointer context, guint rank);
+    void gst_amf_av1_enc_register (GstPlugin * plugin,
+    GST_AMF_PLATFORM_DEVICE * device, gpointer context, guint rank);
+
 
 G_END_DECLS
