@@ -236,6 +236,19 @@ gst_v4l2_codec_vp8_enc_getcaps (GstVideoEncoder * encoder, GstCaps * filter)
 }
 
 static gboolean
+gst_v4l2_codec_vp8_enc_propose_allocation (GstVideoEncoder * encoder,
+    GstQuery * query)
+{
+  GstV4l2CodecVp8Enc *self = GST_V4L2_CODEC_VP8_ENC (encoder);
+
+  gst_query_add_allocation_pool (query, NULL, self->vinfo.size, 2, 0);
+  gst_query_add_allocation_meta (query, GST_VIDEO_META_API_TYPE, NULL);
+
+  return GST_VIDEO_ENCODER_CLASS (parent_class)->propose_allocation (encoder,
+      query);
+}
+
+static gboolean
 gst_v4l2_codec_vp8_enc_buffers_allocation (GstVideoEncoder * encoder)
 {
   GstV4l2CodecVp8Enc *self = GST_V4L2_CODEC_VP8_ENC (encoder);
@@ -689,6 +702,8 @@ gst_v4l2_codec_vp8_enc_subclass_init (GstV4l2CodecVp8EncClass * klass,
   encoder_class->sink_event =
       GST_DEBUG_FUNCPTR (gst_v4l2_codec_vp8_enc_sink_event);
   encoder_class->getcaps = GST_DEBUG_FUNCPTR (gst_v4l2_codec_vp8_enc_getcaps);
+  encoder_class->propose_allocation =
+      GST_DEBUG_FUNCPTR (gst_v4l2_codec_vp8_enc_propose_allocation);
   vp8encoder_class->encode_frame =
       GST_DEBUG_FUNCPTR (gst_v4l2_codec_vp8_enc_encode_frame);
 
