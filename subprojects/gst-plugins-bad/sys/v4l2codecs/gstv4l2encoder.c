@@ -400,7 +400,7 @@ gst_v4l2_encoder_select_sink_format (GstV4l2Encoder * self, GstVideoInfo * in,
     return FALSE;
   }
 
-  if (pix_fmt != fmt.fmt.pix_mp.pixelformat
+  if (!gst_v4l2_format_equivalent (pix_fmt, fmt.fmt.pix_mp.pixelformat)
       || fmt.fmt.pix_mp.width != width || fmt.fmt.pix_mp.height != height) {
     GST_DEBUG_OBJECT (self,
         "Trying to use peer format: %" GST_FOURCC_FORMAT " %ix%i",

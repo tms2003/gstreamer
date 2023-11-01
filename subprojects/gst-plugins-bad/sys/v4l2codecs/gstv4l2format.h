@@ -38,4 +38,6 @@ gboolean   gst_v4l2_format_to_video_format (guint32 pix_fmt,
 gboolean   gst_v4l2_format_from_video_format (GstVideoFormat format,
                                               guint32 * out_pix_fmt);
 
+gboolean   gst_v4l2_format_equivalent (guint32 pix_fmt_a, guint32 pix_fmt_b);
+
 #endif /* __GST_V4L2_FORMAT_H__ */

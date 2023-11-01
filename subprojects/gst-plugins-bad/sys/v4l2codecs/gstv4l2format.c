@@ -204,3 +204,23 @@ gst_v4l2_format_from_video_format (GstVideoFormat format, guint32 * out_pix_fmt)
   *out_pix_fmt = entry->v4l2_pix_fmt;
   return TRUE;
 }
+
+gboolean
+gst_v4l2_format_equivalent (guint32 pix_fmt_a, guint32 pix_fmt_b)
+{
+  struct FormatEntry *entry_a, *entry_b;
+
+  if (pix_fmt_a == pix_fmt_b)
+    return TRUE;
+
+  entry_a = lookup_v4l2_fmt (pix_fmt_a);
+  entry_b = lookup_v4l2_fmt (pix_fmt_b);
+
+  if (!entry_a || !entry_b)
+    return FALSE;
+
+  if (entry_a->gst_fmt == entry_b->gst_fmt)
+    return TRUE;
+
+  return FALSE;
+}
