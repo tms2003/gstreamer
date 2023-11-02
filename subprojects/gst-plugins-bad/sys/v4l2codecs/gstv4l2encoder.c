@@ -77,8 +77,9 @@ struct _GstV4l2Encoder
   GstQueueArray *pending_requests;
   guint version;
 
-  enum v4l2_buf_type src_buf_type;
   enum v4l2_buf_type sink_buf_type;
+  struct v4l2_format sink_fmt;
+  enum v4l2_buf_type src_buf_type;
   gboolean mplane;
 
   /* properties */
@@ -423,6 +424,7 @@ gst_v4l2_encoder_select_sink_format (GstV4l2Encoder * self, GstVideoInfo * in,
 
   GST_INFO_OBJECT (self, "Selected sink format %s %ix%i",
       gst_video_format_to_string (out->finfo->format), out->width, out->height);
+  self->sink_fmt = fmt;
 
   return TRUE;
 }
