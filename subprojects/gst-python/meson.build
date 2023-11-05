@@ -15,10 +15,17 @@ add_project_arguments('-DHAVE_CONFIG_H', language: 'c')
 
 gst_req = '>= @0@.@1@.0'.format(gst_version_major, gst_version_minor)
 
-gst_dep = dependency('gstreamer-1.0', version : gst_req,
-  fallback : ['gstreamer', 'gst_dep'])
-gstbase_dep = dependency('gstreamer-base-1.0', version : gst_req,
-  fallback : ['gstreamer', 'gst_base_dep'])
+if get_option('gst-full')
+  gst_dep = dependency('gstreamer-full-1.0', version : gst_req,
+    fallback : ['gstreamer', 'gst_dep'])
+  gst_base_dep = gst_dep
+else
+  gst_dep = dependency('gstreamer-1.0', version : gst_req,
+    fallback : ['gstreamer', 'gst_dep'])
+  gstbase_dep = dependency('gstreamer-base-1.0', version : gst_req,
+    fallback : ['gstreamer', 'gst_base_dep'])
+endif
+
 gmodule_dep = dependency('gmodule-no-export-2.0')
 pygobject_dep = dependency('pygobject-3.0', fallback: ['pygobject', 'pygobject_dep'], version : '>= 3.8')
 

@@ -5,3 +5,5 @@ option('libpython-dir', type : 'string', value : '',
 option('python', type : 'string', value : 'python3')
 option('tests', type : 'feature', value : 'auto', yield : true)
 option('plugin', type : 'feature', value : 'auto')
+
+option('gst-full', type : 'boolean', value : false, description: 'Build against gst-full')
