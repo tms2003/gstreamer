@@ -319,8 +319,6 @@ gst_video_frame_copy_plane (GstVideoFrame * dest, const GstVideoFrame * src,
 
   finfo = dinfo->finfo;
 
-  g_return_val_if_fail (dinfo->width <= sinfo->width
-      && dinfo->height <= sinfo->height, FALSE);
   g_return_val_if_fail (finfo->n_planes > plane, FALSE);
 
   sp = src->data[plane];
@@ -333,15 +331,19 @@ gst_video_frame_copy_plane (GstVideoFrame * dest, const GstVideoFrame * src,
   }
 
   gst_video_format_info_component (finfo, plane, comp);
-  w = GST_VIDEO_FRAME_COMP_WIDTH (dest,
-      comp[0]) * GST_VIDEO_FRAME_COMP_PSTRIDE (dest, comp[0]);
+  w = MIN (GST_VIDEO_FRAME_COMP_WIDTH (dest, comp[0]),
+      GST_VIDEO_FRAME_COMP_WIDTH (src, comp[0])) *
+      GST_VIDEO_FRAME_COMP_PSTRIDE (dest, comp[0]);
+
+
   /* FIXME: workaround for complex formats like v210, UYVP and IYU1 that have
    * pstride == 0 */
   if (w == 0)
     w = MIN (GST_VIDEO_INFO_PLANE_STRIDE (dinfo, plane),
         GST_VIDEO_INFO_PLANE_STRIDE (sinfo, plane));
 
-  h = GST_VIDEO_FRAME_COMP_HEIGHT (dest, comp[0]);
+  h = MIN (GST_VIDEO_FRAME_COMP_HEIGHT (dest, comp[0]),
+      GST_VIDEO_FRAME_COMP_HEIGHT (src, comp[0]));
 
   ss = GST_VIDEO_INFO_PLANE_STRIDE (sinfo, plane);
   ds = GST_VIDEO_INFO_PLANE_STRIDE (dinfo, plane);
@@ -409,19 +411,12 @@ gboolean
 gst_video_frame_copy (GstVideoFrame * dest, const GstVideoFrame * src)
 {
   guint i, n_planes;
-  const GstVideoInfo *sinfo;
   GstVideoInfo *dinfo;
 
   g_return_val_if_fail (dest != NULL, FALSE);
   g_return_val_if_fail (src != NULL, FALSE);
 
-  sinfo = &src->info;
   dinfo = &dest->info;
-
-  g_return_val_if_fail (dinfo->finfo->format == sinfo->finfo->format, FALSE);
-  g_return_val_if_fail (dinfo->width <= sinfo->width
-      && dinfo->height <= sinfo->height, FALSE);
-
   n_planes = dinfo->finfo->n_planes;
 
   for (i = 0; i < n_planes; i++)
