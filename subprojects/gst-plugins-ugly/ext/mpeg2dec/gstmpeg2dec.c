@@ -229,7 +229,7 @@ gst_mpeg2dec_flush (GstVideoDecoder * decoder)
   GstMpeg2dec *mpeg2dec = GST_MPEG2DEC (decoder);
 
   /* reset the initial video state */
-  mpeg2dec->discont_state = MPEG2DEC_DISC_NEW_PICTURE;
+  mpeg2dec->discont_state = MPEG2DEC_DISC_FLUSHING;
   mpeg2_reset (mpeg2dec->decoder, 1);
   mpeg2_skip (mpeg2dec->decoder, 1);
 
@@ -1054,7 +1054,7 @@ gst_mpeg2dec_handle_frame (GstVideoDecoder * decoder,
   GstMpeg2dec *mpeg2dec = GST_MPEG2DEC (decoder);
   GstBuffer *buf = frame->input_buffer;
   GstMapInfo minfo;
-  const mpeg2_info_t *info;
+  const mpeg2_info_t *info = mpeg2dec->info;
   mpeg2_state_t state;
   gboolean done = FALSE;
   GstFlowReturn ret = GST_FLOW_OK;
@@ -1064,14 +1064,33 @@ gst_mpeg2dec_handle_frame (GstVideoDecoder * decoder,
       frame->system_frame_number,
       GST_TIME_ARGS (frame->pts), GST_TIME_ARGS (frame->duration));
 
+  if (mpeg2dec->discont_state == MPEG2DEC_DISC_FLUSHING && mpeg2dec->input_state
+      && mpeg2dec->input_state->codec_data) {
+    if (!gst_buffer_map (mpeg2dec->input_state->codec_data, &minfo,
+            GST_MAP_READ)) {
+      GST_ERROR_OBJECT (mpeg2dec, "Failed to map codec_data buffer");
+      return GST_FLOW_ERROR;
+    }
+
+    mpeg2_buffer (mpeg2dec->decoder, minfo.data, minfo.data + minfo.size);
+    state = mpeg2_parse (mpeg2dec->decoder);
+
+    gst_buffer_unmap (mpeg2dec->input_state->codec_data, &minfo);
+
+    if (state == STATE_INVALID) {
+      GST_ERROR_OBJECT (mpeg2dec, "Couldn't restore state parsing codec_data");
+      return GST_FLOW_ERROR;
+    }
+
+    mpeg2dec->discont_state = MPEG2DEC_DISC_NEW_PICTURE;
+  }
+
   gst_buffer_ref (buf);
   if (!gst_buffer_map (buf, &minfo, GST_MAP_READ)) {
     GST_ERROR_OBJECT (mpeg2dec, "Failed to map input buffer");
     gst_buffer_unref (buf);
     return GST_FLOW_ERROR;
   }
-
-  info = mpeg2dec->info;
 
   GST_LOG_OBJECT (mpeg2dec, "calling mpeg2_buffer");
   mpeg2_buffer (mpeg2dec->decoder, minfo.data, minfo.data + minfo.size);

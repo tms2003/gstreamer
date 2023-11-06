@@ -27,7 +27,7 @@ gstmxf = library('gstmxf',
   mxf_sources,
   c_args : gst_plugins_bad_args + [ '-DGST_USE_UNSTABLE_API' ],
   include_directories : [configinc],
-  dependencies : [gstbase_dep, gstaudio_dep, gstvideo_dep],
+  dependencies : [gstcodecparsers_dep, gstbase_dep, gstaudio_dep, gstvideo_dep],
   install : true,
   install_dir : plugins_install_dir,
 )

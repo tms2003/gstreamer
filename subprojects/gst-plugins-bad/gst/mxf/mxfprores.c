@@ -46,7 +46,8 @@ static GstFlowReturn
 mxf_prores_handle_essence_element (const MXFUL * key, GstBuffer * buffer,
     GstCaps * caps,
     MXFMetadataTimelineTrack * track,
-    gpointer mapping_data, GstBuffer ** outbuf)
+    gpointer mapping_data, MXFEssenceElementParsedProperties * props,
+    GstBuffer ** outbuf)
 {
   *outbuf = buffer;
 
@@ -182,7 +183,8 @@ mxf_prores_create_caps (MXFMetadataTimelineTrack * track, GstTagList ** tags,
 static const MXFEssenceElementHandler mxf_prores_essence_element_handler = {
   mxf_is_prores_essence_track,
   mxf_prores_get_track_wrapping,
-  mxf_prores_create_caps
+  mxf_prores_create_caps,
+  g_free,
 };
 
 void

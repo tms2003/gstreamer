@@ -21,7 +21,7 @@
  * Generic Container
  */
 
-/* TODO: 
+/* TODO:
  *   - Handle CDCI essence
  *   - Handle more formats with RGBA descriptor (4:4:4 / 4:4:4:4 YUV, RGB656, ...)
  *   - Handle all the dimensions and other properties in the picture
@@ -115,7 +115,8 @@ static GstFlowReturn
 mxf_up_handle_essence_element (const MXFUL * key, GstBuffer * buffer,
     GstCaps * caps,
     MXFMetadataTimelineTrack * track,
-    gpointer mapping_data, GstBuffer ** outbuf)
+    gpointer mapping_data, MXFEssenceElementParsedProperties * props,
+    GstBuffer ** outbuf)
 {
   MXFUPMappingData *data = mapping_data;
   gsize expected_in_stride = 0, out_stride = 0;
@@ -419,7 +420,8 @@ mxf_up_create_caps (MXFMetadataTimelineTrack * track, GstTagList ** tags,
 static const MXFEssenceElementHandler mxf_up_essence_element_handler = {
   mxf_is_up_essence_track,
   mxf_up_get_track_wrapping,
-  mxf_up_create_caps
+  mxf_up_create_caps,
+  g_free,
 };
 
 static GstFlowReturn
@@ -634,6 +636,7 @@ static MXFEssenceElementWriter mxf_up_essence_element_writer = {
   mxf_up_update_descriptor,
   mxf_up_get_edit_rate,
   mxf_up_get_track_number_template,
+  g_free,
   NULL,
   {{0,}}
 };

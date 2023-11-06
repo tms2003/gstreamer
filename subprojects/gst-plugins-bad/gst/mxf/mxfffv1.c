@@ -81,7 +81,8 @@ static GstFlowReturn
 mxf_ffv1_handle_essence_element (const MXFUL * key, GstBuffer * buffer,
     GstCaps * caps,
     MXFMetadataTimelineTrack * track,
-    gpointer mapping_data, GstBuffer ** outbuf)
+    gpointer mapping_data, MXFEssenceElementParsedProperties * props,
+    GstBuffer ** outbuf)
 {
   *outbuf = buffer;
 
@@ -197,7 +198,8 @@ mxf_ffv1_create_caps (MXFMetadataTimelineTrack * track, GstTagList ** tags,
 static const MXFEssenceElementHandler mxf_ffv1_essence_element_handler = {
   mxf_is_ffv1_essence_track,
   mxf_ffv1_get_track_wrapping,
-  mxf_ffv1_create_caps
+  mxf_ffv1_create_caps,
+  g_free,
 };
 
 static gboolean

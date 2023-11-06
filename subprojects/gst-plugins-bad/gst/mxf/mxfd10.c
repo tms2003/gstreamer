@@ -57,8 +57,12 @@ static GstFlowReturn
 mxf_d10_picture_handle_essence_element (const MXFUL * key, GstBuffer * buffer,
     GstCaps * caps,
     MXFMetadataTimelineTrack * track,
-    gpointer mapping_data, GstBuffer ** outbuf)
+    gpointer mapping_data, MXFEssenceElementParsedProperties * props,
+    GstBuffer ** outbuf)
 {
+  GstFlowReturn ret = GST_FLOW_OK;
+  MXFMPEGVideoMappingData *mdata = mapping_data;
+
   *outbuf = buffer;
 
   /* SMPTE 386M 5.2.1 */
@@ -67,19 +71,18 @@ mxf_d10_picture_handle_essence_element (const MXFUL * key, GstBuffer * buffer,
     return GST_FLOW_ERROR;
   }
 
-  if (mxf_mpeg_is_mpeg2_keyframe (buffer))
-    GST_BUFFER_FLAG_UNSET (buffer, GST_BUFFER_FLAG_DELTA_UNIT);
-  else
-    GST_BUFFER_FLAG_SET (buffer, GST_BUFFER_FLAG_DELTA_UNIT);
+  if (props)
+    ret = mxf_mpeg_parse_mpeg2_pict_props (buffer, mdata, props);
 
-  return GST_FLOW_OK;
+  return ret;
 }
 
 static GstFlowReturn
 mxf_d10_sound_handle_essence_element (const MXFUL * key, GstBuffer * buffer,
     GstCaps * caps,
     MXFMetadataTimelineTrack * track,
-    gpointer mapping_data, GstBuffer ** outbuf)
+    gpointer mapping_data, MXFEssenceElementParsedProperties * props,
+    GstBuffer ** outbuf)
 {
   guint i, j, nsamples;
   const guint8 *indata;
@@ -253,7 +256,8 @@ mxf_d10_create_caps (MXFMetadataTimelineTrack * track, GstTagList ** tags,
 static const MXFEssenceElementHandler mxf_d10_essence_element_handler = {
   mxf_is_d10_essence_track,
   mxf_d10_get_track_wrapping,
-  mxf_d10_create_caps
+  mxf_d10_create_caps,
+  g_free,
 };
 
 void

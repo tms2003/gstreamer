@@ -25,9 +25,45 @@
 #define __MXF_MPEG_H__
 
 #include <gst/gst.h>
+#include "mxfessence.h"
+
+typedef enum
+{
+  MXF_MPEG_ESSENCE_TYPE_OTHER = 0,
+  MXF_MPEG_ESSENCE_TYPE_VIDEO_MPEG2,
+  MXF_MPEG_ESSENCE_TYPE_VIDEO_MPEG4,
+  MXF_MPEG_ESSENCE_TYPE_VIDEO_AVC
+} MXFMPEGEssenceType;
+
+/**
+ * MXFMPEGVideoMappingData:
+ * @essence_type: Type of essence for the essence track.
+ * @closed_group: Whether current group is closed.
+ * @only_b_picts: Whether only B-pictures were encountered since last I-frame.
+ * @pict_seq_nb: The sequence number of current pict. NONE is G_MAXUINT64;
+ *
+ * The MXF Mpeg Mapping Data structure stores context data which is used
+ * while parsing mpeg packets of the essence track.
+ */
+struct _MXFMPEGVideoMappingData
+{
+  MXFMPEGEssenceType essence_type;
+  gboolean closed_group;
+  gboolean only_b_picts;
+  guint64 pict_seq_nb;
+  gpointer parser_context;
+};
+
+typedef struct _MXFMPEGVideoMappingData MXFMPEGVideoMappingData;
 
 void mxf_mpeg_init (void);
 
-gboolean mxf_mpeg_is_mpeg2_keyframe (GstBuffer *buffer);
+GstFlowReturn mxf_mpeg_parse_mpeg2_pict_props (GstBuffer * buffer,
+    MXFMPEGVideoMappingData * mapping_data,
+    MXFEssenceElementParsedProperties * props);
+
+GstFlowReturn mxf_mpeg_parse_mpeg4_pict_props (GstBuffer * buffer,
+    MXFMPEGVideoMappingData * mapping_data,
+    MXFEssenceElementParsedProperties * props);
 
 #endif /* __MXF_MPEG_H__ */

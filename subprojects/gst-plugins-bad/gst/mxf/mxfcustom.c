@@ -52,7 +52,8 @@ static GstFlowReturn
 mxf_canon_xfhevc_handle_essence_element (const MXFUL * key, GstBuffer * buffer,
     GstCaps * caps,
     MXFMetadataTimelineTrack * track,
-    gpointer mapping_data, GstBuffer ** outbuf)
+    gpointer mapping_data, MXFEssenceElementParsedProperties * props,
+    GstBuffer ** outbuf)
 {
   *outbuf = buffer;
   /* Blindly accept it */
@@ -85,7 +86,8 @@ mxf_canon_xfhevc_create_caps (MXFMetadataTimelineTrack * track,
 static const MXFEssenceElementHandler mxf_canon_xfhevc_essence_element_handler = {
   mxf_is_canon_xfhevc_essence_track,
   mxf_canon_xfhevc_get_track_wrapping,
-  mxf_canon_xfhevc_create_caps
+  mxf_canon_xfhevc_create_caps,
+  g_free,
 };
 
 void

@@ -1246,11 +1246,19 @@ mxf_index_table_segment_parse (const MXFUL * ul,
           entry->flags = GST_READ_UINT8 (tag_data);
           tag_data += 1;
           tag_size -= 1;
-          GST_DEBUG ("     flags = 0x%02x (%s%s%s%s)", entry->flags,
-              entry->flags & 0x80 ? "Random-Access " : "",
-              entry->flags & 0x40 ? "Sequence-Header " : "",
-              entry->flags & 0x20 ? "Forward-Prediction " : "",
-              entry->flags & 0x10 ? "Backward-Prediction " : "");
+          GST_DEBUG ("     flags = 0x%02x (%s%s%s%s%s)", entry->flags,
+              MXF_INDEX_ENTRY_FLAGS_IS_SET_RANDOM_ACCESS (entry->flags) ?
+              "Random-Access " : "",
+              MXF_INDEX_ENTRY_FLAGS_IS_SET_SEQUENCE_HEADER (entry->flags) ?
+              "Sequence-Header " : "",
+              MXF_INDEX_ENTRY_FLAGS_IS_SET_FORWARD_PREDICTION (entry->flags) ?
+              "Forward-Prediction " : "",
+              MXF_INDEX_ENTRY_FLAGS_IS_SET_BACKWARD_PREDICTION (entry->flags) ?
+              "Backward-Prediction " : "",
+              !MXF_INDEX_ENTRY_FLAGS_IS_SET_DELTA_UNIT (entry->flags) ?
+              "Keyframe " : "",
+              !MXF_INDEX_ENTRY_FLAGS_IS_SET_OFFSET_OUT_OF_RANGE (entry->flags) ?
+              "Offset-Out-of-Range" : "");
 
           entry->stream_offset = GST_READ_UINT64_BE (tag_data);
           tag_data += 8;

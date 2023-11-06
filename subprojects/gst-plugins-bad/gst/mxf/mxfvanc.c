@@ -85,7 +85,8 @@ static GstFlowReturn
 mxf_vanc_handle_essence_element (const MXFUL * key, GstBuffer * buffer,
     GstCaps * caps,
     MXFMetadataTimelineTrack * track,
-    gpointer mapping_data, GstBuffer ** outbuf)
+    gpointer mapping_data, MXFEssenceElementParsedProperties * props,
+    GstBuffer ** outbuf)
 {
   GstMapInfo map;
   GstByteReader reader;
@@ -286,7 +287,8 @@ mxf_vanc_create_caps (MXFMetadataTimelineTrack * track, GstTagList ** tags,
 static const MXFEssenceElementHandler mxf_vanc_essence_element_handler = {
   mxf_is_vanc_essence_track,
   mxf_vanc_get_track_wrapping,
-  mxf_vanc_create_caps
+  mxf_vanc_create_caps,
+  g_free,
 };
 
 static GstFlowReturn
@@ -412,6 +414,7 @@ static MXFEssenceElementWriter mxf_vanc_essence_element_writer = {
   mxf_vanc_update_descriptor,
   mxf_vanc_get_edit_rate,
   mxf_vanc_get_track_number_template,
+  g_free,
   NULL,
   {{0,}}
 };

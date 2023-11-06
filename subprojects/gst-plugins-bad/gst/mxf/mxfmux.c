@@ -38,6 +38,7 @@
 #include <string.h>
 
 #include "gstmxfelements.h"
+#include "mxfmpeg.h"
 #include "mxfmux.h"
 
 #ifdef HAVE_SYS_UTSNAME_H
@@ -89,7 +90,13 @@ gst_mxf_mux_pad_finalize (GObject * object)
   GstMXFMuxPad *pad = GST_MXF_MUX_PAD (object);
 
   g_object_unref (pad->adapter);
-  g_free (pad->mapping_data);
+  if (pad->mapping_data) {
+    if (pad->writer && pad->writer->free_mapping_data)
+      pad->writer->free_mapping_data (pad->mapping_data);
+    else
+      g_free (pad->mapping_data);
+    pad->mapping_data = NULL;
+  }
 
   G_OBJECT_CLASS (gst_mxf_mux_pad_parent_class)->finalize (object);
 }
@@ -237,8 +244,13 @@ gst_mxf_mux_reset (GstMXFMux * mux)
     GstMXFMuxPad *pad = l->data;
 
     gst_adapter_clear (pad->adapter);
-    g_free (pad->mapping_data);
-    pad->mapping_data = NULL;
+    if (pad->mapping_data) {
+      if (pad->writer && pad->writer->free_mapping_data)
+        pad->writer->free_mapping_data (pad->mapping_data);
+      else
+        g_free (pad->mapping_data);
+      pad->mapping_data = NULL;
+    }
 
     pad->pos = 0;
     pad->last_timestamp = 0;
@@ -273,6 +285,7 @@ gst_mxf_mux_reset (GstMXFMux * mux)
               n).index_entries);
   g_array_set_size (mux->index_table, 0);
   mux->current_index_pos = 0;
+  mux->last_random_access_pos = 0;
   mux->last_keyframe_pos = 0;
 }
 
@@ -306,8 +319,13 @@ gst_mxf_mux_set_caps (GstMXFMux * mux, GstMXFMuxPad * pad, GstCaps * caps)
     memcpy (&d_instance_uid, &MXF_METADATA_BASE (old_descriptor)->instance_uid,
         16);
     pad->descriptor = NULL;
-    g_free (pad->mapping_data);
-    pad->mapping_data = NULL;
+    if (pad->mapping_data) {
+      if (pad->writer && pad->writer->free_mapping_data)
+        pad->writer->free_mapping_data (pad->mapping_data);
+      else
+        g_free (pad->mapping_data);
+      pad->mapping_data = NULL;
+    }
   }
 
   pad->descriptor =
@@ -1211,6 +1229,43 @@ static const guint8 _gc_essence_element_ul[] = {
   0x0d, 0x01, 0x03, 0x01, 0x00, 0x00, 0x00, 0x00
 };
 
+static MXFEssenceElementParsedProperties
+get_essence_element_props (GstMXFMuxPad * pad, GstBuffer * buf)
+{
+  MXFEssenceElementParsedProperties eprops;
+  eprops.flags = MXF_INDEX_ENTRY_FLAGS_DEFAULT;
+
+  GstCaps *caps = gst_pad_get_current_caps (GST_PAD (pad));
+
+  if (caps) {
+    GstStructure *s = gst_caps_get_structure (caps, 0);
+    if (strcmp (gst_structure_get_name (s), "video/mpeg") == 0) {
+      gint mpegversion;
+
+      if (gst_structure_get_int (s, "mpegversion", &mpegversion)) {
+        MXFMPEGVideoMappingData *mdata = pad->mapping_data;
+
+        if (mpegversion == 1 || mpegversion == 2) {
+          mxf_mpeg_parse_mpeg2_pict_props (buf, mdata, &eprops);
+          goto done;
+        } else if (mpegversion == 4) {
+          mxf_mpeg_parse_mpeg4_pict_props (buf, mdata, &eprops);
+          goto done;
+        }
+      }
+    }
+  }
+
+  /* Apply default strategy */
+  if (GST_BUFFER_FLAG_IS_SET (buf, GST_BUFFER_FLAG_DELTA_UNIT)) {
+    MXF_INDEX_ENTRY_FLAGS_UNSET_RANDOM_ACCESS (eprops.flags);
+    MXF_INDEX_ENTRY_FLAGS_SET_FORWARD_PREDICTION (eprops.flags);
+  }
+
+done:
+  return eprops;
+}
+
 static GstFlowReturn
 gst_mxf_mux_handle_buffer (GstMXFMux * mux, GstMXFMuxPad * pad)
 {
@@ -1222,8 +1277,8 @@ gst_mxf_mux_handle_buffer (GstMXFMux * mux, GstMXFMuxPad * pad)
   guint8 slen, ber[9];
   gboolean flush = gst_aggregator_pad_is_eos (GST_AGGREGATOR_PAD (pad))
       && !pad->have_complete_edit_unit && buf == NULL;
-  gboolean is_keyframe = buf ?
-      !GST_BUFFER_FLAG_IS_SET (buf, GST_BUFFER_FLAG_DELTA_UNIT) : TRUE;
+  MXFEssenceElementParsedProperties eprops =
+      get_essence_element_props (pad, buf);
   GstClockTime pts = buf ? GST_BUFFER_PTS (buf) : GST_CLOCK_TIME_NONE;
   GstClockTime dts = buf ? GST_BUFFER_DTS (buf) : GST_CLOCK_TIME_NONE;
 
@@ -1275,6 +1330,7 @@ gst_mxf_mux_handle_buffer (GstMXFMux * mux, GstMXFMuxPad * pad)
   if (pad == (GstMXFMuxPad *) GST_ELEMENT_CAST (mux)->sinkpads->data) {
     MXFIndexTableSegment *segment;
     const gint max_segment_size = G_MAXUINT16 / 11;
+    guint64 keyframe_offset;
 
     if (mux->index_table->len == 0 ||
         g_array_index (mux->index_table, MXFIndexTableSegment,
@@ -1381,24 +1437,41 @@ gst_mxf_mux_handle_buffer (GstMXFMux * mux, GstMXFMuxPad * pad)
         }
       }
       if (pts_index_pos != G_MAXUINT64) {
-        g_assert (index_pos_diff < 127 && index_pos_diff >= -127);
-        pts_segment =
-            &g_array_index (mux->index_table, MXFIndexTableSegment,
-            pts_index_pos);
-        pts_segment->index_entries[pts_segment_pos +
-            index_pos_diff].temporal_offset = -index_pos_diff;
+        if (index_pos_diff < 127 && index_pos_diff >= -127) {
+          pts_segment =
+              &g_array_index (mux->index_table, MXFIndexTableSegment,
+              pts_index_pos);
+          pts_segment->index_entries[pts_segment_pos +
+              index_pos_diff].temporal_offset = -index_pos_diff;
+        } else
+          MXF_INDEX_ENTRY_FLAGS_SET_OFFSET_OUT_OF_RANGE (eprops.flags);
       }
     }
 
-    /* Leave temporal offset initialized at 0, above code will set it as necessary */
-    ;
-    if (is_keyframe)
+    /* Keep temporal offset as is, above code will set it as necessary */
+    if (!MXF_INDEX_ENTRY_FLAGS_IS_SET_DELTA_UNIT (eprops.flags)) {
       mux->last_keyframe_pos = pad->pos;
+
+      if (MXF_INDEX_ENTRY_FLAGS_IS_SET_RANDOM_ACCESS (eprops.flags))
+        mux->last_random_access_pos = pad->pos;
+
+      keyframe_offset = 0;
+    } else {
+      if (!MXF_INDEX_ENTRY_FLAGS_IS_SET_BACKWARD_PREDICTION (eprops.flags))
+        mux->last_random_access_pos = mux->last_keyframe_pos;
+
+      keyframe_offset = mux->last_random_access_pos - pad->pos;
+      if (keyframe_offset < -128) {
+        keyframe_offset = -128;
+        MXF_INDEX_ENTRY_FLAGS_SET_OFFSET_OUT_OF_RANGE (eprops.flags);
+      }
+    }
+
     segment->index_entries[segment->n_index_entries].key_frame_offset =
-        MIN (pad->pos - mux->last_keyframe_pos, 127);
-    segment->index_entries[segment->n_index_entries].flags = is_keyframe ? 0x80 : 0x20; /* FIXME: Need to distinguish all the cases */
+        keyframe_offset;
     segment->index_entries[segment->n_index_entries].stream_offset =
         mux->partition.body_offset;
+    segment->index_entries[segment->n_index_entries].flags = eprops.flags;
 
     segment->n_index_entries++;
     segment->index_duration++;
