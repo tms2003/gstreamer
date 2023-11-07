@@ -58,7 +58,7 @@ static GstStaticPadTemplate sink_template = GST_STATIC_PAD_TEMPLATE ("sink",
         "alignment=(string) { au, nal }, "
         /* TODO: Can support more profiles by adding the according
            output formats in src caps. */
-        "profile=(string) main")
+        "profile=(string) { main, main-intra, main-still-picture }")
     );
 
 static GstStaticPadTemplate src_template = GST_STATIC_PAD_TEMPLATE ("src",
