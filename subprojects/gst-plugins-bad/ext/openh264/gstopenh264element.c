@@ -35,7 +35,7 @@
 
 
 gboolean
-openh264_element_init (GstPlugin * plugin)
+openh264_element_init (GstPlugin *plugin)
 {
   OpenH264Version libver;
   /* g_stCodecVersion is the version detected at build time as defined in the

@@ -35,7 +35,7 @@
 
 
 static gboolean
-plugin_init (GstPlugin * plugin)
+plugin_init (GstPlugin *plugin)
 {
   gboolean ret = FALSE;
 
