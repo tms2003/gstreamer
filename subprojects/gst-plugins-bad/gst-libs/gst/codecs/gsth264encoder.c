@@ -38,6 +38,8 @@ GST_DEBUG_CATEGORY (gst_h264_encoder_debug);
 
 #define H264_DEFAULT_BITRATE			100000
 
+#define H264ENC_DEFAULT_CABAC_IDC               0
+
 enum
 {
   PROP_0,
@@ -45,6 +47,8 @@ enum
   PROP_MAX_QUALITY,
   PROP_MIN_QUALITY,
   PROP_BITRATE,
+  PROP_CABAC,
+  PROP_CABAC_INIT_IDC,
 };
 
 struct _GstH264EncoderPrivate
@@ -59,6 +63,8 @@ struct _GstH264EncoderPrivate
   gint current_quality;
   guint64 used_bytes;
   guint64 nb_frames;
+  gboolean cabac;
+  guint cabac_init_idc;
 };
 
 #define parent_class gst_h264_encoder_parent_class
@@ -247,6 +253,16 @@ gst_h264_encoder_get_property (GObject * object, guint property_id,
       g_value_set_uint64 (value, priv->targeted_bitrate);
       GST_OBJECT_UNLOCK (self);
       break;
+    case PROP_CABAC:
+      GST_OBJECT_LOCK (self);
+      g_value_set_boolean (value, priv->cabac);
+      GST_OBJECT_UNLOCK (self);
+      break;
+    case PROP_CABAC_INIT_IDC:
+      GST_OBJECT_LOCK (self);
+      g_value_set_uint (value, priv->cabac_init_idc);
+      GST_OBJECT_UNLOCK (self);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
       break;
@@ -279,6 +295,16 @@ gst_h264_encoder_set_property (GObject * object, guint property_id,
     case PROP_BITRATE:
       GST_OBJECT_LOCK (self);
       priv->targeted_bitrate = g_value_get_uint64 (value);
+      GST_OBJECT_UNLOCK (self);
+      break;
+    case PROP_CABAC:
+      GST_OBJECT_LOCK (self);
+      priv->cabac = g_value_get_boolean (value);
+      GST_OBJECT_UNLOCK (self);
+      break;
+    case PROP_CABAC_INIT_IDC:
+      GST_OBJECT_LOCK (self);
+      priv->cabac_init_idc = g_value_get_uint (value);
       GST_OBJECT_UNLOCK (self);
       break;
     default:
@@ -349,5 +375,26 @@ gst_h264_encoder_class_init (GstH264EncoderClass * klass)
       g_param_spec_uint64 ("bitrate", "Targeted bitrate",
           "Set bitrate target",
           0, UINT_MAX, H264_DEFAULT_BITRATE,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | G_PARAM_CONSTRUCT));
+
+  /**
+  * GstH264Encoder:cabac:
+  *
+  *
+  * Since: 1.2x
+  */
+  g_object_class_install_property (object_class, PROP_CABAC,
+      g_param_spec_boolean ("cabac", "CABAC", "Enable use of CABAC over CAVLC",
+          FALSE, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  /**
+  * GstH264Encoder:cabac-init-idc:
+  *
+  *
+  * Since: 1.2x
+  */
+  g_object_class_install_property (object_class, PROP_CABAC_INIT_IDC,
+      g_param_spec_uint ("cabac-init-idc", "Initial CABAC table ID",
+          "Set initial CABAC table idc value", 0, 2, H264ENC_DEFAULT_CABAC_IDC,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | G_PARAM_CONSTRUCT));
 }

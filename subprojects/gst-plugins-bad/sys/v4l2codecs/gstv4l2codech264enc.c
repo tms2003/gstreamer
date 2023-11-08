@@ -88,6 +88,8 @@ struct _GstV4l2CodecH264Enc
   gint height_in_macroblocks;
   guint qp_max, qp_min;
   guint64 targeted_bitrate;
+  gboolean cabac;
+  guint cabac_init_idc;
 
   GstV4l2CodecAllocator *sink_allocator;
   GstV4l2CodecAllocator *src_allocator;
@@ -568,6 +570,7 @@ gst_v4l2_codec_h264_enc_init_sps_pps (GstV4l2CodecH264Enc * self,
   self->pps.pic_init_qp_minus26 = -13;
   self->pps.second_chroma_qp_index_offset = self->pps.chroma_qp_index_offset;
   self->pps.deblocking_filter_control_present_flag = 1;
+  self->pps.entropy_coding_mode_flag = self->cabac;
 }
 
 static gboolean
@@ -637,6 +640,9 @@ gst_v4l2_codec_h264_enc_set_format (GstVideoEncoder * encoder,
 
     gst_v4l2_codec_h264_enc_get_qp_range (self->encoder, &self->qp_min,
         &self->qp_max);
+
+    g_object_get (self, "cabac", &self->cabac, "cabac-init-idc",
+        &self->cabac_init_idc, NULL);
 
     gst_v4l2_codec_h264_enc_init_sps_pps (self, state);
 
@@ -837,8 +843,14 @@ gst_v4l2_codec_h264_enc_fill_encode_params (GstH264Encoder * encoder,
       break;
   }
 
+  if (self->cabac) {
+    self->encode_params.flags |= V4L2_H264_ENCODE_FLAG_ENTROPY_CABAC;
+  } else {
+    self->encode_params.flags &= ~V4L2_H264_ENCODE_FLAG_ENTROPY_CABAC;
+  }
+
   self->encode_params.pic_parameter_set_id = 0;
-  self->encode_params.cabac_init_idc = 0;
+  self->encode_params.cabac_init_idc = self->cabac_init_idc;
 
   self->encode_params.pic_init_qp_minus26 = self->pps.pic_init_qp_minus26;
   self->encode_params.chroma_qp_index_offset = self->pps.chroma_qp_index_offset;
