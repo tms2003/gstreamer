@@ -73,6 +73,8 @@ static void gst_rtp_vp8_pay_set_property (GObject * object, guint prop_id,
 
 static GstFlowReturn gst_rtp_vp8_pay_handle_buffer (GstRTPBasePayload * payload,
     GstBuffer * buffer);
+static gboolean gst_rtp_vp8_pay_src_event (GstPad * pad, GstObject * parent,
+    GstEvent * event);
 static gboolean gst_rtp_vp8_pay_sink_event (GstRTPBasePayload * payload,
     GstEvent * event);
 static gboolean gst_rtp_vp8_pay_set_caps (GstRTPBasePayload * payload,
@@ -157,9 +159,13 @@ gst_rtp_vp8_pay_reset (GstRtpVP8Pay * obj)
 static void
 gst_rtp_vp8_pay_init (GstRtpVP8Pay * obj)
 {
+  GstPad *srcpad = GST_RTP_BASE_PAYLOAD_SRCPAD (obj);
+
   obj->picture_id_mode = DEFAULT_PICTURE_ID_MODE;
   obj->picture_id_offset = DEFAULT_PICTURE_ID_OFFSET;
   gst_rtp_vp8_pay_reset (obj);
+
+  gst_pad_set_event_function (srcpad, gst_rtp_vp8_pay_src_event);
 }
 
 static void
@@ -270,7 +276,7 @@ static gboolean
 gst_rtp_vp8_pay_parse_frame (GstRtpVP8Pay * self, GstBuffer * buffer,
     gsize buffer_size)
 {
-  return gst_rtp_vp8_parse_header(buffer, buffer_size, &self->parsed_header);
+  return gst_rtp_vp8_parse_header (buffer, buffer_size, &self->parsed_header);
 }
 
 static guint
@@ -538,9 +544,60 @@ gst_rtp_vp8_pay_handle_buffer (GstRTPBasePayload * payload, GstBuffer * buffer)
 
   ret = gst_rtp_base_payload_push_list (payload, list);
 
+  if (self->parsed_header.refresh_golden_frame)
+    self->golden_frame_picture_id = self->picture_id;
+
+  if (self->parsed_header.refresh_alternate_frame)
+    self->alternate_frame_picture_id = self->picture_id;
+
   gst_rtp_vp8_pay_picture_id_increment (self);
 
   gst_buffer_unref (buffer);
+
+  return ret;
+}
+
+static gboolean
+gst_rtp_vp8_pay_src_event (GstPad * pad, GstObject * parent, GstEvent * event)
+{
+  GstRtpVP8Pay *self = GST_RTP_VP8_PAY (parent);
+  gboolean ret = FALSE;
+  const GstStructure *s;
+
+  switch (GST_EVENT_TYPE (event)) {
+    case GST_EVENT_CUSTOM_UPSTREAM:
+      s = gst_event_get_structure (event);
+      if (gst_structure_has_name (s, "GstReferencePictureSelectionIndication")) {
+        guint pt;
+        guint64 bit_string;
+        if (gst_structure_get_uint (s, "payload", &pt) &&
+            gst_structure_get_uint64 (s, "bit_string", &bit_string)) {
+          GstEvent *decoded = NULL;
+
+          if (bit_string == self->golden_frame_picture_id)
+            decoded = gst_event_new_custom (GST_EVENT_CUSTOM_UPSTREAM,
+                gst_structure_new ("Vp8DecodedFrame", "frame_type", G_TYPE_UINT,
+                    0, NULL));
+
+          if (bit_string == self->alternate_frame_picture_id)
+            decoded = gst_event_new_custom (GST_EVENT_CUSTOM_UPSTREAM,
+                gst_structure_new ("Vp8DecodedFrame", "frame_type", G_TYPE_UINT,
+                    1, NULL));
+
+          if (decoded)
+            ret =
+                gst_pad_push_event (GST_RTP_BASE_PAYLOAD_SINKPAD (self),
+                decoded);
+          gst_event_unref (event);
+        }
+        break;
+      } else {
+        ret = gst_pad_event_default (pad, parent, event);
+      }
+    default:
+      ret = gst_pad_event_default (pad, parent, event);
+      break;
+  }
 
   return ret;
 }
