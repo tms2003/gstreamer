@@ -216,6 +216,8 @@ struct _GstD3D11Decoder
 
   GstD3D11Device *device;
 
+  gint64 adapter_luid;
+
   ID3D11VideoDevice *video_device;
   ID3D11VideoContext *video_context;
 
@@ -237,6 +239,7 @@ struct _GstD3D11Decoder
   GstVideoCodecState *output_state;
 
   SRWLOCK lock;
+  CRITICAL_SECTION context_lock;
   /* performance frequency */
   LARGE_INTEGER frequency;
   gboolean flushing;
@@ -288,6 +291,7 @@ static void
 gst_d3d11_decoder_init (GstD3D11Decoder * self)
 {
   QueryPerformanceFrequency (&self->frequency);
+  InitializeCriticalSection (&self->context_lock);
 }
 
 static void
@@ -304,7 +308,7 @@ gst_d3d11_decoder_clear_resource (GstD3D11Decoder * self)
 }
 
 static void
-gst_d3d11_decoder_reset (GstD3D11Decoder * self)
+gst_d3d11_decoder_reset (GstD3D11Decoder * self, gboolean hard)
 {
   gst_d3d11_decoder_clear_resource (self);
 
@@ -320,6 +324,13 @@ gst_d3d11_decoder_reset (GstD3D11Decoder * self)
 
   g_clear_pointer (&self->output_state, gst_video_codec_state_unref);
   g_clear_pointer (&self->input_state, gst_video_codec_state_unref);
+
+  if (hard) {
+    GST_D3D11_CLEAR_COM (self->video_device);
+    GST_D3D11_CLEAR_COM (self->video_context);
+
+    gst_clear_object (&self->device);
+  }
 }
 
 static void
@@ -327,12 +338,7 @@ gst_d3d11_decoder_dispose (GObject * obj)
 {
   GstD3D11Decoder *self = GST_D3D11_DECODER (obj);
 
-  gst_d3d11_decoder_reset (self);
-
-  GST_D3D11_CLEAR_COM (self->video_device);
-  GST_D3D11_CLEAR_COM (self->video_context);
-
-  gst_clear_object (&self->device);
+  gst_d3d11_decoder_reset (self, TRUE);
 
   G_OBJECT_CLASS (parent_class)->dispose (obj);
 }
@@ -340,53 +346,82 @@ gst_d3d11_decoder_dispose (GObject * obj)
 static void
 gst_d3d11_decoder_finalize (GObject * obj)
 {
-#if HAVE_WINMM
   GstD3D11Decoder *self = GST_D3D11_DECODER (obj);
 
+#if HAVE_WINMM
   /* Restore clock precision */
   if (self->timer_resolution)
     timeEndPeriod (self->timer_resolution);
 #endif
 
+  DeleteCriticalSection (&self->context_lock);
+
   G_OBJECT_CLASS (parent_class)->finalize (obj);
 }
 
 GstD3D11Decoder *
-gst_d3d11_decoder_new (GstD3D11Device * device, GstDxvaCodec codec)
+gst_d3d11_decoder_new (GstDxvaCodec codec, gint64 adapter_luid)
 {
   GstD3D11Decoder *self;
-  ID3D11VideoDevice *video_device;
-  ID3D11VideoContext *video_context;
 
-  g_return_val_if_fail (GST_IS_D3D11_DEVICE (device), nullptr);
   g_return_val_if_fail (codec > GST_DXVA_CODEC_NONE, nullptr);
   g_return_val_if_fail (codec < GST_DXVA_CODEC_LAST, nullptr);
 
-  video_device = gst_d3d11_device_get_video_device_handle (device);
-  if (!video_device) {
-    GST_WARNING_OBJECT (device, "ID3D11VideoDevice is not available");
-    return nullptr;
-  }
-
-  video_context = gst_d3d11_device_get_video_context_handle (device);
-  if (!video_context) {
-    GST_WARNING_OBJECT (device, "ID3D11VideoContext is not available");
-    return nullptr;
-  }
-
   self = (GstD3D11Decoder *) g_object_new (GST_TYPE_D3D11_DECODER, nullptr);
 
-  self->device = (GstD3D11Device *) gst_object_ref (device);
   self->codec = codec;
-  self->video_device = video_device;
-  video_device->AddRef ();
-
-  self->video_context = video_context;
-  video_context->AddRef ();
+  self->adapter_luid = adapter_luid;
 
   gst_object_ref_sink (self);
 
   return self;
+}
+
+gboolean
+gst_d3d11_decoder_open (GstD3D11Decoder * decoder, GstElement * element)
+{
+  ID3D11VideoDevice *video_device;
+  ID3D11VideoContext *video_context;
+
+  GstD3D11CSLockGuard lk (&decoder->context_lock);
+  if (!gst_d3d11_ensure_element_data_for_adapter_luid (element,
+          decoder->adapter_luid, &decoder->device)) {
+    GST_ERROR_OBJECT (element, "Couldn't create d3d11device");
+    return FALSE;
+  }
+
+  if (decoder->video_context)
+    return TRUE;
+
+  video_device = gst_d3d11_device_get_video_device_handle (decoder->device);
+  if (!video_device) {
+    GST_WARNING_OBJECT (element, "ID3D11VideoDevice is not available");
+    return FALSE;
+  }
+
+  video_context = gst_d3d11_device_get_video_context_handle (decoder->device);
+  if (!video_context) {
+    GST_WARNING_OBJECT (element, "ID3D11VideoContext is not available");
+    return FALSE;
+  }
+
+  decoder->video_device = video_device;
+  video_device->AddRef ();
+
+  decoder->video_context = video_context;
+  video_context->AddRef ();
+
+  return TRUE;
+}
+
+gboolean
+gst_d3d11_decoder_close (GstD3D11Decoder * decoder)
+{
+  GstD3D11CSLockGuard lk (&decoder->context_lock);
+
+  gst_d3d11_decoder_reset (decoder, TRUE);
+
+  return TRUE;
 }
 
 static gboolean
@@ -690,7 +725,7 @@ gst_d3d11_decoder_configure (GstD3D11Decoder * decoder,
       GST_FLOW_ERROR);
   g_return_val_if_fail (dpb_size > 0, GST_FLOW_ERROR);
 
-  gst_d3d11_decoder_reset (decoder);
+  gst_d3d11_decoder_reset (decoder, FALSE);
 
   if (!gst_d3d11_device_get_format (decoder->device,
           GST_VIDEO_INFO_FORMAT (out_info), &d3d11_format) ||
@@ -788,7 +823,7 @@ gst_d3d11_decoder_enable_high_precision_timer (GstD3D11Decoder * self)
 }
 
 static gboolean
-gst_d3d11_decoder_open (GstD3D11Decoder * self)
+gst_d3d11_decoder_create (GstD3D11Decoder * self)
 {
   HRESULT hr;
   BOOL can_support = FALSE;
@@ -977,7 +1012,7 @@ gst_d3d11_decoder_open (GstD3D11Decoder * self)
 
 error:
   g_free (config_list);
-  gst_d3d11_decoder_reset (self);
+  gst_d3d11_decoder_reset (self, FALSE);
 
   return FALSE;
 }
@@ -1776,7 +1811,7 @@ gst_d3d11_decoder_negotiate (GstD3D11Decoder * decoder,
 
   decoder->downstream_supports_d3d11 = d3d11_supported;
 
-  return gst_d3d11_decoder_open (decoder);
+  return gst_d3d11_decoder_create (decoder);
 }
 
 gboolean
@@ -1959,6 +1994,27 @@ gst_d3d11_decoder_sink_event (GstD3D11Decoder * decoder, GstEvent * event)
     default:
       break;
   }
+}
+
+void
+gst_d3d11_decoder_set_context (GstD3D11Decoder * decoder, GstElement * element,
+    GstContext * context)
+{
+  GstD3D11CSLockGuard lk (&decoder->context_lock);
+
+  gst_d3d11_handle_set_context_for_adapter_luid (element,
+      context, decoder->adapter_luid, &decoder->device);
+}
+
+gboolean
+gst_d3d11_decoder_handle_query (GstD3D11Decoder * decoder, GstElement * element,
+    GstQuery * query)
+{
+  if (GST_QUERY_TYPE (query) != GST_QUERY_CONTEXT)
+    return FALSE;
+
+  GstD3D11CSLockGuard lk (&decoder->context_lock);
+  return gst_d3d11_handle_context_query (element, query, decoder->device);
 }
 
 static gboolean
@@ -2443,28 +2499,4 @@ gst_d3d11_decoder_proxy_get_property (GObject * object, guint prop_id,
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
   }
-}
-
-gboolean
-gst_d3d11_decoder_proxy_open (GstVideoDecoder * videodec,
-    GstD3D11DecoderSubClassData * subclass_data, GstD3D11Device ** device,
-    GstD3D11Decoder ** decoder)
-{
-  GstElement *elem = GST_ELEMENT (videodec);
-
-  if (!gst_d3d11_ensure_element_data_for_adapter_luid (elem,
-          subclass_data->adapter_luid, device)) {
-    GST_ERROR_OBJECT (elem, "Cannot create d3d11device");
-    return FALSE;
-  }
-
-  *decoder = gst_d3d11_decoder_new (*device, subclass_data->codec);
-
-  if (*decoder == nullptr) {
-    GST_ERROR_OBJECT (elem, "Cannot create d3d11 decoder");
-    gst_clear_object (device);
-    return FALSE;
-  }
-
-  return TRUE;
 }

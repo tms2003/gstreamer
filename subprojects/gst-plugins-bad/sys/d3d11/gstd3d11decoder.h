@@ -17,8 +17,7 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#ifndef __GST_D3D11_DECODER_H__
-#define __GST_D3D11_DECODER_H__
+#pragma once
 
 #include <gst/gst.h>
 #include <gst/video/video.h>
@@ -46,7 +45,6 @@ struct GstD3D11DecoderSubClassData
   static GstElementClass *parent_class = NULL; \
   typedef struct _##ModuleObjName { \
     ParentName parent; \
-    GstD3D11Device *device; \
     GstD3D11Decoder *decoder; \
   } ModuleObjName;\
   typedef struct _##ModuleObjName##Class { \
@@ -59,6 +57,7 @@ struct GstD3D11DecoderSubClassData
   static inline ModuleObjName##Class * MODULE##_##OBJ_NAME##_GET_CLASS (gpointer ptr) { \
     return G_TYPE_INSTANCE_GET_CLASS ((ptr),G_TYPE_FROM_INSTANCE(ptr),ModuleObjName##Class); \
   } \
+  static void module_obj_name##_finalize (GObject * object); \
   static void module_obj_name##_get_property (GObject * object, \
       guint prop_id, GValue * value, GParamSpec * pspec); \
   static void module_obj_name##_set_context (GstElement * element, \
@@ -97,8 +96,13 @@ struct GstD3D11DecoderSubClassData
   static GstFlowReturn  module_obj_name##_duplicate_picture (ParentName * decoder, \
       GstCodecPicture * src, GstCodecPicture * dst);
 
-GstD3D11Decoder * gst_d3d11_decoder_new (GstD3D11Device * device,
-                                         GstDxvaCodec codec);
+GstD3D11Decoder * gst_d3d11_decoder_new (GstDxvaCodec codec,
+                                         gint64 adapter_luid);
+
+gboolean          gst_d3d11_decoder_open (GstD3D11Decoder * decoder,
+                                          GstElement * element);
+
+gboolean          gst_d3d11_decoder_close (GstD3D11Decoder * decoder);
 
 GstFlowReturn     gst_d3d11_decoder_configure     (GstD3D11Decoder * decoder,
                                                    GstVideoCodecState * input_state,
@@ -146,6 +150,14 @@ gboolean          gst_d3d11_decoder_decide_allocation   (GstD3D11Decoder * decod
 void              gst_d3d11_decoder_sink_event          (GstD3D11Decoder * decoder,
                                                          GstEvent * event);
 
+void              gst_d3d11_decoder_set_context       (GstD3D11Decoder * decoder,
+                                                       GstElement * element,
+                                                       GstContext * context);
+
+gboolean          gst_d3d11_decoder_handle_query      (GstD3D11Decoder * decoder,
+                                                       GstElement * element,
+                                                       GstQuery * query);
+
 gboolean          gst_d3d11_decoder_util_is_legacy_device (GstD3D11Device * device);
 
 gboolean          gst_d3d11_decoder_get_supported_decoder_profile (GstD3D11Device * device,
@@ -182,11 +194,5 @@ void  gst_d3d11_decoder_proxy_get_property            (GObject * object,
                                                        GParamSpec * pspec,
                                                        GstD3D11DecoderSubClassData * subclass_data);
 
-gboolean gst_d3d11_decoder_proxy_open                 (GstVideoDecoder * videodec,
-                                                       GstD3D11DecoderSubClassData * subclass_data,
-                                                       GstD3D11Device ** device,
-                                                       GstD3D11Decoder ** decoder);
-
 G_END_DECLS
 
-#endif /* __GST_D3D11_DECODER_H__ */

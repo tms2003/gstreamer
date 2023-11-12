@@ -24,6 +24,7 @@
 #include "gstd3d11utils.h"
 #include "gstd3d11device.h"
 #include "gstd3d11-private.h"
+#include "gstd3d11memory.h"
 
 #include <windows.h>
 #include <versionhelpers.h>
@@ -641,4 +642,118 @@ gst_d3d11_create_user_token (void)
   /* *INDENT-ON* */
 
   return user_token.fetch_add (1);
+}
+
+/**
+ * gst_d3d11_upload_buffer_new:
+ * @device: a #GstD3D11Device
+ * @info: a #GstVideoInfo
+ *
+ * Allocates #GstBuffer with D3D11_USAGE_DYNAMIC type texture
+ *
+ * Returns: (transfer full) (nullable): #GstBuffer
+ * or %NULL if allocation is failed
+ *
+ * Since: 1.24
+ */
+GstBuffer *
+gst_d3d11_dynamic_buffer_new (GstD3D11Device * device,
+    const GstVideoInfo * info)
+{
+  GstD3D11Format device_format;
+  GstBuffer *buf;
+  GstMemory *mem;
+  gint stride[GST_VIDEO_MAX_PLANES] = { 0, };
+  gsize offset[GST_VIDEO_MAX_PLANES] = { 0, };
+  D3D11_TEXTURE2D_DESC desc = { 0, };
+  guint row_pitch;
+
+  g_return_val_if_fail (GST_IS_D3D11_DEVICE (device), nullptr);
+  g_return_val_if_fail (info, nullptr);
+
+  if (!gst_d3d11_device_get_format (device, GST_VIDEO_INFO_FORMAT (info),
+          &device_format)) {
+    GST_WARNING_OBJECT (device, "Format %s is not supported",
+        gst_video_format_to_string (GST_VIDEO_INFO_FORMAT (info)));
+  }
+
+  desc.MipLevels = 1;
+  desc.ArraySize = 1;
+  desc.SampleDesc.Count = 1;
+  desc.Usage = D3D11_USAGE_DYNAMIC;
+  desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+  desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+
+  buf = gst_buffer_new ();
+  if (device_format.dxgi_format != DXGI_FORMAT_UNKNOWN) {
+    guint aligned_width = info->width;
+    guint aligned_height = info->height;
+    guint num_planes = 1;
+
+    switch (device_format.dxgi_format) {
+      case DXGI_FORMAT_NV12:
+      case DXGI_FORMAT_P010:
+      case DXGI_FORMAT_P016:
+        aligned_width = GST_ROUND_UP_2 (info->width);
+        aligned_height = GST_ROUND_UP_2 (info->height);
+        num_planes = 2;
+        break;
+      default:
+        break;
+    }
+
+    desc.Width = aligned_width;
+    desc.Height = aligned_height;
+    desc.Format = device_format.dxgi_format;
+
+    mem = gst_d3d11_allocator_alloc (nullptr, device, &desc);
+    if (!mem) {
+      gst_buffer_unref (buf);
+      return nullptr;
+    }
+
+    offset[0] = 0;
+    gst_d3d11_memory_get_resource_stride (GST_D3D11_MEMORY_CAST (mem),
+        &row_pitch);
+    stride[0] = row_pitch;
+
+    if (num_planes == 2) {
+      offset[1] = stride[0] * aligned_height;
+      stride[1] = stride[1];
+    }
+
+    gst_buffer_append_memory (buf, mem);
+  } else {
+    gsize size = 0;
+
+    for (guint i = 0; i < GST_VIDEO_MAX_PLANES; i++) {
+      if (device_format.resource_format[i] == DXGI_FORMAT_UNKNOWN)
+        break;
+
+      desc.Width = GST_VIDEO_INFO_COMP_WIDTH (info, i);
+      desc.Height = GST_VIDEO_INFO_COMP_HEIGHT (info, i);
+      desc.Format = device_format.resource_format[i];
+
+      mem = gst_d3d11_allocator_alloc (nullptr, device, &desc);
+      if (!mem) {
+        gst_buffer_unref (buf);
+        return nullptr;
+      }
+
+      gst_d3d11_memory_get_resource_stride (GST_D3D11_MEMORY_CAST (mem),
+          &row_pitch);
+      offset[i] = size;
+      stride[i] = row_pitch;
+      size += mem->size;
+
+      gst_buffer_append_memory (buf, mem);
+    }
+  }
+
+  gst_buffer_add_video_meta_full (buf, GST_VIDEO_FRAME_FLAG_NONE,
+      GST_VIDEO_INFO_FORMAT (info), GST_VIDEO_INFO_WIDTH (info),
+      GST_VIDEO_INFO_HEIGHT (info), GST_VIDEO_INFO_N_PLANES (info),
+      offset, stride);
+
+  return buf;
 }

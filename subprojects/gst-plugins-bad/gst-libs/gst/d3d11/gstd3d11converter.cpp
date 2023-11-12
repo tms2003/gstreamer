@@ -2350,47 +2350,13 @@ static gboolean
 gst_d3d11_converter_create_fallback_buffer (GstD3D11Converter * self)
 {
   GstD3D11ConverterPrivate *priv = self->priv;
-  GstD3D11AllocationParams *params;
-  GstBufferPool *pool;
-  GstCaps *caps;
-  guint bind_flags = D3D11_BIND_SHADER_RESOURCE;
-  GstStructure *config;
 
   gst_clear_buffer (&priv->fallback_inbuf);
+  priv->fallback_inbuf = gst_d3d11_dynamic_buffer_new (self->device,
+      &priv->fallback_info);
 
-  params = gst_d3d11_allocation_params_new (self->device, &priv->fallback_info,
-      GST_D3D11_ALLOCATION_FLAG_DEFAULT, bind_flags, 0);
-
-  caps = gst_video_info_to_caps (&priv->fallback_info);
-  pool = gst_d3d11_buffer_pool_new (self->device);
-
-  config = gst_buffer_pool_get_config (pool);
-  gst_buffer_pool_config_set_params (config, caps, priv->fallback_info.size,
-      0, 0);
-  gst_buffer_pool_config_set_d3d11_allocation_params (config, params);
-  gst_caps_unref (caps);
-  gst_d3d11_allocation_params_free (params);
-
-  if (!gst_buffer_pool_set_config (pool, config)) {
-    GST_ERROR_OBJECT (self, "Failed to set pool config");
-    gst_object_unref (pool);
+  if (!priv->fallback_inbuf)
     return FALSE;
-  }
-
-  if (!gst_buffer_pool_set_active (pool, TRUE)) {
-    GST_ERROR_OBJECT (self, "Failed to set active");
-    gst_object_unref (pool);
-    return FALSE;
-  }
-
-  gst_buffer_pool_acquire_buffer (pool, &priv->fallback_inbuf, nullptr);
-  gst_buffer_pool_set_active (pool, FALSE);
-  gst_object_unref (pool);
-
-  if (!priv->fallback_inbuf) {
-    GST_ERROR_OBJECT (self, "Failed to create fallback buffer");
-    return FALSE;
-  }
 
   return TRUE;
 }
