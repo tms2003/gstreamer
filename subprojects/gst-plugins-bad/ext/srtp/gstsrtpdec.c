@@ -811,6 +811,23 @@ validate_buffer (GstSrtpDec * filter, GstBuffer * buf, guint32 * ssrc,
   GstSrtpDecSsrcStream *stream = NULL;
   GstRTPBuffer rtpbuf = GST_RTP_BUFFER_INIT;
 
+  /*
+   * XXX: hacky way to demux RT(C)P -- check PT
+   */
+  guint8 pt;
+  if (gst_buffer_extract (buf, 1, &pt, 1) != 1) {
+    GST_WARNING_OBJECT (filter, "could not extract PT from buffer");
+  }
+
+  if (G_UNLIKELY (pt >= 200 && pt <= 204)) {
+    if (*is_rtcp == FALSE) {
+      GST_WARNING_OBJECT (filter,
+          "[RTP] payload type %u -> RTCP",
+          (unsigned) pt);
+      *is_rtcp = TRUE;
+    }
+  }
+
   if (*is_rtcp == FALSE) {
     if (gst_rtp_buffer_map (buf,
         GST_MAP_READ | GST_RTP_BUFFER_MAP_FLAG_SKIP_PADDING, &rtpbuf)) {
