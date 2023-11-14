@@ -124,6 +124,7 @@ GST_DEBUG_CATEGORY_STATIC (gst_srtp_dec_debug);
 #define GST_CAT_DEFAULT gst_srtp_dec_debug
 
 #define DEFAULT_REPLAY_WINDOW_SIZE 128
+#define DEFAULT_DEMUX_RTCP FALSE
 
 /* Filter signals and args */
 enum
@@ -140,6 +141,7 @@ enum
 {
   PROP_0,
   PROP_REPLAY_WINDOW_SIZE,
+  PROP_RTCP_DEMUX,
   PROP_STATS
 };
 
@@ -288,6 +290,11 @@ gst_srtp_dec_class_init (GstSrtpDecClass * klass)
           "Size of the replay protection window",
           64, 0x8000, DEFAULT_REPLAY_WINDOW_SIZE,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+  g_object_class_install_property (gobject_class, PROP_RTCP_DEMUX,
+      g_param_spec_boolean("rtcp-demux", "Demultiplex RTCP",
+          "Whether to demultiplex incoming RTCP from RTP",
+          DEFAULT_DEMUX_RTCP,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
   g_object_class_install_property (gobject_class, PROP_STATS,
       g_param_spec_boxed ("stats", "Statistics", "Various statistics",
           GST_TYPE_STRUCTURE, G_PARAM_READABLE | G_PARAM_STATIC_STRINGS));
@@ -374,6 +381,7 @@ static void
 gst_srtp_dec_init (GstSrtpDec * filter)
 {
   filter->replay_window_size = DEFAULT_REPLAY_WINDOW_SIZE;
+  filter->demux_rtcp = FALSE;
 
   filter->rtp_sinkpad =
       gst_pad_new_from_static_template (&rtp_sink_template, "rtp_sink");
@@ -485,6 +493,9 @@ gst_srtp_dec_set_property (GObject * object, guint prop_id,
     case PROP_REPLAY_WINDOW_SIZE:
       filter->replay_window_size = g_value_get_uint (value);
       break;
+    case PROP_RTCP_DEMUX:
+      filter->demux_rtcp = g_value_get_boolean (value);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -504,6 +515,9 @@ gst_srtp_dec_get_property (GObject * object, guint prop_id,
   switch (prop_id) {
     case PROP_REPLAY_WINDOW_SIZE:
       g_value_set_uint (value, filter->replay_window_size);
+      break;
+    case PROP_RTCP_DEMUX:
+      g_value_set_boolean (value, filter->demux_rtcp);
       break;
     case PROP_STATS:
       g_value_take_boxed (value, gst_srtp_dec_create_stats (filter));
@@ -819,12 +833,18 @@ validate_buffer (GstSrtpDec * filter, GstBuffer * buf, guint32 * ssrc,
     GST_WARNING_OBJECT (filter, "could not extract PT from buffer");
   }
 
-  if (G_UNLIKELY (pt >= 200 && pt <= 204)) {
+  if (G_UNLIKELY ((pt & 0x80) != 0)) {
     if (*is_rtcp == FALSE) {
-      GST_WARNING_OBJECT (filter,
-          "[RTP] payload type %u -> RTCP",
-          (unsigned) pt);
-      *is_rtcp = TRUE;
+      if (filter->demux_rtcp) {
+        GST_WARNING_OBJECT (filter,
+            "[RTP] payload type %u -> RTCP",
+            (unsigned) pt);
+        *is_rtcp = TRUE;
+      } else {
+        GST_WARNING_OBJECT (filter,
+            "[RTP] payload type %u, not demultiplexing",
+            (unsigned) pt);
+      }
     }
   }
 
