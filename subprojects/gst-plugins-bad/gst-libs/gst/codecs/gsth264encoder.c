@@ -147,7 +147,8 @@ gst_h264_encoder_set_quality (GstH264Encoder * self, GstH264Frame * h264_frame)
 }
 
 static GstFlowReturn
-gst_h264_encoder_set_frame_type (GstH264Encoder * self, GstH264Frame * h264_frame)
+gst_h264_encoder_set_frame_type (GstH264Encoder * self,
+    GstH264Frame * h264_frame)
 {
   GstH264EncoderPrivate *priv = self->priv;
   GstVideoCodecFrame *frame = h264_frame->frame;
