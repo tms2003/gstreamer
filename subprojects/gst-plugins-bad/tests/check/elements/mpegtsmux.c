@@ -19,7 +19,9 @@
  */
 
 #include <gst/check/gstcheck.h>
+#include <gst/check/gstharness.h>
 #include <string.h>
+#include <gst/mpegtsmux/tsmux/tsmuxcommon.h>
 #include <gst/video/video.h>
 
 static GstStaticPadTemplate sink_template = GST_STATIC_PAD_TEMPLATE ("sink_%d",
@@ -586,6 +588,114 @@ GST_START_TEST (test_keyframe_flag_propagation)
 
 GST_END_TEST;
 
+static GstBuffer *
+new_buffer (GstHarness * h, gsize size, GstClockTime dts, GstClockTime pts,
+    GstClockTime duration)
+{
+  GstBuffer *buf = gst_harness_create_buffer (h, size);
+  GST_BUFFER_DTS (buf) = dts;
+  GST_BUFFER_PTS (buf) = pts;
+  GST_BUFFER_DURATION (buf) = duration;
+  return buf;
+}
+
+GST_START_TEST (test_bitrate)
+{
+  GstHarness *h = gst_harness_new_with_padnames ("mpegtsmux", "sink_%d", "src");
+  gst_harness_use_testclock (h);
+
+  /* use a multiple of 188 to make the math easy */
+  gint byterate = (__i__ + 1) * 18800;
+  g_object_set (h->element, "bitrate", byterate * 8, NULL);
+
+  gst_harness_set_src_caps_str (h, VIDEO_CAPS_STRING);
+
+  GstSegment segment;
+  gst_segment_init (&segment, GST_FORMAT_TIME);
+  gst_harness_push_event (h, gst_event_new_segment (&segment));
+
+  GstClockTime end = 10 * GST_SECOND;
+  GstBuffer *b = new_buffer (h, 1, 0, 0, end);
+  gst_harness_push (h, b);
+  gst_harness_set_time (h, GST_SECOND);
+
+  gsize n_bytes = 0;
+  gst_harness_set_time (h, end);
+  gst_harness_push (h, new_buffer (h, 1, end, end, 0));
+  gst_harness_push_event (h, gst_event_new_eos ());
+  while (TRUE) {
+    GstBuffer *out = NULL;
+    fail_unless (gst_harness_pull_until_eos (h, &out));
+    if (out == NULL) {
+      break;
+    }
+    n_bytes += gst_buffer_get_size (out);
+    gst_clear_buffer (&out);
+  }
+
+  gsize n_packets = gst_harness_buffers_received (h);
+
+  gsize bytes_expected = 188 + (end * byterate) / GST_SECOND;
+  gsize packets_expected = bytes_expected / 188;
+
+  fail_unless_equals_uint64 (bytes_expected, n_bytes);
+  fail_unless_equals_uint64 (packets_expected, n_packets);
+
+  gst_harness_teardown (h);
+}
+
+GST_END_TEST;
+
+static gboolean
+is_null_header (const guint8 * header, gsize size)
+{
+  return size >= 4 && header[0] == TSMUX_SYNC_BYTE && header[1] == 0x1f
+      && header[2] == 0xff && header[3] == 0x10;
+}
+
+GST_START_TEST (test_bitrate_sparse_drops_null_packets)
+{
+  GstHarness *h = gst_harness_new_with_padnames ("mpegtsmux", "sink_%d", "src");
+  gst_harness_use_testclock (h);
+
+  gint bitrate = (__i__ + 1) * 18800000 * 8;
+  g_object_set (h->element, "bitrate", bitrate, NULL);
+  g_object_set (h->element, "bitrate-sparse", TRUE, NULL);
+
+  gst_harness_set_src_caps_str (h, VIDEO_CAPS_STRING);
+
+  GstSegment segment;
+  gst_segment_init (&segment, GST_FORMAT_TIME);
+  gst_harness_push_event (h, gst_event_new_segment (&segment));
+
+  GstClockTime next = GST_SECOND;
+  GstBuffer *b = new_buffer (h, 1, 0, 0, 0);
+
+  gst_harness_push (h, b);
+  gst_harness_set_time (h, next);
+  gst_harness_push (h, new_buffer (h, 1, next, next, 0));
+  gst_harness_push_event (h, gst_event_new_eos ());
+
+  while (TRUE) {
+    GstBuffer *out = NULL;
+    fail_unless (gst_harness_pull_until_eos (h, &out));
+    if (out == NULL) {
+      break;
+    }
+
+    GstMapInfo info;
+    fail_unless (gst_buffer_map (out, &info, GST_MAP_READ));
+    fail_if (is_null_header (info.data, info.size));
+    gst_buffer_unmap (out, &info);
+
+    gst_clear_buffer (&out);
+  }
+
+  gst_harness_teardown (h);
+}
+
+GST_END_TEST;
+
 static Suite *
 mpegtsmux_suite (void)
 {
@@ -602,6 +712,8 @@ mpegtsmux_suite (void)
   tcase_add_test (tc_chain, test_reappearing_pad_while_playing);
   tcase_add_test (tc_chain, test_reappearing_pad_while_stopped);
   tcase_add_test (tc_chain, test_unused_pad);
+  tcase_add_loop_test (tc_chain, test_bitrate, 0, 20);
+  tcase_add_loop_test (tc_chain, test_bitrate_sparse_drops_null_packets, 0, 20);
 
   return s;
 }
