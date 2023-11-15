@@ -623,7 +623,7 @@ gst_v4l2_codec_h264_enc_set_format (GstVideoEncoder * encoder,
       gst_video_encoder_set_output_state (GST_VIDEO_ENCODER (self),
       caps, state);
 
-  if (GST_VIDEO_ENCODER_CLASS (parent_class)->negotiate (encoder)) {
+  if (gst_video_encoder_negotiate (encoder)) {
     if (!gst_v4l2_encoder_streamon (self->encoder, GST_PAD_SINK)) {
       GST_ELEMENT_ERROR (self, RESOURCE, FAILED,
           ("Could not enable the encoder driver."),
