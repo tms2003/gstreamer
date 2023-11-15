@@ -1,5 +1,6 @@
 /* GStreamer
  * Copyright (C) 2023 Michael Grzeschik <m.grzeschik@pengutronix.de>
+ * Copyright (C) 2023 Denis Shimizu <denis.shimizu@collabora.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -20,7 +21,6 @@
 #ifdef HAVE_CONFIG_H
 #include <config.h>
 #endif
-
 #include "gstv4l2codecallocator.h"
 #include "gstv4l2codech264enc.h"
 #include "gstv4l2codecpool.h"
@@ -79,6 +79,7 @@ struct _GstV4l2CodecH264Enc
   gint height;
   gint width_in_macroblocks;
   gint height_in_macroblocks;
+  gint qp_init, qp_max, qp_min;
   guint64 targeted_bitrate;
   gboolean cabac;
   guint cabac_init_idc;
@@ -477,7 +478,7 @@ gst_v4l2_codec_h264_enc_init_sps_pps (GstV4l2CodecH264Enc * self,
   gint n_levels = G_N_ELEMENTS (_h264_level_limits);
   GValue bitrate = G_VALUE_INIT;
   g_object_get_property (G_OBJECT (self), "bitrate", &bitrate);
-  self->targeted_bitrate = g_value_get_uint64 (&bitrate);
+  self->targeted_bitrate = g_value_get_uint (&bitrate);
   maximum_bitrate = self->targeted_bitrate;
   frame_size_in_macroblocks = self->width * self->height / 256;
   macroblocks_per_second = frame_size_in_macroblocks * state->info.fps_n / state->info.fps_d;   // Assuming each macroblock is 16x16
@@ -571,8 +572,11 @@ gst_v4l2_codec_h264_enc_init_sps_pps (GstV4l2CodecH264Enc * self,
   self->pps.weighted_bipred_idc = 0;
 
   /* Rate Control */
+  GValue qp_init = G_VALUE_INIT;
+  g_object_get_property (G_OBJECT (self), "quantizer", &qp_init);
+  self->qp_init = g_value_get_int (&qp_init);
   self->pps.chroma_qp_index_offset = 4;
-  self->pps.pic_init_qp_minus26 = -13;
+  self->pps.pic_init_qp_minus26 = self->qp_init - 26;
   self->pps.second_chroma_qp_index_offset = self->pps.chroma_qp_index_offset;
   self->pps.deblocking_filter_control_present_flag = 1;
   self->pps.entropy_coding_mode_flag = self->cabac;
@@ -649,6 +653,8 @@ gst_v4l2_codec_h264_enc_set_format (GstVideoEncoder * encoder,
 
   self->width = state->info.width;
   self->height = state->info.height;
+  GST_VIDEO_ENCODER_CLASS (parent_class)->set_format (encoder, state);
+
   gst_v4l2_codec_h264_enc_buffers_allocation (encoder);
   self->width_in_macroblocks = (self->width + 15) / 16;
   self->height_in_macroblocks = (self->height + 15) / 16;
@@ -683,6 +689,9 @@ gst_v4l2_codec_h264_enc_set_format (GstVideoEncoder * encoder,
           ("VIDIOC_STREAMON(SRC) failed: %s", g_strerror (errno)));
       return FALSE;
     }
+
+    g_object_get (self, "cabac", &self->cabac, "cabac-init-idc",
+        &self->cabac_init_idc, NULL);
 
     gst_v4l2_codec_h264_enc_init_sps_pps (self, state);
 
@@ -905,9 +914,9 @@ gst_v4l2_codec_h264_enc_fill_encode_rc (GstH264Encoder * encoder,
   GstV4l2CodecH264Enc *self = GST_V4L2_CODEC_H264_ENC (encoder);
 
   /* Rate Control */
-  self->encode_rc.qp = h264_frame->quality;
-  self->encode_rc.qp_min = 0;
-  self->encode_rc.qp_max = 51;
+  self->encode_rc.qp = h264_frame->qp;
+  self->encode_rc.qp_min = self->qp_min;
+  self->encode_rc.qp_max = self->qp_max;
 }
 
 static GstFlowReturn
@@ -950,8 +959,7 @@ gst_v4l2_codec_h264_enc_encode_frame (GstH264Encoder * encoder,
     /* *INDENT-ON* */
   };
 
-  GST_DEBUG_OBJECT (self, "encode h264 frame with quality = %d",
-      h264_frame->quality);
+  GST_DEBUG_OBJECT (self, "encode h264 frame with qp = %d", h264_frame->qp);
 
   if (!gst_v4l2_codec_h264_enc_ensure_output_bitstream (self, frame)) {
     GST_ELEMENT_ERROR (self, RESOURCE, NO_SPACE_LEFT,
@@ -959,8 +967,7 @@ gst_v4l2_codec_h264_enc_encode_frame (GstH264Encoder * encoder,
     goto done;
   }
 
-  GST_DEBUG_OBJECT (self, "encode h264 frame with quality = %d",
-      h264_frame->quality);
+  GST_DEBUG_OBJECT (self, "encode h264 frame with qp = %d", h264_frame->qp);
 
   request = gst_v4l2_encoder_alloc_request (self->encoder,
       frame->system_frame_number, frame->input_buffer, frame->output_buffer);

@@ -1,5 +1,6 @@
 /* GStreamer
  * Copyright (C) 2023 Michael Grzeschik <m.grzeschik@pengutronix.de>
+ * Copyright (C) 2023 Denis Shimizu <denis.shimizu@collabora.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -22,47 +23,44 @@
 #endif
 
 #include "gsth264encoder.h"
-
+#include "gstratecontroller.h"
 #include <gst/codecparsers/gsth264bitwriter.h>
-#include <gst/video/video.h>
 #include <gst/video/gstvideometa.h>
-#include <gst/base/base.h>
 
 GST_DEBUG_CATEGORY (gst_h264_encoder_debug);
 #define GST_CAT_DEFAULT gst_h264_encoder_debug
 
-#define H264ENC_DEFAULT_KEYFRAME_INTERVAL	30
+#define H264_MAX_QP	            51
+#define H264_MIN_QP                  0
 
-#define H264_MAX_QUALITY				51
-#define H264_MIN_QUALITY				0
-
-#define H264_DEFAULT_BITRATE			100000
-
-#define H264ENC_DEFAULT_CABAC_IDC               0
+#define DEFAULT_KEYFRAME_INTERVAL   30
+#define DEFAULT_MAX_QP              51
+#define DEFAULT_MIN_QP              10
+#define DEFAULT_QP_STEP              4
+#define DEFAULT_QUANTIZER           18
+#define DEFAULT_BITRATE      G_MAXUINT
 
 enum
 {
   PROP_0,
   PROP_KEYFRAME_INTERVAL,
-  PROP_MAX_QUALITY,
-  PROP_MIN_QUALITY,
+  PROP_MAX_QP,
+  PROP_MIN_QP,
+  PROP_QP_STEP,
+  PROP_QUANTIZER,
   PROP_BITRATE,
   PROP_CABAC,
   PROP_CABAC_INIT_IDC,
+  PROP_RATE_CONTROL,
 };
 
 struct _GstH264EncoderPrivate
 {
-  gint keyframe_interval;
-
   guint32 last_keyframe;
+  GstRateController *rate_controller;
 
-  guint64 targeted_bitrate;
-  gint max_quality;
-  gint min_quality;
-  gint current_quality;
-  guint64 used_bytes;
-  guint64 nb_frames;
+  /* properties */
+  gint keyframe_interval;
   gboolean cabac;
   guint cabac_init_idc;
 };
@@ -78,25 +76,22 @@ static void
 gst_h264_encoder_init (GstH264Encoder * self)
 {
   self->priv = gst_h264_encoder_get_instance_private (self);
+  self->priv->rate_controller = gst_rc_new ();
 }
 
 static void
 gst_h264_encoder_finalize (GObject * object)
 {
+  GstH264Encoder *self = GST_H264_ENCODER (object);
+
+  gst_object_unref (self->priv->rate_controller);
+
   G_OBJECT_CLASS (parent_class)->finalize (object);
 }
 
 static gboolean
 gst_h264_encoder_start (GstVideoEncoder * encoder)
 {
-  GstH264Encoder *self = GST_H264_ENCODER (encoder);
-  GstH264EncoderPrivate *priv = self->priv;
-
-  priv->last_keyframe = 0;
-  priv->current_quality = priv->min_quality;
-  priv->used_bytes = 0;
-  priv->nb_frames = 0;
-
   return TRUE;
 }
 
@@ -110,46 +105,12 @@ static gboolean
 gst_h264_encoder_set_format (GstVideoEncoder * encoder,
     GstVideoCodecState * state)
 {
-  return TRUE;
-}
-
-static GstFlowReturn
-gst_h264_encoder_set_quality (GstH264Encoder * self, GstH264Frame * h264_frame)
-{
+  GstH264Encoder *self = GST_H264_ENCODER (encoder);
   GstH264EncoderPrivate *priv = self->priv;
-  GstVideoEncoder *encoder = GST_VIDEO_ENCODER (self);
-  GstVideoCodecState *output_state =
-      gst_video_encoder_get_output_state (encoder);
-  gint qp = priv->current_quality;
-  guint64 bitrate = 0;
-  guint fps_n = 30, fps_d = 1;
 
-  if (output_state == NULL)
-    return qp;
+  gst_rc_set_format (priv->rate_controller, &state->info);
 
-  if (GST_VIDEO_INFO_FPS_N (&output_state->info) != 0) {
-    fps_n = GST_VIDEO_INFO_FPS_N (&output_state->info);
-    fps_d = GST_VIDEO_INFO_FPS_D (&output_state->info);
-  }
-  gst_video_codec_state_unref (output_state);
-
-  bitrate = (priv->used_bytes * 8 * fps_n) / (priv->nb_frames * fps_d);
-  if (bitrate > priv->targeted_bitrate) {
-    qp++;
-  }
-
-  if (bitrate < priv->targeted_bitrate) {
-    qp--;
-  }
-
-  if (qp > priv->max_quality)
-    qp = priv->max_quality;
-  if (qp < priv->min_quality)
-    qp = priv->min_quality;
-
-  h264_frame->quality = qp;
-
-  return GST_FLOW_OK;
+  return TRUE;
 }
 
 static GstFlowReturn
@@ -183,16 +144,19 @@ gst_h264_encoder_mark_frame (GstH264Encoder * self, GstH264Frame * h264_frame)
 {
   GstVideoCodecFrame *frame = h264_frame->frame;
   GstH264EncoderPrivate *priv = self->priv;
+  GstRcFrameType rc_frame_type = GST_RC_INTER_FRAME;
 
   switch (h264_frame->type) {
     case GstH264Keyframe:
       priv->last_keyframe = frame->system_frame_number;
+      rc_frame_type = GST_RC_KEY_FRAME;
+      break;
+    default:
       break;
   }
 
-  priv->current_quality = h264_frame->quality;
-  priv->used_bytes += gst_buffer_get_size (frame->output_buffer);
-  priv->nb_frames++;
+  gst_rc_record (priv->rate_controller, rc_frame_type,
+      gst_buffer_get_size (frame->output_buffer), frame->duration);
 }
 
 static GstFlowReturn
@@ -200,6 +164,7 @@ gst_h264_encoder_handle_frame (GstVideoEncoder * encoder,
     GstVideoCodecFrame * frame)
 {
   GstH264Encoder *self = GST_H264_ENCODER (encoder);
+  GstH264EncoderPrivate *priv = self->priv;
   GstH264EncoderClass *klass = GST_H264_ENCODER_GET_CLASS (self);
   GstFlowReturn ret = GST_FLOW_OK;
   GstH264Frame *h264_frame = gst_h264_frame_new (frame);
@@ -208,12 +173,9 @@ gst_h264_encoder_handle_frame (GstVideoEncoder * encoder,
   if (ret != GST_FLOW_OK)
     return ret;
 
-  ret = gst_h264_encoder_set_quality (self, h264_frame);
-  if (ret != GST_FLOW_OK)
-    return ret;
+  h264_frame->qp = gst_rc_get_qp (priv->rate_controller);
 
-  /* TODO: add encoding parameters management here
-   * for now just send the frame to encode */
+  /* Send the frame to encode */
   if (klass->encode_frame) {
     ret = klass->encode_frame (self, h264_frame);
     if (ret == GST_FLOW_OK)
@@ -232,41 +194,42 @@ gst_h264_encoder_get_property (GObject * object, guint property_id,
   GstH264Encoder *self = GST_H264_ENCODER (object);
   GstH264EncoderPrivate *priv = self->priv;
 
+  GST_OBJECT_LOCK (self);
+
   switch (property_id) {
     case PROP_KEYFRAME_INTERVAL:
-      GST_OBJECT_LOCK (self);
       g_value_set_int (value, priv->keyframe_interval);
-      GST_OBJECT_UNLOCK (self);
       break;
-    case PROP_MAX_QUALITY:
-      GST_OBJECT_LOCK (self);
-      g_value_set_int (value, priv->max_quality);
-      GST_OBJECT_UNLOCK (self);
+    case PROP_MAX_QP:
+      g_value_set_int (value, gst_rc_get_max_qp (priv->rate_controller));
       break;
-    case PROP_MIN_QUALITY:
-      GST_OBJECT_LOCK (self);
-      g_value_set_int (value, priv->min_quality);
-      GST_OBJECT_UNLOCK (self);
+    case PROP_MIN_QP:
+      g_value_set_int (value, gst_rc_get_min_qp (priv->rate_controller));
+      break;
+    case PROP_QP_STEP:
+      g_value_set_int (value, gst_rc_get_qp_step (priv->rate_controller));
+      break;
+    case PROP_QUANTIZER:
+      g_value_set_int (value, gst_rc_get_init_qp (priv->rate_controller));
       break;
     case PROP_BITRATE:
-      GST_OBJECT_LOCK (self);
-      g_value_set_uint64 (value, priv->targeted_bitrate);
-      GST_OBJECT_UNLOCK (self);
+      g_value_set_uint (value, gst_rc_get_bitrate (priv->rate_controller));
+      break;
+    case PROP_RATE_CONTROL:
+      g_value_set_enum (value, gst_rc_get_mode (priv->rate_controller));
       break;
     case PROP_CABAC:
-      GST_OBJECT_LOCK (self);
       g_value_set_boolean (value, priv->cabac);
-      GST_OBJECT_UNLOCK (self);
       break;
     case PROP_CABAC_INIT_IDC:
-      GST_OBJECT_LOCK (self);
       g_value_set_uint (value, priv->cabac_init_idc);
-      GST_OBJECT_UNLOCK (self);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
       break;
   }
+
+  GST_OBJECT_UNLOCK (self);
 }
 
 static void
@@ -276,41 +239,42 @@ gst_h264_encoder_set_property (GObject * object, guint property_id,
   GstH264Encoder *self = GST_H264_ENCODER (object);
   GstH264EncoderPrivate *priv = self->priv;
 
+  GST_OBJECT_LOCK (self);
+
   switch (property_id) {
     case PROP_KEYFRAME_INTERVAL:
-      GST_OBJECT_LOCK (self);
       priv->keyframe_interval = g_value_get_int (value);
-      GST_OBJECT_UNLOCK (self);
       break;
-    case PROP_MAX_QUALITY:
-      GST_OBJECT_LOCK (self);
-      priv->max_quality = g_value_get_int (value);
-      GST_OBJECT_UNLOCK (self);
+    case PROP_MAX_QP:
+      gst_rc_set_max_qp (priv->rate_controller, g_value_get_int (value));
       break;
-    case PROP_MIN_QUALITY:
-      GST_OBJECT_LOCK (self);
-      priv->min_quality = g_value_get_int (value);
-      GST_OBJECT_UNLOCK (self);
+    case PROP_MIN_QP:
+      gst_rc_set_min_qp (priv->rate_controller, g_value_get_int (value));
+      break;
+    case PROP_QP_STEP:
+      gst_rc_set_qp_step (priv->rate_controller, g_value_get_int (value));
+      break;
+    case PROP_QUANTIZER:
+      gst_rc_set_init_qp (priv->rate_controller, g_value_get_int (value));
       break;
     case PROP_BITRATE:
-      GST_OBJECT_LOCK (self);
-      priv->targeted_bitrate = g_value_get_uint64 (value);
-      GST_OBJECT_UNLOCK (self);
+      gst_rc_set_bitrate (priv->rate_controller, g_value_get_uint (value));
+      break;
+    case PROP_RATE_CONTROL:
+      gst_rc_set_mode (priv->rate_controller, g_value_get_enum (value));
       break;
     case PROP_CABAC:
-      GST_OBJECT_LOCK (self);
       priv->cabac = g_value_get_boolean (value);
-      GST_OBJECT_UNLOCK (self);
       break;
     case PROP_CABAC_INIT_IDC:
-      GST_OBJECT_LOCK (self);
       priv->cabac_init_idc = g_value_get_uint (value);
-      GST_OBJECT_UNLOCK (self);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
       break;
   }
+
+  GST_OBJECT_UNLOCK (self);
 }
 
 static void
@@ -332,69 +296,99 @@ gst_h264_encoder_class_init (GstH264EncoderClass * klass)
   /**
    * GstH264Encoder:keyframe-interval:
    *
-   *
    * Since: 1.2x
    */
   g_object_class_install_property (object_class, PROP_KEYFRAME_INTERVAL,
       g_param_spec_int ("keyframe-interval", "Keyframe Interval",
-          "Interval between keyframes",
-          0, G_MAXINT, H264ENC_DEFAULT_KEYFRAME_INTERVAL,
+          "Maximum distance in frames between IDR.",
+          0, G_MAXINT, DEFAULT_KEYFRAME_INTERVAL,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | G_PARAM_CONSTRUCT));
 
   /**
-   * GstH264Encoder:max-quality:
-   *
+   * GstH264Encoder:qp-max:
    *
    * Since: 1.2x
    */
-  g_object_class_install_property (object_class, PROP_MAX_QUALITY,
-      g_param_spec_int ("max-quality", "Max Quality Level",
-          "Set upper quality limit (lower number equates to higher quality but more bits)",
-          H264_MIN_QUALITY, H264_MAX_QUALITY, H264_MAX_QUALITY,
+  g_object_class_install_property (object_class, PROP_MAX_QP,
+      g_param_spec_int ("qp-max", "Max Quantizer Level",
+          "Set upper qp limit (lower number equates to higher quality but more bits)",
+          H264_MIN_QP, H264_MAX_QP, DEFAULT_MAX_QP,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | G_PARAM_CONSTRUCT));
 
    /**
-   * GstH264Encoder:min-quality:
-   *
+   * GstH264Encoder:qp-min:
    *
    * Since: 1.2x
    */
-  g_object_class_install_property (object_class, PROP_MIN_QUALITY,
-      g_param_spec_int ("min-quality", "Min Quality Level",
-          "Set lower quality limit (lower number equates to higher quality but more bits)",
-          H264_MIN_QUALITY, H264_MAX_QUALITY, H264_MIN_QUALITY,
+  g_object_class_install_property (object_class, PROP_MIN_QP,
+      g_param_spec_int ("qp-min", "Min Quantizer Level",
+          "Set lower qp limit (lower number equates to higher quality but more bits)",
+          H264_MIN_QP, H264_MAX_QP, DEFAULT_MIN_QP,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | G_PARAM_CONSTRUCT));
+
+  /**
+   * GstH264Encoder:qp-step:
+   *
+   * Since: 1.2x
+   */
+  g_object_class_install_property (object_class, PROP_QP_STEP,
+      g_param_spec_int ("qp-step", "Max QP increase/decrease step",
+          "Set maximum value which qp value can be increase/decrease by the bitrate controller (Valid only with rate-control=cbr)",
+          H264_MIN_QP, H264_MAX_QP, DEFAULT_QP_STEP,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | G_PARAM_CONSTRUCT));
+
+ /**
+   * GstH264Encoder:quantizer:
+   *
+   * Since: 1.2x
+   */
+  g_object_class_install_property (object_class, PROP_QUANTIZER,
+      g_param_spec_int ("quantizer", "Quantizer Level",
+          "Set the qp value (lower number equates to higher quality but more bits, initial value for rate-control=cbr)",
+          H264_MIN_QP, H264_MAX_QP, DEFAULT_QUANTIZER,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | G_PARAM_CONSTRUCT));
 
    /**
    * GstH264Encoder:bitrate:
    *
-   *
    * Since: 1.2x
    */
   g_object_class_install_property (object_class, PROP_BITRATE,
-      g_param_spec_uint64 ("bitrate", "Targeted bitrate",
-          "Set bitrate target",
-          0, UINT_MAX, H264_DEFAULT_BITRATE,
+      g_param_spec_uint ("bitrate", "Targeted bitrate",
+          "Set the targeted bitrate (in bit/s)",
+          0, UINT_MAX, DEFAULT_BITRATE,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | G_PARAM_CONSTRUCT));
 
   /**
   * GstH264Encoder:cabac:
-  *
+  * Note: Supported only on main profile
   *
   * Since: 1.2x
   */
   g_object_class_install_property (object_class, PROP_CABAC,
-      g_param_spec_boolean ("cabac", "CABAC", "Enable use of CABAC over CAVLC",
-          FALSE, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+      g_param_spec_boolean ("cabac", "CABAC",
+          "Enable Cabac", FALSE, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   /**
   * GstH264Encoder:cabac-init-idc:
-  *
+  * Note: Supported only on main profile
   *
   * Since: 1.2x
   */
   g_object_class_install_property (object_class, PROP_CABAC_INIT_IDC,
-      g_param_spec_uint ("cabac-init-idc", "Initial CABAC table ID",
-          "Set initial CABAC table idc value", 0, 2, H264ENC_DEFAULT_CABAC_IDC,
+      g_param_spec_uint ("cabac-init-idc", "PROP_CABAC_INIT_IDC",
+          "Set Cabac init idc value",
+          0, 2, 0,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | G_PARAM_CONSTRUCT));
+
+  /**
+  * GstH264Encoder:rate-control:
+  *
+  * Since: 1.2x
+  */
+  g_object_class_install_property (object_class, PROP_RATE_CONTROL,
+      g_param_spec_enum ("rate-control", "Rate Control Mode",
+          "Select rate control mode", gst_rate_control_mode_get_type (),
+          GST_RC_CONSTANT_QP,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | G_PARAM_CONSTRUCT));
 }

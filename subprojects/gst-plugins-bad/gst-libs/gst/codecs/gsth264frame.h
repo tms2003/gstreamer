@@ -42,7 +42,7 @@ struct _GstH264Frame
 {
   GstMiniObject parent;
   gint type;
-  gint quality;
+  gint qp;
 
   GstVideoCodecFrame *frame;
 };
