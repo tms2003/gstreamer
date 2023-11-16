@@ -58,26 +58,12 @@ static GstStaticPadTemplate src_template = GST_STATIC_PAD_TEMPLATE ("src",
         "profile = (string) { main, constrained-baseline, baseline}")
     );
 
-
-#define H264ENC_DEFAULT_KEYFRAME_INTERVAL	30
-
-#define H264_MAX_QUALITY				63
-#define H264_MIN_QUALITY				0
-
-#define H264_DEFAULT_BITRATE			100000
-
-/* Scale factor for bitrate (HRD bit_rate_scale: min = 6) */
-#define SX_BITRATE 6
-/* Scale factor for cpb_size (HRD cpb_size_scale: min = 4) */
-#define SX_CPB_SIZE 4
 /* Maximum sizes for common headers (in bits) */
 #define MAX_SPS_HDR_SIZE  16473
 #define MAX_VUI_PARAMS_SIZE  210
 #define MAX_HRD_PARAMS_SIZE  4103
 #define MAX_PPS_HDR_SIZE  101
 #define MAX_SLICE_HDR_SIZE  397 + 2572 + 6670 + 2402
-
-#define MAX_GOP_SIZE  1024
 
 #define SPS_SIZE 4 + GST_ROUND_UP_8 (MAX_SPS_HDR_SIZE + MAX_VUI_PARAMS_SIZE + \
     2 * MAX_HRD_PARAMS_SIZE) / 8
@@ -93,7 +79,6 @@ struct _GstV4l2CodecH264Enc
   gint height;
   gint width_in_macroblocks;
   gint height_in_macroblocks;
-  guint qp_max, qp_min;
   guint64 targeted_bitrate;
   gboolean cabac;
   guint cabac_init_idc;
@@ -699,9 +684,6 @@ gst_v4l2_codec_h264_enc_set_format (GstVideoEncoder * encoder,
       return FALSE;
     }
 
-    gst_v4l2_codec_h264_enc_get_qp_range (self->encoder, &self->qp_min,
-        &self->qp_max);
-
     gst_v4l2_codec_h264_enc_init_sps_pps (self, state);
 
     return TRUE;
@@ -911,6 +893,7 @@ gst_v4l2_codec_h264_enc_fill_encode_params (GstH264Encoder * encoder,
   self->encode_params.cabac_init_idc = self->cabac_init_idc;
 
   self->encode_params.pic_init_qp_minus26 = self->pps.pic_init_qp_minus26;
+
   self->encode_params.chroma_qp_index_offset = self->pps.chroma_qp_index_offset;
   self->encode_params.disable_deblocking_filter_idc = 0;
 }
@@ -922,21 +905,9 @@ gst_v4l2_codec_h264_enc_fill_encode_rc (GstH264Encoder * encoder,
   GstV4l2CodecH264Enc *self = GST_V4L2_CODEC_H264_ENC (encoder);
 
   /* Rate Control */
-  self->encode_rc.qp = self->pps.pic_init_qp_minus26 + 26;      //encoder->rc.qp;
-  self->encode_rc.qp_min = self->qp_min;
-  self->encode_rc.qp_max = self->qp_max;
-}
-
-static guint
-gst_v4l2_codec_h264_enc_check_qp_range (GstV4l2CodecH264Enc * self,
-    GstH264Frame * h264_frame)
-{
-  if (h264_frame->quality > self->qp_max)
-    return self->qp_max;
-  if (h264_frame->quality < self->qp_min)
-    return self->qp_min;
-
-  return h264_frame->quality;
+  self->encode_rc.qp = h264_frame->quality;
+  self->encode_rc.qp_min = 0;
+  self->encode_rc.qp_max = 51;
 }
 
 static GstFlowReturn
@@ -987,6 +958,9 @@ gst_v4l2_codec_h264_enc_encode_frame (GstH264Encoder * encoder,
         ("Failed to allocate output buffer."), (NULL));
     goto done;
   }
+
+  GST_DEBUG_OBJECT (self, "encode h264 frame with quality = %d",
+      h264_frame->quality);
 
   request = gst_v4l2_encoder_alloc_request (self->encoder,
       frame->system_frame_number, frame->input_buffer, frame->output_buffer);

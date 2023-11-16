@@ -1368,28 +1368,3 @@ gst_v4l2_codec_vp8_enc_get_qp_range (GstV4l2Encoder * self,
 
   return TRUE;
 }
-
-gboolean
-gst_v4l2_codec_h264_enc_get_qp_range (GstV4l2Encoder * self,
-    guint * qp_min, guint * qp_max)
-{
-  gint ret;
-  struct v4l2_query_ext_ctrl control = {
-    .id = V4L2_CID_STATELESS_H264_ENCODE_RC,
-  };
-
-  *qp_max = 127;
-  *qp_min = 0;
-
-  ret = ioctl (self->video_fd, VIDIOC_QUERY_EXT_CTRL, &control);
-  if (ret < 0) {
-    GST_DEBUG_OBJECT (self, "unable to retrieve encoder qp, use default");
-    return FALSE;
-  }
-
-  *qp_max = control.maximum;
-  *qp_min = control.minimum;
-  GST_DEBUG_OBJECT (self, "encoder qp min %d qp max %d", *qp_min, *qp_max);
-
-  return TRUE;
-}
