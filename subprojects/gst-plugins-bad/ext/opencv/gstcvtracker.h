@@ -46,6 +46,7 @@
 #define __GST_CVTRACKER_H__
 
 #include <gst/video/gstvideometa.h>
+#include <gst/analyticmeta/generic/gstanalysismeta.h>
 #include <gst/opencv/gstopencvvideofilter.h>
 #include <opencv2/core.hpp>
 #include <opencv2/imgproc.hpp>
@@ -96,6 +97,15 @@ struct _GstCVTracker
 #else
   cv::Ptr<cv::Rect2d> roi;
 #endif
+
+  guint track_id;
+  GstClockTime first_time_seen;
+  GstClockTime last_time_seen;
+  GstClockTimeDiff max_unseen_duration;
+  GSList* objects_types_of_interest;
+  GQuark object_type_tracked;
+  gfloat min_iou;
+  GstAnalyticRelationMetaInitParams relation_init_params;
 };
 
 typedef enum {
@@ -111,6 +121,9 @@ typedef enum {
 struct _GstCVTrackerClass
 {
   GstOpencvVideoFilterClass parent_class;
+
+  /*< private > */
+  guint track_id_seq;
 };
 
 GType gst_cvtracker_get_type (void);
