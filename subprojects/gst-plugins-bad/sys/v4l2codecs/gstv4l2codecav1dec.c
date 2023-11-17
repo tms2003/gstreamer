@@ -52,11 +52,6 @@ GST_STATIC_PAD_TEMPLATE (GST_VIDEO_DECODER_SINK_NAME,
     GST_PAD_SINK, GST_PAD_ALWAYS,
     GST_STATIC_CAPS ("video/x-av1, alignment=frame"));
 
-static GstStaticPadTemplate src_template =
-GST_STATIC_PAD_TEMPLATE (GST_VIDEO_DECODER_SRC_NAME,
-    GST_PAD_SRC, GST_PAD_ALWAYS,
-    GST_STATIC_CAPS (GST_VIDEO_CAPS_MAKE (GST_V4L2_DEFAULT_VIDEO_FORMATS)));
-
 struct _GstV4l2CodecAV1Dec
 {
   GstAV1Decoder parent;
@@ -1506,7 +1501,8 @@ gst_v4l2_codec_av1_dec_subclass_init (GstV4l2CodecAV1DecClass * klass,
       "Daniel Almeida <daniel.almeida@collabora.com>");
 
   gst_element_class_add_static_pad_template (element_class, &sink_template);
-  gst_element_class_add_static_pad_template (element_class, &src_template);
+  gst_element_class_add_pad_template (element_class,
+      gst_v4l2_get_src_template ());
 
   element_class->change_state =
       GST_DEBUG_FUNCPTR (gst_v4l2_codec_av1_dec_change_state);
