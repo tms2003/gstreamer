@@ -440,11 +440,11 @@ gst_v4l2_codec_vp8_enc_copy_input_buffer (GstV4l2CodecVp8Enc * self,
 {
   GstVideoFrame src_frame;
   GstVideoFrame dest_frame;
-  GstVideoInfo dest_vinfo;
+  GstVideoInfo src_vinfo;
   GstBuffer *buffer;
   GstFlowReturn flow_ret;
 
-  gst_video_info_set_format (&dest_vinfo, GST_VIDEO_INFO_FORMAT (&self->vinfo),
+  gst_video_info_set_format (&src_vinfo, GST_VIDEO_INFO_FORMAT (&self->vinfo),
       self->width, self->height);
 
   flow_ret = gst_buffer_pool_acquire_buffer (GST_BUFFER_POOL (self->sink_pool),
@@ -461,11 +461,11 @@ gst_v4l2_codec_vp8_enc_copy_input_buffer (GstV4l2CodecVp8Enc * self,
   if (!buffer)
     goto fail;
 
-  if (!gst_video_frame_map (&src_frame, &self->vinfo,
+  if (!gst_video_frame_map (&src_frame, &src_vinfo,
           frame->input_buffer, GST_MAP_READ))
     goto fail;
 
-  if (!gst_video_frame_map (&dest_frame, &dest_vinfo, buffer, GST_MAP_WRITE)) {
+  if (!gst_video_frame_map (&dest_frame, &self->vinfo, buffer, GST_MAP_WRITE)) {
     gst_video_frame_unmap (&dest_frame);
     goto fail;
   }
