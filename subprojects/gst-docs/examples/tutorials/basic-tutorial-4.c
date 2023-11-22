@@ -61,7 +61,7 @@ tutorial_main (int argc, char *argv[])
   do {
     msg = gst_bus_timed_pop_filtered (bus, 100 * GST_MSECOND,
         GST_MESSAGE_STATE_CHANGED | GST_MESSAGE_ERROR | GST_MESSAGE_EOS |
-        GST_MESSAGE_DURATION);
+        GST_MESSAGE_DURATION_CHANGED);
 
     /* Parse message */
     if (msg != NULL) {
@@ -108,7 +108,7 @@ tutorial_main (int argc, char *argv[])
 }
 
 static void
-handle_message (CustomData * data, GstMessage * msg)
+handle_message (CustomData *data, GstMessage *msg)
 {
   GError *err;
   gchar *debug_info;
@@ -128,7 +128,7 @@ handle_message (CustomData * data, GstMessage * msg)
       g_print ("\nEnd-Of-Stream reached.\n");
       data->terminate = TRUE;
       break;
-    case GST_MESSAGE_DURATION:
+    case GST_MESSAGE_DURATION_CHANGED:
       /* The duration has changed, mark the current one as invalid */
       data->duration = GST_CLOCK_TIME_NONE;
       break;
