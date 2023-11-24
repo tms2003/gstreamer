@@ -17,6 +17,7 @@ va_sources = [
   'gstvah264enc.c',
   'gstvah265dec.c',
   'gstvah265enc.c',
+  'gstvah266dec.c',
   'gstvajpegdec.c',
   'gstvampeg2dec.c',
   'gstvapluginutils.c',

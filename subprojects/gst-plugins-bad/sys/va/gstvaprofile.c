@@ -118,6 +118,11 @@ static const struct ProfileMap
   P (AV1, Profile1, "high", "video/x-av1", "profile = (string) high"),
   P (HEVC, SccMain444_10, "screen-extended-main-444-10", "video/x-h265",
       "profile = (string) screen-extended-main-444-10"),
+  Q (VVC, Main10, "main-10", "video/x-h266", "profile = (string) main-10",
+     "profile = (string) { main-10, main-10-still-picture }"),
+  Q (VVC, MultilayerMain10, "multilayer-main-10", "video/x-h266",
+     "profile = (string) multilayer-main-10",
+     "profile = (string) { multilayer-main-10, multilayer-main-10-still-picture }"),
 #undef O
 #undef P
 #undef Q
