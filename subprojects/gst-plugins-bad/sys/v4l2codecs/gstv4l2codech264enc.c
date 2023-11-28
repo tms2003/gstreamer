@@ -26,6 +26,7 @@
 #include "gstv4l2codecpool.h"
 #include "gstv4l2format.h"
 #include <gst/codecparsers/gsth264bitwriter.h>
+#include <gst/base/gstbytereader.h>
 
 #define KERNEL_VERSION(a,b,c) (((a) << 16) + ((b) << 8) + (c))
 
@@ -310,6 +311,38 @@ gst_v4l2_codec_h264_enc_buffers_allocation (GstVideoEncoder * encoder)
   return TRUE;
 }
 
+static guint
+gst_v4l2_codec_deemulate_nal (guint8 * data, guint size, guint maxsize)
+{
+  GstByteReader br;
+  /* skip initial start code */
+  guint offset = 3;
+
+  gst_byte_reader_init (&br, data, maxsize);
+
+  do {
+    offset = gst_byte_reader_masked_scan_uint32 (&br,
+        0xfffffc00, 0x00000000, offset, size);
+    if (offset == -1 || offset >= size)
+      break;
+
+    if (size == maxsize)
+      break;
+
+    /* Make 1 byte space after the two leading zeros */
+    offset += 2;
+    memmove (data + offset + 1, data + offset, size - offset);
+
+    /* Write the emulation byte */
+    data[offset] = 0x03;
+
+    size++;
+    offset += 3;
+  } while (TRUE);
+
+  return size;
+}
+
 static gboolean
 gst_v4l2_codec_h264_enc_set_codec_data (GstVideoEncoder * encoder,
     GstBuffer * codec_data, guint * data_size)
@@ -332,6 +365,8 @@ gst_v4l2_codec_h264_enc_set_codec_data (GstVideoEncoder * encoder,
     return FALSE;
   }
 
+  size = gst_v4l2_codec_deemulate_nal (data, size, SPS_SIZE);
+
   data += size;
   *data_size = size;
 
@@ -341,6 +376,8 @@ gst_v4l2_codec_h264_enc_set_codec_data (GstVideoEncoder * encoder,
     gst_buffer_unmap (codec_data, &info);
     return FALSE;
   }
+
+  size = gst_v4l2_codec_deemulate_nal (data, size, PPS_SIZE);
 
   *data_size += size;
 
