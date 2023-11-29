@@ -1098,29 +1098,21 @@ invalid_manifest:
   }
 }
 
-struct http_headers_collector
+typedef struct
 {
   GstAdaptiveDemux *demux;
+  GstStructure *req_headers;
   gchar **cookies;
-};
+} http_headers_collector;
 
 static gboolean
-gst_adaptive_demux_handle_upstream_http_header (GQuark field_id,
-    const GValue * value, gpointer userdata)
+http_headers_collector_handle_header (http_headers_collector * hdr_data,
+    const gchar * field_name, const GValue * value)
 {
-  struct http_headers_collector *hdr_data = userdata;
   GstAdaptiveDemux *demux = hdr_data->demux;
-  const gchar *field_name = g_quark_to_string (field_id);
 
   if (G_UNLIKELY (value == NULL))
-    return TRUE;                /* This should not happen */
-
-  if (g_ascii_strcasecmp (field_name, "User-Agent") == 0) {
-    const gchar *user_agent = g_value_get_string (value);
-
-    GST_INFO_OBJECT (demux, "User-Agent : %s", GST_STR_NULL (user_agent));
-    downloadhelper_set_user_agent (demux->download_helper, user_agent);
-  }
+    return FALSE;               /* This should not happen */
 
   if ((g_ascii_strcasecmp (field_name, "Cookie") == 0) ||
       g_ascii_strcasecmp (field_name, "Set-Cookie") == 0) {
@@ -1135,7 +1127,7 @@ gst_adaptive_demux_handle_upstream_http_header (GQuark field_id,
       cookies = (gchar **) g_malloc0 ((total_len + 1) * sizeof (gchar *));
 
       for (i = 0; i < gst_value_array_get_size (value); i++) {
-        GST_INFO_OBJECT (demux, "%s : %s", g_quark_to_string (field_id),
+        GST_INFO_OBJECT (demux, "%s : %s", field_name,
             g_value_get_string (gst_value_array_get_value (value, i)));
         cookies[i] = g_value_dup_string (gst_value_array_get_value (value, i));
       }
@@ -1143,12 +1135,11 @@ gst_adaptive_demux_handle_upstream_http_header (GQuark field_id,
       total_len = 1 + prev_len;
       cookies = (gchar **) g_malloc0 ((total_len + 1) * sizeof (gchar *));
 
-      GST_INFO_OBJECT (demux, "%s : %s", g_quark_to_string (field_id),
+      GST_INFO_OBJECT (demux, "%s : %s", field_name,
           g_value_get_string (value));
       cookies[0] = g_value_dup_string (value);
     } else {
-      GST_WARNING_OBJECT (demux, "%s field is not string or array",
-          g_quark_to_string (field_id));
+      GST_WARNING_OBJECT (demux, "%s field is not string or array", field_name);
     }
 
     if (cookies) {
@@ -1165,13 +1156,8 @@ gst_adaptive_demux_handle_upstream_http_header (GQuark field_id,
       g_strfreev (hdr_data->cookies);
       hdr_data->cookies = cookies;
     }
-  }
 
-  if (g_ascii_strcasecmp (field_name, "Referer") == 0) {
-    const gchar *referer = g_value_get_string (value);
-    GST_INFO_OBJECT (demux, "Referer : %s", GST_STR_NULL (referer));
-
-    downloadhelper_set_referer (demux->download_helper, referer);
+    return TRUE;
   }
 
   /* Date header can be used to estimate server offset */
@@ -1196,7 +1182,44 @@ gst_adaptive_demux_handle_upstream_http_header (GQuark field_id,
         gst_date_time_unref (datetime);
       }
     }
+
+    return TRUE;
   }
+
+  return FALSE;
+}
+
+static gboolean
+handle_upstream_request_header (GQuark field_id, const GValue * value,
+    gpointer userdata)
+{
+  http_headers_collector *hdr_data = userdata;
+  const gchar *field_name = g_quark_to_string (field_id);
+  gboolean handled;
+
+  handled = http_headers_collector_handle_header (hdr_data, field_name, value);
+
+  /* Append any headers for future requests that do not need special handling */
+  if (!handled && G_LIKELY (value != NULL) && G_VALUE_HOLDS_STRING (value)) {
+    if (!hdr_data->req_headers)
+      hdr_data->req_headers = gst_structure_new_empty ("request-headers");
+
+    GST_INFO_OBJECT (hdr_data->demux, "Appending header: \"%s: %s\"",
+        field_name, GST_STR_NULL (g_value_get_string (value)));
+    gst_structure_set_value (hdr_data->req_headers, field_name, value);
+  }
+
+  return TRUE;
+}
+
+static gboolean
+handle_upstream_response_header (GQuark field_id, const GValue * value,
+    gpointer userdata)
+{
+  http_headers_collector *hdr_data = userdata;
+  const gchar *field_name = g_quark_to_string (field_id);
+
+  http_headers_collector_handle_header (hdr_data, field_name, value);
 
   return TRUE;
 }
@@ -1250,32 +1273,32 @@ gst_adaptive_demux_sink_event (GstPad * pad, GstObject * parent,
       return TRUE;
     case GST_EVENT_CUSTOM_DOWNSTREAM_STICKY:{
       const GstStructure *structure = gst_event_get_structure (event);
-      struct http_headers_collector c = { demux, NULL };
 
       if (gst_structure_has_name (structure, "http-headers")) {
-        if (gst_structure_has_field (structure, "request-headers")) {
-          GstStructure *req_headers = NULL;
-          gst_structure_get (structure, "request-headers", GST_TYPE_STRUCTURE,
-              &req_headers, NULL);
-          if (req_headers) {
-            gst_structure_foreach (req_headers,
-                gst_adaptive_demux_handle_upstream_http_header, &c);
-            gst_structure_free (req_headers);
-          }
+        http_headers_collector c = { demux, NULL, NULL };
+        GstStructure *req_headers = NULL, *res_headers = NULL;
+
+        gst_structure_get (structure,
+            "request-headers", GST_TYPE_STRUCTURE, &req_headers,
+            "response-headers", GST_TYPE_STRUCTURE, &res_headers, NULL);
+
+        if (req_headers) {
+          gst_structure_foreach (req_headers,
+              handle_upstream_request_header, &c);
+          gst_structure_free (req_headers);
         }
-        if (gst_structure_has_field (structure, "response-headers")) {
-          GstStructure *res_headers = NULL;
-          gst_structure_get (structure, "response-headers", GST_TYPE_STRUCTURE,
-              &res_headers, NULL);
-          if (res_headers) {
-            gst_structure_foreach (res_headers,
-                gst_adaptive_demux_handle_upstream_http_header, &c);
-            gst_structure_free (res_headers);
-          }
+        if (res_headers) {
+          gst_structure_foreach (res_headers,
+              handle_upstream_response_header, &c);
+          gst_structure_free (res_headers);
         }
 
+        if (c.req_headers) {
+          downloadhelper_take_request_headers (demux->download_helper,
+              c.req_headers);
+        }
         if (c.cookies)
-          downloadhelper_set_cookies (demux->download_helper, c.cookies);
+          downloadhelper_take_cookies (demux->download_helper, c.cookies);
       }
       break;
     }

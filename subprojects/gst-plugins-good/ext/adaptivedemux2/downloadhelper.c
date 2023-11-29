@@ -47,8 +47,7 @@ struct DownloadHelper
   GAsyncQueue *transfer_requests;
   GSource *transfer_requests_source;
 
-  gchar *referer;
-  gchar *user_agent;
+  GstStructure *req_headers;
   gchar **cookies;
 };
 
@@ -652,34 +651,24 @@ downloadhelper_free (DownloadHelper * dh)
   g_array_free (dh->active_transfers, TRUE);
   g_async_queue_unref (dh->transfer_requests);
 
-  g_free (dh->referer);
-  g_free (dh->user_agent);
+  gst_clear_structure (&dh->req_headers);
   g_strfreev (dh->cookies);
 
   g_free (dh);
 }
 
 void
-downloadhelper_set_referer (DownloadHelper * dh, const gchar * referer)
+downloadhelper_take_request_headers (DownloadHelper * dh,
+    GstStructure * req_headers)
 {
   g_mutex_lock (&dh->transfer_lock);
-  g_free (dh->referer);
-  dh->referer = g_strdup (referer);
+  gst_clear_structure (&dh->req_headers);
+  dh->req_headers = req_headers;
   g_mutex_unlock (&dh->transfer_lock);
 }
 
 void
-downloadhelper_set_user_agent (DownloadHelper * dh, const gchar * user_agent)
-{
-  g_mutex_lock (&dh->transfer_lock);
-  g_free (dh->user_agent);
-  dh->user_agent = g_strdup (user_agent);
-  g_mutex_unlock (&dh->transfer_lock);
-}
-
-/* Takes ownership of the strv */
-void
-downloadhelper_set_cookies (DownloadHelper * dh, gchar ** cookies)
+downloadhelper_take_cookies (DownloadHelper * dh, gchar ** cookies)
 {
   g_mutex_lock (&dh->transfer_lock);
   g_strfreev (dh->cookies);
@@ -826,6 +815,19 @@ downloadhelper_stop (DownloadHelper * dh)
   g_mutex_unlock (&dh->transfer_lock);
 }
 
+static gboolean
+append_request_header_cb (GQuark field_id, const GValue * value,
+    SoupMessageHeaders * msg_headers)
+{
+  const gchar *key = g_quark_to_string (field_id);
+  const gchar *val_str = g_value_get_string (value);
+
+  if (G_LIKELY (key && val_str))
+    _soup_message_headers_append (msg_headers, key, val_str);
+
+  return TRUE;
+}
+
 gboolean
 downloadhelper_submit_request (DownloadHelper * dh,
     const gchar * referer, DownloadFlags flags, DownloadRequest * request,
@@ -835,6 +837,7 @@ downloadhelper_submit_request (DownloadHelper * dh,
   const gchar *method;
   SoupMessage *msg;
   SoupMessageHeaders *msg_headers;
+  gint64 range_start, range_end;
   gboolean blocking = (flags & DOWNLOAD_FLAG_BLOCKING) != 0;
 
   method =
@@ -869,12 +872,8 @@ downloadhelper_submit_request (DownloadHelper * dh,
   if (request->range_start < 1024)
     request->range_start = 0;
 
-  msg_headers = _soup_message_get_request_headers (msg);
-
-  if (request->range_start != 0 || request->range_end != -1) {
-    _soup_message_headers_set_range (msg_headers, request->range_start,
-        request->range_end);
-  }
+  range_start = request->range_start;
+  range_end = request->range_end;
 
   download_request_unlock (request);
 
@@ -884,23 +883,27 @@ downloadhelper_submit_request (DownloadHelper * dh,
   if ((flags & DOWNLOAD_FLAG_COMPRESS) == 0) {
     _soup_message_disable_feature (msg, _soup_content_decoder_get_type ());
   }
-  if (flags & DOWNLOAD_FLAG_FORCE_REFRESH) {
-    _soup_message_headers_append (msg_headers, "Cache-Control", "max-age=0");
-  }
+
+  msg_headers = _soup_message_get_request_headers (msg);
 
   /* Take the lock to protect header strings */
   g_mutex_lock (&dh->transfer_lock);
 
-  if (referer != NULL) {
+  /* Start by setting all request headers */
+  if (dh->req_headers) {
+    gst_structure_foreach (dh->req_headers,
+        (GstStructureForeachFunc) append_request_header_cb, msg_headers);
+  }
+
+  /* Now add more or update some of the earlier set headers if needed */
+  if (flags & DOWNLOAD_FLAG_FORCE_REFRESH) {
+    _soup_message_headers_append (msg_headers, "Cache-Control", "max-age=0");
+  }
+  if (range_start != 0 || range_end != -1) {
+    _soup_message_headers_set_range (msg_headers, range_start, range_end);
+  }
+  if (referer && !_soup_message_headers_get_one (msg_headers, "Referer"))
     _soup_message_headers_append (msg_headers, "Referer", referer);
-  } else if (dh->referer != NULL) {
-    _soup_message_headers_append (msg_headers, "Referer", dh->referer);
-  }
-
-  if (dh->user_agent != NULL) {
-    _soup_message_headers_append (msg_headers, "User-Agent", dh->user_agent);
-  }
-
   if (dh->cookies != NULL) {
     gchar **cookie;
 

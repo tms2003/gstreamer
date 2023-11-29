@@ -51,9 +51,8 @@ void downloadhelper_stop (DownloadHelper * dh);
 
 void downloadhelper_free (DownloadHelper * dh);
 
-void downloadhelper_set_referer (DownloadHelper * dh, const gchar *referer);
-void downloadhelper_set_user_agent (DownloadHelper * dh, const gchar *user_agent);
-void downloadhelper_set_cookies (DownloadHelper * dh, gchar **cookies);
+void downloadhelper_take_request_headers (DownloadHelper * dh, GstStructure * req_headers);
+void downloadhelper_take_cookies (DownloadHelper * dh, gchar **cookies);
 
 gboolean downloadhelper_submit_request (DownloadHelper * dh,
     const gchar * referer, DownloadFlags flags, DownloadRequest * request,
