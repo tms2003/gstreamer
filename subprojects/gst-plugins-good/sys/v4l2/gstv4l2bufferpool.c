@@ -719,6 +719,59 @@ streamon_failed:
   }
 }
 
+gboolean
+gst_v4l2_buffer_pool_resume (GstV4l2BufferPool * pool)
+{
+  GstV4l2Object *obj = pool->obj;
+
+  if (!pool->streaming)
+    return FALSE;
+
+  switch (obj->mode) {
+    case GST_V4L2_IO_MMAP:
+    case GST_V4L2_IO_USERPTR:
+    case GST_V4L2_IO_DMABUF:
+    case GST_V4L2_IO_DMABUF_IMPORT:
+      if (!V4L2_TYPE_IS_OUTPUT (pool->obj->type)) {
+        guint num_queued;
+        guint i, n;
+
+        GST_OBJECT_LOCK (pool);
+        n = pool->num_allocated;
+        GST_OBJECT_UNLOCK (pool);
+
+        num_queued = g_atomic_int_get (&pool->num_queued);
+        if (num_queued >= n)
+          return FALSE;
+
+        num_queued = 0;
+        g_signal_handler_block (pool->vallocator, pool->group_released_handler);
+        /* For captures, we need to enqueue buffers before decoder resuming,
+         * so the driver don't underflow immediately. As we have put then back
+         * into the base class queue, resurrect them, then releasing will queue
+         * them back. */
+        for (i = 0; i < n; i++) {
+          if (!g_atomic_int_get(&pool->buffer_state[i])) {
+            GstBuffer *buffer = pool->buffers[i];
+            GstBufferPool *bpool = GST_BUFFER_POOL (pool);
+
+            gst_v4l2_buffer_pool_complete_release_buffer (bpool, buffer, FALSE);
+            num_queued++;
+          }
+        }
+
+        g_signal_handler_unblock (pool->vallocator, pool->group_released_handler);
+
+        GST_DEBUG_OBJECT (pool, "resurrect %d buffers", num_queued);
+      }
+      break;
+    default:
+      break;
+  }
+
+  return TRUE;
+}
+
 /* Call with streamlock held, or when streaming threads are down */
 static void
 gst_v4l2_buffer_pool_streamoff (GstV4l2BufferPool * pool)
@@ -1672,15 +1725,18 @@ gst_v4l2_buffer_pool_release_buffer (GstBufferPool * bpool, GstBuffer * buffer)
   gboolean queued = FALSE;
 
   if (gst_v4l2_is_buffer_valid (buffer, &group)) {
-    gint old_buffer_state =
-        g_atomic_int_and (&pool->buffer_state[group->buffer.index],
+    queued = (g_atomic_int_get (&pool->buffer_state[group->buffer.index])
+              & BUFFER_STATE_QUEUED) != 0;
+
+    gst_v4l2_buffer_pool_complete_release_buffer (bpool, buffer, queued);
+
+    g_atomic_int_and (&pool->buffer_state[group->buffer.index],
         ~BUFFER_STATE_OUTSTANDING);
-    queued = (old_buffer_state & BUFFER_STATE_QUEUED) != 0;
     GST_LOG_OBJECT (pool, "mark buffer %u not outstanding",
         group->buffer.index);
+  } else {
+    gst_v4l2_buffer_pool_complete_release_buffer (bpool, buffer, queued);
   }
-
-  gst_v4l2_buffer_pool_complete_release_buffer (bpool, buffer, queued);
 }
 
 static void
