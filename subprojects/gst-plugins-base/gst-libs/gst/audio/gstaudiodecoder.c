@@ -1618,9 +1618,6 @@ gst_audio_decoder_handle_frame (GstAudioDecoder * dec,
 {
   /* Skip decoding and send a GAP instead if
    * GST_SEGMENT_FLAG_TRICKMODE_NO_AUDIO is set and we have timestamps
-   * FIXME: We only do this for forward playback atm, because reverse
-   * playback would require accumulating GAP events and pushing them
-   * out in reverse order as for normal audio samples
    */
   if (G_UNLIKELY (dec->input_segment.rate > 0.0
           && dec->input_segment.flags & GST_SEGMENT_FLAG_TRICKMODE_NO_AUDIO)) {
@@ -2061,8 +2058,16 @@ gst_audio_decoder_chain_reverse (GstAudioDecoder * dec, GstBuffer * buf)
       /* copy to decode queue */
       priv->decode = g_list_prepend (priv->decode, gbuf);
     }
-    /* decode stuff in the decode queue */
-    gst_audio_decoder_flush_decode (dec);
+
+    if (dec->input_segment.flags & GST_SEGMENT_FLAG_TRICKMODE_NO_AUDIO) {
+      /* Sending out the accumulated gap events */
+      GST_LOG_OBJECT (dec,
+          "Skipping decode in reverse trickmode and sending gap");
+      send_pending_events (dec);
+    } else {
+      /* decode stuff in the decode queue */
+      gst_audio_decoder_flush_decode (dec);
+    }
   }
 
   if (G_LIKELY (buf)) {
@@ -2070,6 +2075,22 @@ gst_audio_decoder_chain_reverse (GstAudioDecoder * dec, GstBuffer * buf)
         "time %" GST_TIME_FORMAT ", dur %" GST_TIME_FORMAT, buf,
         gst_buffer_get_size (buf), GST_TIME_ARGS (GST_BUFFER_PTS (buf)),
         GST_TIME_ARGS (GST_BUFFER_DURATION (buf)));
+
+    /* Accumulate gap events */
+    if (dec->input_segment.flags & GST_SEGMENT_FLAG_TRICKMODE_NO_AUDIO) {
+      if (buf) {
+        GstClockTime ts = GST_BUFFER_PTS (buf);
+        if (GST_CLOCK_TIME_IS_VALID (ts)) {
+          GstEvent *event = gst_event_new_gap (ts, GST_BUFFER_DURATION (buf));
+
+          priv->pending_events = g_list_prepend (priv->pending_events, event);
+
+          gst_buffer_unref (buf);
+          GST_LOG_OBJECT (dec, "prepending gap events in reverse trickmode.");
+          return result;
+        }
+      }
+    }
 
     /* add buffer to gather queue */
     priv->gather = g_list_prepend (priv->gather, buf);
