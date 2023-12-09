@@ -1,6 +1,8 @@
 /*
  * Copyright (c) 2014, Ericsson AB. All rights reserved.
  *
+ * SPDX-License-Identifier: BSD-2-Clause
+ *
  * Redistribution and use in source and binary forms, with or without modification,
  * are permitted provided that the following conditions are met:
  *
@@ -35,7 +37,7 @@
 
 
 gboolean
-openh264_element_init (GstPlugin * plugin)
+openh264_element_init (GstPlugin *plugin)
 {
   OpenH264Version libver;
   /* g_stCodecVersion is the version detected at build time as defined in the
