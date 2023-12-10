@@ -99,26 +99,22 @@ static GstStructure *
 gst_v4l2uvc_fourcc_to_bare_struct (guint32 fourcc)
 {
   GstStructure *structure = NULL;
+  GstVideoFormat format = GST_VIDEO_FORMAT_UNKNOWN;
 
-  /* Since MJPEG and YUY2 are currently the only one supported
-   * we limit the function to parse only these fourccs
-   */
   switch (fourcc) {
     case V4L2_PIX_FMT_MJPEG:   /* Motion-JPEG */
     case V4L2_PIX_FMT_JPEG:    /* JFIF JPEG */
       structure = gst_structure_new_empty ("image/jpeg");
       break;
-    case V4L2_PIX_FMT_YUYV:{
-      GstVideoFormat format = GST_VIDEO_FORMAT_YUY2;
-      if (format != GST_VIDEO_FORMAT_UNKNOWN)
-        structure = gst_structure_new ("video/x-raw",
-            "format", G_TYPE_STRING, gst_video_format_to_string (format), NULL);
-      break;
-    }
-      break;
     default:
-      GST_DEBUG ("Unsupported fourcc 0x%08x %" GST_FOURCC_FORMAT,
-          fourcc, GST_FOURCC_ARGS (fourcc));
+      format = gst_video_format_from_fourcc (fourcc);
+      if (format == GST_VIDEO_FORMAT_UNKNOWN) {
+        GST_DEBUG ("Unsupported fourcc 0x%08x %" GST_FOURCC_FORMAT,
+            fourcc, GST_FOURCC_ARGS (fourcc));
+        break;
+      }
+      structure = gst_structure_new ("video/x-raw",
+          "format", G_TYPE_STRING, gst_video_format_to_string (format), NULL);
       break;
   }
 
@@ -155,6 +151,8 @@ gst_uvc_sink_get_configured_caps (GstUvcSink * self)
   }
 
   s = gst_v4l2uvc_fourcc_to_bare_struct (format.pixelformat);
+  if (!s)
+    return NULL;
 
   memset (&size, 0, sizeof (struct v4l2_frmsizeenum));
   size.index = self->cur.bFrameIndex - 1;
@@ -615,6 +613,15 @@ gst_uvc_sink_task (gpointer data)
            * from the probed caps that match the configured caps.
            */
           configured_caps = gst_uvc_sink_get_configured_caps (self);
+          if (!configured_caps) {
+            GST_ELEMENT_ERROR (self, RESOURCE, WRITE,
+                ("gst_uvc_sink_get_configured_caps failed"),
+                ("gst_uvc_sink_get_configured_caps on current format failed"));
+            gst_uvc_sink_unwatch (self);
+            gst_element_set_state (GST_ELEMENT (self), GST_STATE_NULL);
+            return;
+          }
+
           gst_clear_caps (&self->cur_caps);
           self->cur_caps =
               gst_caps_intersect_full (self->probed_caps, configured_caps,
