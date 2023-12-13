@@ -89,6 +89,8 @@ void             gst_play_sink_set_font_desc  (GstPlaySink *playsink, const gcha
 gchar *          gst_play_sink_get_font_desc  (GstPlaySink *playsink);
 void             gst_play_sink_set_subtitle_encoding  (GstPlaySink *playsink, const gchar * encoding);
 gchar *          gst_play_sink_get_subtitle_encoding  (GstPlaySink *playsink);
+void             gst_play_sink_set_subtitle_bg_color  (GstPlaySink *playsink, guint bg_color);
+guint            gst_play_sink_get_subtitle_bg_color  (GstPlaySink *playsink);
 
 void             gst_play_sink_set_av_offset  (GstPlaySink *playsink, gint64 av_offset);
 gint64           gst_play_sink_get_av_offset  (GstPlaySink *playsink);

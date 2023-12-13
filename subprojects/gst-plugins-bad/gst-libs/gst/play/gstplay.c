@@ -106,6 +106,7 @@ GST_DEBUG_CATEGORY_STATIC (gst_play_debug);
 #define DEFAULT_POSITION_UPDATE_INTERVAL_MS 100
 #define DEFAULT_AUDIO_VIDEO_OFFSET 0
 #define DEFAULT_SUBTITLE_VIDEO_OFFSET 0
+#define DEFAULT_SUBTITLE_BG_COLOR 0x00000000
 
 /**
  * gst_play_error_quark:
@@ -125,6 +126,7 @@ typedef enum
   CONFIG_QUARK_USER_AGENT = 0,
   CONFIG_QUARK_POSITION_INTERVAL_UPDATE,
   CONFIG_QUARK_ACCURATE_SEEK,
+  CONFIG_QUARK_SUBTITLE_BG_COLOR,
 
   CONFIG_QUARK_MAX
 } ConfigQuarkId;
@@ -133,6 +135,7 @@ static const gchar *_config_quark_strings[] = {
   "user-agent",
   "position-interval-update",
   "accurate-seek",
+  "subtitle-bg-color",
 };
 
 static GQuark _config_quark_table[CONFIG_QUARK_MAX];
@@ -316,6 +319,7 @@ gst_play_init (GstPlay * self)
   self->config = gst_structure_new_id (QUARK_CONFIG,
       CONFIG_QUARK (POSITION_INTERVAL_UPDATE), G_TYPE_UINT, DEFAULT_POSITION_UPDATE_INTERVAL_MS,
       CONFIG_QUARK (ACCURATE_SEEK), G_TYPE_BOOLEAN, FALSE,
+      CONFIG_QUARK (SUBTITLE_BG_COLOR), G_TYPE_UINT, DEFAULT_SUBTITLE_BG_COLOR,
       NULL);
   /* *INDENT-ON* */
 
@@ -2537,6 +2541,7 @@ gst_play_main (gpointer data)
   GstBus *bus;
   GSource *source;
   GstElement *scaletempo;
+  guint subtitle_bg_color;
   const gchar *env;
 
   GST_TRACE_OBJECT (self, "Starting main thread");
@@ -2566,6 +2571,9 @@ gst_play_main (gpointer data)
   }
 
   gst_object_ref_sink (self->playbin);
+
+  subtitle_bg_color = gst_play_config_get_subtitle_bg_color (self->config);
+  g_object_set (self->playbin, "subtitle-bg-color", subtitle_bg_color, NULL);
 
   if (self->video_renderer) {
     gst_play_set_playbin_video_sink (self);
@@ -4333,6 +4341,11 @@ gst_play_set_config (GstPlay * self, GstStructure * config)
   self->config = config;
   g_mutex_unlock (&self->lock);
 
+  if (self->playbin) {
+    guint subtitle_bg_color = gst_play_config_get_subtitle_bg_color (config);
+    g_object_set (self->playbin, "subtitle-bg-color", subtitle_bg_color, NULL);
+  }
+
   return TRUE;
 }
 
@@ -4493,6 +4506,49 @@ gst_play_config_get_seek_accurate (const GstStructure * config)
       CONFIG_QUARK (ACCURATE_SEEK), G_TYPE_BOOLEAN, &accurate, NULL);
 
   return accurate;
+}
+
+/**
+ * gst_play_config_set_subtitle_bg_color:
+ * @config: a #GstPlay configuration
+ * @bg_color: a big-endian ARGB color value
+ *
+ * Sets the color of the subtitle background. This can be useful when enabling
+ * an external subtitle file for a video which already contains hard-coded
+ * subtitles. In this situation, setting the background color to opaque black
+ * (0xff000000) would reduce overlapping between the hard-coded subtitles and
+ * the external ones.
+ *
+ * Since: 1.22
+ */
+void
+gst_play_config_set_subtitle_bg_color (GstStructure * config, guint bg_color)
+{
+  g_return_if_fail (config != NULL);
+
+  gst_structure_id_set (config, CONFIG_QUARK (SUBTITLE_BG_COLOR), G_TYPE_UINT,
+      bg_color, NULL);
+}
+
+/**
+ * gst_play_config_get_subtitle_bg_color:
+ * @config: a #GstPlay configuration
+ *
+ * Returns: the configured big-endian ARGB color used for rendering subtitle backgrounds
+ *
+ * Since: 1.22
+ */
+guint
+gst_play_config_get_subtitle_bg_color (const GstStructure * config)
+{
+  guint bg_color = DEFAULT_SUBTITLE_BG_COLOR;
+
+  g_return_val_if_fail (config != NULL, bg_color);
+
+  gst_structure_id_get (config, CONFIG_QUARK (SUBTITLE_BG_COLOR), G_TYPE_UINT,
+      &bg_color, NULL);
+
+  return bg_color;
 }
 
 /**

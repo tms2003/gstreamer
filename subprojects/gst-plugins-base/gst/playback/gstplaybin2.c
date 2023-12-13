@@ -528,6 +528,7 @@ struct _GstPlayBinClass
 #define DEFAULT_BUFFER_DURATION   -1
 #define DEFAULT_BUFFER_SIZE       -1
 #define DEFAULT_RING_BUFFER_MAX_SIZE 0
+#define DEFAULT_SUBTITLE_BG_COLOR 0x00000000
 
 enum
 {
@@ -566,7 +567,8 @@ enum
   PROP_AUDIO_FILTER,
   PROP_VIDEO_FILTER,
   PROP_MULTIVIEW_MODE,
-  PROP_MULTIVIEW_FLAGS
+  PROP_MULTIVIEW_FLAGS,
+  PROP_SUBTITLE_BG_COLOR
 };
 
 /* signals */
@@ -1019,6 +1021,21 @@ gst_play_bin_class_init (GstPlayBinClass * klass)
           "Override details of the multiview frame layout",
           GST_TYPE_VIDEO_MULTIVIEW_FLAGS, GST_VIDEO_MULTIVIEW_FLAGS_NONE,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  /**
+   * playbin:subtitle-bg-color:
+   *
+   * Color of the background of the rendered text.
+   *
+   * Since: 1.22
+   */
+  g_object_class_install_property (gobject_klass,
+      PROP_SUBTITLE_BG_COLOR,
+      g_param_spec_uint ("subtitle-bg-color",
+          "Subtitles Background Color",
+          "Color to use for subtitles background (big-endian ARGB).", 0,
+          G_MAXUINT32, DEFAULT_SUBTITLE_BG_COLOR,
+          G_PARAM_READWRITE | GST_PARAM_CONTROLLABLE | G_PARAM_STATIC_STRINGS));
 
   /**
    * GstPlayBin::about-to-finish
@@ -2532,6 +2549,11 @@ gst_play_bin_set_property (GObject * object, guint prop_id,
       playbin->multiview_flags = g_value_get_flags (value);
       GST_PLAY_BIN_UNLOCK (playbin);
       break;
+    case PROP_SUBTITLE_BG_COLOR:
+      gst_play_sink_set_subtitle_bg_color (playbin->playsink,
+          g_value_get_uint (value));
+      break;
+
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -2788,6 +2810,10 @@ gst_play_bin_get_property (GObject * object, guint prop_id, GValue * value,
       GST_OBJECT_LOCK (playbin);
       g_value_set_flags (value, playbin->multiview_flags);
       GST_OBJECT_UNLOCK (playbin);
+      break;
+    case PROP_SUBTITLE_BG_COLOR:
+      g_value_set_uint (value,
+          gst_play_sink_get_subtitle_bg_color (playbin->playsink));
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);

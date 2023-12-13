@@ -252,6 +252,7 @@ struct _GstPlaySink
   gboolean mute;
   gchar *font_desc;             /* font description */
   gchar *subtitle_encoding;     /* subtitle encoding */
+  guint subtitle_bg_color;
   guint connection_speed;       /* connection speed in bits/sec (0 = unknown) */
   guint count;
   gboolean volume_changed;      /* volume/mute changed while no audiochain */
@@ -340,6 +341,7 @@ enum
   PROP_VOLUME,
   PROP_FONT_DESC,
   PROP_SUBTITLE_ENCODING,
+  PROP_SUBTITLE_BG_COLOR,
   PROP_VIS_PLUGIN,
   PROP_SAMPLE,
   PROP_AV_OFFSET,
@@ -504,6 +506,23 @@ gst_play_sink_class_init (GstPlaySinkClass * klass)
           "be checked for an encoding to use. If that is not set either, "
           "ISO-8859-15 will be assumed.", NULL,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  /**
+   * GstPlaySink:subtitle-bg-color:
+   *
+   * Background color of the subtitles.
+   *
+   * Since: 1.22
+   */
+  g_object_class_install_property (gobject_klass,
+      PROP_SUBTITLE_BG_COLOR,
+      g_param_spec_uint ("subtitle-bg-color",
+          "Subtitle Background Color",
+          "Color to use for subtitles background (big-endian ARGB).", 0,
+          G_MAXUINT32, 0x00000000,
+          G_PARAM_READWRITE | GST_PARAM_CONTROLLABLE | G_PARAM_STATIC_STRINGS));
+
+
   g_object_class_install_property (gobject_klass, PROP_VIS_PLUGIN,
       g_param_spec_object ("vis-plugin", "Vis plugin",
           "the visualization element to use (NULL = default)",
@@ -693,6 +712,7 @@ gst_play_sink_init (GstPlaySink * playsink)
   playsink->volume = 1.0;
   playsink->font_desc = NULL;
   playsink->subtitle_encoding = NULL;
+  playsink->subtitle_bg_color = 0x00000000;
   playsink->flags = DEFAULT_FLAGS;
   playsink->send_event_mode = MODE_DEFAULT;
   playsink->force_aspect_ratio = TRUE;
@@ -3822,7 +3842,7 @@ gst_play_sink_do_reconfigure (GstPlaySink * playsink)
       GST_DEBUG_OBJECT (playsink, "adding text chain");
       if (playsink->textchain->overlay)
         g_object_set (G_OBJECT (playsink->textchain->overlay), "silent", FALSE,
-            NULL);
+            "bg-color", playsink->subtitle_bg_color, NULL);
       add_chain (GST_PLAY_CHAIN (playsink->textchain), TRUE);
 
       if (!playsink->text_sinkpad_stream_synchronizer) {
@@ -4059,6 +4079,40 @@ gst_play_sink_get_subtitle_encoding (GstPlaySink * playsink)
 
   return result;
 }
+
+void
+gst_play_sink_set_subtitle_bg_color (GstPlaySink * playsink, guint bg_color)
+{
+  GstPlayTextChain *chain;
+
+  GST_PLAY_SINK_LOCK (playsink);
+  chain = (GstPlayTextChain *) playsink->textchain;
+  playsink->subtitle_bg_color = bg_color;
+  if (chain && chain->overlay) {
+    g_object_set (chain->overlay, "bg-color", bg_color, NULL);
+  }
+  GST_PLAY_SINK_UNLOCK (playsink);
+}
+
+guint
+gst_play_sink_get_subtitle_bg_color (GstPlaySink * playsink)
+{
+  guint result = 0;
+  GstPlayTextChain *chain;
+
+  GST_PLAY_SINK_LOCK (playsink);
+  chain = (GstPlayTextChain *) playsink->textchain;
+  if (chain && chain->overlay) {
+    g_object_get (chain->overlay, "bg-color", &result, NULL);
+    playsink->subtitle_bg_color = result;
+  } else {
+    result = playsink->subtitle_bg_color;
+  }
+  GST_PLAY_SINK_UNLOCK (playsink);
+
+  return result;
+}
+
 
 static void
 update_av_offset (GstPlaySink * playsink)
@@ -5211,6 +5265,9 @@ gst_play_sink_set_property (GObject * object, guint prop_id,
       gst_play_sink_set_subtitle_encoding (playsink,
           g_value_get_string (value));
       break;
+    case PROP_SUBTITLE_BG_COLOR:
+      gst_play_sink_set_subtitle_bg_color (playsink, g_value_get_uint (value));
+      break;
     case PROP_VIS_PLUGIN:
       gst_play_sink_set_vis_plugin (playsink, g_value_get_object (value));
       break;
@@ -5293,6 +5350,9 @@ gst_play_sink_get_property (GObject * object, guint prop_id,
     case PROP_SUBTITLE_ENCODING:
       g_value_take_string (value,
           gst_play_sink_get_subtitle_encoding (playsink));
+      break;
+    case PROP_SUBTITLE_BG_COLOR:
+      g_value_set_uint (value, gst_play_sink_get_subtitle_bg_color (playsink));
       break;
     case PROP_VIS_PLUGIN:
       g_value_take_object (value, gst_play_sink_get_vis_plugin (playsink));

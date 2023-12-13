@@ -67,6 +67,7 @@
 #define DEFAULT_PROP_DRAW_OUTLINE TRUE
 #define DEFAULT_PROP_COLOR      0xffffffff
 #define DEFAULT_PROP_OUTLINE_COLOR 0xff000000
+#define DEFAULT_PROP_BG_COLOR 0x00000000
 #define DEFAULT_PROP_SHADING_VALUE    80
 #define DEFAULT_PROP_TEXT_X 0
 #define DEFAULT_PROP_TEXT_Y 0
@@ -105,6 +106,7 @@ enum
   PROP_DRAW_SHADOW,
   PROP_DRAW_OUTLINE,
   PROP_OUTLINE_COLOR,
+  PROP_BG_COLOR,
   PROP_TEXT_X,
   PROP_TEXT_Y,
   PROP_TEXT_WIDTH,
@@ -542,6 +544,19 @@ gst_base_text_overlay_class_init (GstBaseTextOverlayClass * klass)
           G_PARAM_READWRITE | GST_PARAM_CONTROLLABLE | G_PARAM_STATIC_STRINGS));
 
   /**
+   * GstBaseTextOverlay:bg-color:
+   *
+   * Color of the background of the rendered text.
+   *
+   * Since: 1.22
+   */
+  g_object_class_install_property (G_OBJECT_CLASS (klass), PROP_BG_COLOR,
+      g_param_spec_uint ("bg-color", "Text Background Color",
+          "Color to use for the background of the text (big-endian ARGB).", 0,
+          G_MAXUINT32, DEFAULT_PROP_BG_COLOR,
+          G_PARAM_READWRITE | GST_PARAM_CONTROLLABLE | G_PARAM_STATIC_STRINGS));
+
+  /**
    * GstBaseTextOverlay:line-alignment:
    *
    * Alignment of text lines relative to each other (for multi-line text)
@@ -744,6 +759,7 @@ gst_base_text_overlay_init (GstBaseTextOverlay * overlay,
 
   overlay->color = DEFAULT_PROP_COLOR;
   overlay->outline_color = DEFAULT_PROP_OUTLINE_COLOR;
+  overlay->bg_color = DEFAULT_PROP_BG_COLOR;
   overlay->halign = DEFAULT_PROP_HALIGNMENT;
   overlay->valign = DEFAULT_PROP_VALIGNMENT;
   overlay->xpad = DEFAULT_PROP_XPAD;
@@ -1115,6 +1131,9 @@ gst_base_text_overlay_set_property (GObject * object, guint prop_id,
     case PROP_OUTLINE_COLOR:
       overlay->outline_color = g_value_get_uint (value);
       break;
+    case PROP_BG_COLOR:
+      overlay->bg_color = g_value_get_uint (value);
+      break;
     case PROP_SILENT:
       overlay->silent = g_value_get_boolean (value);
       break;
@@ -1244,6 +1263,9 @@ gst_base_text_overlay_get_property (GObject * object, guint prop_id,
       break;
     case PROP_OUTLINE_COLOR:
       g_value_set_uint (value, overlay->outline_color);
+      break;
+    case PROP_BG_COLOR:
+      g_value_set_uint (value, overlay->bg_color);
       break;
     case PROP_SHADING_VALUE:
       g_value_set_uint (value, overlay->shading_value);
@@ -1946,7 +1968,12 @@ gst_base_text_overlay_render_pangocairo (GstBaseTextOverlay * overlay,
   cr = cairo_create (surface);
 
   /* clear surface */
-  cairo_set_operator (cr, CAIRO_OPERATOR_CLEAR);
+  cairo_set_operator (cr, CAIRO_OPERATOR_SOURCE);
+  a = (overlay->bg_color >> 24) & 0xff;
+  r = (overlay->bg_color >> 16) & 0xff;
+  g = (overlay->bg_color >> 8) & 0xff;
+  b = (overlay->bg_color >> 0) & 0xff;
+  cairo_set_source_rgba (cr, r / 255.0, g / 255.0, b / 255.0, a / 255.0);
   cairo_paint (cr);
 
   cairo_set_operator (cr, CAIRO_OPERATOR_OVER);

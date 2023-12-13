@@ -9108,6 +9108,20 @@
                         "type": "gboolean",
                         "writable": true
                     },
+                    "bg-color": {
+                        "blurb": "Color to use for the background of the text (big-endian ARGB).",
+                        "conditionally-available": false,
+                        "construct": false,
+                        "construct-only": false,
+                        "controllable": true,
+                        "default": "0",
+                        "max": "-1",
+                        "min": "0",
+                        "mutable": "null",
+                        "readable": true,
+                        "type": "guint",
+                        "writable": true
+                    },
                     "color": {
                         "blurb": "Color to use for text (big-endian ARGB).",
                         "conditionally-available": false,
@@ -10612,6 +10626,20 @@
                         "type": "GstElement",
                         "writable": false
                     },
+                    "subtitle-bg-color": {
+                        "blurb": "Color to use for subtitles background (big-endian ARGB).",
+                        "conditionally-available": false,
+                        "construct": false,
+                        "construct-only": false,
+                        "controllable": true,
+                        "default": "0",
+                        "max": "-1",
+                        "min": "0",
+                        "mutable": "null",
+                        "readable": true,
+                        "type": "guint",
+                        "writable": true
+                    },
                     "subtitle-encoding": {
                         "blurb": "Encoding to assume if input subtitles are not in UTF-8 encoding. If not set, the GST_SUBTITLE_ENCODING environment variable will be checked for an encoding to use. If that is not set either, ISO-8859-15 will be assumed.",
                         "conditionally-available": false,
@@ -11138,6 +11166,20 @@
                         "type": "GstSample",
                         "writable": false
                     },
+                    "subtitle-bg-color": {
+                        "blurb": "Color to use for subtitles background (big-endian ARGB).",
+                        "conditionally-available": false,
+                        "construct": false,
+                        "construct-only": false,
+                        "controllable": true,
+                        "default": "0",
+                        "max": "-1",
+                        "min": "0",
+                        "mutable": "null",
+                        "readable": true,
+                        "type": "guint",
+                        "writable": true
+                    },
                     "subtitle-encoding": {
                         "blurb": "Encoding to assume if input subtitles are not in UTF-8 encoding. If not set, the GST_SUBTITLE_ENCODING environment variable will be checked for an encoding to use. If that is not set either, ISO-8859-15 will be assumed.",
                         "conditionally-available": false,
@@ -11488,6 +11530,20 @@
                         "type": "GstPlaySinkSendEventMode",
                         "writable": true
                     },
+                    "subtitle-bg-color": {
+                        "blurb": "Color to use for subtitles background (big-endian ARGB).",
+                        "conditionally-available": false,
+                        "construct": false,
+                        "construct-only": false,
+                        "controllable": true,
+                        "default": "0",
+                        "max": "-1",
+                        "min": "0",
+                        "mutable": "null",
+                        "readable": true,
+                        "type": "guint",
+                        "writable": true
+                    },
                     "subtitle-encoding": {
                         "blurb": "Encoding to assume if input subtitles are not in UTF-8 encoding. If not set, the GST_SUBTITLE_ENCODING environment variable will be checked for an encoding to use. If that is not set either, ISO-8859-15 will be assumed.",
                         "conditionally-available": false,
@@ -11667,6 +11723,20 @@
                     }
                 },
                 "properties": {
+                    "bg-color": {
+                        "blurb": "Color to use for text background (big-endian ARGB).",
+                        "conditionally-available": false,
+                        "construct": false,
+                        "construct-only": false,
+                        "controllable": true,
+                        "default": "0",
+                        "max": "-1",
+                        "min": "0",
+                        "mutable": "null",
+                        "readable": true,
+                        "type": "guint",
+                        "writable": true
+                    },
                     "font-desc": {
                         "blurb": "Pango font description of font to be used for subtitle rendering",
                         "conditionally-available": false,

@@ -403,6 +403,7 @@ struct _GstPlayBin3Class
 #define DEFAULT_CURRENT_AUDIO     -1
 #define DEFAULT_CURRENT_TEXT      -1
 #define DEFAULT_SUBTITLE_ENCODING NULL
+#define DEFAULT_SUBTITLE_BG_COLOR 0x00000000
 #define DEFAULT_AUDIO_SINK        NULL
 #define DEFAULT_VIDEO_SINK        NULL
 #define DEFAULT_VIS_PLUGIN        NULL
@@ -425,6 +426,7 @@ enum
   PROP_CURRENT_SUBURI,
   PROP_FLAGS,
   PROP_SUBTITLE_ENCODING,
+  PROP_SUBTITLE_BG_COLOR,
   PROP_AUDIO_SINK,
   PROP_VIDEO_SINK,
   PROP_VIS_PLUGIN,
@@ -620,6 +622,21 @@ gst_play_bin3_class_init (GstPlayBin3Class * klass)
           "be checked for an encoding to use. If that is not set either, "
           "ISO-8859-15 will be assumed.", NULL,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  /**
+   * playbin3:subtitle-bg-color:
+   *
+   * Color of the background of the rendered text.
+   *
+   * Since: 1.22
+   */
+  g_object_class_install_property (gobject_klass,
+      PROP_SUBTITLE_BG_COLOR,
+      g_param_spec_uint ("subtitle-bg-color",
+          "Subtitles Background Color",
+          "Color to use for subtitles background (big-endian ARGB).", 0,
+          G_MAXUINT32, DEFAULT_SUBTITLE_BG_COLOR,
+          G_PARAM_READWRITE | GST_PARAM_CONTROLLABLE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property (gobject_klass, PROP_VIDEO_FILTER,
       g_param_spec_object ("video-filter", "Video filter",
@@ -1423,6 +1440,14 @@ gst_play_bin3_set_encoding (GstPlayBin3 * playbin, const gchar * encoding)
 }
 
 static void
+gst_play_bin3_set_subtitle_bg_color (GstPlayBin3 * playbin, guint bg_color)
+{
+  GST_PLAY_BIN3_LOCK (playbin);
+  gst_play_sink_set_subtitle_bg_color (playbin->playsink, bg_color);
+  GST_PLAY_BIN3_UNLOCK (playbin);
+}
+
+static void
 gst_play_bin3_set_property (GObject * object, guint prop_id,
     const GValue * value, GParamSpec * pspec)
 {
@@ -1440,6 +1465,9 @@ gst_play_bin3_set_property (GObject * object, guint prop_id,
       break;
     case PROP_SUBTITLE_ENCODING:
       gst_play_bin3_set_encoding (playbin, g_value_get_string (value));
+      break;
+    case PROP_SUBTITLE_BG_COLOR:
+      gst_play_bin3_set_subtitle_bg_color (playbin, g_value_get_uint (value));
       break;
     case PROP_VIDEO_FILTER:
       gst_play_sink_set_filter (playbin->playsink, GST_PLAY_SINK_TYPE_VIDEO,
@@ -1602,6 +1630,12 @@ gst_play_bin3_get_property (GObject * object, guint prop_id, GValue * value,
       GST_PLAY_BIN3_LOCK (playbin);
       g_value_take_string (value,
           gst_play_sink_get_subtitle_encoding (playbin->playsink));
+      GST_PLAY_BIN3_UNLOCK (playbin);
+      break;
+    case PROP_SUBTITLE_BG_COLOR:
+      GST_PLAY_BIN3_LOCK (playbin);
+      g_value_set_uint (value,
+          gst_play_sink_get_subtitle_bg_color (playbin->playsink));
       GST_PLAY_BIN3_UNLOCK (playbin);
       break;
     case PROP_VIDEO_FILTER:

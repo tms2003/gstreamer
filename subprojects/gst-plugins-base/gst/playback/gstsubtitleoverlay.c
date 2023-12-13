@@ -72,13 +72,17 @@ GST_STATIC_PAD_TEMPLATE ("subtitle_sink",
     GST_PAD_ALWAYS,
     GST_STATIC_CAPS_ANY);
 
+#define DEFAULT_PROP_BG_COLOR 0x00000000
+
 enum
 {
   PROP_0,
   PROP_SILENT,
   PROP_FONT_DESC,
   PROP_SUBTITLE_ENCODING,
-  PROP_SUBTITLE_TS_OFFSET
+  PROP_SUBTITLE_TS_OFFSET,
+  PROP_BG_COLOR,
+  PROP_LAST
 };
 
 #define gst_subtitle_overlay_parent_class parent_class
@@ -821,7 +825,8 @@ _setup_renderer (GstSubtitleOverlay * self, GstElement * renderer)
     /* Set some textoverlay specific properties */
     gst_util_set_object_arg (G_OBJECT (renderer), "halignment", "center");
     gst_util_set_object_arg (G_OBJECT (renderer), "valignment", "bottom");
-    g_object_set (G_OBJECT (renderer), "wait-text", FALSE, NULL);
+    g_object_set (G_OBJECT (renderer), "wait-text", FALSE, "bg-color",
+        self->bg_color, NULL);
     if (self->font_desc)
       g_object_set (G_OBJECT (renderer), "font-desc", self->font_desc, NULL);
     self->silent_property = "silent";
@@ -1520,7 +1525,11 @@ gst_subtitle_overlay_get_property (GObject * object, guint prop_id,
       g_value_set_int64 (value, self->subtitle_ts_offset);
       GST_SUBTITLE_OVERLAY_UNLOCK (self);
       break;
-
+    case PROP_BG_COLOR:
+      GST_SUBTITLE_OVERLAY_LOCK (self);
+      g_value_set_uint (value, self->bg_color);
+      GST_SUBTITLE_OVERLAY_UNLOCK (self);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -1588,7 +1597,11 @@ gst_subtitle_overlay_set_property (GObject * object, guint prop_id,
       _update_subtitle_offset (self);
       GST_SUBTITLE_OVERLAY_UNLOCK (self);
       break;
-
+    case PROP_BG_COLOR:
+      GST_SUBTITLE_OVERLAY_LOCK (self);
+      self->bg_color = g_value_get_uint (value);
+      GST_SUBTITLE_OVERLAY_UNLOCK (self);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -1632,6 +1645,20 @@ gst_subtitle_overlay_class_init (GstSubtitleOverlayClass * klass)
           "The synchronisation offset between text and video in nanoseconds",
           G_MININT64, G_MAXINT64, 0,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  /**
+   * subtitleoverlay:bg-color:
+   *
+   * Color of the background of the rendered text.
+   *
+   * Since: 1.22
+   */
+  g_object_class_install_property (gobject_class,
+      PROP_BG_COLOR, g_param_spec_uint ("bg-color",
+          "Text Background Color",
+          "Color to use for text background (big-endian ARGB).", 0, G_MAXUINT32,
+          DEFAULT_PROP_BG_COLOR,
+          G_PARAM_READWRITE | GST_PARAM_CONTROLLABLE | G_PARAM_STATIC_STRINGS));
 
   gst_element_class_add_static_pad_template (element_class, &srctemplate);
 
@@ -2113,4 +2140,5 @@ gst_subtitle_overlay_init (GstSubtitleOverlay * self)
 
   self->fps_n = 0;
   self->fps_d = 0;
+  self->bg_color = DEFAULT_PROP_BG_COLOR;
 }

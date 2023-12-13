@@ -64,6 +64,7 @@ struct _GstSubtitleOverlay
   gchar *font_desc;
   gchar *encoding;
   gint64 subtitle_ts_offset;
+  guint bg_color;
 
   /* < private > */
   gboolean do_async;
