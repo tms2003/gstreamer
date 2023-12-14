@@ -41,6 +41,7 @@
 #include <gst/base/base.h>
 #include <json-glib/json-glib.h>
 
+#include "gstcodec2json.h"
 #include "gsth2642json.h"
 
 GST_DEBUG_CATEGORY (gst_h264_2_json_debug);
@@ -56,8 +57,6 @@ struct _GstH2642json
   guint nal_length_size;
 
   gboolean use_avc;
-
-  JsonObject *json;
 };
 
 static GstStaticPadTemplate sink_factory = GST_STATIC_PAD_TEMPLATE ("sink",
@@ -81,36 +80,31 @@ gst_h264_2_json_finalize (GObject * object)
 {
   GstH2642json *self = GST_H264_2_JSON (object);
 
-  json_object_unref (self->json);
   gst_h264_nal_parser_free (self->parser);
 }
 
-static gchar *
-get_string_from_json_object (JsonObject * object)
+static void
+gst_h264_2_json_parse_nal (JsonObject * json, GstH264NalUnit * nalu)
 {
-  JsonNode *root;
-  JsonGenerator *generator;
-  gchar *text;
+  JsonObject *nal = json_object_new ();
 
-  /* Make it the root node */
-  root = json_node_init_object (json_node_alloc (), object);
-  generator = json_generator_new ();
-  json_generator_set_indent (generator, 2);
-  json_generator_set_indent_char (generator, ' ');
-  json_generator_set_pretty (generator, TRUE);
-  json_generator_set_root (generator, root);
-  text = json_generator_to_data (generator, NULL);
+  json_object_set_int_member (nal, "reference idc", nalu->ref_idc);
+  json_object_set_int_member (nal, "type", nalu->type);
+  json_object_set_boolean_member (nal, "idr pic flag", nalu->idr_pic_flag);
+  json_object_set_int_member (nal, "size", nalu->size);
+  json_object_set_int_member (nal, "offset", nalu->offset);
+  json_object_set_int_member (nal, "start code offset", nalu->sc_offset);
+  json_object_set_int_member (nal, "header size (in bytes)",
+      nalu->header_bytes);
+  json_object_set_int_member (nal, "extension type", nalu->extension_type);
 
-  /* Release everything */
-  g_object_unref (generator);
-  json_node_free (root);
-  return text;
+  json_object_set_object_member (json, "NAL Unit", nal);
 }
 
 static GstFlowReturn
 gst_h264_2_json_parse_sps (GstH2642json * self, GstH264NalUnit * nalu)
 {
-  JsonObject *json = self->json;
+  JsonObject *json = json_object_new ();
   JsonObject *sps;
   JsonArray *scaling_lists_4x4, *scaling_lists_8x8, *offset_for_ref_frame;
   GstH264SPS h264_sps;
@@ -132,6 +126,8 @@ gst_h264_2_json_parse_sps (GstH2642json * self, GstH264NalUnit * nalu)
     ret = GST_FLOW_ERROR;
     goto error;
   }
+
+  gst_h264_2_json_parse_nal (json, nalu);
 
   sps = json_object_new ();
 
@@ -412,6 +408,7 @@ gst_h264_2_json_parse_sps (GstH2642json * self, GstH264NalUnit * nalu)
 
   json_object_set_int_member (sps, "extension type", h264_sps.extension_type);
   json_object_set_object_member (json, "sps", sps);
+  gst_codec_2_json_push_outbuffer (json, self->srcpad);
 
 error:
   gst_h264_sps_clear (&h264_sps);
@@ -425,7 +422,7 @@ gst_h264_2_json_parse_pps (GstH2642json * self, GstH264NalUnit * nalu)
   GstH264PPS h264_pps;
   JsonObject *pps;
   GstH264ParserResult pres;
-  JsonObject *json = self->json;
+  JsonObject *json = json_object_new ();
   GstFlowReturn ret = GST_FLOW_OK;
   JsonArray *scaling_lists_4x4, *scaling_lists_8x8;
   gint i, j;
@@ -448,6 +445,8 @@ gst_h264_2_json_parse_pps (GstH2642json * self, GstH264NalUnit * nalu)
     ret = GST_FLOW_ERROR;
     goto error;
   }
+
+  gst_h264_2_json_parse_nal (json, nalu);
 
   pps = json_object_new ();
 
@@ -549,6 +548,7 @@ gst_h264_2_json_parse_pps (GstH2642json * self, GstH264NalUnit * nalu)
   json_object_set_array_member (pps, "scaling lists 8x8", scaling_lists_8x8);
 
   json_object_set_object_member (json, "pps", pps);
+  gst_codec_2_json_push_outbuffer (json, self->srcpad);
 
 error:
   gst_h264_pps_clear (&h264_pps);
@@ -563,7 +563,7 @@ gst_h264_2_json_parse_slice (GstH2642json * self, GstH264NalUnit * nalu)
   GstH264PPS *pps;
   GstH264SPS *sps;
   GstH264ParserResult pres = GST_H264_PARSER_OK;
-  JsonObject *json = self->json;
+  JsonObject *json = json_object_new ();
   JsonArray *delta_pic_order_cnt, *ref_pic_list_modification_l0,
       *ref_pic_list_modification_l1, *luma_weight_l0, *luma_offset_l0;
   JsonObject *hdr, *pred_weight_table;
@@ -579,6 +579,8 @@ gst_h264_2_json_parse_slice (GstH2642json * self, GstH264NalUnit * nalu)
 
   pps = slice.pps;
   sps = pps->sequence;
+
+  gst_h264_2_json_parse_nal (json, nalu);
 
   hdr = json_object_new ();
 
@@ -832,6 +834,7 @@ gst_h264_2_json_parse_slice (GstH2642json * self, GstH264NalUnit * nalu)
       slice.slice_group_change_cycle);
 
   json_object_set_object_member (json, "slice header", hdr);
+  gst_codec_2_json_push_outbuffer (json, self->srcpad);
 
   return GST_FLOW_OK;
 }
@@ -859,7 +862,10 @@ gst_h264_2_json_decode_nal (GstH2642json * self, GstH264NalUnit * nalu)
     case GST_H264_NAL_SLICE_EXT:
       ret = gst_h264_2_json_parse_slice (self, nalu);
       break;
+    case GST_H264_NAL_AU_DELIMITER:
     default:
+      if (gst_h264_parser_parse_nal (self->parser, nalu) != GST_H264_PARSER_OK)
+        ret = GST_FLOW_ERROR;
       break;
   }
 
@@ -870,13 +876,9 @@ static GstFlowReturn
 gst_h264_2_json_chain (GstPad * sinkpad, GstObject * object, GstBuffer * in_buf)
 {
   GstH2642json *self = GST_H264_2_JSON (object);
-  JsonObject *json = self->json;
-  GstBuffer *out_buf;
-  gchar *json_string;
-  guint length;
   GstH264NalUnit nalu;
   GstH264ParserResult pres;
-  GstMapInfo in_map, out_map;
+  GstMapInfo in_map;
   GstFlowReturn ret = GST_FLOW_OK;
 
   if (!gst_buffer_map (in_buf, &in_map, GST_MAP_READ)) {
@@ -912,21 +914,6 @@ gst_h264_2_json_chain (GstPad * sinkpad, GstObject * object, GstBuffer * in_buf)
         pres = GST_H264_PARSER_OK;
     }
   }
-
-  json_string = get_string_from_json_object (json);
-  length = strlen (json_string);
-  out_buf = gst_buffer_new_allocate (NULL, length, NULL);
-  gst_buffer_map (out_buf, &out_map, GST_MAP_WRITE);
-  if (length)
-    memcpy (&out_map.data[0], json_string, length);
-  gst_buffer_unmap (out_buf, &out_map);
-
-  g_free (json_string);
-
-  gst_buffer_copy_into (out_buf, in_buf,
-      GST_BUFFER_COPY_FLAGS | GST_BUFFER_COPY_TIMESTAMPS |
-      GST_BUFFER_COPY_METADATA, 0, -1);
-  ret = gst_pad_push (self->srcpad, out_buf);
 
   gst_buffer_unmap (in_buf, &in_map);
   gst_buffer_unref (in_buf);
@@ -1098,8 +1085,6 @@ gst_h264_2_json_init (GstH2642json * self)
 
   self->srcpad = gst_pad_new_from_static_template (&src_factory, "src");
   gst_element_add_pad (GST_ELEMENT (self), self->srcpad);
-
-  self->json = json_object_new ();
 
   self->parser = gst_h264_nal_parser_new ();
   self->use_avc = FALSE;
