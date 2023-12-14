@@ -22,6 +22,9 @@
 #include <config.h>
 #endif
 
+#define GST_USE_UNSTABLE_API
+#include <gst/codecs/gstmpeg2decoder.h>
+
 #include "gstv4l2codecallocator.h"
 #include "gstv4l2codecmpeg2dec.h"
 #include "gstv4l2codecpool.h"
@@ -40,6 +43,11 @@
 GST_DEBUG_CATEGORY_STATIC (v4l2_mpeg2dec_debug);
 #define GST_CAT_DEFAULT v4l2_mpeg2dec_debug
 
+#define GST_TYPE_V4L2_CODEC_MPEG2_DEC \
+  (gst_v4l2_codec_mpeg2_dec_get_type())
+#define GST_V4L2_CODEC_MPEG2_DEC(obj) \
+  (G_TYPE_CHECK_INSTANCE_CAST((obj),GST_TYPE_V4L2_CODEC_MPEG2_DEC,GstV4l2CodecMpeg2Dec))
+
 enum
 {
   PROP_0,
@@ -57,6 +65,16 @@ static GstStaticPadTemplate src_template =
 GST_STATIC_PAD_TEMPLATE (GST_VIDEO_DECODER_SRC_NAME,
     GST_PAD_SRC, GST_PAD_ALWAYS,
     GST_STATIC_CAPS (GST_VIDEO_CAPS_MAKE (GST_V4L2_DEFAULT_VIDEO_FORMATS)));
+
+typedef struct _GstV4l2CodecMpeg2Dec GstV4l2CodecMpeg2Dec;
+typedef struct _GstV4l2CodecMpeg2DecClass GstV4l2CodecMpeg2DecClass;
+
+struct _GstV4l2CodecMpeg2DecClass
+{
+  GstMpeg2DecoderClass parent_class;
+  GstV4l2CodecDevice *device;
+};
+
 
 struct _GstV4l2CodecMpeg2Dec
 {
@@ -91,6 +109,8 @@ struct _GstV4l2CodecMpeg2Dec
 
   gboolean copy_frames;
 };
+
+static GType gst_v4l2_codec_mpeg2_dec_get_type (void);
 
 G_DEFINE_ABSTRACT_TYPE (GstV4l2CodecMpeg2Dec, gst_v4l2_codec_mpeg2_dec,
     GST_TYPE_MPEG2_DECODER);

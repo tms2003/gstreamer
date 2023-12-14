@@ -22,6 +22,9 @@
 #include <config.h>
 #endif
 
+#define GST_USE_UNSTABLE_API
+#include <gst/codecs/gsth265decoder.h>
+
 #include "gstv4l2codecallocator.h"
 #include "gstv4l2codech265dec.h"
 #include "gstv4l2codecpool.h"
@@ -36,6 +39,11 @@
 
 GST_DEBUG_CATEGORY_STATIC (v4l2_h265dec_debug);
 #define GST_CAT_DEFAULT v4l2_h265dec_debug
+
+#define GST_TYPE_V4L2_CODEC_H265_DEC \
+  (gst_v4l2_codec_h265_dec_get_type())
+#define GST_V4L2_CODEC_H265_DEC(obj) \
+  (G_TYPE_CHECK_INSTANCE_CAST((obj),GST_TYPE_V4L2_CODEC_H265_DEC,GstV4l2CodecH265Dec))
 
 enum
 {
@@ -55,6 +63,15 @@ static GstStaticPadTemplate src_template =
 GST_STATIC_PAD_TEMPLATE (GST_VIDEO_DECODER_SRC_NAME,
     GST_PAD_SRC, GST_PAD_ALWAYS,
     GST_STATIC_CAPS (GST_VIDEO_CAPS_MAKE (GST_V4L2_DEFAULT_VIDEO_FORMATS)));
+
+typedef struct _GstV4l2CodecH265Dec GstV4l2CodecH265Dec;
+typedef struct _GstV4l2CodecH265DecClass GstV4l2CodecH265DecClass;
+
+struct _GstV4l2CodecH265DecClass
+{
+  GstH265DecoderClass parent_class;
+  GstV4l2CodecDevice *device;
+};
 
 struct _GstV4l2CodecH265Dec
 {
@@ -102,6 +119,8 @@ struct _GstV4l2CodecH265Dec
   gint crop_rect_width, crop_rect_height;
   gint crop_rect_x, crop_rect_y;
 };
+
+static GType gst_v4l2_codec_h265_dec_get_type (void);
 
 G_DEFINE_ABSTRACT_TYPE (GstV4l2CodecH265Dec, gst_v4l2_codec_h265_dec,
     GST_TYPE_H265_DECODER);
