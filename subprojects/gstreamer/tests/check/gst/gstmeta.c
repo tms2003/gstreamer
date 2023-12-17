@@ -808,6 +808,79 @@ GST_START_TEST (test_meta_custom_transform)
 
 GST_END_TEST;
 
+GST_START_TEST (test_meta_serialize)
+{
+  GstBuffer *buffer, *other_buffer;
+  const gchar *tags[] = { NULL };
+  const GstMetaInfo *info;
+  GstMeta *meta;
+  GstCustomMeta *cmeta;
+  GstStructure *s;
+  gchar *str;
+  const gchar *cstr;
+
+  info = gst_meta_register_custom ("test-custom-meta-serializable",
+      tags, NULL, NULL, NULL);
+  fail_unless (info);
+
+  buffer = gst_buffer_new_and_alloc (4);
+  fail_unless (buffer);
+
+  other_buffer = gst_buffer_new_and_alloc (4);
+  fail_unless (other_buffer);
+
+  /* Test (de)serializable custom meta */
+  cmeta = gst_buffer_add_custom_meta (buffer, "test-custom-meta-serializable");
+  s = gst_custom_meta_get_structure (cmeta);
+  fail_unless (s);
+  gst_structure_set (s, "foo", G_TYPE_STRING, "bar", NULL);
+
+  str = gst_meta_serialize ((GstMeta *) cmeta);
+  fail_unless (str);
+
+  s = gst_structure_new_from_string (str);
+  cstr = gst_structure_get_string (s, "foo");
+  fail_unless_equals_string (cstr, "bar");
+  gst_structure_free (s);
+
+  /* Deserialize meta and attach to other buffer */
+  meta = gst_buffer_add_meta_from_string (other_buffer, str);
+  g_free (str);
+
+  fail_unless (meta);
+  fail_unless (gst_meta_info_is_custom (meta->info));
+
+  s = gst_custom_meta_get_structure ((GstCustomMeta *) meta);
+  cstr = gst_structure_get_string (s, "foo");
+  fail_unless_equals_string (cstr, "bar");
+
+  /* Test non-serializable custom meta */
+  info = gst_meta_register_custom ("test-custom-meta-not-serializable",
+      tags, NULL, NULL, NULL);
+  fail_unless (info);
+
+  cmeta = gst_buffer_add_custom_meta (buffer,
+      "test-custom-meta-not-serializable");
+  s = gst_custom_meta_get_structure (cmeta);
+  fail_unless (s);
+  gst_structure_set (s, "foo", G_TYPE_POINTER, 0xabcdef, NULL);
+
+  str = gst_meta_serialize ((GstMeta *) cmeta);
+  fail_if (str);
+
+  /* Test normal meta, which is non-serializable for now */
+  meta = (GstMeta *) GST_META_FOO_ADD (buffer);
+  fail_unless (meta);
+
+  str = gst_meta_serialize (meta);
+  fail_if (str);
+
+  gst_buffer_unref (buffer);
+  gst_buffer_unref (other_buffer);
+}
+
+GST_END_TEST;
+
 static Suite *
 gst_buffermeta_suite (void)
 {
@@ -827,6 +900,7 @@ gst_buffermeta_suite (void)
   tcase_add_test (tc_chain, test_meta_seqnum);
   tcase_add_test (tc_chain, test_meta_custom);
   tcase_add_test (tc_chain, test_meta_custom_transform);
+  tcase_add_test (tc_chain, test_meta_serialize);
 
   return s;
 }

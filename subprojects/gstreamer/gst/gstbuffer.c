@@ -2949,6 +2949,57 @@ gst_buffer_get_custom_meta (GstBuffer * buffer, const gchar * name)
   return (GstCustomMeta *) gst_buffer_get_meta (buffer, info->api);
 }
 
+static gboolean
+_gst_structure_copy_value (GQuark field_id, const GValue * value,
+    GstStructure * meta_s)
+{
+  gst_structure_id_set_value (meta_s, field_id, value);
+
+  return TRUE;
+}
+
+/**
+ * gst_buffer_add_meta_from_string:
+ * @buffer: a #GstBuffer
+ * @string: a serialized representation of a #GstMeta
+ *
+ * Deserializes @string into #GstMeta form and attaches to @buffer
+ *
+ * Returns: (transfer none) (nullable): the #GstMeta
+ *
+ * Since: 1.24
+ */
+GstMeta *
+gst_buffer_add_meta_from_string (GstBuffer * buffer, const gchar * string)
+{
+  GstStructure *s;
+  GstStructure *meta_s;
+  const gchar *name;
+  GstCustomMeta *meta;
+
+  g_return_val_if_fail (buffer != NULL, NULL);
+  g_return_val_if_fail (string != NULL, NULL);
+
+  s = gst_structure_new_from_string (string);
+  if (!s)
+    return NULL;
+
+  /* Only GstCustomMeta is supported for now */
+  name = gst_structure_get_name (s);
+  meta = gst_buffer_add_custom_meta (buffer, name);
+  if (!meta) {
+    gst_structure_free (s);
+    return NULL;
+  }
+
+  meta_s = gst_custom_meta_get_structure (meta);
+  gst_structure_foreach (s, (GstStructureForeachFunc) _gst_structure_copy_value,
+      meta_s);
+  gst_structure_free (s);
+
+  return (GstMeta *) meta;
+}
+
 /**
  * gst_buffer_ref: (skip)
  * @buf: a #GstBuffer.
