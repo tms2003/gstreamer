@@ -380,6 +380,9 @@ GstStructure *gst_video_region_of_interest_meta_get_param (GstVideoRegionOfInter
  * Each frame is assumed to have its own timecode, i.e. they are not
  * automatically incremented/interpolated.
  *
+ * Since 1.24 it can be serialized using gst_meta_serialize() and
+ * gst_meta_deserialize().
+ *
  * Since: 1.10
  */
 typedef struct {
