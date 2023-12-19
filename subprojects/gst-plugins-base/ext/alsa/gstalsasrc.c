@@ -997,7 +997,7 @@ gst_alsasrc_read (GstAudioSrc * asrc, gpointer data, guint length,
     GstClockTime * timestamp)
 {
   GstAlsaSrc *alsa;
-  gint err;
+  gint frames;
   gint cptr;
   guint8 *ptr = data;
 
@@ -1007,20 +1007,26 @@ gst_alsasrc_read (GstAudioSrc * asrc, gpointer data, guint length,
 
   GST_ALSA_SRC_LOCK (asrc);
   while (cptr > 0) {
-    if ((err = snd_pcm_readi (alsa->handle, ptr, cptr)) < 0) {
-      if (err == -EAGAIN) {
-        GST_DEBUG_OBJECT (asrc, "Read error: %s", snd_strerror (err));
-        continue;
-      } else if (err == -ENODEV) {
-        goto device_disappeared;
-      } else if (xrun_recovery (alsa, alsa->handle, err) < 0) {
-        goto read_error;
-      }
-      continue;
-    }
+    frames = snd_pcm_readi (alsa->handle, ptr, cptr);
+    switch (frames) {
+      case -EBADFD:
+        goto device_state_error;
+      case -ESTRPIPE:
+        goto device_suspend_error;
+      case -EPIPE:
+        if (xrun_recovery (alsa, alsa->handle, frames) < 0) {
+          goto read_error;
+        }
+        break;
+      default:
+        if (frames < 0) {
+          goto device_unknown_error;
+        }
 
-    ptr += snd_pcm_frames_to_bytes (alsa->handle, err);
-    cptr -= err;
+        ptr += snd_pcm_frames_to_bytes (alsa->handle, frames);
+        cptr -= frames;
+        break;
+    }
   }
   GST_ALSA_SRC_UNLOCK (asrc);
 
@@ -1035,11 +1041,26 @@ read_error:
     GST_ALSA_SRC_UNLOCK (asrc);
     return length;              /* skip one period */
   }
-device_disappeared:
+device_state_error:
   {
     GST_ELEMENT_ERROR (asrc, RESOURCE, READ,
         (_("Error recording from audio device. "
-                "The device has been disconnected.")), (NULL));
+                "The device is in wrong state.")), (NULL));
+    GST_ALSA_SRC_UNLOCK (asrc);
+    return (guint) - 1;
+  }
+device_suspend_error:
+  {
+    GST_ELEMENT_ERROR (asrc, RESOURCE, READ,
+        (_("Error recording from audio device. "
+                "The device has been suspended.")), (NULL));
+    GST_ALSA_SRC_UNLOCK (asrc);
+    return (guint) - 1;
+  }
+device_unknown_error:
+  {
+    GST_ELEMENT_ERROR (asrc, RESOURCE, READ, (NULL),
+        ("Error recording from audio device: %s", snd_strerror (frames)));
     GST_ALSA_SRC_UNLOCK (asrc);
     return (guint) - 1;
   }
