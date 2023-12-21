@@ -1163,17 +1163,30 @@ gst_vulkan_upload_change_state (GstElement * element, GstStateChange transition)
           return GST_STATE_CHANGE_FAILURE;
         }
       }
-
-      if (!gst_vulkan_queue_run_context_query (GST_ELEMENT (vk_upload),
+      // Issue with NVIDIA driver where the output gets artifacts if I select another
+      // queue seen the codec one does not support VK_QUEUE_GRAPHICS_BIT but VK_QUEUE_TRANSFER_BIT.
+      if (gst_vulkan_queue_run_context_query (GST_ELEMENT (vk_upload),
               &vk_upload->queue)) {
-        GST_DEBUG_OBJECT (vk_upload, "No queue retrieved from peer elements");
+        GST_DEBUG_OBJECT (vk_upload, "Queue retrieved from peer elements");
+        guint flags =
+            vk_upload->device->physical_device->
+            queue_family_props[vk_upload->queue->family].queueFlags;
+        if ((flags & (VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_TRANSFER_BIT)) == 0) {
+          GST_DEBUG_OBJECT (vk_upload,
+              "Queue does not support VK_QUEUE_GRAPHICS_BIT or VK_QUEUE_TRANSFER_BIT");
+          gst_object_unref (vk_upload->queue);
+          vk_upload->queue = NULL;
+        }
+      }
+
+      if (!vk_upload->queue) {
         vk_upload->queue =
             gst_vulkan_device_select_queue (vk_upload->device,
             VK_QUEUE_GRAPHICS_BIT);
       }
       if (!vk_upload->queue) {
         GST_ELEMENT_ERROR (vk_upload, RESOURCE, NOT_FOUND,
-            ("Failed to create/retrieve vulkan queue"), (NULL));
+            ("Failed to create/retrieve a valid vulkan queue"), (NULL));
         return GST_STATE_CHANGE_FAILURE;
       }
       break;
