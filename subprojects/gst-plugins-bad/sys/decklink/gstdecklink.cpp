@@ -1102,30 +1102,52 @@ public:
   }
 
   virtual HRESULT STDMETHODCALLTYPE
-      VideoInputFormatChanged (BMDVideoInputFormatChangedEvents,
+      VideoInputFormatChanged (BMDVideoInputFormatChangedEvents events,
       IDeckLinkDisplayMode * mode, BMDDetectedVideoInputFormatFlags formatFlags)
   {
     BMDPixelFormat pixelFormat = bmdFormatUnspecified;
 
+    GST_DEBUG
+        ("Detected BMDDetectedVideoInputFormatFlags: 0x%.8X, BMDDisplayMode: 0x%.8X ",
+        formatFlags, mode->GetDisplayMode ());
     GST_INFO ("Video input format changed");
 
     /* Detect input format */
     if (formatFlags & bmdDetectedVideoInputRGB444) {
       if (formatFlags & bmdDetectedVideoInput10BitDepth) {
         pixelFormat = bmdFormat10BitRGB;
+        if (!m_input->auto_format) {
+          switch (m_input->format) {
+            case bmdFormat8BitBGRA:
+            case bmdFormat8BitARGB:
+              GST_INFO ("10 bit rgb downgraded to 8 bit rgb");
+              pixelFormat = m_input->format;
+              break;
+            default:
+              break;
+          }
+        }
       } else if (formatFlags & bmdDetectedVideoInput8BitDepth) {
         /* Cannot detect ARGB vs BGRA, so assume ARGB unless user sets BGRA */
-        if (m_input->format == bmdFormat8BitBGRA) {
-          pixelFormat = bmdFormat8BitBGRA;
-        } else {
-          pixelFormat = bmdFormat8BitARGB;
-        }
+        pixelFormat =
+            m_input->format ==
+            bmdFormat8BitBGRA ? bmdFormat8BitBGRA : bmdFormat8BitARGB;
       } else {
         GST_ERROR ("Not implemented depth");
       }
     } else if (formatFlags & bmdDetectedVideoInputYCbCr422) {
       if (formatFlags & bmdDetectedVideoInput10BitDepth) {
         pixelFormat = bmdFormat10BitYUV;
+        if (!m_input->auto_format) {
+          switch (m_input->format) {
+            case bmdFormat8BitYUV:
+              GST_INFO ("10 bit yuv downgraded to 8 bit yuv");
+              pixelFormat = m_input->format;
+              break;
+            default:
+              break;
+          }
+        }
       } else if (formatFlags & bmdDetectedVideoInput8BitDepth) {
         pixelFormat = bmdFormat8BitYUV;
       }
@@ -1141,40 +1163,46 @@ public:
       return E_FAIL;
     }
 
-    g_mutex_lock (&m_input->lock);
-    m_input->input->PauseStreams ();
-    m_input->input->EnableVideoInput (mode->GetDisplayMode (),
-        pixelFormat, bmdVideoInputEnableFormatDetection);
-    m_input->input->FlushStreams ();
+    if ((events & (bmdVideoInputDisplayModeChanged |
+                bmdVideoInputFieldDominanceChanged))
+        || (m_input->format != pixelFormat)) {
+      GST_DEBUG
+          ("Set the BMDDisplayMode to:  0x%.8X and the BMDPixelFormat to: 0x%.8X ",
+          mode->GetDisplayMode (), pixelFormat);
+      g_mutex_lock (&m_input->lock);
+      m_input->input->PauseStreams ();
+      m_input->input->EnableVideoInput (mode->GetDisplayMode (), pixelFormat,
+          bmdVideoInputEnableFormatDetection);
+      m_input->input->FlushStreams ();
 
-    /* Reset any timestamp observations we might've made */
-    if (m_input->videosrc) {
-      GstDecklinkVideoSrc *videosrc =
-          GST_DECKLINK_VIDEO_SRC (m_input->videosrc);
+      /* Reset any timestamp observations we might've made */
+      if (m_input->videosrc) {
+        GstDecklinkVideoSrc *videosrc =
+            GST_DECKLINK_VIDEO_SRC (m_input->videosrc);
 
-      g_mutex_lock (&videosrc->lock);
-      videosrc->window_fill = 0;
-      videosrc->window_filled = FALSE;
-      videosrc->window_skip = 1;
-      videosrc->window_skip_count = 0;
-      videosrc->current_time_mapping.xbase = 0;
-      videosrc->current_time_mapping.b = 0;
-      videosrc->current_time_mapping.num = 1;
-      videosrc->current_time_mapping.den = 1;
-      videosrc->next_time_mapping.xbase = 0;
-      videosrc->next_time_mapping.b = 0;
-      videosrc->next_time_mapping.num = 1;
-      videosrc->next_time_mapping.den = 1;
-      g_mutex_unlock (&videosrc->lock);
+        g_mutex_lock (&videosrc->lock);
+        videosrc->window_fill = 0;
+        videosrc->window_filled = FALSE;
+        videosrc->window_skip = 1;
+        videosrc->window_skip_count = 0;
+        videosrc->current_time_mapping.xbase = 0;
+        videosrc->current_time_mapping.b = 0;
+        videosrc->current_time_mapping.num = 1;
+        videosrc->current_time_mapping.den = 1;
+        videosrc->next_time_mapping.xbase = 0;
+        videosrc->next_time_mapping.b = 0;
+        videosrc->next_time_mapping.num = 1;
+        videosrc->next_time_mapping.den = 1;
+        g_mutex_unlock (&videosrc->lock);
+      }
+
+      m_input->input->StartStreams ();
+      m_input->mode =
+          gst_decklink_get_mode (gst_decklink_get_mode_enum_from_bmd
+          (mode->GetDisplayMode ()));
+      m_input->format = pixelFormat;
+      g_mutex_unlock (&m_input->lock);
     }
-
-    m_input->input->StartStreams ();
-    m_input->mode =
-        gst_decklink_get_mode (gst_decklink_get_mode_enum_from_bmd
-        (mode->GetDisplayMode ()));
-    m_input->format = pixelFormat;
-    g_mutex_unlock (&m_input->lock);
-
     return S_OK;
   }
 
