@@ -126,7 +126,7 @@
 #define SUB4204           { 0, 1, 1, 0 }, { 0, 1, 1, 0 }
 #define SUB4224           { 0, 1, 1, 0 }, { 0, 0, 0, 0 }
 
-#define ASPECT_2PLANE (VK_IMAGE_ASPECT_PLANE_0_BIT | VK_IMAGE_ASPECT_PLANE_1_BIT)
+#define ASPECT_2PLANE (VK_IMAGE_ASPECT_COLOR_BIT)
 
 /* *INDENT-OFF* */
 static GstVulkanFormatInfo formats[] = {
