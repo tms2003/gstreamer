@@ -45,6 +45,9 @@ struct _GstVaDecoder
   guint rt_format;
   gint coded_width;
   gint coded_height;
+
+  GArray *buffers;
+  GArray *slices;
 };
 
 GST_DEBUG_CATEGORY_STATIC (gst_va_decoder_debug);
@@ -66,8 +69,6 @@ enum
 };
 
 static GParamSpec *g_properties[N_PROPERTIES];
-
-static gboolean _destroy_buffers (GstVaDecodePicture * pic);
 
 static void
 gst_va_decoder_set_property (GObject * object, guint prop_id,
@@ -123,10 +124,26 @@ gst_va_decoder_dispose (GObject * object)
   if (!gst_va_decoder_close (self))
     GST_WARNING_OBJECT (self, "VaDecoder is not successfully closed");
 
-  g_clear_pointer (&self->available_profiles, g_array_unref);
   gst_clear_object (&self->display);
 
   G_OBJECT_CLASS (parent_class)->dispose (object);
+}
+
+static void
+gst_va_decoder_finalize (GObject * object)
+{
+  GstVaDecoder *self = GST_VA_DECODER (object);
+
+  if (self->available_profiles)
+    g_array_unref (self->available_profiles);
+
+  if (self->buffers)
+    g_array_unref (self->buffers);
+
+  if (self->slices)
+    g_array_unref (self->slices);
+
+  G_OBJECT_CLASS (parent_class)->finalize (object);
 }
 
 static void
@@ -137,6 +154,7 @@ gst_va_decoder_class_init (GstVaDecoderClass * klass)
   gobject_class->set_property = gst_va_decoder_set_property;
   gobject_class->get_property = gst_va_decoder_get_property;
   gobject_class->dispose = gst_va_decoder_dispose;
+  gobject_class->finalize = gst_va_decoder_finalize;
 
   g_properties[PROP_DISPLAY] =
       g_param_spec_object ("display", "GstVaDisplay", "GstVaDisplay object",
@@ -180,13 +198,16 @@ gst_va_decoder_init (GstVaDecoder * self)
 static gboolean
 gst_va_decoder_initialize (GstVaDecoder * self, guint32 codec)
 {
-  if (self->available_profiles)
-    return FALSE;
-
   self->available_profiles = gst_va_display_get_profiles (self->display, codec,
       VAEntrypointVLD);
 
-  return (self->available_profiles != NULL);
+  if (!self->available_profiles)
+    return FALSE;
+
+  self->buffers = g_array_sized_new (FALSE, FALSE, sizeof (VABufferID), 16);
+  self->slices = g_array_sized_new (FALSE, FALSE, sizeof (VABufferID), 64);
+
+  return TRUE;
 }
 
 GstVaDecoder *
@@ -257,6 +278,41 @@ gst_va_decoder_open (GstVaDecoder * self, VAProfile profile, guint rt_format)
   return TRUE;
 }
 
+static gboolean
+gst_va_decoder_clear_buffers (GstVaDecoder * self)
+{
+  VADisplay dpy = gst_va_display_get_va_dpy (self->display);
+  guint i;
+  VAStatus status;
+  VABufferID buf_id;
+  gboolean ret = TRUE;
+
+  for (i = 0; i < self->buffers->len; i++) {
+    buf_id = g_array_index (self->buffers, VABufferID, i);
+    status = vaDestroyBuffer (dpy, buf_id);
+    if (status != VA_STATUS_SUCCESS) {
+      ret = FALSE;
+      GST_WARNING ("Failed to destroy parameter buffer: %s",
+          vaErrorStr (status));
+    }
+  }
+
+  g_array_set_size (self->buffers, 0);
+
+  for (i = 0; i < self->slices->len; i++) {
+    buf_id = g_array_index (self->slices, VABufferID, i);
+    status = vaDestroyBuffer (dpy, buf_id);
+    if (status != VA_STATUS_SUCCESS) {
+      ret = FALSE;
+      GST_WARNING ("Failed to destroy slice buffer: %s", vaErrorStr (status));
+    }
+  }
+
+  g_array_set_size (self->slices, 0);
+
+  return ret;
+}
+
 gboolean
 gst_va_decoder_close (GstVaDecoder * self)
 {
@@ -268,8 +324,9 @@ gst_va_decoder_close (GstVaDecoder * self)
   if (!gst_va_decoder_is_open (self))
     return TRUE;
 
-  dpy = gst_va_display_get_va_dpy (self->display);
+  gst_va_decoder_clear_buffers (self);
 
+  dpy = gst_va_display_get_va_dpy (self->display);
   if (self->context != VA_INVALID_ID) {
     status = vaDestroyContext (dpy, self->context);
     if (status != VA_STATUS_SUCCESS)
@@ -539,9 +596,25 @@ gst_va_decoder_get_surface_formats (GstVaDecoder * self)
   return formats;
 }
 
+GstFlowReturn
+gst_va_decoder_start_picture (GstVaDecoder * self, GstCodecPicture * pic)
+{
+  g_return_val_if_fail (GST_IS_VA_DECODER (self), GST_FLOW_ERROR);
+  g_return_val_if_fail (pic, GST_FLOW_ERROR);
+
+  if (!gst_codec_picture_get_user_data (pic)) {
+    GST_ERROR_OBJECT (self, "No attached buffer");
+    return GST_FLOW_ERROR;
+  }
+
+  gst_va_decoder_clear_buffers (self);
+
+  return GST_FLOW_OK;
+}
+
 gboolean
-gst_va_decoder_add_param_buffer (GstVaDecoder * self, GstVaDecodePicture * pic,
-    gint type, gpointer data, gsize size)
+gst_va_decoder_add_param_buffer (GstVaDecoder * self, gint type, gpointer data,
+    gsize size)
 {
   VABufferID buffer;
   VADisplay dpy;
@@ -549,7 +622,7 @@ gst_va_decoder_add_param_buffer (GstVaDecoder * self, GstVaDecodePicture * pic,
 
   g_return_val_if_fail (GST_IS_VA_DECODER (self), FALSE);
   g_return_val_if_fail (self->context != VA_INVALID_ID, FALSE);
-  g_return_val_if_fail (pic && data && size > 0, FALSE);
+  g_return_val_if_fail (data && size > 0, FALSE);
 
   dpy = gst_va_display_get_va_dpy (self->display);
   status = vaCreateBuffer (dpy, self->context, type, size, 1, data, &buffer);
@@ -558,14 +631,15 @@ gst_va_decoder_add_param_buffer (GstVaDecoder * self, GstVaDecodePicture * pic,
     return FALSE;
   }
 
-  g_array_append_val (pic->buffers, buffer);
+  g_array_append_val (self->buffers, buffer);
+
   return TRUE;
 }
 
 gboolean
 gst_va_decoder_add_slice_buffer_with_n_params (GstVaDecoder * self,
-    GstVaDecodePicture * pic, gpointer params_data, gsize params_size,
-    guint params_num, gpointer slice_data, gsize slice_size)
+    gpointer params_data, gsize params_size, guint params_num,
+    gpointer slice_data, gsize slice_size)
 {
   VABufferID params_buffer, slice_buffer;
   VADisplay dpy;
@@ -573,7 +647,7 @@ gst_va_decoder_add_slice_buffer_with_n_params (GstVaDecoder * self,
 
   g_return_val_if_fail (GST_IS_VA_DECODER (self), FALSE);
   g_return_val_if_fail (self->context != VA_INVALID_ID, FALSE);
-  g_return_val_if_fail (pic && slice_data && slice_size > 0
+  g_return_val_if_fail (slice_data && slice_size > 0
       && params_data && params_size > 0, FALSE);
 
   dpy = gst_va_display_get_va_dpy (self->display);
@@ -591,42 +665,48 @@ gst_va_decoder_add_slice_buffer_with_n_params (GstVaDecoder * self,
     return FALSE;
   }
 
-  g_array_append_val (pic->slices, params_buffer);
-  g_array_append_val (pic->slices, slice_buffer);
+  g_array_append_val (self->slices, params_buffer);
+  g_array_append_val (self->slices, slice_buffer);
 
   return TRUE;
 }
 
 gboolean
-gst_va_decoder_add_slice_buffer (GstVaDecoder * self, GstVaDecodePicture * pic,
-    gpointer params_data, gsize params_size, gpointer slice_data,
-    gsize slice_size)
+gst_va_decoder_add_slice_buffer (GstVaDecoder * self, gpointer params_data,
+    gsize params_size, gpointer slice_data, gsize slice_size)
 {
-  return gst_va_decoder_add_slice_buffer_with_n_params (self, pic, params_data,
+  return gst_va_decoder_add_slice_buffer_with_n_params (self, params_data,
       params_size, 1, slice_data, slice_size);
 }
 
-gboolean
+GstFlowReturn
 gst_va_decoder_decode_with_aux_surface (GstVaDecoder * self,
-    GstVaDecodePicture * pic, gboolean use_aux)
+    GstCodecPicture * pic, gboolean use_aux)
 {
   VADisplay dpy;
   VAStatus status;
   VASurfaceID surface = VA_INVALID_ID;
-  gboolean ret = FALSE;
+  GstFlowReturn ret = GST_FLOW_ERROR;
+  GstBuffer *surface_buf;
 
-  g_return_val_if_fail (GST_IS_VA_DECODER (self), FALSE);
-  g_return_val_if_fail (self->context != VA_INVALID_ID, FALSE);
-  g_return_val_if_fail (pic, FALSE);
+  g_return_val_if_fail (GST_IS_VA_DECODER (self), GST_FLOW_ERROR);
+  g_return_val_if_fail (self->context != VA_INVALID_ID, GST_FLOW_ERROR);
+  g_return_val_if_fail (pic, GST_FLOW_ERROR);
+
+  surface_buf = gst_codec_picture_get_user_data (pic);
+  if (!surface_buf) {
+    GST_ERROR_OBJECT (self, "No attached surface buffer");
+    return GST_FLOW_ERROR;
+  }
 
   if (use_aux) {
-    surface = gst_va_decode_picture_get_aux_surface (pic);
+    surface = gst_va_buffer_get_aux_surface (surface_buf);
   } else {
-    surface = gst_va_decode_picture_get_surface (pic);
+    surface = gst_va_buffer_get_surface (surface_buf);
   }
   if (surface == VA_INVALID_ID) {
     GST_ERROR_OBJECT (self, "Decode picture without VASurfaceID");
-    return FALSE;
+    return GST_FLOW_ERROR;
   }
 
   GST_TRACE_OBJECT (self, "Decode to surface %#x", surface);
@@ -639,18 +719,18 @@ gst_va_decoder_decode_with_aux_surface (GstVaDecoder * self,
     goto fail_end_pic;
   }
 
-  if (pic->buffers->len > 0) {
+  if (self->buffers->len > 0) {
     status = vaRenderPicture (dpy, self->context,
-        (VABufferID *) pic->buffers->data, pic->buffers->len);
+        (VABufferID *) self->buffers->data, self->buffers->len);
     if (status != VA_STATUS_SUCCESS) {
       GST_WARNING_OBJECT (self, "vaRenderPicture: %s", vaErrorStr (status));
       goto fail_end_pic;
     }
   }
 
-  if (pic->slices->len > 0) {
+  if (self->slices->len > 0) {
     status = vaRenderPicture (dpy, self->context,
-        (VABufferID *) pic->slices->data, pic->slices->len);
+        (VABufferID *) self->slices->data, self->slices->len);
     if (status != VA_STATUS_SUCCESS) {
       GST_WARNING_OBJECT (self, "vaRenderPicture: %s", vaErrorStr (status));
       goto fail_end_pic;
@@ -661,10 +741,10 @@ gst_va_decoder_decode_with_aux_surface (GstVaDecoder * self,
   if (status != VA_STATUS_SUCCESS)
     GST_WARNING_OBJECT (self, "vaEndPicture: %s", vaErrorStr (status));
   else
-    ret = TRUE;
+    ret = GST_FLOW_OK;
 
 bail:
-  _destroy_buffers (pic);
+  gst_va_decoder_clear_buffers (self);
 
   return ret;
 
@@ -675,8 +755,8 @@ fail_end_pic:
   }
 }
 
-gboolean
-gst_va_decoder_decode (GstVaDecoder * self, GstVaDecodePicture * pic)
+GstFlowReturn
+gst_va_decoder_decode (GstVaDecoder * self, GstCodecPicture * pic)
 {
   return gst_va_decoder_decode_with_aux_surface (self, pic, FALSE);
 }
@@ -722,109 +802,30 @@ gst_va_decoder_get_config (GstVaDecoder * self, VAProfile * profile,
   return TRUE;
 }
 
-static gboolean
-_destroy_buffers (GstVaDecodePicture * pic)
+VASurfaceID
+gst_va_codec_picture_get_surface (GstCodecPicture * pic)
 {
-  GstVaDisplay *display;
-  VABufferID buffer;
-  VADisplay dpy;
-  VAStatus status;
-  guint i;
-  gboolean ret = TRUE;
+  GstBuffer *surface_buf;
 
-  display = gst_va_buffer_peek_display (pic->gstbuffer);
-  if (!display)
-    return FALSE;
-  dpy = gst_va_display_get_va_dpy (display);
+  g_return_val_if_fail (pic, VA_INVALID_ID);
 
-  if (pic->buffers) {
-    for (i = 0; i < pic->buffers->len; i++) {
-      buffer = g_array_index (pic->buffers, VABufferID, i);
-      status = vaDestroyBuffer (dpy, buffer);
-      if (status != VA_STATUS_SUCCESS) {
-        ret = FALSE;
-        GST_WARNING ("Failed to destroy parameter buffer: %s",
-            vaErrorStr (status));
-      }
-    }
+  surface_buf = gst_codec_picture_get_user_data (pic);
+  if (!surface_buf)
+    return VA_INVALID_ID;
 
-    pic->buffers = g_array_set_size (pic->buffers, 0);
-  }
-
-  if (pic->slices) {
-    for (i = 0; i < pic->slices->len; i++) {
-      buffer = g_array_index (pic->slices, VABufferID, i);
-      status = vaDestroyBuffer (dpy, buffer);
-      if (status != VA_STATUS_SUCCESS) {
-        ret = FALSE;
-        GST_WARNING ("Failed to destroy slice buffer: %s", vaErrorStr (status));
-      }
-    }
-
-    pic->slices = g_array_set_size (pic->slices, 0);
-  }
-
-  return ret;
-}
-
-GstVaDecodePicture *
-gst_va_decode_picture_new (GstVaDecoder * self, GstBuffer * buffer)
-{
-  GstVaDecodePicture *pic;
-
-  g_return_val_if_fail (buffer && GST_IS_BUFFER (buffer), NULL);
-  g_return_val_if_fail (self && GST_IS_VA_DECODER (self), NULL);
-
-  pic = g_new (GstVaDecodePicture, 1);
-  pic->gstbuffer = gst_buffer_ref (buffer);
-  pic->buffers = g_array_sized_new (FALSE, FALSE, sizeof (VABufferID), 16);
-  pic->slices = g_array_sized_new (FALSE, FALSE, sizeof (VABufferID), 64);
-
-  return pic;
+  return gst_va_buffer_get_surface (surface_buf);
 }
 
 VASurfaceID
-gst_va_decode_picture_get_surface (GstVaDecodePicture * pic)
+gst_va_codec_picture_get_aux_surface (GstCodecPicture * pic)
 {
+  GstBuffer *surface_buf;
+
   g_return_val_if_fail (pic, VA_INVALID_ID);
-  g_return_val_if_fail (pic->gstbuffer, VA_INVALID_ID);
 
-  return gst_va_buffer_get_surface (pic->gstbuffer);
-}
+  surface_buf = gst_codec_picture_get_user_data (pic);
+  if (!surface_buf)
+    return VA_INVALID_ID;
 
-VASurfaceID
-gst_va_decode_picture_get_aux_surface (GstVaDecodePicture * pic)
-{
-  g_return_val_if_fail (pic, VA_INVALID_ID);
-  g_return_val_if_fail (pic->gstbuffer, VA_INVALID_ID);
-
-  return gst_va_buffer_get_aux_surface (pic->gstbuffer);
-}
-
-void
-gst_va_decode_picture_free (GstVaDecodePicture * pic)
-{
-  g_return_if_fail (pic);
-
-  _destroy_buffers (pic);
-
-  gst_buffer_unref (pic->gstbuffer);
-  g_clear_pointer (&pic->buffers, g_array_unref);
-  g_clear_pointer (&pic->slices, g_array_unref);
-
-  g_free (pic);
-}
-
-GstVaDecodePicture *
-gst_va_decode_picture_dup (GstVaDecodePicture * pic)
-{
-  GstVaDecodePicture *dup;
-
-  g_return_val_if_fail (pic, NULL);
-
-  dup = g_new0 (GstVaDecodePicture, 1);
-
-  /* dups only need gstbuffer */
-  dup->gstbuffer = gst_buffer_ref (pic->gstbuffer);
-  return dup;
+  return gst_va_buffer_get_aux_surface (surface_buf);
 }

@@ -48,6 +48,7 @@
 
 #include "gstvacaps.h"
 #include "gstvabasedec.h"
+#include "gstjpegpicture.h"
 
 GST_DEBUG_CATEGORY_STATIC (gst_va_jpegdec_debug);
 #ifndef GST_DISABLE_GST_DEBUG
@@ -72,7 +73,7 @@ struct _GstVaJpegDec
 {
   GstVaBaseDec parent;
 
-  GstVaDecodePicture *pic;
+  GstJpegPicture *pic;
 };
 
 static GstElementClass *parent_class = NULL;
@@ -146,10 +147,11 @@ gst_va_jpeg_dec_new_picture (GstJpegDecoder * decoder,
   VAProfile profile;
   VAPictureParameterBufferJPEGBaseline pic_param;
   guint32 i, rt_format;
+  GstCodecPicture *codec_picture = GST_CODEC_PICTURE (self->pic);
 
   GST_LOG_OBJECT (self, "new picture");
 
-  g_clear_pointer (&self->pic, gst_va_decode_picture_free);
+  gst_codec_picture_set_user_data (codec_picture, NULL, NULL);
 
   profile = _get_profile (marker);
   if (profile == VAProfileNone)
@@ -175,14 +177,13 @@ gst_va_jpeg_dec_new_picture (GstJpegDecoder * decoder,
   g_clear_pointer (&base->input_state, gst_video_codec_state_unref);
   base->input_state = gst_video_codec_state_ref (decoder->input_state);
 
-  ret = gst_va_base_dec_prepare_output_frame (base, frame);
+  ret = gst_va_base_dec_new_picture (base, frame, codec_picture);
   if (ret != GST_FLOW_OK) {
     GST_ERROR_OBJECT (self, "Failed to allocate output buffer: %s",
         gst_flow_get_name (ret));
-    return ret;
   }
 
-  self->pic = gst_va_decode_picture_new (base->decoder, frame->output_buffer);
+  gst_va_decoder_start_picture (base->decoder, codec_picture);
 
   /* *INDENT-OFF* */
   pic_param = (VAPictureParameterBufferJPEGBaseline) {
@@ -205,7 +206,7 @@ gst_va_jpeg_dec_new_picture (GstJpegDecoder * decoder,
         frame_hdr->components[i].quant_table_selector;
   }
 
-  if (!gst_va_decoder_add_param_buffer (base->decoder, self->pic,
+  if (!gst_va_decoder_add_param_buffer (base->decoder,
           VAPictureParameterBufferType, &pic_param, sizeof (pic_param)))
     return GST_FLOW_ERROR;
 
@@ -239,7 +240,7 @@ gst_va_jpeg_dec_decode_scan (GstJpegDecoder * decoder,
     scan->quantization_tables->quant_tables[i].valid = FALSE;
   }
 
-  if (!gst_va_decoder_add_param_buffer (base->decoder, self->pic,
+  if (!gst_va_decoder_add_param_buffer (base->decoder,
           VAIQMatrixBufferType, &quant, sizeof (quant)))
     return GST_FLOW_ERROR;
 
@@ -274,7 +275,7 @@ gst_va_jpeg_dec_decode_scan (GstJpegDecoder * decoder,
   for (i = 0; i < G_N_ELEMENTS (scan->huffman_tables->ac_tables); i++)
     scan->huffman_tables->ac_tables[i].valid = FALSE;
 
-  if (!gst_va_decoder_add_param_buffer (base->decoder, self->pic,
+  if (!gst_va_decoder_add_param_buffer (base->decoder,
           VAHuffmanTableBufferType, &huff, sizeof (huff)))
     return GST_FLOW_ERROR;
 
@@ -300,7 +301,7 @@ gst_va_jpeg_dec_decode_scan (GstJpegDecoder * decoder,
         scan->scan_hdr->components[i].ac_selector;
   }
 
-  if (!gst_va_decoder_add_slice_buffer (base->decoder, self->pic, &slice_param,
+  if (!gst_va_decoder_add_slice_buffer (base->decoder, &slice_param,
           sizeof (slice_param), (void *) buffer, size))
     return GST_FLOW_ERROR;
 
@@ -313,23 +314,20 @@ gst_va_jpeg_dec_end_picture (GstJpegDecoder * decoder)
   GstVaJpegDec *self = GST_VA_JPEG_DEC (decoder);
   GstVaBaseDec *base = GST_VA_BASE_DEC (decoder);
 
-  GST_LOG_OBJECT (self, "end picture");
+  GST_LOG_OBJECT (base, "end picture");
 
-  if (!gst_va_decoder_decode (base->decoder, self->pic))
-    return GST_FLOW_ERROR;
-  return GST_FLOW_OK;
+  return gst_va_decoder_decode (base->decoder, GST_CODEC_PICTURE (self->pic));
 }
 
 static GstFlowReturn
 gst_va_jpeg_dec_output_picture (GstJpegDecoder * decoder,
     GstVideoCodecFrame * frame)
 {
+  GstVaJpegDec *self = GST_VA_JPEG_DEC (decoder);
   GstVaBaseDec *base = GST_VA_BASE_DEC (decoder);
-  GstVideoDecoder *vdec = GST_VIDEO_DECODER (decoder);
 
-  if (gst_va_base_dec_process_output (base, frame, NULL, 0))
-    return gst_video_decoder_finish_frame (vdec, frame);
-  return GST_FLOW_ERROR;
+  return gst_va_base_dec_output_picture (base, frame,
+      gst_codec_picture_ref (GST_CODEC_PICTURE (self->pic)), 0);
 }
 
 /* @XXX: Checks for drivers that can do color convertion to nv12
@@ -349,6 +347,26 @@ has_internal_nv12_color_convertion (GstVaBaseDec * base, GstVideoFormat format)
     return FALSE;
 
   return TRUE;
+}
+
+static gboolean
+gst_va_jpeg_dec_start (GstVideoDecoder * decoder)
+{
+  GstVaJpegDec *self = GST_VA_JPEG_DEC (decoder);
+
+  self->pic = gst_jpeg_picture_new ();
+
+  return TRUE;
+}
+
+static gboolean
+gst_va_jpeg_dec_stop (GstVideoDecoder * decoder)
+{
+  GstVaJpegDec *self = GST_VA_JPEG_DEC (decoder);
+
+  gst_clear_jpeg_picture (&self->pic);
+
+  return GST_VIDEO_DECODER_CLASS (parent_class)->stop (decoder);
 }
 
 static gboolean
@@ -426,10 +444,7 @@ gst_va_jpeg_dec_negotiate (GstVideoDecoder * decoder)
 static void
 gst_va_jpeg_dec_dispose (GObject * object)
 {
-  GstVaJpegDec *self = GST_VA_JPEG_DEC (object);
-
   gst_va_base_dec_close (GST_VIDEO_DECODER (object));
-  g_clear_pointer (&self->pic, gst_va_decode_picture_free);
 
   G_OBJECT_CLASS (parent_class)->dispose (object);
 }
@@ -473,6 +488,8 @@ gst_va_jpeg_dec_class_init (gpointer g_class, gpointer class_data)
 
   gobject_class->dispose = gst_va_jpeg_dec_dispose;
 
+  decoder_class->start = GST_DEBUG_FUNCPTR (gst_va_jpeg_dec_start);
+  decoder_class->stop = GST_DEBUG_FUNCPTR (gst_va_jpeg_dec_stop);
   decoder_class->negotiate = GST_DEBUG_FUNCPTR (gst_va_jpeg_dec_negotiate);
 
   jpegdecoder_class->decode_scan =

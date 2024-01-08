@@ -1049,9 +1049,9 @@ _copy_buffer_and_apply_video_crop (GstVaBaseDec * base,
   return TRUE;
 }
 
-gboolean
+static gboolean
 gst_va_base_dec_copy_output_buffer (GstVaBaseDec * base,
-    GstVideoCodecFrame * codec_frame)
+    GstVideoCodecFrame * codec_frame, GstBuffer * surface_buf)
 {
   GstVideoFrame src_frame;
   GstVideoFrame dest_frame;
@@ -1076,15 +1076,14 @@ gst_va_base_dec_copy_output_buffer (GstVaBaseDec * base,
   ret = gst_buffer_pool_acquire_buffer (base->other_pool, &buffer, NULL);
   if (ret != GST_FLOW_OK)
     goto fail;
-  if (!gst_video_frame_map (&src_frame, src_vinfo, codec_frame->output_buffer,
-          GST_MAP_READ))
+  if (!gst_video_frame_map (&src_frame, src_vinfo, surface_buf, GST_MAP_READ))
     goto fail;
   if (!gst_video_frame_map (&dest_frame, &dest_vinfo, buffer, GST_MAP_WRITE)) {
     gst_video_frame_unmap (&src_frame);
     goto fail;
   }
 
-  video_crop = gst_buffer_get_video_crop_meta (codec_frame->output_buffer);
+  video_crop = gst_buffer_get_video_crop_meta (surface_buf);
   if (video_crop) {
     if (!_copy_buffer_and_apply_video_crop (base,
             &src_frame, &dest_frame, video_crop)) {
@@ -1121,25 +1120,37 @@ fail:
   return FALSE;
 }
 
-gboolean
-gst_va_base_dec_process_output (GstVaBaseDec * base, GstVideoCodecFrame * frame,
-    GstVideoCodecState * input_state, GstVideoBufferFlags buffer_flags)
+GstFlowReturn
+gst_va_base_dec_output_picture (GstVaBaseDec * base, GstVideoCodecFrame * frame,
+    GstCodecPicture * picture, GstVideoBufferFlags buffer_flags)
 {
   GstVideoDecoder *vdec = GST_VIDEO_DECODER (base);
+  GstFlowReturn ret = GST_FLOW_ERROR;
+  GstBuffer *surface_buf;
 
-  if (input_state) {
+  if (picture->discont_state) {
     g_clear_pointer (&base->input_state, gst_video_codec_state_unref);
-    base->input_state = gst_video_codec_state_ref (input_state);
+    base->input_state = gst_video_codec_state_ref (picture->discont_state);
 
     base->need_negotiation = TRUE;
     if (!gst_video_decoder_negotiate (vdec)) {
       GST_ERROR_OBJECT (base, "Could not re-negotiate with updated state");
-      return GST_FLOW_ERROR;
+      ret = GST_FLOW_NOT_NEGOTIATED;
+      goto error;
     }
   }
 
+  surface_buf = gst_codec_picture_get_user_data (picture);
+  if (!surface_buf) {
+    GST_ERROR_OBJECT (base, "No attached surface buffer");
+    ret = GST_FLOW_ERROR;
+    goto error;
+  }
+
   if (base->copy_frames)
-    gst_va_base_dec_copy_output_buffer (base, frame);
+    gst_va_base_dec_copy_output_buffer (base, frame, surface_buf);
+  else
+    frame->output_buffer = gst_buffer_ref (surface_buf);
 
   if (buffer_flags != 0) {
 #ifndef GST_DISABLE_GST_DEBUG
@@ -1154,7 +1165,14 @@ gst_va_base_dec_process_output (GstVaBaseDec * base, GstVideoCodecFrame * frame,
     GST_BUFFER_FLAG_SET (frame->output_buffer, buffer_flags);
   }
 
-  return TRUE;
+  gst_codec_picture_unref (picture);
+  return gst_video_decoder_finish_frame (vdec, frame);
+
+error:
+  gst_codec_picture_unref (picture);
+  gst_video_decoder_release_frame (vdec, frame);
+
+  return ret;
 }
 
 GstFlowReturn
@@ -1163,6 +1181,8 @@ gst_va_base_dec_prepare_output_frame (GstVaBaseDec * base,
 {
   GstVideoDecoder *vdec = GST_VIDEO_DECODER (base);
 
+  g_return_val_if_fail (frame, GST_FLOW_ERROR);
+
   if (base->need_negotiation) {
     if (!gst_video_decoder_negotiate (vdec)) {
       GST_ERROR_OBJECT (base, "Failed to negotiate with downstream");
@@ -1170,8 +1190,35 @@ gst_va_base_dec_prepare_output_frame (GstVaBaseDec * base,
     }
   }
 
-  if (frame)
-    return gst_video_decoder_allocate_output_frame (vdec, frame);
+  return gst_video_decoder_allocate_output_frame (vdec, frame);
+}
+
+GstFlowReturn
+gst_va_base_dec_new_picture (GstVaBaseDec * base, GstVideoCodecFrame * frame,
+    GstCodecPicture * picture)
+{
+  GstFlowReturn ret;
+  GstBuffer *surface_buf;
+
+  g_return_val_if_fail (frame, GST_FLOW_ERROR);
+  g_return_val_if_fail (picture, GST_FLOW_ERROR);
+
+  /* output buffer maybe configured by subclass already */
+  if (!frame->output_buffer) {
+    ret = gst_va_base_dec_prepare_output_frame (base, frame);
+    if (ret != GST_FLOW_OK)
+      return ret;
+  }
+
+  /* GstCodecPicture will hold buffer */
+  surface_buf = g_steal_pointer (&frame->output_buffer);
+
+  GST_LOG_OBJECT (base, "New va decode picture %p - %#x", surface_buf,
+      gst_va_buffer_get_surface (surface_buf));
+
+  gst_codec_picture_set_user_data (picture, surface_buf,
+      (GDestroyNotify) gst_buffer_unref);
+
   return GST_FLOW_OK;
 }
 
