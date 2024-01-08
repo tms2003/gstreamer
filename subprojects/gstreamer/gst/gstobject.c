@@ -1497,3 +1497,24 @@ gst_object_set_control_rate (GstObject * object, GstClockTime control_rate)
 
   object->control_rate = control_rate;
 }
+
+/**
+ * gst_object_call_async:
+ * @object: (transfer none): a #GstObject
+ * @func: function to call asynchronously from another thread
+ * @user_data: data to pass to @func
+ * @notify: (nullable): a function to call when @user_data is no longer in use
+ *
+ * Equivalent to gst_element_call_async() but this API allows @func to be called
+ * with #GstObject. See also gst_element_call_async()
+ *
+ * Since: 1.24
+ */
+void
+gst_object_call_async (GstObject * object, GstObjectCallAsyncFunc func,
+    gpointer user_data, GDestroyNotify notify)
+{
+  g_return_if_fail (GST_IS_OBJECT (object));
+
+  _priv_gst_object_call_async (object, (GFunc) func, user_data, notify);
+}
