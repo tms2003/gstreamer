@@ -2153,23 +2153,12 @@ gst_audio_aggregator_create_output_buffer (GstAudioAggregator * aagg,
 static gboolean
 sync_pad_values (GstElement * aagg, GstPad * pad, gpointer user_data)
 {
-  GstAudioAggregatorPad *aapad = GST_AUDIO_AGGREGATOR_PAD (pad);
-  GstAggregatorPad *bpad = GST_AGGREGATOR_PAD_CAST (pad);
-  GstClockTime timestamp, stream_time;
-
-  if (aapad->priv->buffer == NULL)
-    return TRUE;
-
-  timestamp = GST_BUFFER_PTS (aapad->priv->buffer);
-  GST_OBJECT_LOCK (bpad);
-  stream_time = gst_segment_to_stream_time (&bpad->segment, GST_FORMAT_TIME,
-      timestamp);
-  GST_OBJECT_UNLOCK (bpad);
+  gint64 *out_stream_time = user_data;
 
   /* sync object properties on stream time */
   /* TODO: Ideally we would want to do that on every sample */
-  if (GST_CLOCK_TIME_IS_VALID (stream_time))
-    gst_object_sync_values (GST_OBJECT_CAST (pad), stream_time);
+  if (GST_CLOCK_TIME_IS_VALID (*out_stream_time))
+    gst_object_sync_values (GST_OBJECT_CAST (pad), *out_stream_time);
 
   return TRUE;
 }
@@ -2244,12 +2233,10 @@ gst_audio_aggregator_aggregate (GstAggregator * agg, gboolean timeout)
   guint blocksize;
   GstAudioAggregatorPad *srcpad = GST_AUDIO_AGGREGATOR_PAD (agg->srcpad);
   GstSegment *agg_segment = &GST_AGGREGATOR_PAD (agg->srcpad)->segment;
+  GstClockTime outbuf_stream_time;
 
   element = GST_ELEMENT (agg);
   aagg = GST_AUDIO_AGGREGATOR (agg);
-
-  /* Sync pad properties to the stream time */
-  gst_element_foreach_sink_pad (element, sync_pad_values, NULL);
 
   GST_AUDIO_AGGREGATOR_LOCK (aagg);
   GST_OBJECT_LOCK (agg);
@@ -2352,6 +2339,13 @@ gst_audio_aggregator_aggregate (GstAggregator * agg, gboolean timeout)
       agg_segment->start + gst_util_uint64_scale (next_offset, GST_SECOND,
       rate);
 
+  if (agg_segment->rate > 0.0)
+    outbuf_stream_time = gst_segment_to_stream_time (agg_segment,
+        GST_FORMAT_TIME, agg_segment->position);
+  else
+    outbuf_stream_time = gst_segment_to_stream_time (agg_segment,
+        GST_FORMAT_TIME, next_timestamp);
+
   outbuf = aagg->priv->current_buffer;
 
   GST_LOG_OBJECT (agg,
@@ -2370,6 +2364,9 @@ gst_audio_aggregator_aggregate (GstAggregator * agg, gboolean timeout)
 
     if (!pad_eos)
       is_eos = FALSE;
+
+    /* Sync pad properties to the stream time */
+    sync_pad_values (element, &aggpad->parent, &outbuf_stream_time);
 
     input_buffer = gst_aggregator_pad_peek_buffer (aggpad);
 
