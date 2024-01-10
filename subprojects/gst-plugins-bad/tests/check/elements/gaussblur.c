@@ -98,11 +98,36 @@ _check_gaussblur (const float sigma, const char *target_checksum)
   gst_harness_teardown (h);
 }
 
-GST_START_TEST (gaussblur_check_frame)
+static void
+_check_gaussblur_with_threads (const unsigned int threads_val)
 {
+  gchar *threads = g_strdup_printf ("%d", threads_val);
+  g_setenv ("OMP_NUM_THREADS", threads, TRUE);
+  g_free (threads);
+
   _check_gaussblur (1.2, TARGET_1_2_GB_CHECKSUM);
   _check_gaussblur (2, TARGET_2_0_GB_CHECKSUM);
   _check_gaussblur (-2, TARGET__2_0_GB_CHECKSUM);
+}
+
+GST_START_TEST (gaussblur_check_frame_1_thread)
+{
+  _check_gaussblur_with_threads (1);
+}
+
+GST_END_TEST;
+
+
+GST_START_TEST (gaussblur_check_frame_2_thread)
+{
+  _check_gaussblur_with_threads (2);
+}
+
+GST_END_TEST;
+
+GST_START_TEST (gaussblur_check_frame_4_thread)
+{
+  _check_gaussblur_with_threads (4);
 }
 
 GST_END_TEST;
@@ -115,7 +140,9 @@ gaussblur_suite (void)
 
   tc = tcase_create ("gaussblur");
   suite_add_tcase (s, tc);
-  tcase_add_test (tc, gaussblur_check_frame);
+  tcase_add_test (tc, gaussblur_check_frame_1_thread);
+  tcase_add_test (tc, gaussblur_check_frame_2_thread);
+  tcase_add_test (tc, gaussblur_check_frame_4_thread);
 
   return s;
 }

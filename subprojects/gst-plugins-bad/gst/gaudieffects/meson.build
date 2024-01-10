@@ -29,11 +29,24 @@ else
     copy : true)
 endif
 
+gaudieffects_extra_args = []
+
+ge_cdata = configuration_data()
+gstgaudioeffects_deps = [gstbase_dep, gstvideo_dep, orc_dep, libm]
+openmp_deps = dependency('openmp', required: false)
+
+if openmp_deps.found()
+  ge_cdata.set('HAS_OPENMP', true)
+  gstgaudioeffects_deps += openmp_deps
+endif
+
+configure_file(output : 'gbconfig.h', configuration : ge_cdata)
+
 gstgaudioeffects = library('gstgaudieffects',
   gaudio_sources, orc_c, orc_h,
-  c_args : gst_plugins_bad_args,
+  c_args : [gst_plugins_bad_args],
   include_directories : [configinc],
-  dependencies : [gstbase_dep, gstvideo_dep, orc_dep, libm],
+  dependencies : gstgaudioeffects_deps,
   install : true,
   install_dir : plugins_install_dir,
 )
