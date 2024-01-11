@@ -104,7 +104,9 @@ GST_STATIC_PAD_TEMPLATE ("src",
 enum
 {
   PROP_0,
-  PROP_SIGMA
+  PROP_SIGMA,
+  PROP_KERNEL_SIZE,
+  PROP_KERNEL,
 };
 
 static gboolean make_gaussian_kernel (GstGaussianBlur * gb, float sigma);
@@ -148,6 +150,20 @@ gst_gaussianblur_class_init (GstGaussianBlurClass * klass)
           -20.0, 20.0, DEFAULT_SIGMA,
           G_PARAM_READWRITE | GST_PARAM_CONTROLLABLE | G_PARAM_STATIC_STRINGS));
 
+  g_object_class_install_property (gobject_class, PROP_KERNEL_SIZE,
+      g_param_spec_int ("kernel-size", "Kernel-size",
+          "The kernel size to define manually the kernel to apply",
+          0, 101, 0,
+          G_PARAM_READWRITE | GST_PARAM_CONTROLLABLE | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property (gobject_class, PROP_KERNEL,
+      gst_param_spec_array ("kernel", "Kernel",
+          "Kernel to apply",
+          g_param_spec_float ("kernel-array", "array", "array",
+              -G_MAXFLOAT, G_MAXFLOAT, 0,
+              (GParamFlags) (G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS)),
+          (GParamFlags) (G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS)));
+
   vfilter_class->transform_frame =
       GST_DEBUG_FUNCPTR (gst_gaussianblur_transform_frame);
   vfilter_class->set_info = GST_DEBUG_FUNCPTR (gst_gaussianblur_set_info);
@@ -177,6 +193,8 @@ gst_gaussianblur_init (GstGaussianBlur * gb)
 {
   gb->sigma = (gfloat) DEFAULT_SIGMA;
   gb->cur_sigma = -1.0;
+  gb->fixed_kernel = FALSE;
+  gb->fixed_kernel_built = FALSE;
 }
 
 static void
@@ -225,13 +243,15 @@ gst_gaussianblur_transform_frame (GstVideoFilter * vfilter,
   GST_OBJECT_UNLOCK (filter);
 
   if (filter->cur_sigma != sigma) {
-    g_free (filter->kernel);
-    filter->kernel = NULL;
-    g_free (filter->kernel_sum);
-    filter->kernel_sum = NULL;
+    if (!filter->fixed_kernel) {
+      g_free (filter->kernel);
+      filter->kernel = NULL;
+      g_free (filter->kernel_sum);
+      filter->kernel_sum = NULL;
+    }
     filter->cur_sigma = sigma;
   }
-  if (filter->kernel == NULL &&
+  if ((filter->kernel == NULL || !filter->fixed_kernel_built) &&
       !make_gaussian_kernel (filter, filter->cur_sigma)) {
     GST_ELEMENT_ERROR (filter, RESOURCE, NO_SPACE_LEFT, ("Out of memory"),
         ("Failed to allocation gaussian kernel"));
@@ -361,39 +381,45 @@ make_gaussian_kernel (GstGaussianBlur * gb, float sigma)
   const float fe = -0.5 / (sigma * sigma);
   const float dx = 1.0 / (sigma * sqrt (2 * G_PI));
 
-  center = ceil (2.5 * fabs (sigma));
-  gb->windowsize = (int) (1 + 2 * center);
+  if (gb->fixed_kernel) {
+    center = ceil (gb->windowsize / 2);
+    GST_INFO_OBJECT (gb, "kernel size=%d, center %d\n", gb->windowsize, center);
+    gb->fixed_kernel_built = TRUE;
+  } else {
+    center = ceil (2.5 * fabs (sigma));
+    gb->windowsize = (int) (1 + 2 * center);
 
-  gb->kernel = g_new (float, gb->windowsize);
-  gb->kernel_sum = g_new (float, gb->windowsize);
-  if (gb->kernel == NULL || gb->kernel_sum == NULL)
-    return FALSE;
+    gb->kernel = g_new (float, gb->windowsize);
+    gb->kernel_sum = g_new (float, gb->windowsize);
+    if (gb->kernel == NULL || gb->kernel_sum == NULL)
+      return FALSE;
 
-  if (gb->windowsize == 1) {
-    gb->kernel[0] = 1.0;
-    gb->kernel_sum[0] = 1.0;
-    return TRUE;
+    if (gb->windowsize == 1) {
+      gb->kernel[0] = 1.0;
+      gb->kernel_sum[0] = 1.0;
+      return TRUE;
+    }
+
+    /* Center co-efficient */
+    sum = gb->kernel[center] = dx;
+
+    /* Other coefficients */
+    left = center - 1;
+    right = center + 1;
+    for (i = 1; i <= center; i++, left--, right++) {
+      float fx = dx * pow (G_E, fe * i * i);
+      gb->kernel[right] = gb->kernel[left] = fx;
+      sum += 2 * fx;
+    }
+
+    if (sigma < 0) {
+      sum = -sum;
+      gb->kernel[center] += 2.0 * sum;
+    }
+
+    for (i = 0; i < gb->windowsize; i++)
+      gb->kernel[i] /= sum;
   }
-
-  /* Center co-efficient */
-  sum = gb->kernel[center] = dx;
-
-  /* Other coefficients */
-  left = center - 1;
-  right = center + 1;
-  for (i = 1; i <= center; i++, left--, right++) {
-    float fx = dx * pow (G_E, fe * i * i);
-    gb->kernel[right] = gb->kernel[left] = fx;
-    sum += 2 * fx;
-  }
-
-  if (sigma < 0) {
-    sum = -sum;
-    gb->kernel[center] += 2.0 * sum;
-  }
-
-  for (i = 0; i < gb->windowsize; i++)
-    gb->kernel[i] /= sum;
 
   sum2 = 0.0;
   for (i = 0; i < gb->windowsize; i++) {
@@ -420,6 +446,7 @@ static void
 gst_gaussianblur_set_property (GObject * object,
     guint prop_id, const GValue * value, GParamSpec * pspec)
 {
+  guint i;
   GstGaussianBlur *gb = GST_GAUSSIANBLUR (object);
   switch (prop_id) {
     case PROP_SIGMA:
@@ -427,6 +454,37 @@ gst_gaussianblur_set_property (GObject * object,
       gb->sigma = g_value_get_double (value);
       GST_OBJECT_UNLOCK (object);
       break;
+    case PROP_KERNEL_SIZE:
+      GST_OBJECT_LOCK (object);
+      gb->fixed_kernel = TRUE;
+      gb->windowsize = g_value_get_int (value);
+      GST_INFO_OBJECT (object, "Setting fixed kernel size to: %d",
+          gb->windowsize);
+      gb->kernel = g_new (float, gb->windowsize);
+      gb->kernel_sum = g_new (float, gb->windowsize);
+      if (gb->kernel == NULL || gb->kernel_sum == NULL)
+        GST_ERROR_OBJECT (object,
+            "Was not possible to allocate memory for the kernels");
+      GST_OBJECT_UNLOCK (object);
+      break;
+    case PROP_KERNEL:{
+      if (gb->windowsize == 0) {
+        GST_WARNING_OBJECT (object,
+            "The kernel-size property was not previously set");
+      }
+      g_return_if_fail (gb->windowsize > 0);
+      g_return_if_fail (gb->fixed_kernel == TRUE);
+      GST_OBJECT_LOCK (object);
+      for (i = 0; i < gb->windowsize; i++) {
+        const GValue *item_value = gst_value_array_get_value (value, i);
+        g_return_if_fail (G_VALUE_HOLDS_FLOAT (item_value));
+        const float value = g_value_get_float (item_value);
+        GST_INFO_OBJECT (object, "Reading value %f", value);
+        gb->kernel[i] = value;
+      }
+      GST_OBJECT_UNLOCK (object);
+      break;
+    }
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -437,6 +495,7 @@ static void
 gst_gaussianblur_get_property (GObject * object,
     guint prop_id, GValue * value, GParamSpec * pspec)
 {
+  guint i;
   GstGaussianBlur *gb = GST_GAUSSIANBLUR (object);
   switch (prop_id) {
     case PROP_SIGMA:
@@ -444,6 +503,23 @@ gst_gaussianblur_get_property (GObject * object,
       g_value_set_double (value, gb->sigma);
       GST_OBJECT_UNLOCK (gb);
       break;
+    case PROP_KERNEL_SIZE:
+      GST_OBJECT_LOCK (gb);
+      g_value_set_int (value, gb->windowsize);
+      GST_OBJECT_UNLOCK (gb);
+      break;
+    case PROP_KERNEL:{
+      GST_OBJECT_LOCK (gb);
+      for (i = 0; i < gb->windowsize; i++) {
+        GValue item = G_VALUE_INIT;
+        g_value_init (&item, G_TYPE_FLOAT);
+        g_value_set_float (&item, gb->kernel[i]);
+        gst_value_array_append_value (value, &item);
+        g_value_unset (&item);
+      }
+      GST_OBJECT_UNLOCK (gb);
+      break;
+    }
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
