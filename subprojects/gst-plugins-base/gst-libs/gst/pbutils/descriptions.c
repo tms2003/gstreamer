@@ -118,6 +118,7 @@ static const FormatInfo formats[] = {
   {"audio/amr", "Adaptive Multi Rate (AMR)", FLAG_AUDIO, "amr"},
   {"audio/AMR", "Adaptive Multi Rate (AMR)", FLAG_AUDIO, "amr"},
   {"audio/AMR-WB", "Adaptive Multi Rate WideBand (AMR-WB)", FLAG_AUDIO, "amr"},
+  {"audio/G723", "G.723.1", FLAG_AUDIO, ""},
   {"audio/iLBC-sh", "Internet Low Bitrate Codec (iLBC)", AUDIO_CONTAINER,
       "ilbc"},
   {"audio/ms-gsm", "MS GSM", FLAG_AUDIO, "gsm"},
@@ -340,8 +341,8 @@ static const FormatInfo formats[] = {
 };
 
 static const gchar *
-pbutils_desc_get_profile_name_from_nick (const gchar * map, gsize map_len,
-    const gchar * nick)
+pbutils_desc_get_profile_name_from_nick (const gchar *map, gsize map_len,
+    const gchar *nick)
 {
   const gchar *end = map + map_len;
   const gchar *p;
@@ -359,7 +360,7 @@ pbutils_desc_get_profile_name_from_nick (const gchar * map, gsize map_len,
 }
 
 static const gchar *
-pbutils_desc_get_mpeg2v_profile_name_from_nick (const gchar * nick)
+pbutils_desc_get_mpeg2v_profile_name_from_nick (const gchar *nick)
 {
   static const gchar map[] =
       "simple\000Simple\000main\000Main\000high\000High\000";
@@ -368,7 +369,7 @@ pbutils_desc_get_mpeg2v_profile_name_from_nick (const gchar * nick)
 }
 
 static const gchar *
-pbutils_desc_get_mpeg4v_profile_name_from_nick (const gchar * nick)
+pbutils_desc_get_mpeg4v_profile_name_from_nick (const gchar *nick)
 {
   static const gchar map[] = "simple\000Simple\000"
       "simple-scalable\000Simple Scalable\000"
@@ -395,7 +396,7 @@ pbutils_desc_get_mpeg4v_profile_name_from_nick (const gchar * nick)
 }
 
 static const gchar *
-pbutils_desc_get_h264_profile_name_from_nick (const gchar * nick)
+pbutils_desc_get_h264_profile_name_from_nick (const gchar *nick)
 {
   static const gchar map[] = "baseline\000Baseline\000"
       "constrained-baseline\000Constrained Baseline\000"
@@ -419,7 +420,7 @@ pbutils_desc_get_h264_profile_name_from_nick (const gchar * nick)
 }
 
 static const gchar *
-pbutils_desc_get_h265_profile_name_from_nick (const gchar * nick)
+pbutils_desc_get_h265_profile_name_from_nick (const gchar *nick)
 {
   static const gchar map[] = "main\000Main\000"
       "main-10\000Main 10\000"
@@ -438,7 +439,7 @@ pbutils_desc_get_h265_profile_name_from_nick (const gchar * nick)
 /* returns static descriptions and dynamic ones (such as video/x-raw),
  * or NULL if caps aren't known at all */
 static gchar *
-format_info_get_desc (const FormatInfo * info, const GstCaps * caps)
+format_info_get_desc (const FormatInfo *info, const GstCaps *caps)
 {
   const GstStructure *s;
 
@@ -865,7 +866,7 @@ format_info_get_desc (const FormatInfo * info, const GstCaps * caps)
 
 /* returns format info structure, will return NULL for dynamic media types! */
 static const FormatInfo *
-find_format_info (const GstCaps * caps)
+find_format_info (const GstCaps *caps)
 {
   const GstStructure *s;
   const gchar *media_type;
@@ -891,7 +892,7 @@ find_format_info (const GstCaps * caps)
 }
 
 static gboolean
-caps_are_rtp_caps (const GstCaps * caps, const gchar * media, gchar ** format)
+caps_are_rtp_caps (const GstCaps *caps, const gchar *media, gchar **format)
 {
   const GstStructure *s;
   const gchar *str;
@@ -937,7 +938,7 @@ caps_are_rtp_caps (const GstCaps * caps, const gchar * media, gchar ** format)
  *          string with g_free() when not needed any longer.
  */
 gchar *
-gst_pb_utils_get_source_description (const gchar * protocol)
+gst_pb_utils_get_source_description (const gchar *protocol)
 {
   gchar *proto_uc, *ret;
 
@@ -987,7 +988,7 @@ gst_pb_utils_get_source_description (const gchar * protocol)
  *          string with g_free() when not needed any longer.
  */
 gchar *
-gst_pb_utils_get_sink_description (const gchar * protocol)
+gst_pb_utils_get_sink_description (const gchar *protocol)
 {
   gchar *proto_uc, *ret;
 
@@ -1021,7 +1022,7 @@ gst_pb_utils_get_sink_description (const gchar * protocol)
  *          string with g_free() when not needed any longer.
  */
 gchar *
-gst_pb_utils_get_decoder_description (const GstCaps * caps)
+gst_pb_utils_get_decoder_description (const GstCaps *caps)
 {
   gchar *str, *ret;
   GstCaps *tmp;
@@ -1075,7 +1076,7 @@ gst_pb_utils_get_decoder_description (const GstCaps * caps)
  *          string with g_free() when not needed any longer.
  */
 gchar *
-gst_pb_utils_get_encoder_description (const GstCaps * caps)
+gst_pb_utils_get_encoder_description (const GstCaps *caps)
 {
   gchar *str, *ret;
   GstCaps *tmp;
@@ -1126,7 +1127,7 @@ gst_pb_utils_get_encoder_description (const GstCaps * caps)
  *          string with g_free() when not needed any longer.
  */
 gchar *
-gst_pb_utils_get_element_description (const gchar * factory_name)
+gst_pb_utils_get_element_description (const gchar *factory_name)
 {
   gchar *ret;
 
@@ -1154,8 +1155,8 @@ gst_pb_utils_get_element_description (const gchar * factory_name)
  * Returns: TRUE if a codec tag was added, FALSE otherwise.
  */
 gboolean
-gst_pb_utils_add_codec_description_to_tag_list (GstTagList * taglist,
-    const gchar * codec_tag, const GstCaps * caps)
+gst_pb_utils_add_codec_description_to_tag_list (GstTagList *taglist,
+    const gchar *codec_tag, const GstCaps *caps)
 {
   const FormatInfo *info;
   gchar *desc;
@@ -1207,7 +1208,7 @@ gst_pb_utils_add_codec_description_to_tag_list (GstTagList * taglist,
  *          string with g_free() when not needed any longer.
  */
 gchar *
-gst_pb_utils_get_codec_description (const GstCaps * caps)
+gst_pb_utils_get_codec_description (const GstCaps *caps)
 {
   const FormatInfo *info;
   gchar *str, *comma;
@@ -1245,7 +1246,7 @@ const gchar *pb_utils_get_file_extension_from_caps (const GstCaps * caps);
 gboolean pb_utils_is_tag (const GstCaps * caps);
 
 const gchar *
-pb_utils_get_file_extension_from_caps (const GstCaps * caps)
+pb_utils_get_file_extension_from_caps (const GstCaps *caps)
 {
   const FormatInfo *info;
   const gchar *ext = NULL;
@@ -1302,7 +1303,7 @@ pb_utils_get_file_extension_from_caps (const GstCaps * caps)
  * Since: 1.20
  */
 gchar *
-gst_pb_utils_get_file_extension_from_caps (const GstCaps * caps)
+gst_pb_utils_get_file_extension_from_caps (const GstCaps *caps)
 {
   const gchar *extension = pb_utils_get_file_extension_from_caps (caps);
   return extension ? g_strdup (extension) : NULL;
@@ -1321,7 +1322,7 @@ gst_pb_utils_get_file_extension_from_caps (const GstCaps * caps)
  * Since: 1.20
  */
 GstPbUtilsCapsDescriptionFlags
-gst_pb_utils_get_caps_description_flags (const GstCaps * caps)
+gst_pb_utils_get_caps_description_flags (const GstCaps *caps)
 {
   GstCaps *tmp;
   const FormatInfo *info;
@@ -1360,7 +1361,7 @@ gst_pb_utils_get_caps_description_flags (const GstCaps * caps)
 }
 
 gboolean
-pb_utils_is_tag (const GstCaps * caps)
+pb_utils_is_tag (const GstCaps *caps)
 {
   const FormatInfo *info;
   GstCaps *stripped_caps;
