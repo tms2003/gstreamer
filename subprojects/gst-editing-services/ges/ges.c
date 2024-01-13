@@ -96,6 +96,32 @@ ges_init_pre (GOptionContext * context, GOptionGroup * group, gpointer data,
   return TRUE;
 }
 
+static void
+ges_initialize_asset_relocation_dirs_from_envvar (void)
+{
+  const gchar *relocated_assets_path = g_getenv ("GES_MISSING_URI_ASSETS_PATH");
+  gchar **paths;
+  gint i;
+
+  if (!relocated_assets_path)
+    return;
+
+  paths = g_strsplit (relocated_assets_path, G_SEARCHPATH_SEPARATOR_S, 0);
+  for (i = 0; paths[i]; i++) {
+    GError *error = NULL;
+    gchar *uri = gst_filename_to_uri (paths[i], &error);
+
+    if (error) {
+      GST_ERROR ("Could not add relocation URI from path: %s (%s)", paths[i],
+          error->message);
+      continue;
+    }
+    ges_add_missing_uri_relocation_uri (uri, FALSE);
+    g_free (uri);
+  }
+  g_strfreev (paths);
+}
+
 static gboolean
 ges_init_post (GOptionContext * context, GOptionGroup * group, gpointer data,
     GError ** error)
@@ -162,6 +188,7 @@ ges_init_post (GOptionContext * context, GOptionGroup * group, gpointer data,
   /* TODO: user-defined types? */
   initialized_thread = g_thread_self ();
   g_type_class_unref (uriasset_klass);
+  ges_initialize_asset_relocation_dirs_from_envvar ();
 
   if (!marker_list_registered) {
     gstvtable.type = GES_TYPE_MARKER_LIST;

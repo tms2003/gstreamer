@@ -296,6 +296,10 @@ ges_uri_clip_asset_class_init (GESUriClipAssetClass * klass)
    *
    * The duration (in nanoseconds) of the media file
    *
+   * Whether the asset represents a nested timeline, meaning that the
+   * underlying file represents a timeline that will be "demuxed" with
+   * GStreamer.
+   *
    * Since: 1.18
    */
   properties[PROP_IS_NESTED_TIMELINE] =

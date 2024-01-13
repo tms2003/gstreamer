@@ -234,6 +234,7 @@ struct _GESTimelinePrivate
 
   GThread *valid_thread;
   gboolean disposed;
+  gint last_seek_seqnum;
 
   GstStreamCollection *stream_collection;
 
@@ -251,8 +252,13 @@ typedef struct
   GstPad *ghostpad;
   gulong track_element_added_sigid;
 
-  gulong probe_id;
+  gulong timeline_probe_id;     /* ID of the probe set on the timeline srcpad */
+  gulong track_probe_id;        /* ID of the probe set on the track srcpad */
+  gulong buffer_drop_probe_id;  /* Temporary probe to drop buffer while seeking */
   GstStream *stream;
+
+  /* When awaited_seqnum != GST_SEQNUM_INVALID(0), drop the dataflow */
+  gint awaited_seqnum;
 } TrackPrivate;
 
 enum
@@ -1996,31 +2002,170 @@ update_stream_object (TrackPrivate * tr_priv)
 }
 
 static GstPadProbeReturn
-_pad_probe_cb (GstPad * mixer_pad, GstPadProbeInfo * info,
+_track_pad_drop_buffers (GstPad * pad, GstPadProbeInfo * info,
     TrackPrivate * tr_priv)
+{
+  GST_INFO_OBJECT (pad, "Dropping buffer");
+
+  return GST_PAD_PROBE_DROP;
+}
+
+static GstPadProbeReturn
+_src_pad_probe_cb (GstPad * pad, GstPadProbeInfo * info, TrackPrivate * tr_priv)
 {
   GstEvent *event = GST_PAD_PROBE_INFO_EVENT (info);
   GESTimeline *timeline = tr_priv->timeline;
 
-  if (GST_EVENT_TYPE (event) == GST_EVENT_STREAM_START) {
-    LOCK_DYN (timeline);
-    if (timeline->priv->stream_start_group_id == -1) {
-      if (!gst_event_parse_group_id (event,
-              &timeline->priv->stream_start_group_id))
-        timeline->priv->stream_start_group_id = gst_util_group_id_next ();
+  switch (GST_EVENT_TYPE (event)) {
+    case GST_EVENT_SEEK:{
+      GstSeekFlags flags;
+      guint32 seqnum = GST_EVENT_SEQNUM (event);
+
+      gst_event_parse_seek (event, NULL, NULL, &flags, NULL, NULL, NULL, NULL);
+      if (!(flags & GST_SEEK_FLAG_FLUSH)) {
+        GST_ERROR_OBJECT (timeline, "Doesn't support non flushing seeks");
+
+        GST_PAD_PROBE_INFO_FLOW_RETURN (info) = GST_FLOW_ERROR;
+        gst_event_unref (event);
+        return GST_PAD_PROBE_HANDLED;
+      }
+
+      LOCK_DYN (timeline);
+      if (timeline->priv->last_seek_seqnum != seqnum) {
+        GList *pads = NULL, *tmp;
+        GstEvent *flush_start = gst_event_new_flush_start ();
+        GstEvent *flush_stop = gst_event_new_flush_stop (TRUE);
+
+        gst_event_set_seqnum (flush_start, seqnum);
+        gst_event_set_seqnum (flush_stop, seqnum);
+        timeline->priv->last_seek_seqnum = seqnum;
+        for (tmp = timeline->priv->priv_tracks; tmp; tmp = tmp->next) {
+          TrackPrivate *tmp_tr_priv = (TrackPrivate *) tmp->data;
+
+          pads = g_list_prepend (pads, gst_object_ref (tmp_tr_priv->pad));
+          tmp_tr_priv->awaited_seqnum = seqnum;
+          tmp_tr_priv->buffer_drop_probe_id =
+              gst_pad_add_probe (tmp_tr_priv->pad,
+              GST_PAD_PROBE_TYPE_BUFFER | GST_PAD_PROBE_TYPE_BUFFER_LIST,
+              (GstPadProbeCallback) _track_pad_drop_buffers, tmp_tr_priv, NULL);
+        }
+        UNLOCK_DYN (timeline);
+
+        for (tmp = pads; tmp; tmp = tmp->next) {
+          GstPad *pad = tmp->data;
+          GstPad *sinkpad = GST_PAD (gst_proxy_pad_get_internal (tmp->data));
+
+          if (sinkpad) {
+            gst_pad_push_event (pad, gst_event_ref (flush_start));
+            if (!gst_pad_push_event (sinkpad, gst_event_ref (event))) {
+              GST_ERROR_OBJECT (tmp->data, "Could not send seek");
+              GST_PAD_PROBE_INFO_FLOW_RETURN (info) = GST_FLOW_ERROR;
+            }
+            gst_pad_push_event (pad, gst_event_ref (flush_stop));
+            gst_object_unref (sinkpad);
+          }
+        }
+        gst_event_unref (flush_start);
+        gst_event_unref (flush_stop);
+
+        g_list_free_full (pads, gst_object_unref);
+      } else {
+        UNLOCK_DYN (timeline);
+        GST_INFO_OBJECT (timeline, "Got seek... again!");
+      }
+      gst_event_unref (event);
+
+      return GST_PAD_PROBE_HANDLED;
     }
-
-    gst_event_unref (event);
-    event = info->data =
-        gst_event_new_stream_start (gst_stream_get_stream_id (tr_priv->stream));
-    gst_event_set_stream (event, tr_priv->stream);
-    gst_event_set_group_id (event, timeline->priv->stream_start_group_id);
-    UNLOCK_DYN (timeline);
-
-    return GST_PAD_PROBE_REMOVE;
+    default:
+      break;
   }
 
   return GST_PAD_PROBE_OK;
+}
+
+/* WITH LOCK_DYN */
+static GstPadProbeReturn
+_track_check_stop_dropping (GstPad * pad, TrackPrivate * tr_priv,
+    GstEvent * event)
+{
+  guint32 seqnum = GST_EVENT_SEQNUM (event);
+
+  if (tr_priv->awaited_seqnum) {
+    if (seqnum != tr_priv->awaited_seqnum) {
+      GST_DEBUG_OBJECT (pad, "Dropping %s %d, stop dropping",
+          GST_EVENT_TYPE_NAME (event), seqnum);
+
+      return GST_PAD_PROBE_DROP;
+    }
+
+    GST_INFO_OBJECT (pad, "Got %s %d, stop dropping",
+        GST_EVENT_TYPE_NAME (event), seqnum);
+    tr_priv->awaited_seqnum = GST_SEQNUM_INVALID;
+    gst_pad_remove_probe (pad, tr_priv->buffer_drop_probe_id);
+  }
+
+  return GST_PAD_PROBE_OK;
+}
+
+static GstPadProbeReturn
+_track_pad_probe_cb (GstPad * pad, GstPadProbeInfo * info,
+    TrackPrivate * tr_priv)
+{
+  GstEvent *event = NULL;
+  GESTimeline *timeline = tr_priv->timeline;
+  GstPadProbeReturn res = GST_PAD_PROBE_OK;
+
+  event = GST_PAD_PROBE_INFO_EVENT (info);
+  switch (GST_EVENT_TYPE (event)) {
+    case GST_EVENT_SEGMENT:{
+      LOCK_DYN (timeline);
+      res = _track_check_stop_dropping (pad, tr_priv, event);
+      goto DONE_UNLOCKING;
+    }
+    case GST_EVENT_STREAM_START:{
+      LOCK_DYN (timeline);
+      res = _track_check_stop_dropping (pad, tr_priv, event);
+      if (res == GST_PAD_PROBE_DROP)
+        goto DONE_UNLOCKING;
+
+      if (timeline->priv->stream_start_group_id == -1) {
+        if (!gst_event_parse_group_id (event,
+                &timeline->priv->stream_start_group_id))
+          timeline->priv->stream_start_group_id = gst_util_group_id_next ();
+      }
+
+      gst_event_unref (event);
+      event = info->data =
+          gst_event_new_stream_start (gst_stream_get_stream_id
+          (tr_priv->stream));
+      gst_event_set_stream (event, tr_priv->stream);
+      gst_event_set_group_id (event, timeline->priv->stream_start_group_id);
+      goto DONE_UNLOCKING;
+    }
+    case GST_EVENT_FLUSH_STOP:{
+      LOCK_DYN (timeline);
+      res = _track_check_stop_dropping (pad, tr_priv, event);
+      goto DONE_UNLOCKING;
+    }
+    case GST_EVENT_SEEK:
+      break;
+    default:
+      LOCK_DYN (timeline);
+      if (tr_priv->awaited_seqnum) {
+        GST_INFO_OBJECT (pad, "Dropping %" GST_PTR_FORMAT, event);
+        res = GST_PAD_PROBE_DROP;
+      }
+      goto DONE_UNLOCKING;
+  }
+
+done:
+
+  return res;
+
+DONE_UNLOCKING:
+  UNLOCK_DYN (timeline);
+  goto done;
 }
 
 static void
@@ -2065,9 +2210,13 @@ _ghost_track_srcpad (TrackPrivate * tr_priv)
     gst_element_no_more_pads (GST_ELEMENT (tr_priv->timeline));
   }
 
-  tr_priv->probe_id = gst_pad_add_probe (pad,
+  tr_priv->track_probe_id = gst_pad_add_probe (pad,
+      GST_PAD_PROBE_TYPE_EVENT_BOTH | GST_PAD_PROBE_TYPE_EVENT_FLUSH,
+      (GstPadProbeCallback) _track_pad_probe_cb, tr_priv, NULL);
+
+  tr_priv->timeline_probe_id = gst_pad_add_probe (tr_priv->ghostpad,
       GST_PAD_PROBE_TYPE_EVENT_DOWNSTREAM,
-      (GstPadProbeCallback) _pad_probe_cb, tr_priv, NULL);
+      (GstPadProbeCallback) _src_pad_probe_cb, tr_priv, NULL);
 
   UNLOCK_DYN (tr_priv->timeline);
 }
@@ -2619,6 +2768,7 @@ ges_timeline_remove_track (GESTimeline * timeline, GESTrack * track)
   }
 
   tr_priv = tmp->data;
+  gst_pad_remove_probe (tr_priv->pad, tr_priv->track_probe_id);
   gst_object_unref (tr_priv->pad);
   priv->priv_tracks = g_list_remove (priv->priv_tracks, tr_priv);
   UNLOCK_DYN (timeline);
@@ -2643,6 +2793,7 @@ ges_timeline_remove_track (GESTimeline * timeline, GESTrack * track)
   /* Remove ghost pad */
   if (tr_priv->ghostpad) {
     GST_DEBUG ("Removing ghostpad");
+    gst_pad_remove_probe (tr_priv->ghostpad, tr_priv->timeline_probe_id);
     gst_pad_set_active (tr_priv->ghostpad, FALSE);
     gst_ghost_pad_set_target ((GstGhostPad *) tr_priv->ghostpad, NULL);
     gst_element_remove_pad (GST_ELEMENT (timeline), tr_priv->ghostpad);
