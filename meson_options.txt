@@ -10,6 +10,7 @@ option('rtsp_server', type : 'feature', value : 'auto')
 option('rs', type : 'feature', value : 'disabled')
 option('vaapi', type : 'feature', value : 'disabled')
 option('gst-examples', type : 'feature', value : 'auto', description : 'Build gst-examples subproject')
+option('gst-docs', type: 'boolean', value: true, description: 'Build documentation and tutorials')
 # Bindings
 option('python', type : 'feature', value : 'auto')
 option('sharp', type : 'feature', value : 'disabled')
