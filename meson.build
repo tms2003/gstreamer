@@ -34,7 +34,6 @@ pre_commit_req = '>= 3.6.0'
 pre_commit = find_program('pre_commit', version: pre_commit_req, required: false)
 if pre_commit.found()
   run_command(pre_commit, 'install', '-f', check: false)
-  run_command(pre_commit, 'install', '--hook-type', 'commit-msg', check: false)
 else
   message('pre-commit not found or too old, please install it with your package manager or `python3 -m pip install pre-commit`')
 endif
