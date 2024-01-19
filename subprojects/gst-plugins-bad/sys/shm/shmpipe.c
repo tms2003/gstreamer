@@ -575,7 +575,7 @@ sp_writer_free_block (ShmBlock * block)
 /* Returns the number of client this has successfully been sent to */
 
 int
-sp_writer_send_buf (ShmPipe * self, char *buf, size_t size, void *tag)
+sp_writer_send_buf (ShmPipe * self, char *buf, size_t size, void *tag, ShmClient *single_client)
 {
   ShmArea *area = NULL;
   unsigned long offset = 0;
@@ -583,11 +583,24 @@ sp_writer_send_buf (ShmPipe * self, char *buf, size_t size, void *tag)
   ShmBuffer *sb;
   ShmClient *client = NULL;
   ShmAllocBlock *ablock = NULL;
+  int num_clients = 0;
   int i = 0;
   int c = 0;
 
   if (self->num_clients == 0)
     return 0;
+
+  if (single_client) {
+    for (client = self->clients; client; client = client->next) {
+      if (client == single_client)
+        break;
+    }
+    if (client == NULL)
+      return -1;
+    num_clients = 1;
+  } else {
+    num_clients = self->num_clients;
+  }
 
   for (area = self->shm_area; area; area = area->next) {
     if (buf >= area->shm_area_buf &&
@@ -602,18 +615,20 @@ sp_writer_send_buf (ShmPipe * self, char *buf, size_t size, void *tag)
   if (!ablock)
     return -1;
 
-  sb = spalloc_alloc (sizeof (ShmBuffer) + sizeof (int) * self->num_clients);
+  sb = spalloc_alloc (sizeof (ShmBuffer) + sizeof (int) * num_clients);
   memset (sb, 0, sizeof (ShmBuffer));
-  memset (sb->clients, -1, sizeof (int) * self->num_clients);
+  memset (sb->clients, -1, sizeof (int) * num_clients);
   sb->shm_area = area;
   sb->offset = offset;
   sb->size = size;
-  sb->num_clients = self->num_clients;
+  sb->num_clients = num_clients;
   sb->ablock = ablock;
   sb->tag = tag;
 
   for (client = self->clients; client; client = client->next) {
     struct CommandBuffer cb = { 0 };
+    if (single_client && client != single_client)
+      continue;
     cb.payload.buffer.offset = offset;
     cb.payload.buffer.size = bsize;
     if (!send_command (client->fd, &cb, COMMAND_NEW_BUFFER, self->shm_area->id))
@@ -623,7 +638,7 @@ sp_writer_send_buf (ShmPipe * self, char *buf, size_t size, void *tag)
   }
 
   if (c == 0) {
-    spalloc_free1 (sizeof (ShmBuffer) + sizeof (int) * sb->num_clients, sb);
+    spalloc_free1 (sizeof (ShmBuffer) + sizeof (int) * num_clients, sb);
     return 0;
   }
 

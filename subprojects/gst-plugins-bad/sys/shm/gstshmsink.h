@@ -64,6 +64,8 @@ struct _GstShmSink
   gboolean unlock;
   GstClockTimeDiff buffer_time;
 
+  GstBufferList *streamheaders;
+
   GCond cond;
 
   GstShmSinkAllocator *allocator;
