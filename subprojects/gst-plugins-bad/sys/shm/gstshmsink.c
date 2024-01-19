@@ -872,10 +872,10 @@ pollthread_func (gpointer data)
 
       GST_OBJECT_LOCK (self);
       client = sp_writer_accept_client (self->pipe);
-      GST_OBJECT_UNLOCK (self);
 
       if (!client) {
-        GST_ELEMENT_ERROR (self, RESOURCE, READ,
+         GST_OBJECT_UNLOCK (self);
+         GST_ELEMENT_ERROR (self, RESOURCE, READ,
             ("Failed to read from shmsink"),
             ("Control socket returns wrong data"));
         return NULL;
@@ -888,6 +888,8 @@ pollthread_func (gpointer data)
       gst_poll_add_fd (self->poll, &gclient->pollfd);
       gst_poll_fd_ctl_read (self->poll, &gclient->pollfd, TRUE);
       self->clients = g_list_prepend (self->clients, gclient);
+      GST_OBJECT_UNLOCK (self);
+
       g_signal_emit (self, signals[SIGNAL_CLIENT_CONNECTED], 0,
           gclient->pollfd.fd);
       /* we need to call gst_poll_wait before calling gst_poll_* status
@@ -938,12 +940,13 @@ pollthread_func (gpointer data)
         GST_OBJECT_LOCK (self);
         sp_writer_close_client (self->pipe, gclient->client,
             (sp_buffer_free_callback) free_buffer_locked, (void **) &list);
+        gst_poll_remove_fd (self->poll, &gclient->pollfd);
+        self->clients = g_list_remove (self->clients, gclient);
+
         GST_OBJECT_UNLOCK (self);
         g_slist_free_full (list, (GDestroyNotify) gst_buffer_unref);
       }
 
-      gst_poll_remove_fd (self->poll, &gclient->pollfd);
-      self->clients = g_list_remove (self->clients, gclient);
 
       g_signal_emit (self, signals[SIGNAL_CLIENT_DISCONNECTED], 0,
           gclient->pollfd.fd);
