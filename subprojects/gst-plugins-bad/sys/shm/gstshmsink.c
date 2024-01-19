@@ -660,13 +660,32 @@ gst_shm_sink_can_render (GstShmSink * self, GstClockTime time)
   return TRUE;
 }
 
+static gboolean
+gst_shm_sink_is_usable_mem (GstShmSink * self, GstBuffer * buf)
+{
+  if (gst_buffer_n_memory (buf) > 1) {
+    GST_LOG_OBJECT (self, "Buffer %p has %d GstMemory, we only support a single"
+        " one, need to do a memcpy", buf, gst_buffer_n_memory (buf));
+    return FALSE;
+  } else {
+    GstMemory *memory = gst_buffer_peek_memory (buf, 0);
+
+    if (memory->allocator != GST_ALLOCATOR (self->allocator)) {
+      GST_LOG_OBJECT (self, "Memory in buffer %p was not allocated by "
+          "%" GST_PTR_FORMAT ", will memcpy", buf, memory->allocator);
+      return FALSE;
+    }
+  }
+
+  return TRUE;
+}
+
 static GstFlowReturn
 gst_shm_sink_render (GstBaseSink * bsink, GstBuffer * buf)
 {
   GstShmSink *self = GST_SHM_SINK (bsink);
   int rv = 0;
   GstMapInfo map;
-  gboolean need_new_memory = FALSE;
   GstFlowReturn ret = GST_FLOW_OK;
   GstMemory *memory = NULL;
   GstBuffer *sendbuf = NULL;
@@ -702,22 +721,7 @@ gst_shm_sink_render (GstBaseSink * bsink, GstBuffer * buf)
     }
   }
 
-
-  if (gst_buffer_n_memory (buf) > 1) {
-    GST_LOG_OBJECT (self, "Buffer %p has %d GstMemory, we only support a single"
-        " one, need to do a memcpy", buf, gst_buffer_n_memory (buf));
-    need_new_memory = TRUE;
-  } else {
-    memory = gst_buffer_peek_memory (buf, 0);
-
-    if (memory->allocator != GST_ALLOCATOR (self->allocator)) {
-      need_new_memory = TRUE;
-      GST_LOG_OBJECT (self, "Memory in buffer %p was not allocated by "
-          "%" GST_PTR_FORMAT ", will memcpy", buf, memory->allocator);
-    }
-  }
-
-  if (need_new_memory) {
+  if (!gst_shm_sink_is_usable_mem (self, buf)) {
     if (gst_buffer_get_size (buf) > sp_writer_get_max_buf_size (self->pipe)) {
       gsize area_size = sp_writer_get_max_buf_size (self->pipe);
       GST_ELEMENT_ERROR (self, RESOURCE, NO_SPACE_LEFT, (NULL),
