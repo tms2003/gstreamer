@@ -1443,6 +1443,8 @@ gst_kms_sink_set_caps (GstBaseSink * bsink, GstCaps * caps)
   if (!gst_video_info_from_caps (&vinfo, caps))
     goto invalid_format;
   self->vinfo = vinfo;
+  self->video_width = vinfo.width;
+  self->video_height = vinfo.height;
 
   if (!gst_kms_sink_calculate_display_ratio (self, &vinfo,
           &GST_VIDEO_SINK_WIDTH (self), &GST_VIDEO_SINK_HEIGHT (self)))
@@ -1886,7 +1888,7 @@ gst_kms_sink_show_frame (GstVideoSink * vsink, GstBuffer * buf)
   GstVideoInfo *vinfo;
   GstVideoCropMeta *crop;
   GstVideoRectangle src = { 0, };
-  gint video_width, video_height;
+  guint video_width, video_height;
   GstVideoRectangle dst = { 0, };
   GstVideoRectangle result;
   GstFlowReturn res;
@@ -1898,14 +1900,17 @@ gst_kms_sink_show_frame (GstVideoSink * vsink, GstBuffer * buf)
   if (buf) {
     buffer = gst_kms_sink_get_input_buffer (self, buf);
     vinfo = &self->vinfo;
-    video_width = src.w = GST_VIDEO_SINK_WIDTH (self);
-    video_height = src.h = GST_VIDEO_SINK_HEIGHT (self);
+    src.w = GST_VIDEO_SINK_WIDTH (self);
+    src.h = GST_VIDEO_SINK_HEIGHT (self);
   } else if (self->last_buffer) {
     buffer = gst_buffer_ref (self->last_buffer);
     vinfo = &self->last_vinfo;
-    video_width = src.w = self->last_width;
-    video_height = src.h = self->last_height;
+    src.w = self->last_width;
+    src.h = self->last_height;
   }
+
+  video_width = self->video_width;
+  video_height = self->video_height;
 
   /* Make sure buf is not used accidentally */
   buf = NULL;
@@ -1927,8 +1932,8 @@ gst_kms_sink_show_frame (GstVideoSink * vsink, GstBuffer * buf)
   if ((crop = gst_buffer_get_video_crop_meta (buffer))) {
     GstVideoInfo cropped_vinfo = *vinfo;
 
-    cropped_vinfo.width = crop->width;
-    cropped_vinfo.height = crop->height;
+    video_width = src.w = cropped_vinfo.width = crop->width;
+    video_height = src.h = cropped_vinfo.height = crop->height;
 
     if (!gst_kms_sink_calculate_display_ratio (self, &cropped_vinfo, &src.w,
             &src.h))
@@ -1947,13 +1952,9 @@ retry_set_plane:
   result.x += self->render_rect.x;
   result.y += self->render_rect.y;
 
-  if (crop) {
-    src.w = crop->width;
-    src.h = crop->height;
-  } else {
-    src.w = video_width;
-    src.h = video_height;
-  }
+  /* Restore the real source size */
+  src.w = video_width;
+  src.h = video_height;
 
   /* handle out of screen case */
   if ((result.x + result.w) > self->hdisplay)
