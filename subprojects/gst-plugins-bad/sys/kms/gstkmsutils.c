@@ -28,6 +28,7 @@
 #endif
 
 #include <drm_fourcc.h>
+#include <xf86drm.h>
 
 #include "gstkmsutils.h"
 
@@ -264,4 +265,93 @@ gst_video_calculate_device_ratio (guint dev_width, guint dev_height,
 
   if (dpy_par_d)
     *dpy_par_d = device_par_map[index][windex ^ 1];
+}
+
+int
+kms_open (gchar ** driver)
+{
+  static const char *drivers[] = { "i915", "radeon", "nouveau", "vmwgfx",
+    "exynos", "amdgpu", "imx-drm", "imx-lcdif", "rockchip", "atmel-hlcdc",
+    "msm", "xlnx", "vc4", "meson", "stm", "sun4i-drm", "mxsfb-drm", "tegra",
+    "tidss", "xilinx_drm",      /* DEPRECATED. Replaced by xlnx */
+  };
+  int i, fd = -1;
+
+  for (i = 0; i < G_N_ELEMENTS (drivers); i++) {
+    fd = drmOpen (drivers[i], NULL);
+    if (fd >= 0) {
+      if (driver)
+        *driver = g_strdup (drivers[i]);
+      break;
+    }
+  }
+
+  return fd;
+}
+
+void
+log_drm_version (GstObject * self, gint fd, gchar * devname)
+{
+#ifndef GST_DISABLE_GST_DEBUG
+  drmVersion *v;
+
+  v = drmGetVersion (fd);
+  if (v) {
+    GST_INFO_OBJECT (self, "DRM v%d.%d.%d [%s — %s — %s]", v->version_major,
+        v->version_minor, v->version_patchlevel, GST_STR_NULL (v->name),
+        GST_STR_NULL (v->desc), GST_STR_NULL (v->date));
+    drmFreeVersion (v);
+  } else {
+    GST_WARNING_OBJECT (self, "could not get driver information: %s",
+        GST_STR_NULL (devname));
+  }
+#endif
+  return;
+}
+
+gboolean
+get_drm_caps (GstObject * self, gint fd, gboolean * has_prime_import,
+    gboolean * has_prime_export, gboolean * has_async_page_flip)
+{
+  gint ret;
+  guint64 cap;
+
+  cap = 0;
+  ret = drmGetCap (fd, DRM_CAP_DUMB_BUFFER, &cap);
+  if (ret)
+    GST_WARNING_OBJECT (self, "could not get dumb buffer capability");
+  if (cap == 0) {
+    GST_ERROR_OBJECT (self, "driver cannot handle dumb buffers");
+    return FALSE;
+  }
+
+  if (has_prime_import || has_prime_export) {
+    cap = 0;
+    ret = drmGetCap (fd, DRM_CAP_PRIME, &cap);
+    if (ret)
+      GST_WARNING_OBJECT (self, "could not get prime capability");
+    else {
+      if (has_prime_import)
+        *has_prime_import = (gboolean) (cap & DRM_PRIME_CAP_IMPORT);
+      if (has_prime_export)
+        *has_prime_export = (gboolean) (cap & DRM_PRIME_CAP_EXPORT);
+    }
+  }
+
+  if (has_async_page_flip) {
+    cap = 0;
+    ret = drmGetCap (fd, DRM_CAP_ASYNC_PAGE_FLIP, &cap);
+    if (ret)
+      GST_WARNING_OBJECT (self, "could not get async page flip capability");
+    else
+      *has_async_page_flip = (gboolean) cap;
+  }
+
+  GST_INFO_OBJECT (self,
+      "prime import (%s) / prime export (%s) / async page flip (%s)",
+      has_prime_import ? (*has_prime_import ? "✓" : "✗") : "?",
+      has_prime_export ? (*has_prime_export ? "✓" : "✗") : "?",
+      has_async_page_flip ? (*has_async_page_flip ? "✓" : "✗") : "?");
+
+  return TRUE;
 }
