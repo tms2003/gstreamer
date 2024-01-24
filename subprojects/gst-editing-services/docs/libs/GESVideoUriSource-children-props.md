@@ -4,35 +4,20 @@ alpha of the stream
 
 Value type: #gdouble
 
-#### `fields`
-
-Fields to use for deinterlacing
-
-Valid values:
-  - **All fields** (0) – all
-  - **Top fields only** (1) – top
-  - **Bottom fields only** (2) – bottom
-  - **Automatically detect** (3) – auto
-
-See #deinterlace:fields
-
 #### `height`
 
 height of the source
 
 Value type: #gint
 
-#### `mode`
+#### `operator`
 
-Deinterlace Mode
+Blending operator to use for blending this pad over the previous ones
 
 Valid values:
-  - **Auto detection (best effort)** (0) – auto
-  - **Force deinterlacing** (1) – interlaced
-  - **Run in passthrough mode** (2) – disabled
-  - **Auto detection (strict)** (3) – auto-strict
-
-See #deinterlace:mode
+  - **Source** (0) – source
+  - **Over** (1) – over
+  - **Add** (2) – add
 
 #### `posx`
 
@@ -45,17 +30,6 @@ Value type: #gint
 y position of the stream
 
 Value type: #gint
-
-#### `tff`
-
-Deinterlace top field first
-
-Valid values:
-  - **Auto detection** (0) – auto
-  - **Top field first** (1) – tff
-  - **Bottom field first** (2) – bff
-
-See #deinterlace:tff
 
 #### `video-direction`
 
@@ -73,11 +47,19 @@ Valid values:
   - **GST_VIDEO_ORIENTATION_AUTO** (8) – auto
   - **GST_VIDEO_ORIENTATION_CUSTOM** (9) – custom
 
-See #GstVideoDirection:video-direction
+See #videoflip:video-direction
 
 #### `width`
 
 width of the source
 
 Value type: #gint
+
+#### `zorder`
+
+z order of the stream.
+**WARNING**: Setting it manually overrides the #GESLayer:priority and should be
+used very carefully
+
+Value type: #guint
 

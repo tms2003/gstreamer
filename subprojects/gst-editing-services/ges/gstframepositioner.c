@@ -542,7 +542,10 @@ gst_frame_positioner_class_init (GstFramePositionerClass * klass)
    * The desired z order for the stream.
    */
   properties[PROP_ZORDER] =
-      g_param_spec_uint ("zorder", "zorder", "z order of the stream", 0,
+      g_param_spec_uint ("zorder", "zorder",
+      "z order of the stream.\n\n"
+      "**WARNING**: Setting it manually overrides the "
+      "#GESLayer:priority and should be used very carefully", 0,
       G_MAXUINT, 0, G_PARAM_READWRITE | GST_PARAM_CONTROLLABLE);
 
   /**
