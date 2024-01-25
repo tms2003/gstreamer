@@ -29,7 +29,6 @@
 
 #include <gst/gst.h>
 #include <gst/analytics/analytics-meta-prelude.h>
-#include <gst/analytics/gsttensor.h>
 
 /**
  * GstTensorDataType:
