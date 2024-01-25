@@ -94,9 +94,17 @@ gst_qt_get_gl_display (gboolean sink)
   GST_INFO ("QGuiApplication::instance()->platformName() %s", app->platformName().toUtf8().data());
 
 #if GST_GL_HAVE_WINDOW_X11 && defined (HAVE_QT_X11)
-  if (QString::fromUtf8 ("xcb") == app->platformName())
-    display = (GstGLDisplay *)
-        gst_gl_display_x11_new_with_display (QX11Info::display ());
+  if (QString::fromUtf8 ("xcb") == app->platformName()) {
+#if GST_GL_HAVE_PLATFORM_EGL && defined (HAVE_QT_QPA_HEADER)
+    QPlatformNativeInterface *native = QGuiApplication::platformNativeInterface();
+    EGLDisplay egl_display = (EGLDisplay) native->nativeResourceForIntegration("egldisplay");
+    if (egl_display != EGL_NO_DISPLAY)
+      display = (GstGLDisplay *) gst_gl_display_egl_new_with_egl_display (egl_display);
+#endif
+    if (!display)
+      display = (GstGLDisplay *)
+          gst_gl_display_x11_new_with_display (QX11Info::display ());
+  }
 #endif
 #if GST_GL_HAVE_WINDOW_WAYLAND && GST_GL_HAVE_PLATFORM_EGL && defined (HAVE_QT_WAYLAND)
   if (QString::fromUtf8 ("wayland") == app->platformName()
@@ -192,6 +200,10 @@ gst_qt_get_gl_wrapcontext (GstGLDisplay * display,
 #if GST_GL_HAVE_PLATFORM_GLX
     platform = GST_GL_PLATFORM_GLX;
 #elif GST_GL_HAVE_PLATFORM_EGL
+    platform = GST_GL_PLATFORM_EGL;
+#endif
+#if GST_GL_HAVE_PLATFORM_EGL
+  } else if (GST_IS_GL_DISPLAY_EGL (display)) {
     platform = GST_GL_PLATFORM_EGL;
 #endif
   }
