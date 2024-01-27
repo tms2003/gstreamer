@@ -275,9 +275,6 @@ struct _GstVaH264EncFrame
    * explicitly. */
   gint unused_for_reference_pic_num;
 
-  /* The total frame count we handled. */
-  guint total_frame_count;
-
   gboolean last_frame;
 };
 
@@ -380,7 +377,6 @@ gst_va_enc_frame_new (void)
   frame->frame_num = 0;
   frame->unused_for_reference_pic_num = -1;
   frame->picture = NULL;
-  frame->total_frame_count = 0;
   frame->last_frame = FALSE;
 
   return frame;
@@ -3038,22 +3034,12 @@ gst_va_h264_enc_flush (GstVideoEncoder * venc)
   return GST_VIDEO_ENCODER_CLASS (parent_class)->flush (venc);
 }
 
-static void
-gst_va_h264_enc_prepare_output (GstVaBaseEnc * base, GstVideoCodecFrame * frame)
+static guint
+gst_va_h264_enc_num_reorder_frames (GstVaBaseEnc * base)
 {
   GstVaH264Enc *self = GST_VA_H264_ENC (base);
-  GstVaH264EncFrame *frame_enc;
 
-  frame_enc = _enc_frame (frame);
-
-  frame->pts =
-      base->start_pts + base->frame_duration * frame_enc->total_frame_count;
-  /* The PTS should always be later than the DTS. */
-  frame->dts = base->start_pts + base->frame_duration *
-      ((gint64) base->output_frame_count -
-      (gint64) self->gop.num_reorder_frames);
-  base->output_frame_count++;
-  frame->duration = base->frame_duration;
+  return self->gop.num_reorder_frames;
 }
 
 static gint
@@ -3183,7 +3169,6 @@ gst_va_h264_enc_new_frame (GstVaBaseEnc * base, GstVideoCodecFrame * frame)
   GstVaH264EncFrame *frame_in;
 
   frame_in = gst_va_enc_frame_new ();
-  frame_in->total_frame_count = base->input_frame_count++;
   gst_video_codec_frame_set_user_data (frame, frame_in, gst_va_enc_frame_free);
 
   return TRUE;
@@ -3529,8 +3514,8 @@ gst_va_h264_enc_class_init (gpointer g_klass, gpointer class_data)
   va_enc_class->reorder_frame =
       GST_DEBUG_FUNCPTR (gst_va_h264_enc_reorder_frame);
   va_enc_class->encode_frame = GST_DEBUG_FUNCPTR (gst_va_h264_enc_encode_frame);
-  va_enc_class->prepare_output =
-      GST_DEBUG_FUNCPTR (gst_va_h264_enc_prepare_output);
+  va_enc_class->num_reorder_frames =
+      GST_DEBUG_FUNCPTR (gst_va_h264_enc_num_reorder_frames);
 
   {
     display = gst_va_display_platform_new (va_enc_class->render_device_path);

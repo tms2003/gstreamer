@@ -125,16 +125,13 @@ gst_va_base_enc_start (GstVideoEncoder * venc)
 
   gst_va_base_enc_reset_state (base);
 
-  base->input_frame_count = 0;
-  base->output_frame_count = 0;
-
   base->input_state = NULL;
+  g_array_set_size (base->timestamp_queue, 0);
 
   /* Set the minimum pts to some huge value (1000 hours). This keeps
    * the dts at the start of the stream from needing to be
    * negative. */
-  base->start_pts = GST_SECOND * 60 * 60 * 1000;
-  gst_video_encoder_set_min_pts (venc, base->start_pts);
+  gst_video_encoder_set_min_pts (venc, GST_SECOND * 60 * 60 * 1000);
 
   return TRUE;
 }
@@ -402,14 +399,50 @@ config_failed:
 }
 
 static GstFlowReturn
+gst_va_base_enc_finish_frame (GstVaBaseEnc * base, GstVideoCodecFrame * frame)
+{
+  GstClockTime dts = GST_CLOCK_TIME_NONE;
+
+  if (base->timestamp_queue->len) {
+    dts = g_array_index (base->timestamp_queue, GstClockTime, 0);
+    g_array_remove_index (base->timestamp_queue, 0);
+  } else {
+    GST_WARNING_OBJECT (base, "Empty timestamp queue");
+  }
+
+  if (GST_CLOCK_TIME_IS_VALID (dts) && frame->output_buffer) {
+    GstVaBaseEncClass *klass = GST_VA_BASE_ENC_GET_CLASS (base);
+    guint reorder_frames = 0;
+
+    if (klass->num_reorder_frames)
+      reorder_frames = klass->num_reorder_frames (base);
+
+    if (reorder_frames > 0) {
+      dts -= (reorder_frames * base->frame_duration);
+      if (GST_CLOCK_TIME_IS_VALID (frame->pts))
+        dts = MIN (dts, frame->pts);
+    }
+
+    frame->dts = dts;
+  }
+
+  if (frame->output_buffer) {
+    GST_LOG_OBJECT (base, "Push to downstream: frame system_frame_number: %d,"
+      " pts: %" GST_TIME_FORMAT ", dts: %" GST_TIME_FORMAT
+      " duration: %" GST_TIME_FORMAT ", buffer size: %" G_GSIZE_FORMAT,
+      frame->system_frame_number, GST_TIME_ARGS (frame->pts),
+      GST_TIME_ARGS (frame->dts), GST_TIME_ARGS (frame->duration),
+      gst_buffer_get_size (frame->output_buffer));
+  }
+
+  return gst_video_encoder_finish_frame (GST_VIDEO_ENCODER (base), frame);
+}
+
+static GstFlowReturn
 _push_buffer_to_downstream (GstVaBaseEnc * base, GstVideoCodecFrame * frame)
 {
   GstVaEncodePicture *enc_picture;
-  GstVaBaseEncClass *base_class = GST_VA_BASE_ENC_GET_CLASS (base);
   GstBuffer *buf;
-
-  if (base_class->prepare_output)
-    base_class->prepare_output (base, frame);
 
   enc_picture =
       *((GstVaEncodePicture **) gst_video_codec_frame_get_user_data (frame));
@@ -423,19 +456,12 @@ _push_buffer_to_downstream (GstVaBaseEnc * base, GstVideoCodecFrame * frame)
   gst_buffer_replace (&frame->output_buffer, buf);
   gst_clear_buffer (&buf);
 
-  GST_LOG_OBJECT (base, "Push to downstream: frame system_frame_number: %d,"
-      " pts: %" GST_TIME_FORMAT ", dts: %" GST_TIME_FORMAT
-      " duration: %" GST_TIME_FORMAT ", buffer size: %" G_GSIZE_FORMAT,
-      frame->system_frame_number, GST_TIME_ARGS (frame->pts),
-      GST_TIME_ARGS (frame->dts), GST_TIME_ARGS (frame->duration),
-      gst_buffer_get_size (frame->output_buffer));
-
-  return gst_video_encoder_finish_frame (GST_VIDEO_ENCODER (base), frame);
+  return gst_va_base_enc_finish_frame (base, frame);
 
 error:
   gst_clear_buffer (&frame->output_buffer);
   gst_clear_buffer (&buf);
-  gst_video_encoder_finish_frame (GST_VIDEO_ENCODER (base), frame);
+  gst_va_base_enc_finish_frame (base, frame);
 
   return GST_FLOW_ERROR;
 }
@@ -514,12 +540,14 @@ gst_va_base_enc_drain (GstVideoEncoder * venc)
   g_queue_clear_full (&base->ref_list,
       (GDestroyNotify) gst_video_codec_frame_unref);
 
+  g_array_set_size (base->timestamp_queue, 0);
+
   return GST_FLOW_OK;
 
 error_and_purge_all:
   if (frame_enc) {
     gst_clear_buffer (&frame_enc->output_buffer);
-    gst_video_encoder_finish_frame (venc, frame_enc);
+    gst_va_base_enc_finish_frame (base, frame_enc);
   }
 
   if (!g_queue_is_empty (&base->output_list)) {
@@ -529,7 +557,7 @@ error_and_purge_all:
       frame_enc = g_queue_pop_head (&base->output_list);
       gst_video_codec_frame_unref (frame_enc);
       gst_clear_buffer (&frame_enc->output_buffer);
-      gst_video_encoder_finish_frame (venc, frame_enc);
+      gst_va_base_enc_finish_frame (base, frame_enc);
     }
   }
 
@@ -540,13 +568,15 @@ error_and_purge_all:
       frame_enc = g_queue_pop_head (&base->reorder_list);
       gst_video_codec_frame_unref (frame_enc);
       gst_clear_buffer (&frame_enc->output_buffer);
-      gst_video_encoder_finish_frame (venc, frame_enc);
+      gst_va_base_enc_finish_frame (base, frame_enc);
     }
   }
 
   /* Also clear the reference list. */
   g_queue_clear_full (&base->ref_list,
       (GDestroyNotify) gst_video_codec_frame_unref);
+
+  g_array_set_size (base->timestamp_queue, 0);
 
   return ret;
 }
@@ -584,9 +614,13 @@ gst_va_base_enc_handle_frame (GstVideoEncoder * venc,
       GST_TIME_ARGS (GST_BUFFER_DTS (frame->input_buffer)),
       GST_TIME_ARGS (GST_BUFFER_PTS (frame->input_buffer)));
 
+  g_array_append_val (base->timestamp_queue, frame->pts);
+
   if (g_atomic_int_compare_and_exchange (&base->reconf, TRUE, FALSE)) {
-    if (!gst_va_base_enc_reset (base))
+    if (!gst_va_base_enc_reset (base)) {
+      gst_va_base_enc_finish_frame (base, frame);
       return GST_FLOW_ERROR;
+    }
   }
 
   ret = gst_va_base_enc_import_input_buffer (base,
@@ -628,7 +662,7 @@ error_buffer_invalid:
         (NULL));
     gst_clear_buffer (&in_buf);
     gst_clear_buffer (&frame->output_buffer);
-    gst_video_encoder_finish_frame (venc, frame);
+    gst_va_base_enc_finish_frame (base, frame);
     return ret;
   }
 error_new_frame:
@@ -636,7 +670,7 @@ error_new_frame:
     GST_ELEMENT_ERROR (venc, STREAM, ENCODE,
         ("Failed to create the input frame."), (NULL));
     gst_clear_buffer (&frame->output_buffer);
-    gst_video_encoder_finish_frame (venc, frame);
+    gst_va_base_enc_finish_frame (base, frame);
     return GST_FLOW_ERROR;
   }
 error_reorder:
@@ -645,7 +679,7 @@ error_reorder:
         ("Failed to reorder the input frame."), (NULL));
     if (frame) {
       gst_clear_buffer (&frame->output_buffer);
-      gst_video_encoder_finish_frame (venc, frame);
+      gst_va_base_enc_finish_frame (base, frame);
     }
     return GST_FLOW_ERROR;
   }
@@ -654,7 +688,7 @@ error_encode:
     GST_ELEMENT_ERROR (venc, STREAM, ENCODE,
         ("Failed to encode the frame %s.", gst_flow_get_name (ret)), (NULL));
     gst_clear_buffer (&frame_encode->output_buffer);
-    gst_video_encoder_finish_frame (venc, frame_encode);
+    gst_va_base_enc_finish_frame (base, frame_encode);
     return ret;
   }
 }
@@ -837,6 +871,8 @@ gst_va_base_enc_init (GstVaBaseEnc * self)
   g_queue_init (&self->output_list);
   gst_video_info_init (&self->in_info);
 
+  self->timestamp_queue = g_array_new (FALSE, FALSE, sizeof (GstClockTime));
+
   self->priv = gst_va_base_enc_get_instance_private (self);
 }
 
@@ -849,6 +885,16 @@ gst_va_base_enc_dispose (GObject * object)
   G_OBJECT_CLASS (parent_class)->dispose (object);
 }
 
+static void
+gst_va_base_enc_finalize (GObject * object)
+{
+  GstVaBaseEnc *self = GST_VA_BASE_ENC (object);
+
+  g_array_unref (self->timestamp_queue);
+
+  G_OBJECT_CLASS (parent_class)->finalize (object);
+}
+
 void
 gst_va_base_enc_class_init (GstVaBaseEncClass * klass)
 {
@@ -858,6 +904,7 @@ gst_va_base_enc_class_init (GstVaBaseEncClass * klass)
 
   gobject_class->get_property = gst_va_base_enc_get_property;
   gobject_class->dispose = gst_va_base_enc_dispose;
+  gobject_class->finalize = gst_va_base_enc_finalize;
 
   element_class->set_context = GST_DEBUG_FUNCPTR (gst_va_base_enc_set_context);
 

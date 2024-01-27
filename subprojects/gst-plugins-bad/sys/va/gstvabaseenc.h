@@ -54,15 +54,12 @@ struct _GstVaBaseEnc
   guint rt_format;
   guint codedbuf_size;
 
-  GstClockTime start_pts;
   GstClockTime frame_duration;
-  /* Total frames we handled since reconfig. */
-  guint input_frame_count;
-  guint output_frame_count;
 
   GQueue reorder_list;
   GQueue ref_list;
   GQueue output_list;
+  GArray *timestamp_queue;
 
   GstVideoCodecState *input_state;
   union {
@@ -80,19 +77,23 @@ struct _GstVaBaseEncClass
 {
   GstVideoEncoderClass parent_class;
 
-  void     (*reset_state)    (GstVaBaseEnc * encoder);
-  gboolean (*reconfig)       (GstVaBaseEnc * encoder);
-  gboolean (*new_frame)      (GstVaBaseEnc * encoder,
-                              GstVideoCodecFrame * frame);
-  gboolean (*reorder_frame)  (GstVaBaseEnc * base,
-                              GstVideoCodecFrame * frame,
-                              gboolean bump_all,
-                              GstVideoCodecFrame ** out_frame);
-  GstFlowReturn (*encode_frame) (GstVaBaseEnc * encoder,
-                                 GstVideoCodecFrame * frame,
-                                 gboolean is_last);
-  void     (*prepare_output) (GstVaBaseEnc * encoder,
-                              GstVideoCodecFrame * frame);
+  void          (*reset_state)        (GstVaBaseEnc * encoder);
+
+  gboolean      (*reconfig)           (GstVaBaseEnc * encoder);
+
+  gboolean      (*new_frame)          (GstVaBaseEnc * encoder,
+                                       GstVideoCodecFrame * frame);
+
+  gboolean      (*reorder_frame)      (GstVaBaseEnc * base,
+                                       GstVideoCodecFrame * frame,
+                                       gboolean bump_all,
+                                       GstVideoCodecFrame ** out_frame);
+
+  GstFlowReturn (*encode_frame)       (GstVaBaseEnc * encoder,
+                                       GstVideoCodecFrame * frame,
+                                       gboolean is_last);
+
+  guint         (*num_reorder_frames) (GstVaBaseEnc * encoder);
 
   GstVaCodecs codec;
   VAEntrypoint entrypoint;
