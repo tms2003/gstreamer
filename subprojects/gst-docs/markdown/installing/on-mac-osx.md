@@ -104,6 +104,7 @@ XCode you will need to do the following:
   - Add `GStreamer.framework` to **General → Frameworks and Libraries**
   - Add the libraries path to **Build Settings → Library Search Paths**
   - Add the headers path to **Build Settings → System Header Search Paths**
+  - Add `@executable_path/../Frameworks/GStreamer.framework/Libraries` to **Build Settings → Runpath Search Paths**
   - Disable hardened runtime **Build Settings → Enable Hardened Runtime**. This
     is needed because the `GStreamer.framework` is not signed.
 
