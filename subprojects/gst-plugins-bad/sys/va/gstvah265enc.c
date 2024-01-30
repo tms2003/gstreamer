@@ -4664,7 +4664,7 @@ gst_va_h265_enc_reconfig (GstVaBaseEnc * base)
       && !gst_va_encoder_open (base->encoder, base->profile,
           format, base->rt_format, self->luma_width, self->luma_height,
           base->codedbuf_size, max_ref_frames, self->rc.rc_ctrl_mode,
-          self->packed_headers)) {
+          self->packed_headers, NULL)) {
     GST_ERROR_OBJECT (self, "Failed to open the VA encoder.");
     return FALSE;
   }

@@ -2204,7 +2204,7 @@ gst_va_vp9_enc_reconfig (GstVaBaseEnc * base)
       && !gst_va_encoder_open (base->encoder, base->profile,
           GST_VIDEO_INFO_FORMAT (&base->in_info), base->rt_format,
           base->width, base->height, base->codedbuf_size, max_ref_frames,
-          self->rc.rc_ctrl_mode, self->packed_headers)) {
+          self->rc.rc_ctrl_mode, self->packed_headers, NULL)) {
     GST_ERROR_OBJECT (self, "Failed to open the VA encoder.");
     return FALSE;
   }

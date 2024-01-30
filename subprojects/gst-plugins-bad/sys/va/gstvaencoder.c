@@ -381,10 +381,10 @@ gboolean
 gst_va_encoder_open (GstVaEncoder * self, VAProfile profile,
     GstVideoFormat video_format, guint rt_format, gint coded_width,
     gint coded_height, gint codedbuf_size, guint max_reconstruct_surfaces,
-    guint rc_ctrl, guint32 packed_headers)
+    guint rc_ctrl, guint32 packed_headers, VAConfigAttrib * extra_attr)
 {
   /* *INDENT-OFF* */
-  VAConfigAttrib attribs[3] = {
+  VAConfigAttrib attribs[4] = {
     { .type = VAConfigAttribRTFormat, .value = rt_format, },
   };
   /* *INDENT-ON* */
@@ -417,6 +417,11 @@ gst_va_encoder_open (GstVaEncoder * self, VAProfile profile,
   if (packed_headers > 0) {
     attribs[attrib_idx].type = VAConfigAttribEncPackedHeaders;
     attribs[attrib_idx].value = packed_headers;
+    attrib_idx++;
+  }
+
+  if (extra_attr) {
+    attribs[attrib_idx] = *extra_attr;
     attrib_idx++;
   }
 
