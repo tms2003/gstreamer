@@ -116,6 +116,7 @@ This config accepts the following fields:
     field, in ns. This can be useful when testing live pipelines where
     configuring and setting up elements can take some time slowing down
     the first buffers until the pipeline reaches its cruising speed.
+
 **GST_VALIDATE_OVERRIDE.**
 
 Set this variable to a colon-separated list of dynamically linkable
@@ -167,6 +168,11 @@ Levels being:
 
 Setting the reporting level allows to control the way issues are
 reported when calling [gst_validate_runner_printf()](gst_validate_runner_printf).
+
+**GST_VALIDATE_TEST_INCLUDE_PATH**.
+
+List of directories to look into to include files with the `include,path=XXX` action in
+`.validatest` files.
 
 **GST_VALIDATE_LAUNCHER_DEBUG.**
 
