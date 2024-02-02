@@ -262,7 +262,7 @@ class GESSimpleTimelineTest(GESTest):
         return clip
 
     def assertElementAreEqual(self, ref, element):
-        self.assertTrue(isinstance(element, type(ref)), "%s and %s do not have the same type!" % (ref, element))
+        self.assertIsInstance(element, type(ref), "%s and %s do not have the same type!" % (ref, element))
 
         props = [p for p in ref.list_properties() if p.name not in ['name']
             and not GObject.type_is_a(p.value_type, GObject.Object)]
@@ -276,8 +276,11 @@ class GESSimpleTimelineTest(GESTest):
             value.init(p.value_type)
             value.set_value(element.get_property(pname))
 
-            self.assertTrue(Gst.value_compare(refval, value) == Gst.VALUE_EQUAL,
-                "%s are not equal: %s != %s\n    %s != %s" % (pname, value, refval, element, ref))
+            self.assertEqual(
+                Gst.value_compare(refval, value),
+                Gst.VALUE_EQUAL,
+                "%s are not equal: %s != %s\n    %s != %s" % (pname, value, refval, element, ref)
+            )
 
         if isinstance(ref, GES.TrackElement):
             self.assertElementAreEqual(ref.get_nleobject(), element.get_nleobject())
