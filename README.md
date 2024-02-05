@@ -126,7 +126,7 @@ also flip the default and disable all plugins except those explicitly enabled
 like so:
 
 ```
-meson -Dauto_features=disabled -Dgstreamer:tools=enabled -Dbad=enabled -Dgst-plugins-bad:openh264=enabled
+meson -Dauto_features=disabled -Dtools=enabled -Dbad=enabled -Dgst-plugins-bad:openh264=enabled builddir
 ```
 
 This will disable all optional features and then enable the `openh264` plugin
