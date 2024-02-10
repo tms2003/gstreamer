@@ -14432,7 +14432,8 @@ additional reference before calling.</doc>
         <source-position filename="../subprojects/gstreamer/gst/gstelement.h"/>
         <return-value transfer-ownership="none">
           <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstelement.c">%TRUE if the message was successfully posted. The function returns
-%FALSE if the element did not have a bus.
+%FALSE if the element did not have a bus or the element was not fully
+constructed yet.
 
 MT safe.</doc>
           <type name="gboolean" c:type="gboolean"/>
@@ -15877,7 +15878,8 @@ additional reference before calling.</doc>
         <source-position filename="../subprojects/gstreamer/gst/gstelement.h"/>
         <return-value transfer-ownership="none">
           <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstelement.c">%TRUE if the message was successfully posted. The function returns
-%FALSE if the element did not have a bus.
+%FALSE if the element did not have a bus or the element was not fully
+constructed yet.
 
 MT safe.</doc>
           <type name="gboolean" c:type="gboolean"/>
@@ -17019,7 +17021,8 @@ MT safe.</doc>
           <source-position filename="../subprojects/gstreamer/gst/gstelement.h"/>
           <return-value transfer-ownership="none">
             <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstelement.c">%TRUE if the message was successfully posted. The function returns
-%FALSE if the element did not have a bus.
+%FALSE if the element did not have a bus or the element was not fully
+constructed yet.
 
 MT safe.</doc>
             <type name="gboolean" c:type="gboolean"/>
