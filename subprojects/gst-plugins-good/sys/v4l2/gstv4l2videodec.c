@@ -398,6 +398,7 @@ gst_v4l2_video_dec_negotiate (GstVideoDecoder * decoder)
   GstV4l2VideoDec *self = GST_V4L2_VIDEO_DEC (decoder);
   GstV4l2Error error = GST_V4L2_ERROR_INIT;
   GstVideoInfo info;
+  GstVideoInfoDmaDrm info_drm;
   GstVideoCodecState *output_state;
   GstCaps *acquired_caps, *fixation_caps, *available_caps, *caps, *filter;
   GstStructure *st;
@@ -430,10 +431,11 @@ gst_v4l2_video_dec_negotiate (GstVideoDecoder * decoder)
   info.fps_d = self->v4l2output->info.fps_d;
 
   gst_caps_replace (&self->probed_srccaps, NULL);
-  self->probed_srccaps = gst_v4l2_object_probe_caps (self->v4l2capture,
+  self->probed_srccaps = gst_v4l2_object_probe_caps_dmabuf (self->v4l2capture,
       gst_v4l2_object_get_raw_caps ());
   /* Create caps from the acquired format, remove the format field */
-  acquired_caps = gst_video_info_to_caps (&info);
+  gst_video_info_dma_drm_from_video_info (&info_drm, &info, 0x0);
+  acquired_caps = gst_video_info_dma_drm_to_caps (&info_drm);
   GST_DEBUG_OBJECT (self, "Acquired caps: %" GST_PTR_FORMAT, acquired_caps);
   fixation_caps = gst_caps_copy (acquired_caps);
   st = gst_caps_get_structure (fixation_caps, 0);
@@ -480,8 +482,6 @@ gst_v4l2_video_dec_negotiate (GstVideoDecoder * decoder)
     gst_v4l2_clear_error (&error);
 
 use_acquired_caps:
-  gst_caps_unref (acquired_caps);
-  gst_caps_unref (caps);
 
   /* catch possible bogus driver that don't enumerate the format it actually
    * returned from G_FMT */
@@ -490,6 +490,10 @@ use_acquired_caps:
 
   output_state = gst_video_decoder_set_output_state (decoder,
       info.finfo->format, info.width, info.height, self->input_state);
+
+  output_state->caps = acquired_caps;
+  //gst_caps_unref (acquired_caps);
+  gst_caps_unref (caps);
 
   /* Copy the rest of the information, there might be more in the future */
   output_state->info.interlace_mode = info.interlace_mode;
