@@ -14,6 +14,7 @@ endif
 virtme_run = find_program('virtme-run.sh')
 
 supported_decoders = {
+  'av1': [],
   'vp8': [],
   'vp9': [],
   'h.264': [
