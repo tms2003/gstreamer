@@ -88,6 +88,7 @@ rtp_sources = [
   'gstrtptheorapay.c',
   'gstrtpvorbisdepay.c',
   'gstrtpvorbispay.c',
+  'gstrtpvp8parse.c',
   'gstrtpvp8depay.c',
   'gstrtpvp8pay.c',
   'gstrtpvp9depay.c',

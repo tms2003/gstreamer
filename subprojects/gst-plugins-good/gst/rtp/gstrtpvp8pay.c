@@ -27,12 +27,10 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <gst/base/gstbitreader.h>
 #include <gst/rtp/gstrtppayloads.h>
 #include <gst/rtp/gstrtpbuffer.h>
 #include <gst/video/video.h>
 #include "gstrtpelements.h"
-#include "dboolhuff.h"
 #include "gstrtpvp8pay.h"
 #include "gstrtputils.h"
 
@@ -272,179 +270,7 @@ static gboolean
 gst_rtp_vp8_pay_parse_frame (GstRtpVP8Pay * self, GstBuffer * buffer,
     gsize buffer_size)
 {
-  GstMapInfo map = GST_MAP_INFO_INIT;
-  GstBitReader reader;
-  guint8 *data;
-  gsize size;
-  int i;
-  gboolean keyframe;
-  guint32 partition0_size;
-  guint8 version;
-  guint8 tmp8 = 0;
-  guint8 partitions;
-  guint offset;
-  BOOL_DECODER bc;
-  guint8 *pdata;
-
-  if (G_UNLIKELY (buffer_size < 3))
-    goto error;
-
-  if (!gst_buffer_map (buffer, &map, GST_MAP_READ) || !map.data)
-    goto error;
-
-  data = map.data;
-  size = map.size;
-
-  gst_bit_reader_init (&reader, data, size);
-
-  self->is_keyframe = keyframe = ((data[0] & 0x1) == 0);
-  version = (data[0] >> 1) & 0x7;
-
-  if (G_UNLIKELY (version > 3)) {
-    GST_ERROR_OBJECT (self, "Unknown VP8 version %u", version);
-    goto error;
-  }
-
-  /* keyframe, version and show_frame use 5 bits */
-  partition0_size = data[2] << 11 | data[1] << 3 | (data[0] >> 5);
-
-  /* Include the uncompressed data blob in the first partition */
-  offset = keyframe ? 10 : 3;
-  partition0_size += offset;
-
-  if (!gst_bit_reader_skip (&reader, 24))
-    goto error;
-
-  if (keyframe) {
-    /* check start tag: 0x9d 0x01 0x2a */
-    if (!gst_bit_reader_get_bits_uint8 (&reader, &tmp8, 8) || tmp8 != 0x9d)
-      goto error;
-
-    if (!gst_bit_reader_get_bits_uint8 (&reader, &tmp8, 8) || tmp8 != 0x01)
-      goto error;
-
-    if (!gst_bit_reader_get_bits_uint8 (&reader, &tmp8, 8) || tmp8 != 0x2a)
-      goto error;
-
-    /* Skip horizontal size code (16 bits) vertical size code (16 bits) */
-    if (!gst_bit_reader_skip (&reader, 32))
-      goto error;
-  }
-
-  offset = keyframe ? 10 : 3;
-  vp8dx_start_decode (&bc, data + offset, size - offset);
-
-  if (keyframe) {
-    /* color space (1 bit) and clamping type (1 bit) */
-    vp8dx_decode_bool (&bc, 0x80);
-    vp8dx_decode_bool (&bc, 0x80);
-  }
-
-  /* segmentation_enabled */
-  if (vp8dx_decode_bool (&bc, 0x80)) {
-    guint8 update_mb_segmentation_map = vp8dx_decode_bool (&bc, 0x80);
-    guint8 update_segment_feature_data = vp8dx_decode_bool (&bc, 0x80);
-
-    if (update_segment_feature_data) {
-      /* skip segment feature mode */
-      vp8dx_decode_bool (&bc, 0x80);
-
-      /* quantizer update */
-      for (i = 0; i < 4; i++) {
-        /* skip flagged quantizer value (7 bits) and sign (1 bit) */
-        if (vp8dx_decode_bool (&bc, 0x80))
-          vp8_decode_value (&bc, 8);
-      }
-
-      /* loop filter update */
-      for (i = 0; i < 4; i++) {
-        /* skip flagged lf update value (6 bits) and sign (1 bit) */
-        if (vp8dx_decode_bool (&bc, 0x80))
-          vp8_decode_value (&bc, 7);
-      }
-    }
-
-    if (update_mb_segmentation_map) {
-      /* segment prob update */
-      for (i = 0; i < 3; i++) {
-        /* skip flagged segment prob */
-        if (vp8dx_decode_bool (&bc, 0x80))
-          vp8_decode_value (&bc, 8);
-      }
-    }
-  }
-
-  /* skip filter type (1 bit), loop filter level (6 bits) and
-   * sharpness level (3 bits) */
-  vp8_decode_value (&bc, 1);
-  vp8_decode_value (&bc, 6);
-  vp8_decode_value (&bc, 3);
-
-  /* loop_filter_adj_enabled */
-  if (vp8dx_decode_bool (&bc, 0x80)) {
-
-    /* delta update */
-    if (vp8dx_decode_bool (&bc, 0x80)) {
-
-      for (i = 0; i < 8; i++) {
-        /* 8 updates, 1 bit indicate whether there is one and if follow by a
-         * 7 bit update */
-        if (vp8dx_decode_bool (&bc, 0x80))
-          vp8_decode_value (&bc, 7);
-      }
-    }
-  }
-
-  if (vp8dx_bool_error (&bc))
-    goto error;
-
-  tmp8 = vp8_decode_value (&bc, 2);
-
-  partitions = 1 << tmp8;
-
-  /* Check if things are still sensible */
-  if (partition0_size + (partitions - 1) * 3 >= size)
-    goto error;
-
-  /* partition data is right after the mode partition */
-  pdata = data + partition0_size;
-
-  /* Set up mapping */
-  self->n_partitions = partitions + 1;
-  self->partition_offset[0] = 0;
-  self->partition_size[0] = partition0_size + (partitions - 1) * 3;
-
-  self->partition_offset[1] = self->partition_size[0];
-  for (i = 1; i < partitions; i++) {
-    guint psize = (pdata[2] << 16 | pdata[1] << 8 | pdata[0]);
-
-    pdata += 3;
-    self->partition_size[i] = psize;
-    self->partition_offset[i + 1] = self->partition_offset[i] + psize;
-  }
-
-  /* Check that our partition offsets and sizes don't go outsize the buffer
-   * size. */
-  if (self->partition_offset[i] >= size)
-    goto error;
-
-  self->partition_size[i] = size - self->partition_offset[i];
-
-  self->partition_offset[i + 1] = size;
-
-  gst_buffer_unmap (buffer, &map);
-
-  if (keyframe)
-    GST_DEBUG_OBJECT (self, "Parsed keyframe");
-
-  return TRUE;
-
-error:
-  GST_DEBUG ("Failed to parse frame");
-  if (map.memory != NULL) {
-    gst_buffer_unmap (buffer, &map);
-  }
-  return FALSE;
+  return gst_rtp_vp8_parse_header(buffer, buffer_size, &self->parsed_header);
 }
 
 static guint
@@ -452,8 +278,8 @@ gst_rtp_vp8_offset_to_partition (GstRtpVP8Pay * self, guint offset)
 {
   int i;
 
-  for (i = 1; i < self->n_partitions; i++) {
-    if (offset < self->partition_offset[i])
+  for (i = 1; i < self->parsed_header.n_partitions; i++) {
+    if (offset < self->parsed_header.partition_offset[i])
       return i - 1;
   }
 
@@ -635,8 +461,8 @@ gst_rtp_vp8_payload_next (GstRtpVP8Pay * self, GstBufferList * list,
     start = (offset == 0);
   } else {
     partition = gst_rtp_vp8_offset_to_partition (self, offset);
-    g_assert (partition < self->n_partitions);
-    start = (offset == self->partition_offset[partition]);
+    g_assert (partition < self->parsed_header.n_partitions);
+    start = (offset == self->parsed_header.partition_offset[partition]);
   }
 
   mark = (remaining == available);
