@@ -59,11 +59,6 @@ else
   pushd linux
 fi
 
-# Apply visl patches until they are upstreamed
-for patch in ../ci/docker/fedora/patches/*.patch; do
-	patch -p1 < "${patch}"
-done
-
 make defconfig
 sync
 make kvm_guest.config
