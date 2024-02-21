@@ -100,6 +100,7 @@
 
 static gboolean tsmux_write_pat (TsMux * mux);
 static gboolean tsmux_write_pmt (TsMux * mux, TsMuxProgram * program);
+static gboolean tsmux_write_tdt (TsMux * mux);
 static gboolean tsmux_write_scte_null (TsMux * mux, TsMuxProgram * program);
 static gint64 get_next_pcr (TsMux * mux, gint64 cur_ts);
 static gint64 get_current_pcr (TsMux * mux, gint64 cur_ts);
@@ -156,6 +157,9 @@ tsmux_new (void)
 
   mux->si_sections = g_hash_table_new_full (g_direct_hash, g_direct_equal,
       NULL, (GDestroyNotify) tsmux_section_free);
+
+  mux->tdt_interval = TSMUX_DEFAULT_TDT_INTERVAL;
+  mux->next_tdt_pcr = -1;
 
   mux->new_stream_func = tsmux_new_stream_default;
   mux->new_stream_data = NULL;
@@ -367,6 +371,37 @@ tsmux_add_mpegts_si_section (TsMux * mux, GstMpegtsSection * section)
   return TRUE;
 }
 
+/**
+ * tsmux_set_tdt_interval:
+ * @mux: a #TsMux
+ * @freq: a new TDT table interval
+ *
+ * Set the interval (in cycles of the 90kHz clock) for writing out the TDT tables. 0=do not write
+ *
+ */
+void
+tsmux_set_tdt_interval (TsMux * mux, guint freq)
+{
+  g_return_if_fail (mux != NULL);
+
+  mux->tdt_interval = freq;
+}
+
+/**
+ * tsmux_get_tdt_interval:
+ * @mux: a #TsMux
+ *
+ * Get the configured TDT table interval. See also tsmux_set_tdt_interval().
+ *
+ * Returns: the configured TDT interval
+ */
+guint
+tsmux_get_tdt_interval (TsMux * mux)
+{
+  g_return_val_if_fail (mux != NULL, 0);
+
+  return mux->tdt_interval;
+}
 
 /**
  * tsmux_free:
@@ -1391,6 +1426,7 @@ rewrite_si (TsMux * mux, gint64 cur_ts)
 {
   gboolean write_pat;
   gboolean write_si;
+  gboolean write_tdt;
   GList *cur;
   gint64 next_pcr;
 
@@ -1486,6 +1522,24 @@ rewrite_si (TsMux * mux, gint64 cur_ts)
     }
 
     program->wrote_si = TRUE;
+  }
+
+  /* check if we need to rewrite tdt */
+  if (mux->tdt_interval == 0)
+    write_tdt = FALSE;
+  else
+    write_tdt = mux->next_tdt_pcr == -1 || next_pcr > mux->next_tdt_pcr;
+
+  if (write_tdt) {
+    if (mux->next_tdt_pcr == -1)
+      mux->next_tdt_pcr = next_pcr + mux->tdt_interval * 300;
+    else
+      mux->next_tdt_pcr += mux->tdt_interval * 300;
+
+    if (!tsmux_write_tdt (mux))
+      return FALSE;
+
+    next_pcr = get_current_pcr (mux, cur_ts);
   }
 
   return TRUE;
@@ -1901,6 +1955,13 @@ tsmux_write_scte_null (TsMux * mux, TsMuxProgram * program)
   /* SCTE-35 NULL section is created when PID is set */
   GST_LOG ("Writing SCTE NULL packet");
   return tsmux_section_write_packet (mux, program->scte35_null_section);
+}
+
+static gboolean
+tsmux_write_tdt (TsMux * mux)
+{
+  return tsmux_send_section (mux,
+      gst_mpegts_section_from_tdt (gst_date_time_new_now_utc ()));
 }
 
 void

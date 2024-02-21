@@ -348,6 +348,9 @@ GstMpegtsSDT *gst_mpegts_sdt_new (void);
 GST_MPEGTS_API
 GstMpegtsSDTService *gst_mpegts_sdt_service_new (void);
 
+GST_MPEGTS_API 
+GstMpegtsSection *gst_mpegts_section_from_tdt (GstDateTime *date_time);
+
 /* EIT */
 
 #define GST_TYPE_MPEGTS_EIT (gst_mpegts_eit_get_type())

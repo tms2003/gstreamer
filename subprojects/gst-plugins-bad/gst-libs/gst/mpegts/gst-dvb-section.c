@@ -38,6 +38,8 @@
 #include "mpegts.h"
 #include "gstmpegts-private.h"
 
+#define BCD_8(num) (((num / 10) << 4) + (num % 10))
+
 /**
  * SECTION:gst-dvb-section
  * @title: DVB variants of MPEG-TS sections
@@ -149,6 +151,36 @@ _parse_utc_time (guint8 * data)
   }
 
   return NULL;
+}
+
+static inline void
+_packetize_utc_time (guint8 * data, const GstDateTime * dt)
+{
+  // 16 bits giving the 16 LSBs of MJD followed by 24 bits coded as 6 digits in 4-bit BCD
+  // MJD calculation:
+  // 1) if M = 1 or M = 2, then L = 1; else L = 0
+  // 2) MJD = 14 956 + D + int [ (Y - L) × 365.25] + int [ (M + 1 + L × 12) × 30.6001
+  // where Y is year from 1900
+  // EXAMPLE:93/10/13 12:45:00 is coded as "0xC079124500"
+
+  int y = gst_date_time_get_year (dt) - 1900;
+  int m = gst_date_time_get_month (dt);
+  int d = gst_date_time_get_day (dt);
+  int h = gst_date_time_get_hour (dt);
+  int min = gst_date_time_get_minute (dt);
+  int s = gst_date_time_get_second (dt);
+  int l = m < 3 ? 1 : 0;
+
+  guint32 mjd =
+      14956 + d + (guint32) ((y - l) * 365.25) + (guint32) ((m + 1 +
+          l * 12) * 30.6001);
+
+  GST_WRITE_UINT16_BE (data, (guint16) mjd);
+  data += 2;
+
+  *(data++) = BCD_8 (h);
+  *(data++) = BCD_8 (min);
+  *(data++) = BCD_8 (s);
 }
 
 /* Event Information Table */
@@ -1181,6 +1213,53 @@ gst_mpegts_section_get_tdt (GstMpegtsSection * section)
   return NULL;
 }
 
+static gboolean
+_packetize_tdt (GstMpegtsSection * section)
+{
+  gsize length;
+  GstDateTime *date_time;
+
+  // this refs date_time
+  date_time = gst_mpegts_section_get_tdt (section);
+
+  if (date_time == NULL)
+    return FALSE;
+
+  /* 3 byte header
+     5 byte time */
+  length = 8;
+  _packetize_common_section (section, length);
+  _packetize_utc_time (section->data + 3, date_time);
+  gst_date_time_unref (date_time);
+
+  return TRUE;
+}
+
+/**
+* gst_mpegts_section_from_tdt:
+* @date_time: (transfer full): a #GstDateTime to create the #GstMpegtsSection from
+*
+* Ownership of @date_time is taken. The data in @date_time is managed by the #GstMpegtsSection
+*
+* Returns: (transfer full): the #GstMpegtsSection
+*/
+GstMpegtsSection *
+gst_mpegts_section_from_tdt (GstDateTime * date_time)
+{
+  GstMpegtsSection *section;
+
+  g_return_val_if_fail (date_time != NULL, NULL);
+
+  section = _gst_mpegts_section_init (0x14, GST_MTS_TABLE_ID_TIME_DATE);
+
+  section->short_section = TRUE;
+  section->subtable_extension = 0;
+  section->cached_parsed = (gpointer) date_time;
+  section->packetizer = _packetize_tdt;
+  section->destroy_parsed = (GDestroyNotify) gst_date_time_unref;
+
+  return section;
+}
 
 /* Time Offset Table (TOT) */
 static GstMpegtsTOT *

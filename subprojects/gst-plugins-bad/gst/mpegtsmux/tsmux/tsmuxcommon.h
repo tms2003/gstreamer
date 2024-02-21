@@ -107,6 +107,8 @@ G_BEGIN_DECLS
 #define TSMUX_DEFAULT_SI_INTERVAL  (TSMUX_CLOCK_FREQ / 10)
 /* PCR interval (1/25th sec) */
 #define TSMUX_DEFAULT_PCR_INTERVAL  (TSMUX_CLOCK_FREQ / 25)
+/* TDT interval (by default never send TDT) */
+#define TSMUX_DEFAULT_TDT_INTERVAL 0
 /* SCTE-35 NULL Interval (5mins) */
 #define TSMUX_DEFAULT_SCTE_35_NULL_INTERVAL (TSMUX_CLOCK_FREQ * 300)
 /* Bitrate (bits per second) */

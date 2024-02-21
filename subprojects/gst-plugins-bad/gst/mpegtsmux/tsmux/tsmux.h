@@ -171,6 +171,11 @@ struct TsMux {
   /* Next SIT position, 27 MHz */
   gint64   next_si_pcr;
 
+  /* interval between TDT in MPEG PTS clock time */
+  guint    tdt_interval;
+  /* Next TDT position, 27 MHz */
+  gint64   next_tdt_pcr;
+
   /* callback to write finished packet */
   TsMuxWriteFunc write_func;
   void *write_func_data;
@@ -222,6 +227,10 @@ void            tsmux_set_si_interval           (TsMux *mux, guint interval);
 guint           tsmux_get_si_interval           (TsMux *mux);
 void            tsmux_resend_si                 (TsMux *mux);
 gboolean        tsmux_add_mpegts_si_section     (TsMux * mux, GstMpegtsSection * section);
+
+/* TDT interval management */
+void            tsmux_set_tdt_interval          (TsMux *mux, guint interval);
+guint           tsmux_get_tdt_interval          (TsMux *mux);
 
 /* One-time sections */
 gboolean        tsmux_send_section              (TsMux *mux, GstMpegtsSection *section);
