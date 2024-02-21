@@ -1,0 +1,116 @@
+.debian-container:
+  variables:
+    FDO_DISTRIBUTION_VERSION: bookworm-slim
+
+.incorporate-templates-commit:
+  variables:
+    FDO_DISTRIBUTION_TAG: "${GSTREAMER_IMAGE_TAG}--${GSTREAMER_TEMPLATES_COMMIT}"
+
+.set-image:
+  extends:
+    - .incorporate-templates-commit
+  variables:
+    GSTREAMER_IMAGE: "$CI_REGISTRY_IMAGE/${GSTREAMER_IMAGE_PATH}:${FDO_DISTRIBUTION_TAG}"
+  image: "$GSTREAMER_IMAGE"
+
+.container:
+  stage: preparation
+  extends:
+    - .incorporate-templates-commit
+  variables:
+    FDO_REPO_SUFFIX: $CI_JOB_NAME
+    FDO_DISTRIBUTION_EXEC: 'bash ci/container/${CI_JOB_NAME}.sh'
+    # no need to pull the whole repo to build the container image
+    GIT_STRATEGY: none
+
+.setup-s3:
+  before_script:
+    - >
+      export SCRIPTS_DIR=$(mktemp -d) &&
+      curl -L -s --retry 4 -f --retry-all-errors --retry-delay 60 -O --output-dir "${SCRIPTS_DIR}" "${CI_PROJECT_URL}/-/raw/${CI_COMMIT_SHA}/ci/setup-test-env.sh" &&
+      . ${SCRIPTS_DIR}/setup-test-env.sh &&
+      echo -n "${CI_JOB_JWT}" > "${CI_JOB_JWT_FILE}" &&
+      unset CI_JOB_JWT  # Unsetting vulnerable env variables
+
+  after_script:
+    # Work around https://gitlab.com/gitlab-org/gitlab/-/issues/20338
+    - find -name '*.log' -exec mv {} {}.txt \;
+
+    - >
+      set +x
+
+      test -e "${CI_JOB_JWT_FILE}" &&
+      export CI_JOB_JWT="$(<${CI_JOB_JWT_FILE})" &&
+      rm "${CI_JOB_JWT_FILE}"
+
+# Debian based x86_64 build image
+debian/x86_64_build:
+  extends:
+    - .fdo.container-build@debian
+    - .container
+    - .debian-container
+  variables:
+    GSTREAMER_IMAGE_TAG: &debian-x86_64_build "${DEBIAN_BASE_TAG}--${PKG_REPO_REV}"
+
+.use-debian/x86_64_build:
+  extends:
+    - .set-image
+  variables:
+    GSTREAMER_IMAGE_PATH: "debian/x86_64_build"
+    GSTREAMER_IMAGE_TAG: *debian-x86_64_build
+    GSTREAMER_ARTIFACTS_TAG: *debian-x86_64_build
+  needs:
+    - debian/x86_64_build
+
+# Debian based ARM build image
+debian/arm64_build:
+  extends:
+    - .fdo.container-build@debian
+    - .container
+    - .debian-container
+  tags:
+    - aarch64
+  variables:
+    GSTREAMER_IMAGE_TAG: &debian-arm64_build "${DEBIAN_BASE_TAG}--${PKG_REPO_REV}"
+
+.use-debian/arm64_build:
+  extends:
+    - .set-image
+  variables:
+    GSTREAMER_IMAGE_PATH: "debian/arm64_build"
+    GSTREAMER_IMAGE_TAG: *debian-arm64_build
+    GSTREAMER_ARTIFACTS_TAG: *debian-arm64_build
+  needs:
+    - debian/arm64_build
+
+.kernel+rootfs:
+  extends:
+    - .debian-container
+  stage: preparation
+  variables:
+    GIT_STRATEGY: fetch
+    GSTREAMER_ROOTFS_TAG: &kernel-rootfs ${KERNEL_ROOTFS_TAG}
+    DISTRIBUTION_TAG: &distribution-tag-arm "${GSTREAMER_ROOTFS_TAG}--${KERNEL_TAG}--${GSTREAMER_ARTIFACTS_TAG}--${GSTREAMER_TEMPLATES_COMMIT}"
+  timeout: 2h30m # Be on the safe side for now
+  script:
+    - ci/container/lava_build.sh
+
+#TODO: Fix s3cp to fdo server, currently getting 403
+kernel+rootfs_arm64:
+  extends:
+    - .use-debian/arm64_build
+    - .kernel+rootfs
+    - .setup-s3
+  tags:
+    - aarch64
+  variables:
+    DEBIAN_ARCH: "arm64"
+  artifacts:
+    paths:
+      - lava-rootfs.tar.zst # TODO: Upload to an S3 server
+      - kernel/*
+
+.use-kernel+rootfs-arm:
+  variables:
+    DISTRIBUTION_TAG: *distribution-tag-arm
+    GSTREAMER_ROOTFS_TAG: *kernel-rootfs

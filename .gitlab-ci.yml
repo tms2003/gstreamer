@@ -12,6 +12,7 @@ include:
   # the appropriate version string in this file which will cause a rebuild.
   ###
   - local: '.gitlab-image-tags.yml'
+  - local: 'ci/container/gitlab-ci.yml'
 
 stages:
   - 'preparation'
@@ -64,6 +65,35 @@ variables:
     ${DEFAULT_MESON_ARGS}
     -Dsharp=enabled
     -Ddoc=disabled
+
+  GSTREAMER_TEMPLATES_COMMIT: &ci-templates-commit d5aa3941aa03c2f716595116354fb81eb8012acb
+  _CI_PRE_CLONE_SCRIPT: |-
+          set -o xtrace
+          wget -q -O download-git-cache.sh ${CI_PROJECT_URL}/-/raw/${CI_COMMIT_SHA}/.gitlab-ci/download-git-cache.sh
+          bash download-git-cache.sh
+          rm download-git-cache.sh
+          set +o xtrace
+  CI_JOB_JWT_FILE: /minio_jwt
+  S3_HOST: s3.freedesktop.org
+  # per-pipeline artifact storage on MinIO
+  PIPELINE_ARTIFACTS_BASE: ${S3_HOST}/artifacts/${CI_PROJECT_PATH}/${CI_PIPELINE_ID}
+  # per-job artifact storage on MinIO
+  JOB_ARTIFACTS_BASE: ${PIPELINE_ARTIFACTS_BASE}/${CI_JOB_ID}
+  ARTIFACTS_BASE_URL: https://${CI_PROJECT_ROOT_NAMESPACE}.${CI_PAGES_DOMAIN}/-/${CI_PROJECT_NAME}/-/jobs/${CI_JOB_ID}/artifacts
+  # Python scripts for structured logger
+  PYTHONPATH: "$PYTHONPATH:$CI_PROJECT_DIR/install"
+  BASE_SYSTEM_HOST_PREFIX: "${S3_HOST}/gst-rootfs"
+  BASE_SYSTEM_MAINLINE_HOST_PATH: "${BASE_SYSTEM_HOST_PREFIX}/${FDO_UPSTREAM_REPO}/${DISTRIBUTION_TAG}/${DEBIAN_ARCH}"
+  BASE_SYSTEM_FORK_HOST_PATH: "${BASE_SYSTEM_HOST_PREFIX}/${CI_PROJECT_PATH}/${DISTRIBUTION_TAG}/${DEBIAN_ARCH}"
+  # per-job build artifacts
+  JOB_ROOTFS_OVERLAY_PATH: "${JOB_ARTIFACTS_BASE}/job-rootfs-overlay.tar.gz"
+  JOB_RESULTS_PATH: "${JOB_ARTIFACTS_BASE}/results.tar.zst"
+  S3_ARTIFACT_NAME: "gstreamer-${ARCH}-default-release"
+  S3_RESULTS_UPLOAD: "${JOB_ARTIFACTS_BASE}"
+  VISIBILITY_GROUP: "Collabora+fdo"
+  # Kernel builds
+  KERNEL_IMAGE_BASE_MAINLINE: "https://${BASE_SYSTEM_HOST_PREFIX}/${FDO_UPSTREAM_REPO}/kernel/${KERNEL_TAG}/${KERNEL_REV}"
+  KERNEL_IMAGE_BASE_FORK: "https://${BASE_SYSTEM_HOST_PREFIX}/${CI_PROJECT_PATH}/kernel/${KERNEL_TAG}/${KERNEL_REV}"
 
 workflow:
   # https://docs.gitlab.com/ee/ci/yaml/index.html#switch-between-branch-pipelines-and-merge-request-pipelines
