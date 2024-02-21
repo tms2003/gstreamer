@@ -151,9 +151,14 @@ gst_proxy_src_set_property (GObject * object, guint prop_id,
         }
         g_weak_ref_set (&self->proxysink, NULL);
       } else {
+        GstPad *sinkpad;
         /* Set proxysrc property on the new proxysink to point to us */
         gst_proxy_sink_set_proxysrc (sink, self);
         g_weak_ref_set (&self->proxysink, sink);
+        /* tell sink to stop flushing, allow it to reconnect to new source */
+        sinkpad = gst_element_get_static_pad (self->queue, "sink");
+        gst_pad_send_event (sinkpad, gst_event_new_flush_stop (TRUE));
+        g_object_unref (sinkpad);
         g_object_unref (sink);
       }
       break;

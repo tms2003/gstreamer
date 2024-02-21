@@ -385,4 +385,11 @@ gst_proxy_sink_set_proxysrc (GstProxySink * self, GstProxySrc * src)
 {
   g_return_if_fail (self);
   g_weak_ref_set (&self->proxysrc, src);
+
+  if (src) {
+    GstPad *srcpad = gst_proxy_src_get_internal_srcpad (src);
+    gst_pad_send_event (srcpad, gst_event_new_flush_stop (TRUE));
+    gst_object_unref (srcpad);
+    self->pending_sticky_events = TRUE;
+  }
 }
