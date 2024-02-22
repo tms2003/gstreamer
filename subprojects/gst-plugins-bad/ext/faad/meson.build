@@ -10,15 +10,9 @@ endif
 
 faad_args = [ ]
 
-have_faad = cc.has_header_symbol('neaacdec.h', 'NeAACDecOpen')
-have_faad_2_7 = have_faad and cc.has_header_symbol('neaacdec.h', 'LATM')
-if have_faad and not have_faad_2_7 and faad_opt.enabled()
-  message('Found faad2, but too old (< v2.7.0)')
-endif
+faad_dep = dependency('faad2', version : '>= 2.9.2', required: faad_opt)
 
-faad_dep = cc.find_library('faad', required : faad_opt)
-
-if faad_dep.found() and have_faad_2_7
+if faad_dep.found()
   gstfaad = library('gstfaad',
     'gstfaad.c',
     c_args : gst_plugins_bad_args + [ '-DFAAD2_MINOR_VERSION=7', '-DFAAD_IS_NEAAC' ],
