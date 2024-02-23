@@ -169,7 +169,7 @@ struct GstBaseTsMux {
   gboolean first;
   GstClockTime pending_key_unit_ts;
   GstEvent *force_key_unit_event;
-  GstMpegtsSection *pending_scte35_section;
+  GList *pending_scte35_sections;
 
   /* write callback handling/state */
   GstFlowReturn last_flow_ret;
