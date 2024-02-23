@@ -72,6 +72,13 @@ struct _GstWaylandSink
 
   gchar *drm_device;
   gboolean skip_dumb_buffer_copy;
+
+  gboolean last_rendered;
+  GThread *callback_thread;
+  GMutex callback_lock;
+  GCond callback_cond;
+  gboolean redraw_cb;
+  gboolean wait_cb;
 };
 
 struct _GstWaylandSinkClass

@@ -68,6 +68,8 @@ static gboolean gst_gtk_wayland_sink_propose_allocation (GstBaseSink * bsink,
     GstQuery * query);
 static GstFlowReturn gst_gtk_wayland_sink_show_frame (GstVideoSink * bsink,
     GstBuffer * buffer);
+static void
+render_last_buffer (GstGtkWaylandSink * self, gboolean redraw);
 static void gst_gtk_wayland_sink_set_rotate_method (GstGtkWaylandSink * self,
     GstVideoOrientationMethod method, gboolean from_tag);
 
@@ -118,6 +120,13 @@ typedef struct _GstGtkWaylandSinkPrivate
 
   gchar *drm_device;
   gboolean skip_dumb_buffer_copy;
+
+  gboolean last_rendered;
+  GThread *callback_thread;
+  GMutex callback_lock;
+  GCond callback_cond;
+  gboolean redraw_cb;
+  gboolean wait_cb;
 } GstGtkWaylandSinkPrivate;
 
 #define gst_gtk_wayland_sink_parent_class parent_class
@@ -193,14 +202,56 @@ gst_gtk_wayland_sink_class_init (GstGtkWaylandSinkClass * klass)
       GST_DEBUG_FUNCPTR (gst_gtk_wayland_sink_show_frame);
 }
 
+static gpointer
+gst_gtk_wayland_sink_cb_thread (gpointer data)
+{
+  GstGtkWaylandSink *self = user_data;
+  GstGtkWaylandSinkPrivate *priv =
+      gst_gtk_wayland_sink_get_instance_private (self);
+  GST_DEBUG_OBJECT (self, "callback thread started");
+
+  while (priv->wait_cb) {
+    g_mutex_lock (&priv->callback_lock);
+
+    while (!priv->redraw_cb)
+      g_cond_wait (&priv->callback_cond, &priv->callback_lock);
+
+    priv->redraw_cb = FALSE;
+    /* lock to implement frame redraw callback */
+    {
+      g_mutex_lock (&priv->render_lock);
+      priv->redraw_pending = FALSE;
+
+      if (priv->callback) {
+        wl_callback_destroy (priv->callback);
+        priv->callback = NULL;
+      }
+
+      if (!priv->last_rendered)
+        render_last_buffer (self, FALSE);
+      g_mutex_unlock (&priv->render_lock);
+    }
+    g_mutex_unlock (&priv->callback_lock);
+  }
+
+  GST_DEBUG_OBJECT (self, "callback thread exited");
+}
+
 static void
 gst_gtk_wayland_sink_init (GstGtkWaylandSink * self)
 {
   GstGtkWaylandSinkPrivate *priv =
       gst_gtk_wayland_sink_get_instance_private (self);
 
+  priv->redraw_cb = FALSE;
+  priv->wait_cb = TRUE;
   g_mutex_init (&priv->display_lock);
   g_mutex_init (&priv->render_lock);
+  g_mutex_init (&priv->callback_lock);
+  g_cond_init (&priv->callback_cond);
+
+  priv->callback_thread = g_thread_new ("gtkwaylandsink-callback",
+      (GThreadFunc) gst_gtk_wayland_sink_cb_thread, self);
 }
 
 static void
@@ -1084,14 +1135,10 @@ frame_redraw_callback (void *data, struct wl_callback *callback, uint32_t time)
 
   GST_LOG_OBJECT (self, "frame_redraw_cb");
 
-  g_mutex_lock (&priv->render_lock);
-  priv->redraw_pending = FALSE;
-
-  if (priv->callback) {
-    wl_callback_destroy (callback);
-    priv->callback = NULL;
-  }
-  g_mutex_unlock (&priv->render_lock);
+  g_mutex_lock (&priv->callback_lock);
+  priv->redraw_cb = TRUE;
+  g_cond_signal (&priv->callback_cond);
+  g_mutex_unlock (&priv->callback_lock);
 }
 
 static const struct wl_callback_listener frame_callback_listener = {
@@ -1109,6 +1156,11 @@ render_last_buffer (GstGtkWaylandSink * self, gboolean redraw)
   struct wl_surface *surface;
   struct wl_callback *callback;
 
+  if (!priv->last_buffer) {
+    GST_ERROR_OBJECT (self, "No buffer to render");
+    return;
+  }
+
   if (!priv->wl_window)
     return;
 
@@ -1125,6 +1177,7 @@ render_last_buffer (GstGtkWaylandSink * self, gboolean redraw)
     priv->video_info_changed = FALSE;
   }
   gst_wl_window_render (priv->wl_window, wlbuffer, info);
+  priv->last_rendered = TRUE;
 }
 
 static GstFlowReturn
@@ -1147,14 +1200,6 @@ gst_gtk_wayland_sink_show_frame (GstVideoSink * vsink, GstBuffer * buffer)
   if (!priv->wl_window) {
     GST_LOG_OBJECT (self,
         "buffer %" GST_PTR_FORMAT " dropped (waiting for window)", buffer);
-    ret = GST_BASE_SINK_FLOW_DROPPED;
-    goto done;
-  }
-
-  /* drop buffers until we get a frame callback */
-  if (priv->redraw_pending) {
-    GST_LOG_OBJECT (self, "buffer %" GST_PTR_FORMAT " dropped (redraw pending)",
-        buffer);
     ret = GST_BASE_SINK_FLOW_DROPPED;
     goto done;
   }
@@ -1318,8 +1363,17 @@ render:
     goto done;
   }
 
+  if (!priv->last_rendered && priv->last_buffer) {
+    GST_WARNING_OBJECT (self,
+        "buffer %" GST_PTR_FORMAT " PTS %" GST_TIME_FORMAT " dropped (redraw pending)",
+        priv->last_buffer, GST_TIME_ARGS (GST_BUFFER_PTS (priv->last_buffer)));
+    ret = GST_BASE_SINK_FLOW_DROPPED;
+  }
+
   gst_buffer_replace (&priv->last_buffer, to_render);
-  render_last_buffer (self, FALSE);
+  priv->last_rendered = FALSE;
+  if (!priv->redraw_pending)
+    render_last_buffer (self, FALSE);
 
   if (buffer != to_render)
     gst_buffer_unref (to_render);
