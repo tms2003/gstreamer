@@ -260,8 +260,11 @@ GstMpegtsSCTESIT *gst_mpegts_scte_splice_in_new (guint32 event_id,
 GST_MPEGTS_API
 GstMpegtsSCTESIT *gst_mpegts_scte_splice_out_new (guint32 event_id,
 						  GstClockTime splice_time,
-						  GstClockTime duration);
-
+						  GstClockTime duration,
+						  gboolean auto_return,
+						  guint16 program_id,
+						  guint8 avail_num,
+						  guint8 avails_expected);
 
 GST_MPEGTS_API
 GType gst_mpegts_scte_splice_event_get_type (void);
