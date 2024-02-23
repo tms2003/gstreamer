@@ -1357,12 +1357,15 @@ gst_d3d11_base_convert_propose_allocation (GstBaseTransform * trans,
     dxgi_format = d3d11_format.dxgi_format;
   }
 
-  device_handle = gst_d3d11_device_get_device_handle (filter->device);
-  hr = device_handle->CheckFormatSupport (dxgi_format, &supported);
-  if (gst_d3d11_result (hr, filter->device) &&
+  {
+    GstD3D11DeviceLockGuard lk (filter->device);
+    device_handle = gst_d3d11_device_get_device_handle (filter->device);
+    hr = device_handle->CheckFormatSupport (dxgi_format, &supported);
+    if (gst_d3d11_result (hr, filter->device) &&
       (supported & D3D11_FORMAT_SUPPORT_RENDER_TARGET) ==
       D3D11_FORMAT_SUPPORT_RENDER_TARGET) {
-    bind_flags |= D3D11_BIND_RENDER_TARGET;
+      bind_flags |= D3D11_BIND_RENDER_TARGET;
+    }
   }
 
   n_pools = gst_query_get_n_allocation_pools (query);
@@ -1475,11 +1478,14 @@ gst_d3d11_base_convert_decide_allocation (GstBaseTransform * trans,
     dxgi_format = d3d11_format.dxgi_format;
   }
 
-  device_handle = gst_d3d11_device_get_device_handle (filter->device);
-  hr = device_handle->CheckFormatSupport (dxgi_format, &supported);
-  if (!gst_d3d11_result (hr, filter->device)) {
-    GST_ERROR_OBJECT (self, "CheckFormatSupport failed");
-    return FALSE;
+  {
+    GstD3D11DeviceLockGuard lk (filter->device);
+    device_handle = gst_d3d11_device_get_device_handle (filter->device);
+    hr = device_handle->CheckFormatSupport (dxgi_format, &supported);
+    if (!gst_d3d11_result (hr, filter->device)) {
+      GST_ERROR_OBJECT (self, "CheckFormatSupport failed");
+      return FALSE;
+    }
   }
 
   if ((supported & D3D11_FORMAT_SUPPORT_RENDER_TARGET) != 0) {
