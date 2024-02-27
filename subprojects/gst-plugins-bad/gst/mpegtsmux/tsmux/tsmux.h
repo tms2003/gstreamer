@@ -188,6 +188,8 @@ struct TsMux {
   guint8 pid_packet_counts[8192];
 
   gint64 first_pcr_ts;
+
+  guint pcr_offset;
 };
 
 /* create/free new muxer session */
@@ -238,6 +240,11 @@ void    tsmux_set_pcr_interval (TsMux * mux, guint freq);
 
 /* writing stuff */
 gboolean 	tsmux_write_stream_packet 	(TsMux *mux, TsMuxStream *stream);
+
+/* SET PCR offset in millis - that's how many ms PCR sits behind PTS.
+ * Default is 250ms.
+ **/
+void    tsmux_set_pcr_offset (TsMux * mux, guint offset);
 
 G_END_DECLS
 
