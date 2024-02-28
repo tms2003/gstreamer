@@ -6,6 +6,14 @@ Value type: #gdouble
 
 See #audiotestsrc:freq
 
+#### `mix-matrix`
+
+Transformation matrix for input/output channels.
+
+Value type: #GstValueArray
+
+See #audioconvert:mix-matrix
+
 #### `mute`
 
 mute channel

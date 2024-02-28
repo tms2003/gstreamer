@@ -10,7 +10,15 @@ Color to use for text (big-endian ARGB).
 
 Value type: #guint
 
-See #GstBaseTextOverlay:color
+See #timeoverlay:color
+
+#### `draw-shadow`
+
+Whether to draw shadow
+
+Value type: #gboolean
+
+See #timeoverlay:draw-shadow
 
 #### `font-desc`
 
@@ -19,7 +27,7 @@ pango_font_description_from_string for syntax.
 
 Value type: #gchararray
 
-See #GstBaseTextOverlay:font-desc
+See #timeoverlay:font-desc
 
 #### `foreground-color`
 
@@ -40,7 +48,7 @@ Valid values:
   - **position** (4) – Absolute position clamped to canvas
   - **absolute** (5) – Absolute position
 
-See #GstBaseTextOverlay:halignment
+See #timeoverlay:halignment
 
 #### `height`
 
@@ -48,13 +56,22 @@ height of the source
 
 Value type: #gint
 
+#### `operator`
+
+Blending operator to use for blending this pad over the previous ones
+
+Valid values:
+  - **Source** (0) – source
+  - **Over** (1) – over
+  - **Add** (2) – add
+
 #### `outline-color`
 
 Color to use for outline the text (big-endian ARGB).
 
 Value type: #guint
 
-See #GstBaseTextOverlay:outline-color
+See #timeoverlay:outline-color
 
 #### `pattern`
 
@@ -86,6 +103,7 @@ Valid values:
   - **Spokes** (22) – spokes
   - **Gradient** (23) – gradient
   - **Colors** (24) – colors
+  - **SMPTE test pattern, RP 219 conformant** (25) – smpte-rp-219
 
 See #videotestsrc:pattern
 
@@ -107,7 +125,7 @@ Whether to shade the background under the text area
 
 Value type: #gboolean
 
-See #GstBaseTextOverlay:shaded-background
+See #timeoverlay:shaded-background
 
 #### `text`
 
@@ -115,7 +133,7 @@ Text to be display.
 
 Value type: #gchararray
 
-See #GstBaseTextOverlay:text
+See #timeoverlay:text
 
 #### `text-height`
 
@@ -123,7 +141,7 @@ Resulting height of font rendering
 
 Value type: #guint
 
-See #GstBaseTextOverlay:text-height
+See #timeoverlay:text-height
 
 #### `text-width`
 
@@ -131,7 +149,7 @@ Resulting width of font rendering
 
 Value type: #guint
 
-See #GstBaseTextOverlay:text-width
+See #timeoverlay:text-width
 
 #### `text-x`
 
@@ -139,15 +157,15 @@ Resulting X position of font rendering.
 
 Value type: #gint
 
-See #GstBaseTextOverlay:text-x
+See #timeoverlay:text-x
 
 #### `text-y`
 
-Resulting X position of font rendering.
+Resulting Y position of font rendering.
 
 Value type: #gint
 
-See #GstBaseTextOverlay:text-y
+See #timeoverlay:text-y
 
 #### `valignment`
 
@@ -161,7 +179,7 @@ Valid values:
   - **center** (4) – center
   - **absolute** (5) – Absolute position
 
-See #GstBaseTextOverlay:valignment
+See #timeoverlay:valignment
 
 #### `video-direction`
 
@@ -179,7 +197,7 @@ Valid values:
   - **GST_VIDEO_ORIENTATION_AUTO** (8) – auto
   - **GST_VIDEO_ORIENTATION_CUSTOM** (9) – custom
 
-See #GstVideoDirection:video-direction
+See #videoflip:video-direction
 
 #### `width`
 
@@ -193,7 +211,7 @@ Horizontal position when using absolute alignment
 
 Value type: #gdouble
 
-See #GstBaseTextOverlay:x-absolute
+See #timeoverlay:x-absolute
 
 #### `xpos`
 
@@ -201,7 +219,7 @@ Horizontal position when using clamped position alignment
 
 Value type: #gdouble
 
-See #GstBaseTextOverlay:xpos
+See #timeoverlay:xpos
 
 #### `y-absolute`
 
@@ -209,7 +227,7 @@ Vertical position when using absolute alignment
 
 Value type: #gdouble
 
-See #GstBaseTextOverlay:y-absolute
+See #timeoverlay:y-absolute
 
 #### `ypos`
 
@@ -217,5 +235,13 @@ Vertical position when using clamped position alignment
 
 Value type: #gdouble
 
-See #GstBaseTextOverlay:ypos
+See #timeoverlay:ypos
+
+#### `zorder`
+
+z order of the stream.
+**WARNING**: Setting it manually overrides the #GESLayer:priority and should be
+used very carefully
+
+Value type: #guint
 
