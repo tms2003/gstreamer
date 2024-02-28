@@ -769,6 +769,8 @@ gst_base_ts_mux_create_or_update_stream (GstBaseTsMux * mux,
     ts_pad->prepare_func = gst_base_ts_mux_prepare_jpeg2000;
     ts_pad->prepare_data = private_data;
     ts_pad->free_func = gst_base_ts_mux_free_jpeg2000;
+  } else if (strcmp (mt, "application/x-arib-subtitles") == 0) {
+    st = TSMUX_ST_PS_ARIB;
   } else {
     GstBaseTsMuxClass *klass = GST_BASE_TS_MUX_GET_CLASS (mux);
 
