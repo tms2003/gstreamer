@@ -1245,9 +1245,9 @@ gst_x264_enc_class_init (GstX264EncClass * klass)
   gst_type_mark_as_plugin_api (GST_X264_ENC_TUNE_TYPE, 0);
 }
 
-/* *INDENT-OFF* */
+/* clang-format off */
 G_GNUC_PRINTF (3, 0)
-/* *INDENT-ON* */
+/* clang-format on */
 
 static void
 gst_x264_enc_log_callback (gpointer private, gint level, const char *format,

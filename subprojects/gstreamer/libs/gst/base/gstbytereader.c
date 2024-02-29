@@ -681,7 +681,7 @@ gst_byte_reader_peek_##name (const GstByteReader * reader, type * val) \
   return _gst_byte_reader_peek_##name##_inline (reader, val); \
 }
 
-/* *INDENT-OFF* */
+/* clang-format off */
 
 GST_BYTE_READER_PEEK_GET(8,guint8,uint8)
 GST_BYTE_READER_PEEK_GET(8,gint8,int8)
@@ -799,7 +799,7 @@ GST_BYTE_READER_PEEK_GET(32,gfloat,float32_be)
 GST_BYTE_READER_PEEK_GET(64,gdouble,float64_le)
 GST_BYTE_READER_PEEK_GET(64,gdouble,float64_be)
 
-/* *INDENT-ON* */
+/* clang-format on */
 
 /**
  * gst_byte_reader_get_data:

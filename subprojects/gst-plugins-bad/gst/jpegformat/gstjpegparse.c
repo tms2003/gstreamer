@@ -260,7 +260,7 @@ valid_state (guint state, guint ref_state)
 }
 
 /* https://zpl.fi/chroma-subsampling-and-jpeg-sampling-factors/ */
-/* *INDENT-OFF* */
+/* clang-format off */
 static const struct
 {
   gint h[3];
@@ -282,7 +282,7 @@ static const struct
   {{4, 1, 1}, {1, 1, 1}, GST_JPEG_SAMPLING_YBR411},
   {{4, 1, 1}, {2, 1, 1}, GST_JPEG_SAMPLING_YBR410},
 };
-/* *INDENT-ON* */
+/* clang-format on */
 
 static guint16
 yuv_sampling (GstJpegFrameHdr * frame_hdr)
@@ -546,7 +546,7 @@ gst_jpeg_parse_app0 (GstJpegParse * parse, GstJpegSegment * seg)
   return TRUE;
 }
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static const struct
 {
   const gchar *suffix;
@@ -555,7 +555,7 @@ static const struct
   {"Exif", gst_tag_list_from_exif_buffer_with_tiff_header},
   {"http://ns.adobe.com/xap/1.0/", gst_tag_list_from_xmp_buffer},
 };
-/* *INDENT-ON* */
+/* clang-format on */
 
 static gboolean
 gst_jpeg_parse_app1 (GstJpegParse * parse, GstJpegSegment * seg)

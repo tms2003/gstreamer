@@ -139,7 +139,7 @@ enum
 /* 8 should enough for a normal encoder */
 #define SRC_POOL_SIZE_DEFAULT            8
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static const gchar *doc_sink_caps_str =
     GST_VIDEO_CAPS_MAKE (
         "{ NV12, YV12, I420, P010_10LE, YUY2, UYVY, BGRA, BGRx, RGB16, VUYA, "
@@ -163,7 +163,7 @@ static const gchar *doc_src_caps_str =
         "{ NV12, VUYA, P010_10LE }") " ;"
     GST_VIDEO_CAPS_MAKE_WITH_FEATURES ("memory:D3D11Memory",
         "{ NV12, VUYA, P010_10LE }");
-/* *INDENT-ON* */
+/* clang-format on */
 
 static GstElementClass *parent_class = NULL;
 

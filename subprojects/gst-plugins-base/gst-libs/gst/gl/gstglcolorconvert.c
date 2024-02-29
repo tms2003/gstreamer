@@ -65,7 +65,7 @@ static GstBuffer *_gst_gl_color_convert_perform_unlocked (GstGLColorConvert *
 static gboolean _do_convert_draw (GstGLContext * context,
     GstGLColorConvert * convert);
 
-/* *INDENT-OFF* */
+/* clang-format off */
 
 typedef struct
 {
@@ -578,7 +578,7 @@ static const GLfloat vertices[] = {
 
 static const GLushort indices[] = { 0, 1, 2, 0, 2, 3 };
 
-/* *INDENT-ON* */
+/* clang-format on */
 
 struct ConvertInfo
 {

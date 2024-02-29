@@ -80,12 +80,12 @@ struct _GstVaAV1Dec
 
 static GstElementClass *parent_class = NULL;
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static const gchar *src_caps_str =
     GST_VIDEO_CAPS_MAKE_WITH_FEATURES (GST_CAPS_FEATURE_MEMORY_VA,
         "{ NV12, P010_10LE }") " ;"
     GST_VIDEO_CAPS_MAKE ("{ NV12, P010_10LE }");
-/* *INDENT-ON* */
+/* clang-format on */
 
 static const gchar *sink_caps_str = "video/x-av1";
 
@@ -414,12 +414,12 @@ gst_va_av1_dec_new_picture (GstAV1Decoder * decoder,
       if (GST_VIDEO_INFO_WIDTH (info) < base->width
           || GST_VIDEO_INFO_HEIGHT (info) < base->height) {
         base->need_valign = TRUE;
-        /* *INDENT-OFF* */
+        /* clang-format off */
         base->valign = (GstVideoAlignment) {
           .padding_bottom = base->height - GST_VIDEO_INFO_HEIGHT (info),
           .padding_right = base->width - GST_VIDEO_INFO_WIDTH (info),
         };
-        /* *INDENT-ON* */
+        /* clang-format on */
       }
 
       base->need_negotiation = TRUE;
@@ -691,7 +691,7 @@ gst_va_av1_dec_start_picture (GstAV1Decoder * decoder, GstAV1Picture * picture,
   va_pic = gst_av1_picture_get_user_data (picture);
   g_assert (va_pic);
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   pic_param = (VADecPictureParameterBufferAV1){
     .profile = seq_header->seq_profile,
     .order_hint_bits_minus_1 = seq_header->order_hint_bits_minus_1,
@@ -818,7 +818,7 @@ gst_va_av1_dec_start_picture (GstAV1Decoder * decoder, GstAV1Picture * picture,
       .lr_uv_shift = frame_header->loop_restoration_params.lr_uv_shift,
     },
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   if (seq_header->bit_depth == 8) {
     pic_param.bit_depth_idx = 0;

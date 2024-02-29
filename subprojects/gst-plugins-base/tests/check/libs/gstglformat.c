@@ -54,7 +54,7 @@ static const struct
   guint gl_type;
   guint n_bytes;
 } formats[] = {
-  /* *INDENT-OFF* */
+    /* clang-format off */
   {GST_GL_LUMINANCE, GL_UNSIGNED_BYTE, 1},
   {GST_GL_ALPHA, GL_UNSIGNED_BYTE, 1},
   {GST_GL_LUMINANCE_ALPHA, GL_UNSIGNED_BYTE, 2},
@@ -71,7 +71,7 @@ static const struct
   {GST_GL_RGBA16, GL_UNSIGNED_SHORT, 8},
 /*  {GST_GL_DEPTH_COMPONENT16, GL_UNSIGNED_BYTE, 2},
   {GST_GL_DEPTH24_STENCIL8, GL_UNSIGNED_BYTE, 4},*/
-  /* *INDENT-ON* */
+    /* clang-format on */
 };
 
 GST_START_TEST (test_format_n_bytes)
@@ -95,7 +95,7 @@ static const struct
   GstGLFormat unsized_format;
   guint gl_type;
 } sized_formats[] = {
-  /* *INDENT-OFF* */
+    /* clang-format off */
   {GST_GL_LUMINANCE, GST_GL_LUMINANCE, GL_UNSIGNED_BYTE},
   {GST_GL_ALPHA, GST_GL_ALPHA, GL_UNSIGNED_BYTE},
   {GST_GL_LUMINANCE_ALPHA, GST_GL_LUMINANCE_ALPHA, GL_UNSIGNED_BYTE},
@@ -115,7 +115,7 @@ static const struct
   {GST_GL_RGBA16, GST_GL_RGBA16, GL_UNSIGNED_SHORT},
 /*  {GST_GL_DEPTH_COMPONENT16, GST_GL_DEPTH_COMPONENT16, GL_UNSIGNED_BYTE},
   {GST_GL_DEPTH24_STENCIL8, GST_GL_DEPTH24_STENCIL8, GL_UNSIGNED_BYTE},*/
-  /* *INDENT-ON* */
+    /* clang-format on */
 };
 
 GST_START_TEST (test_sized_from_unsized)
@@ -141,7 +141,7 @@ static const struct
   guint gl_type;
   GstGLFormat format;
 } unsized_formats[] = {
-  /* *INDENT-OFF* */
+    /* clang-format off */
   {GST_GL_LUMINANCE, GL_UNSIGNED_BYTE, GST_GL_LUMINANCE},
   {GST_GL_ALPHA, GL_UNSIGNED_BYTE, GST_GL_ALPHA},
   {GST_GL_LUMINANCE_ALPHA, GL_UNSIGNED_BYTE, GST_GL_LUMINANCE_ALPHA},
@@ -158,7 +158,7 @@ static const struct
   {GST_GL_RGBA, GL_UNSIGNED_SHORT, GST_GL_RGBA16},
 /*  {GST_GL_DEPTH_COMPONENT16, GL_UNSIGNED_BYTE, GST_GL_DEPTH_COMPONENT16},
   {GST_GL_DEPTH24_STENCIL8, GL_UNSIGNED_BYTE, GST_GL_DEPTH24_STENCIL8},*/
-  /* *INDENT-ON* */
+    /* clang-format on */
 };
 
 GST_START_TEST (test_unsized_from_sized)

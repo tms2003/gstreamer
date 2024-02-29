@@ -140,9 +140,9 @@ static void play_set_relative_volume (GstPlay * play, gdouble volume_step);
 static gboolean play_do_seek (GstPlay * play, gint64 pos, gdouble rate,
     GstPlayTrickMode mode);
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static void gst_play_printf (const gchar * format, ...) G_GNUC_PRINTF (1, 2);
-/* *INDENT-ON* */
+/* clang-format on */
 
 static void keyboard_cb (const gchar * key_input, gpointer user_data);
 static void relative_seek (GstPlay * play, gdouble percent);
@@ -1401,7 +1401,7 @@ play_cycle_track_selection (GstPlay * play, GstPlayTrackType track_type,
 static void
 print_keyboard_help (void)
 {
-  /* *INDENT-OFF* */
+  /* clang-format off */
   static struct
   {
     const gchar *key_desc;
@@ -1426,7 +1426,7 @@ print_keyboard_help (void)
     "S/s", N_("change to previous/next subtitle track")}, {
     "0", N_("seek to beginning")}, {
   "k", N_("show keyboard shortcuts")},};
-  /* *INDENT-ON* */
+  /* clang-format on */
   guint i, chars_to_pad, desc_len, max_desc_len = 0;
 
   gst_print ("\n\n%s\n\n", _("Interactive mode - keyboard controls:"));

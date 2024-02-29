@@ -165,7 +165,7 @@ deserialize_framenode (const gchar ** names, const gchar ** values)
 
   GstValidateMediaFrameNode *framenode = g_new0 (GstValidateMediaFrameNode, 1);
 
-/* *INDENT-OFF* */
+  /* clang-format off */
 #define IF_SET_UINT64_FIELD(name,fieldname) \
     if (g_strcmp0 (names[i], name) == 0) { \
       if (g_strcmp0 (values[i], "unknown") == 0)  \
@@ -193,7 +193,7 @@ deserialize_framenode (const gchar ** names, const gchar ** values)
         framenode->is_keyframe = FALSE;
     }
   }
-/* *INDENT-ON* */
+  /* clang-format on */
 
   framenode->buf = gst_buffer_new_wrapped (framenode->checksum,
       strlen (framenode->checksum) + 1);

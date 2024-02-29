@@ -191,13 +191,13 @@ download_and_check_output_buffer (GstVulkanDecoder * dec, VkFormat vk_format,
       VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, NULL);
 
   barriers = gst_vulkan_operation_retrieve_image_barriers (exec);
-  /* *INDENT-OFF* */
+  /* clang-format off */
   vkCmdPipelineBarrier2 (exec->cmd_buf->cmd, &(VkDependencyInfo) {
       .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
       .pImageMemoryBarriers = (gpointer) barriers->data,
       .imageMemoryBarrierCount = barriers->len,
     });
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   n_planes = GST_VIDEO_INFO_N_PLANES (&info);
   n_mems = gst_buffer_n_memory (pic->out);
@@ -224,7 +224,7 @@ download_and_check_output_buffer (GstVulkanDecoder * dec, VkFormat vk_format,
     else
       plane_aspect = aspects[i];
 
-    /* *INDENT-OFF* */
+    /* clang-format off */
     region = (VkBufferImageCopy) {
       .bufferOffset = 0,
       .bufferRowLength = GST_VIDEO_INFO_COMP_WIDTH (&info, i),
@@ -243,7 +243,7 @@ download_and_check_output_buffer (GstVulkanDecoder * dec, VkFormat vk_format,
         .depth = 1,
       }
     };
-    /* *INDENT-ON* */
+    /* clang-format on */
 
     vkCmdCopyImageToBuffer (exec->cmd_buf->cmd, img_mem->image,
         g_array_index (barriers, VkImageMemoryBarrier2, 0).newLayout,
@@ -399,7 +399,7 @@ GST_START_TEST (test_h264_decoder)
   GstVulkanDecoder *dec;
   GError *err = NULL;
   VkVideoFormatPropertiesKHR format_prop;
-  /* *INDENT-OFF* */
+  /* clang-format off */
   GstVulkanVideoProfile profile = {
     .profile = {
       .sType = VK_STRUCTURE_TYPE_VIDEO_PROFILE_INFO_KHR,
@@ -427,7 +427,7 @@ GST_START_TEST (test_h264_decoder)
     .maxStdPPSCount = h264_params.stdPPSCount,
     .pParametersAddInfo = &h264_params,
     } };
-  /* *INDENT-ON* */
+  /* clang-format on */
   GstVulkanVideoCapabilities video_caps;
   GstVulkanDecoderPicture pic = { NULL, };
 
@@ -517,7 +517,7 @@ GST_START_TEST (test_h264_decoder)
       .pSliceOffsets = (guint32 *) pic.slice_offs->data,
     };
 
-    /* *INDENT-OFF* */
+    /* clang-format off */
     pic.pic_res = (VkVideoPictureResourceInfoKHR) {
       .sType = VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR,
       .codedOffset = (VkOffset2D) {0, 0},
@@ -547,7 +547,7 @@ GST_START_TEST (test_h264_decoder)
       .referenceSlotCount = 0,
       .pReferenceSlots = pic.slots,
     };
-    /* *INDENT-ON* */
+    /* clang-format on */
 
     fail_unless (gst_vulkan_decoder_decode (dec, &pic, &err));
   }
@@ -660,7 +660,7 @@ GST_START_TEST (test_h265_decoder)
   GstVulkanDecoder *dec;
   GError *err = NULL;
   VkVideoFormatPropertiesKHR format_prop;
-  /* *INDENT-OFF* */
+  /* clang-format off */
   GstVulkanVideoProfile profile = {
     .profile = {
       .sType = VK_STRUCTURE_TYPE_VIDEO_PROFILE_INFO_KHR,
@@ -690,7 +690,7 @@ GST_START_TEST (test_h265_decoder)
       .pParametersAddInfo = &h265_params,
     }
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
   GstVulkanVideoCapabilities video_caps;
   GstVulkanDecoderPicture pic = { NULL, };
 
@@ -774,7 +774,7 @@ GST_START_TEST (test_h265_decoder)
       .pSliceSegmentOffsets = (guint32 *) pic.slice_offs->data,
     };
 
-    /* *INDENT-OFF* */
+    /* clang-format off */
     pic.pic_res = (VkVideoPictureResourceInfoKHR) {
       .sType = VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR,
       .codedOffset = (VkOffset2D) {0, 0},
@@ -804,7 +804,7 @@ GST_START_TEST (test_h265_decoder)
       .referenceSlotCount = 0,
       .pReferenceSlots = pic.slots,
     };
-    /* *INDENT-ON* */
+    /* clang-format on */
 
     fail_unless (gst_vulkan_decoder_decode (dec, &pic, &err));
   }

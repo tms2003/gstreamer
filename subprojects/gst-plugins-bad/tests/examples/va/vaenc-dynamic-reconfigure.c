@@ -183,7 +183,7 @@ resolution_change_probe (GstPad * pad, GstPadProbeInfo * info,
 static void
 print_keyboard_help (void)
 {
-  /* *INDENT-OFF* */
+  /* clang-format off */
   static struct
   {
     const gchar *key_desc;
@@ -210,7 +210,7 @@ print_keyboard_help (void)
     "b", "Decrease QP-B (only in CQP)"}, {
     "k", "show keyboard shortcuts"}
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   guint i, chars_to_pad, desc_len, max_desc_len = 0;
 
@@ -438,7 +438,7 @@ main (gint argc, gchar ** argv)
   gulong deep_notify_id = 0;
   guint idx;
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   const GOptionEntry options[] = {
     {"codec", 'c', 0, G_OPTION_ARG_STRING, &codec,
         "Codec to test: [ *h264, h265 ]"},
@@ -453,7 +453,7 @@ main (gint argc, gchar ** argv)
     { "h264", "vah264enc", "h264parse", "vah264dec" },
     { "h265", "vah265enc", "h265parse", "vah265dec" },
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
 #define MAKE_ELEMENT_AND_ADD(elem, name) G_STMT_START { \
   GstElement *_elem = gst_element_factory_make (name, NULL); \

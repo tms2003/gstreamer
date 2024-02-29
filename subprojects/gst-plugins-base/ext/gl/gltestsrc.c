@@ -81,7 +81,7 @@ static const struct vts_color_struct vts_colors[] = {
   {19. / 256.0f, 19. / 256.0f, 19. / 256.0},
 };
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static const GLfloat positions[] = {
      -1.0,  1.0,  0.0, 1.0,
       1.0,  1.0,  0.0, 1.0,
@@ -90,7 +90,7 @@ static const GLfloat positions[] = {
 };
 
 static const GLushort indices_quad[] = { 0, 1, 2, 0, 2, 3 };
-/* *INDENT-ON* */
+/* clang-format on */
 
 struct attribute
 {
@@ -254,7 +254,7 @@ _src_shader_deinit (gpointer impl)
   src->vbo_indices = 0;
 }
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static const gchar *smpte_vertex_src =
     "attribute vec4 position;\n"
     "attribute vec4 a_color;\n"
@@ -292,7 +292,7 @@ static const gchar *snow_fragment_src =
     "{\n"
     "  gl_FragColor = vec4(rand(time * out_uv));\n"
     "}";
-/* *INDENT-ON* */
+/* clang-format on */
 
 #define N_QUADS 21
 struct SrcSMPTE
@@ -679,7 +679,7 @@ static const struct SrcFuncs src_blink = {
   _src_uni_color_free,
 };
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static const gchar *checkers_vertex_src = "attribute vec4 position;\n"
     "varying vec2 uv;\n"
     "void main()\n"
@@ -703,7 +703,7 @@ static const gchar *checkers_fragment_src =
     "  gl_FragColor.g = 1.0 - gl_FragColor.r;\n"
     "  gl_FragColor.ba = vec2(0.0, 1.0);\n"
     "}";
-/* *INDENT-ON* */
+/* clang-format on */
 
 struct SrcCheckers
 {
@@ -910,7 +910,7 @@ static const struct SrcFuncs src_snow = {
   _src_snow_free,
 };
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static const gchar *mandelbrot_vertex_src = "attribute vec4 position;\n"
     "uniform float aspect_ratio;\n"
     "varying vec2 fractal_position;\n"
@@ -951,7 +951,7 @@ static const gchar *mandelbrot_fragment_src =
     "void main() {\n"
     "  gl_FragColor = iterate_pixel(fractal_position);\n"
     "}";
-/* *INDENT-ON* */
+/* clang-format on */
 
 static gboolean
 _src_mandelbrot_init (gpointer impl, GstGLContext * context,
@@ -1055,7 +1055,7 @@ static const struct SrcFuncs src_mandelbrot = {
   _src_mandelbrot_free,
 };
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static const gchar *circular_vertex_src =
     "attribute vec4 position;\n"
     "varying vec2 uv;\n"
@@ -1079,7 +1079,7 @@ static const gchar *circular_fragment_src =
     "    gl_FragColor = vec4 (vec3(sin (d * PI) * 0.5 + 0.5), 1.0);\n"
     "  }\n"
     "}";
-/* *INDENT-ON* */
+/* clang-format on */
 
 static gboolean
 _src_circular_init (gpointer impl, GstGLContext * context,

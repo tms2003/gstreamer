@@ -855,7 +855,7 @@ typedef struct
 GST_START_TEST (test_h265_nal_type_classification)
 {
   gint i;
-  /* *INDENT-OFF* */
+  /* clang-format off */
   H265NalTypeTestVector test_vector[] = {
     /*         NAL-TYPE             IDR    IRAP   BLA    CRA    RADL   RASL */
     {GST_H265_NAL_SLICE_TRAIL_N,    FALSE, FALSE, FALSE, FALSE, FALSE, FALSE},
@@ -879,7 +879,7 @@ GST_START_TEST (test_h265_nal_type_classification)
     {(GstH265NalUnitType) 22,       FALSE, TRUE,  FALSE, FALSE, FALSE, FALSE},
     {(GstH265NalUnitType) 23,       FALSE, TRUE,  FALSE, FALSE, FALSE, FALSE},
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   for (i = 0; i < G_N_ELEMENTS (test_vector); i++) {
     assert_equals_int (GST_H265_IS_NAL_TYPE_IDR (test_vector[i].type),
@@ -1091,7 +1091,7 @@ GST_START_TEST (test_h265_create_sei)
     GstH265SEIMessage parsed_message;
     SEICheckFunc check_func;
   } test_list[] = {
-    /* *INDENT-OFF* */
+      /* clang-format off */
     {h265_sei_user_data_registered, G_N_ELEMENTS (h265_sei_user_data_registered),
         GST_H265_SEI_REGISTERED_USER_DATA, {0,},
         (SEICheckFunc) check_sei_user_data_registered},
@@ -1107,7 +1107,7 @@ GST_START_TEST (test_h265_create_sei)
     {h265_sei_cll, G_N_ELEMENTS (h265_sei_cll),
         GST_H265_SEI_CONTENT_LIGHT_LEVEL, {0,},
         (SEICheckFunc) check_sei_cll},
-    /* *INDENT-ON* */
+      /* clang-format on */
   };
 
   parser = gst_h265_parser_new ();

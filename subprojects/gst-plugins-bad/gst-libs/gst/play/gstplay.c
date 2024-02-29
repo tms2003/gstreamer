@@ -315,13 +315,13 @@ gst_play_init (GstPlay * self)
   self->loop = g_main_loop_new (self->context, FALSE);
   self->api_bus = gst_bus_new ();
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   self->config = gst_structure_new_id (QUARK_CONFIG,
       CONFIG_QUARK (POSITION_INTERVAL_UPDATE), G_TYPE_UINT, DEFAULT_POSITION_UPDATE_INTERVAL_MS,
       CONFIG_QUARK (ACCURATE_SEEK), G_TYPE_BOOLEAN, FALSE,
       CONFIG_QUARK (PIPELINE_DUMP_IN_ERROR_DETAILS), G_TYPE_BOOLEAN, FALSE,
       NULL);
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   self->seek_pending = FALSE;
   self->seek_position = GST_CLOCK_TIME_NONE;

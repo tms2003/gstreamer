@@ -613,7 +613,7 @@ gst_latency_tracer_class_init (GstLatencyTracerClass * klass)
       g_quark_from_static_string ("drop_sub_latency.quark");
 
   /* announce trace formats */
-  /* *INDENT-OFF* */
+  /* clang-format off */
   tr_latency = gst_tracer_record_new ("latency.class",
       "src-element-id", GST_TYPE_STRUCTURE, gst_structure_new ("scope",
           "type", G_TYPE_GTYPE, G_TYPE_STRING,
@@ -726,7 +726,7 @@ gst_latency_tracer_class_init (GstLatencyTracerClass * klass)
           "max", G_TYPE_UINT64, G_MAXUINT64,
           NULL),
       NULL);
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   GST_OBJECT_FLAG_SET (tr_latency, GST_OBJECT_FLAG_MAY_BE_LEAKED);
   GST_OBJECT_FLAG_SET (tr_element_latency, GST_OBJECT_FLAG_MAY_BE_LEAKED);

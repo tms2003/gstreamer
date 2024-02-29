@@ -972,10 +972,10 @@ op_set_color_balance_unlocked (GstVaapiFilter * filter,
    * which will store all the color balance operators.
    */
   if (!enabled_data) {
-    /* *INDENT-OFF* */
+    /* clang-format off */
     if (value == OP_DATA_DEFAULT_VALUE (float, op_data))
       return TRUE;
-    /* *INDENT-ON* */
+    /* clang-format on */
 
     if (!op_ensure_n_elements_buffer (filter, op_data, COLOR_BALANCE_NUM))
       return FALSE;

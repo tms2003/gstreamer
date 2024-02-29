@@ -140,7 +140,7 @@ static DWORD default_ch_masks[] = {
   KSAUDIO_SPEAKER_7POINT1,
 };
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static struct
 {
   guint64 wasapi_pos;
@@ -168,7 +168,7 @@ static struct
   {SPEAKER_TOP_BACK_CENTER, GST_AUDIO_CHANNEL_POSITION_TOP_REAR_CENTER},
   {SPEAKER_TOP_BACK_RIGHT, GST_AUDIO_CHANNEL_POSITION_TOP_REAR_RIGHT}
 };
-/* *INDENT-ON* */
+/* clang-format on */
 
 static int windows_major_version = 0;
 

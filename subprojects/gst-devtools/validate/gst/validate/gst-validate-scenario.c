@@ -7598,7 +7598,7 @@ register_action_types (void)
       g_resource_lookup_data (resource, "/validate/doc/meta-expected-issues.md",
       G_RESOURCE_LOOKUP_FLAGS_NONE, NULL);
 
-  /*  *INDENT-OFF* */
+  /*  clang-format off */
   REGISTER_ACTION_TYPE ("meta", NULL,
       ((GstValidateActionParameter [])  {
       {
@@ -8779,7 +8779,7 @@ register_action_types (void)
       _execute_check_action_type_calls, NULL, NULL, 0);
     REGISTER_ACTION_TYPE("priv_check-subaction-level",
       _execute_check_subaction_level, NULL, NULL, 0);
-    /*  *INDENT-ON* */
+    /*  clang-format on */
 }
 
 void

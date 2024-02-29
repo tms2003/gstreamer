@@ -66,7 +66,7 @@ GST_DEBUG_CATEGORY_STATIC (gst_debug_vaapidecode);
 /* Default templates */
 #define GST_CAPS_CODEC(CODEC) CODEC "; "
 
-/* *INDENT-OFF* */
+/* clang-format off */
 char *gst_vaapidecode_sink_caps_str = NULL;
 
 static const char gst_vaapidecode_src_caps_str[] =
@@ -82,7 +82,7 @@ static GstStaticPadTemplate gst_vaapidecode_src_factory =
         GST_PAD_SRC,
         GST_PAD_ALWAYS,
         GST_STATIC_CAPS(gst_vaapidecode_src_caps_str));
-/* *INDENT-ON* */
+/* clang-format on */
 
 typedef struct _GstVaapiDecoderMap GstVaapiDecoderMap;
 struct _GstVaapiDecoderMap

@@ -111,7 +111,7 @@ static void gst_gl_view_convert_finalize (GObject * object);
 static void _do_view_convert (GstGLContext * context,
     GstGLViewConvert * viewconvert);
 
-/* *INDENT-OFF* */
+/* clang-format off */
 /* These match the order and number of DOWNMIX_ANAGLYPH_* modes */
 static GLfloat downmix_matrices[][2][9] = {
   {                             /* Green-Magenta Dubois */
@@ -135,11 +135,11 @@ static gfloat identity_matrix[] = {
   0.0f, 0.0f, 1.0f, 0.0f,
   0.0f, 0.0f, 0.0f, 1.0f,
 };
-/* *INDENT-ON* */
+/* clang-format on */
 
 #define glsl_OES_extension_string "#extension GL_OES_EGL_image_external : require \n"
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static const gchar *fragment_header =
   "uniform sampler2D tex_l;\n"
   "uniform sampler2D tex_r;\n"
@@ -211,7 +211,7 @@ static const gchar *frag_output_checkerboard =
 static const gchar *frag_output_separated =
   "gl_FragData[0] = l;\n"
   "gl_FragData[1] = r;\n";
-/* *INDENT-ON* */
+/* clang-format on */
 
 static const GLfloat vertices[] = {
   1.0f, -1.0f, 0.0f, 1.0f, 0.0f,

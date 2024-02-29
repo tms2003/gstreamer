@@ -63,7 +63,7 @@ dump_languages (void)
   g_print ("#define ISO_639_FLAG_2T  (1 << 0)\n");
   g_print ("#define ISO_639_FLAG_2B  (1 << 1)\n");
   g_print ("\n");
-  g_print ("/* *INDENT-OFF* */\n");
+  g_print ("/* clang-format off */\n");
   g_print ("\n");
   g_print ("static const struct\n");
   g_print ("{\n");
@@ -130,7 +130,7 @@ dump_languages (void)
   }
   g_print (";\n");
   g_print ("\n");
-  g_print ("/* *INDENT-ON* */\n");
+  g_print ("/* clang-format on */\n");
 
   g_string_free (names, TRUE);
 }

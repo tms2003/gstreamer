@@ -19,7 +19,7 @@
  * TODO
  */
 
-/* *INDENT-OFF* */
+/* clang-format off */
 GST_DEBUG_CATEGORY_STATIC (gst_cpu_throttling_clock_debug);
 #define GST_CAT_DEFAULT gst_cpu_throttling_clock_debug
 
@@ -47,7 +47,7 @@ enum
 };
 
 static GParamSpec *param_specs[PROP_LAST] = { NULL, };
-/* *INDENT-ON* */
+/* clang-format on */
 
 static void
 gst_cpu_throttling_clock_get_property (GObject * object,

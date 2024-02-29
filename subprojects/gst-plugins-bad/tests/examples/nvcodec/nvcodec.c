@@ -48,7 +48,7 @@ typedef struct
 static void
 print_keyboard_help (void)
 {
-  /* *INDENT-OFF* */
+  /* clang-format off */
   static struct
   {
     const gchar *key_desc;
@@ -64,7 +64,7 @@ print_keyboard_help (void)
     "<", "Decrease encoding bitrate by 100 kbit/sec"}, {
     "k", "show keyboard shortcuts"}
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   guint i, chars_to_pad, desc_len, max_desc_len = 0;
 
@@ -337,7 +337,7 @@ main (gint argc, gchar ** argv)
   TestCallbackData data = { 0, };
   GstPad *pad;
   gchar *encoder_name = NULL;
-  /* *INDENT-OFF* */
+  /* clang-format off */
   GOptionEntry options[] = {
     {"use-gl", 0, 0, G_OPTION_ARG_NONE, &use_gl,
         "Use OpenGL memory as input to the nvenc", NULL},
@@ -345,7 +345,7 @@ main (gint argc, gchar ** argv)
         "NVENC encoder element to test, default: nvh264enc"},
     {NULL}
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   option_ctx = g_option_context_new ("nvcodec dynamic reconfigure example");
   g_option_context_add_main_entries (option_ctx, options, NULL);

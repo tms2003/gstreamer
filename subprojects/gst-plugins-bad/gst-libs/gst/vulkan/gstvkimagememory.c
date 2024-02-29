@@ -45,7 +45,7 @@ _create_info_from_args (VkImageCreateInfo * info, VkFormat format, gsize width,
 {
   /* FIXME: validate these */
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   *info = (VkImageCreateInfo) {
       .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
       .pNext = NULL,
@@ -63,7 +63,7 @@ _create_info_from_args (VkImageCreateInfo * info, VkFormat format, gsize width,
       .pQueueFamilyIndices = NULL,
       .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   return TRUE;
 }
@@ -95,7 +95,7 @@ gst_vulkan_image_memory_init (GstVulkanImageMemory * mem,
   mem->barrier.parent.semaphore = VK_NULL_HANDLE;
   mem->barrier.parent.semaphore_value = 0;
   mem->barrier.image_layout = layout;
-  /* *INDENT-OFF* */
+  /* clang-format off */
   mem->barrier.subresource_range = (VkImageSubresourceRange) {
           .aspectMask = gst_vulkan_format_get_aspect (format),
           .baseMipLevel = 0,
@@ -103,7 +103,7 @@ gst_vulkan_image_memory_init (GstVulkanImageMemory * mem,
           .baseArrayLayer = 0,
           .layerCount = 1,
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
   mem->usage = usage;
   mem->wrapped = FALSE;
   mem->notify = notify;

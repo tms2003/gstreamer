@@ -396,7 +396,7 @@ gst_vp9_get_vpx_colorspace (GstVPXEnc * encoder, GstVideoColorimetry * in_cinfo,
   gchar *colorimetry_str;
   guint i;
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   static const struct
   {
     const gchar *str;
@@ -408,7 +408,7 @@ gst_vp9_get_vpx_colorspace (GstVPXEnc * encoder, GstVideoColorimetry * in_cinfo,
     GST_VIDEO_COLORIMETRY_SMPTE240M, VPX_CS_SMPTE_240}, {
     GST_VIDEO_COLORIMETRY_BT2020, VPX_CS_BT_2020}
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   /* We support any range, all mapped CSC are by default reduced range. */
   cinfo.range = GST_VIDEO_COLOR_RANGE_16_235;

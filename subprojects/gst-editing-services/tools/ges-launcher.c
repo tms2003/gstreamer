@@ -1396,7 +1396,7 @@ ges_launcher_parse_options (GESLauncher * self,
   GESLauncherParsedOptions *opts = &self->priv->parsed_options;
   gchar *prev_videosink = opts->videosink, *prev_audiosink = opts->audiosink;
 
-/*  *INDENT-OFF* */
+  /*  clang-format off */
   GOptionEntry options[] = {
     {"disable-mixing", 0, 0, G_OPTION_ARG_NONE, &opts->disable_mixing,
         "Do not use mixing elements to mix layers together.", NULL
@@ -1467,7 +1467,7 @@ ges_launcher_parse_options (GESLauncher * self,
     },
     {NULL}
   };
-/*  *INDENT-ON* */
+  /*  clang-format on */
 
   if (owns_ctx) {
     opts->videosink = opts->audiosink = NULL;

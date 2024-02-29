@@ -43,7 +43,7 @@
 #define GST_CAT_DEFAULT gst_gl_filter_debug
 GST_DEBUG_CATEGORY_STATIC (GST_CAT_DEFAULT);
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static GstStaticPadTemplate gst_gl_filter_src_pad_template =
 GST_STATIC_PAD_TEMPLATE ("src",
     GST_PAD_SRC,
@@ -79,7 +79,7 @@ GST_STATIC_PAD_TEMPLATE ("sink",
       "framerate = " GST_VIDEO_FPS_RANGE ","
       "texture-target = (string) 2D"
     ));
-/* *INDENT-ON* */
+/* clang-format on */
 
 /* Properties */
 enum
@@ -1184,7 +1184,7 @@ gst_gl_filter_render_to_target_with_shader (GstGLFilter * filter,
       NULL);
 }
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static const GLfloat vertices[] = {
   -1.0f, -1.0f, 0.0f, 0.0f, 0.0f,
    1.0f, -1.0f, 0.0f, 1.0f, 0.0f,
@@ -1193,7 +1193,7 @@ static const GLfloat vertices[] = {
 };
 
 static const GLushort indices[] = { 0, 1, 2, 0, 2, 3 };
-/* *INDENT-ON* */
+/* clang-format on */
 
 static void
 _bind_buffer (GstGLFilter * filter)

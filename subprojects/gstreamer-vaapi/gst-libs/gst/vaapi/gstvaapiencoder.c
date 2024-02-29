@@ -805,14 +805,14 @@ gst_vaapi_encoder_reconfigure_internal (GstVaapiEncoder * encoder)
       (GST_VAAPI_ENCODER_RATE_CONTROL (encoder) == GST_VAAPI_RATECONTROL_CBR) ?
       100 : encoder->target_percentage;
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   /* Default values for rate control parameter */
   GST_VAAPI_ENCODER_VA_RATE_CONTROL (encoder) = (VAEncMiscParameterRateControl) {
     .bits_per_second = encoder->bitrate * 1000,
     .target_percentage = target_percentage,
     .window_size = 500,
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   status = klass->reconfigure (encoder);
   if (status != GST_VAAPI_ENCODER_STATUS_SUCCESS)
@@ -1829,7 +1829,7 @@ gst_vaapi_encoder_tune_get_type (void)
   static gsize g_type = 0;
 
   static const GEnumValue encoder_tune_values[] = {
-    /* *INDENT-OFF* */
+      /* clang-format off */
     { GST_VAAPI_ENCODER_TUNE_NONE,
       "None", "none" },
     { GST_VAAPI_ENCODER_TUNE_HIGH_COMPRESSION,
@@ -1839,7 +1839,7 @@ gst_vaapi_encoder_tune_get_type (void)
     { GST_VAAPI_ENCODER_TUNE_LOW_POWER,
       "Low power mode", "low-power" },
     { 0, NULL, NULL },
-    /* *INDENT-ON* */
+      /* clang-format on */
   };
 
   if (g_once_init_enter (&g_type)) {

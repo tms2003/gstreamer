@@ -36,28 +36,28 @@ struct map
 
 /* Profile string map */
 static const struct map gst_vaapi_mpeg2_profile_map[] = {
-/* *INDENT-OFF* */
+    /* clang-format off */
   { GST_VAAPI_PROFILE_MPEG2_SIMPLE,     "simple"        },
   { GST_VAAPI_PROFILE_MPEG2_MAIN,       "main"          },
   { GST_VAAPI_PROFILE_MPEG2_HIGH,       "high"          },
   { 0, NULL }
-/* *INDENT-ON* */
+    /* clang-format on */
 };
 
 /* Level string map */
 static const struct map gst_vaapi_mpeg2_level_map[] = {
-/* *INDENT-OFF* */
+    /* clang-format off */
   { GST_VAAPI_LEVEL_MPEG2_LOW,          "low"           },
   { GST_VAAPI_LEVEL_MPEG2_MAIN,         "main"          },
   { GST_VAAPI_LEVEL_MPEG2_HIGH_1440,    "high-1440"     },
   { GST_VAAPI_LEVEL_MPEG2_HIGH,         "high"          },
   { GST_VAAPI_LEVEL_MPEG2_HIGHP,        "highP"         },
   { 0, NULL }
-/* *INDENT-ON* */
+    /* clang-format on */
 };
 
 /* Table 8-10 to 8-13 (up to Main profile only) */
-/* *INDENT-OFF* */
+/* clang-format off */
 static const GstVaapiMPEG2LevelLimits gst_vaapi_mpeg2_level_limits[] = {
   /* level      h_size  v_size  fps  samples     kbps  vbv_size */
   { GST_VAAPI_LEVEL_MPEG2_LOW,
@@ -73,7 +73,7 @@ static const GstVaapiMPEG2LevelLimits gst_vaapi_mpeg2_level_limits[] = {
     0x02,       1920,  1152,   60, 125337600,  80000,  9781248 },
   { 0, }
 };
-/* *INDENT-ON* */
+/* clang-format on */
 
 /* Lookup value in map */
 static const struct map *

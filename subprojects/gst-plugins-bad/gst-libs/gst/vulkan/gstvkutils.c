@@ -405,7 +405,7 @@ static void
 fill_vulkan_image_view_info (VkImage image, VkFormat format,
     VkImageViewCreateInfo * info)
 {
-  /* *INDENT-OFF* */
+  /* clang-format off */
   *info = (VkImageViewCreateInfo) {
       .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
       .pNext = NULL,
@@ -427,7 +427,7 @@ fill_vulkan_image_view_info (VkImage image, VkFormat format,
           .layerCount = 1,
       }
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 }
 
 static gboolean
@@ -528,7 +528,7 @@ gst_vulkan_create_shader (GstVulkanDevice * device, const gchar * code,
   VkShaderModule shader;
   VkResult res;
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   VkShaderModuleCreateInfo info = {
       .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
       .pNext = NULL,
@@ -536,7 +536,7 @@ gst_vulkan_create_shader (GstVulkanDevice * device, const gchar * code,
       .codeSize = size,
       .pCode = (const guint32 *) code
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
   guint32 first_word;
   guint32 *new_code = NULL;
 

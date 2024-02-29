@@ -32,7 +32,7 @@ GST_DEBUG_CATEGORY_EXTERN (gst_va_display_debug);
 
 #define VA_NSB_FIRST 0          /* No Significant Bit  */
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static struct FormatMap
 {
   GstVideoFormat format;
@@ -182,7 +182,7 @@ static const struct RBG32FormatMap
 #undef F
 #undef D
 };
-/* *INDENT-ON* */
+/* clang-format on */
 
 static const struct FormatMap *
 get_format_map_from_va_fourcc (guint va_fourcc)

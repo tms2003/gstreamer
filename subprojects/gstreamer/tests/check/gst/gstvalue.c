@@ -3448,7 +3448,7 @@ GST_START_TEST (test_structure_ops)
     gint ret;
     GType str_type;
   } comparisons[] = {
-    /* *INDENT-OFF* */
+    /* clang-format off */
     {"foo,bar=(int)1", "foo,bar=(int)1", "compare", GST_VALUE_EQUAL, 0},
     {"foo,bar=(int)1", "foo,bar=(int)1", "is_subset", TRUE, 0},
     {"foo,bar=(int)1", "foo,bar=(int)1", "intersect", TRUE, GST_TYPE_STRUCTURE},
@@ -3472,7 +3472,7 @@ GST_START_TEST (test_structure_ops)
     /* deserializing lists is not implemented (but this should still work!) */
     {"foo,bar=(int)1", "baz,bar=(int)1", "union", TRUE, G_TYPE_LIST},
 #endif
-    /* *INDENT-ON* */
+    /* clang-format on */
   };
   gint i;
 
@@ -3869,7 +3869,7 @@ GST_START_TEST (test_deserialize_serialize_nested_structures)
   gchar *structure_str;
   GstStructure *structure, *structure2;
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   struct
   {
     const gchar *serialized_struct;
@@ -3891,7 +3891,7 @@ GST_START_TEST (test_deserialize_serialize_nested_structures)
       {"s, substruct=[sub, a-broken-string=$broken]", TRUE},
       {"s, sub-caps=(int)[nested-caps(some:Feature)]", TRUE},
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   for (i = 0; i < G_N_ELEMENTS (tests_data); i++) {
     structure = gst_structure_new_from_string (tests_data[i].serialized_struct);

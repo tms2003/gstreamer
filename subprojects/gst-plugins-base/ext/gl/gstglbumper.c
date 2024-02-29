@@ -418,7 +418,7 @@ gst_gl_bumper_callback (gint width, gint height, guint texture, gpointer stuff)
   GLfloat light_diffuse1[] = { 1.0, 1.0, 1.0, 1.0 };
   GLfloat mat_diffuse[] = { 1.0, 1.0, 1.0, 1.0 };
 
-/* *INDENT-OFF* */
+  /* clang-format off */
   MeshData mesh[] = {
    /* |     Vertex      |     Normal      |TexCoord0|TexCoord1|  VertexAttrib  | */
 /*F*/ { 1.0,  1.0, -1.0,  0.0,  0.0, -1.0, 0.0, 0.0, 0.0, 0.0,  0.0,  1.0,  0.0},
@@ -462,7 +462,7 @@ gst_gl_bumper_callback (gint width, gint height, guint texture, gpointer stuff)
     20, 22, 23
   };
 
-/* *INDENT-ON* */
+  /* clang-format on */
 
   gl = GST_GL_FILTER (bumper)->context->gl_vtable;
 

@@ -78,14 +78,14 @@ enum
 #define PROP_B_PYRAMID_DEFAULT          MFX_B_REF_UNKNOWN
 #define PROP_P_PYRAMID_DEFAULT          MFX_P_REF_DEFAULT
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static const gchar *doc_sink_caps_str =
     GST_VIDEO_CAPS_MAKE ("{ NV12, P010_10LE }") " ;"
     GST_VIDEO_CAPS_MAKE_WITH_FEATURES ("memory:DMABuf",
         "{ NV12, P010_10LE }") " ;"
     GST_VIDEO_CAPS_MAKE_WITH_FEATURES ("memory:VAMemory", "{ NV12 }") " ;"
     GST_VIDEO_CAPS_MAKE_WITH_FEATURES ("memory:D3D11Memory", "{ NV12 }");
-/* *INDENT-ON* */
+/* clang-format on */
 
 static const gchar *doc_src_caps_str = "video/x-av1";
 

@@ -76,7 +76,7 @@ GST_DEBUG_CATEGORY_EXTERN (gst_wasapi2_debug);
                                          SPEAKER_FRONT_LEFT_OF_CENTER | SPEAKER_FRONT_RIGHT_OF_CENTER)
 #endif
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static struct
 {
   guint64 wasapi_pos;
@@ -125,7 +125,7 @@ static DWORD default_ch_masks[] = {
   /* 7.1ch */
   KSAUDIO_SPEAKER_7POINT1,
 };
-/* *INDENT-ON* */
+/* clang-format on */
 
 static const gchar *
 hresult_to_string_fallback (HRESULT hr)

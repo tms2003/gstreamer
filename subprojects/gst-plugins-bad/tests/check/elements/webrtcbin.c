@@ -81,7 +81,7 @@ struct test_webrtc
   gulong error_signal_handler_id;
   gpointer user_data;
   GDestroyNotify data_notify;
-/* *INDENT-OFF* */
+  /* clang-format off */
   void      (*on_negotiation_needed)    (struct test_webrtc * t,
                                          GstElement * element,
                                          gpointer user_data);
@@ -145,7 +145,7 @@ struct test_webrtc
                                          gpointer user_data);
   gpointer bus_data;
   GDestroyNotify bus_notify;
-/* *INDENT-ON* */
+  /* clang-format on */
 };
 
 static void

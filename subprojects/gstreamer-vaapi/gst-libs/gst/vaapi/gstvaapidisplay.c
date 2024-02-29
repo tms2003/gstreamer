@@ -804,7 +804,7 @@ set_driver_quirks (GstVaapiDisplay * display)
   GstVaapiDisplayPrivate *const priv = GST_VAAPI_DISPLAY_GET_PRIVATE (display);
   guint i;
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   static const struct
   {
     const char *match_string;
@@ -818,7 +818,7 @@ set_driver_quirks (GstVaapiDisplay * display)
     { "iHD", GST_VAAPI_DRIVER_QUIRK_HEVC_ENC_SLICE_NOT_SPAN_TILE },
     { "i965", GST_VAAPI_DRIVER_QUIRK_JPEG_DEC_BROKEN_FORMATS },
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   if (!ensure_vendor_string (display))
     return;

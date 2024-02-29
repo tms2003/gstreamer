@@ -2357,7 +2357,7 @@ extract_tags_daala (GstOggStream * pad, ogg_packet * packet)
   }
 }
 
-/* *INDENT-OFF* */
+/* clang-format off */
 /* indent hates our freedoms */
 const GstOggMap mappers[] = {
   {
@@ -2682,7 +2682,7 @@ const GstOggMap mappers[] = {
   },
  
 };
-/* *INDENT-ON* */
+/* clang-format on */
 
 gboolean
 gst_ogg_stream_setup_map (GstOggStream * pad, ogg_packet * packet)

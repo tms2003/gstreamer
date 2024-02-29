@@ -80,7 +80,7 @@ typedef struct
   Property properties[MAX_PROPERTIES];
 } GESCommandLineOption;
 
-/*  *INDENT-OFF* */
+/*  clang-format off */
 static GESCommandLineOption options[] = {
   {
     .long_name = "clip",
@@ -315,7 +315,7 @@ static GESCommandLineOption options[] = {
     },
   },
 };
-/*  *INDENT-ON* */
+/*  clang-format on */
 
 /* Should always be in the same order as the options */
 typedef enum

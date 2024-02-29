@@ -57,7 +57,7 @@
     29, 36, 41, 64, 41, 56, 43, 54, 54, 47, 65, 70,    \
     65, 88, 105, 115 }
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static const GstH265VPS vps = {
   .id = 1,
   .base_layer_internal_flag = 1,
@@ -499,7 +499,7 @@ static const GstH265SliceHdr slice_hdr = {
 
   .pps = (GstH265PPS *) &pps,
 };
-/* *INDENT-ON* */
+/* clang-format on */
 
 GST_START_TEST (test_h265_bitwriter_vps_sps_pps_slice_hdr)
 {

@@ -83,7 +83,7 @@ static void gst_gl_filter_glass_draw_video_plane (GstGLFilter * filter,
 
 static gboolean gst_gl_filter_glass_callback (gpointer stuff);
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static const gchar *glass_fragment_source =
     "uniform sampler2D tex;\n"
     "varying float alpha;\n"
@@ -149,7 +149,7 @@ static const gchar * passthrough_fragment =
     "void main () {\n"
     "  gl_FragColor = gl_Color;\n"
     "}\n";
-/* *INDENT-ON* */
+/* clang-format on */
 
 static void
 gst_gl_filter_glass_class_init (GstGLFilterGlassClass * klass)
@@ -273,7 +273,7 @@ gst_gl_filter_glass_draw_background_gradient (GstGLFilterGlass * glass)
   GstGLFilter *filter = GST_GL_FILTER (glass);
   GstGLFuncs *gl = GST_GL_BASE_FILTER (filter)->context->gl_vtable;
 
-/* *INDENT-OFF* */
+  /* clang-format off */
   gfloat mesh[] = {
   /* |       Vertex       |        Color         | */
       -1.0f, -1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f,
@@ -283,7 +283,7 @@ gst_gl_filter_glass_draw_background_gradient (GstGLFilterGlass * glass)
       -1.0f,  1.0f, 0.0f, 0.0f, 0.0f, 0.2f, 1.0f,
        1.0f,  1.0f, 0.0f, 0.0f, 0.0f, 0.2f, 1.0f,
   };
-/* *INDENT-ON* */
+  /* clang-format on */
 
   GLushort indices[] = {
     0, 1, 2,
@@ -317,7 +317,7 @@ gst_gl_filter_glass_draw_video_plane (GstGLFilter * filter,
   gfloat topy = reversed ? center_y - 1.0f : center_y + 1.0f;
   gfloat bottomy = reversed ? center_y + 1.0f : center_y - 1.0f;
 
-/* *INDENT-OFF* */
+  /* clang-format off */
   gfloat mesh[] = {
  /*|           Vertex          |TexCoord0|      Colour               |*/
     center_x-1.6, topy,    0.0, 0.0, 1.0, 1.0, 1.0, 1.0, start_alpha,
@@ -325,7 +325,7 @@ gst_gl_filter_glass_draw_video_plane (GstGLFilter * filter,
     center_x+1.6, bottomy, 0.0, 1.0, 0.0, 1.0, 1.0, 1.0, stop_alpha,
     center_x-1.6, bottomy, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, stop_alpha,
   };
-/* *INDENT-ON* */
+  /* clang-format on */
 
   GLushort indices[] = {
     0, 1, 2,

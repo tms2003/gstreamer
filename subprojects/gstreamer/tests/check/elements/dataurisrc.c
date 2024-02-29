@@ -528,7 +528,7 @@ GST_START_TEST (test_dataurisrc_uris)
     const char *contents;
     gsize contents_len;
   } tests[] = {
-    /* *INDENT-OFF* */
+      /* clang-format off */
     {"simple", "data:,HelloWorld", NULL, STRING_CONTENT ("HelloWorld")},
     {"nodata", "data:,", NULL, STRING_CONTENT ("")},
     {"case_sensitive", "dATa:,HelloWorld", NULL, STRING_CONTENT ("HelloWorld")},
@@ -538,7 +538,7 @@ GST_START_TEST (test_dataurisrc_uris)
     {"charset_base64",
           "data:text/plain;charset=ISO-8859-5;base64,wOPh29DdILjW0ePb0OLe0g==",
         "text/plain", STRING_CONTENT ("Руслан Ижбулатов")},
-    /* *INDENT-ON* */
+      /* clang-format on */
   };
   gint i;
 #undef STRING_CONTENT

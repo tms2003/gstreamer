@@ -73,7 +73,7 @@ typedef struct
 static void
 print_keyboard_help (void)
 {
-  /* *INDENT-OFF* */
+  /* clang-format off */
   static struct
   {
     const gchar *key_desc;
@@ -101,7 +101,7 @@ print_keyboard_help (void)
     "b", "Decrease QP-B"}, {
     "k", "show keyboard shortcuts"}
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   guint i, chars_to_pad, desc_len, max_desc_len = 0;
 
@@ -386,7 +386,7 @@ main (gint argc, gchar ** argv)
   gchar *encoder_name = NULL;
   gchar *rate_control = NULL;
   gint bframes = 0;
-  /* *INDENT-OFF* */
+  /* clang-format off */
   GOptionEntry options[] = {
     {"encoder", 0, 0, G_OPTION_ARG_STRING, &encoder_name,
         "QSV video encoder element to test, default: qsvh264enc"},
@@ -396,7 +396,7 @@ main (gint argc, gchar ** argv)
         "Number of B frames between I and P frames, default: 0"},
     {NULL}
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
 #define MAKE_ELEMENT_AND_ADD(elem, name) G_STMT_START { \
   GstElement *_elem = gst_element_factory_make (name, NULL); \

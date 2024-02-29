@@ -795,7 +795,7 @@ GST_END_TEST;
 
 GST_START_TEST (test_parse_caps_rgb)
 {
-  /* *INDENT-OFF* */
+  /* clang-format off */
   struct
   {
     const gchar *tmpl_caps_string;
@@ -824,7 +824,7 @@ GST_START_TEST (test_parse_caps_rgb)
     GST_VIDEO_CAPS_MAKE ("RGB15"), GST_VIDEO_FORMAT_RGB15}, {
     GST_VIDEO_CAPS_MAKE ("BGR15"), GST_VIDEO_FORMAT_BGR15}
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
   gint i;
 
   for (i = 0; i < G_N_ELEMENTS (formats); ++i) {

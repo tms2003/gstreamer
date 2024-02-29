@@ -609,7 +609,7 @@ GST_START_TEST (test_h264_create_sei)
     GstH264SEIMessage parsed_message;
     SEICheckFunc check_func;
   } test_list[] = {
-    /* *INDENT-OFF* */
+      /* clang-format off */
     {h264_sei_user_data_registered, G_N_ELEMENTS (h264_sei_user_data_registered),
         GST_H264_SEI_REGISTERED_USER_DATA, {0,},
         (SEICheckFunc) check_sei_user_data_registered},
@@ -628,7 +628,7 @@ GST_START_TEST (test_h264_create_sei)
     {nalu_sei_pic_timing, G_N_ELEMENTS (nalu_sei_pic_timing),
         GST_H264_SEI_PIC_TIMING, {0,},
         (SEICheckFunc) check_sei_pic_timing},
-    /* *INDENT-ON* */
+      /* clang-format on */
   };
 
   parser = gst_h264_nal_parser_new ();
@@ -754,7 +754,7 @@ static guint8 h264_avc_codec_data[] = {
   0x00, 0x04, 0x68, 0xeb, 0xec, 0xb2
 };
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static guint8 h264_avc3_codec_data[] = {
   0x01, /* config version, always == 1 */
   0x4d, /* profile */
@@ -784,7 +784,7 @@ static guint8 h264_wrong_length_size_codec_data[] = {
   0xe0, /* 3 reserved bits, numSPS */
   0x00  /* numPPS */
 };
-/* *INDENT-ON* */
+/* clang-format on */
 
 GST_START_TEST (test_h264_decoder_config_record)
 {

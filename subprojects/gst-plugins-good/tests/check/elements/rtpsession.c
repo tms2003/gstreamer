@@ -4239,10 +4239,10 @@ GST_START_TEST (test_twcc_run_length_max)
   SessionHarness *h1 = session_harness_new ();
 
   TWCCPacket packets[] = {
-    /* *INDENT-OFF* */
+      /* clang-format off */
     {0, 1000 * GST_USECOND, FALSE},
     {8205, 2000 * GST_USECOND, TRUE},
-    /* *INDENT-ON* */
+      /* clang-format on */
   };
 
   guint8 exp_fci[] = {
@@ -4274,10 +4274,10 @@ GST_START_TEST (test_twcc_run_length_min)
   SessionHarness *h1 = session_harness_new ();
 
   TWCCPacket packets[] = {
-    /* *INDENT-OFF* */
+      /* clang-format off */
     {0, 1000 * GST_USECOND, FALSE},
     {29, 2000 * GST_USECOND, TRUE},
-    /* *INDENT-ON* */
+      /* clang-format on */
   };
 
   guint8 exp_fci[] = {

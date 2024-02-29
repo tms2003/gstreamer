@@ -318,7 +318,7 @@ static void
 dump_features10 (GstVulkanPhysicalDevice * device,
     VkPhysicalDeviceFeatures * features)
 {
-  /* *INDENT-OFF* */
+  /* clang-format off */
   DEBUG_BOOL_STRUCT ("support for", features, robustBufferAccess);
   DEBUG_BOOL_STRUCT ("support for", features, fullDrawIndexUint32);
   DEBUG_BOOL_STRUCT ("support for", features, imageCubeArray);
@@ -375,7 +375,7 @@ dump_features10 (GstVulkanPhysicalDevice * device,
   DEBUG_BOOL_STRUCT ("support for", features, sparseResidencyAliased);
   DEBUG_BOOL_STRUCT ("support for", features, variableMultisampleRate);
   DEBUG_BOOL_STRUCT ("support for", features, inheritedQueries);
-  /* *INDENT-ON* */
+  /* clang-format on */
 }
 
 #if defined (VK_API_VERSION_1_2)
@@ -383,7 +383,7 @@ static void
 dump_features11 (GstVulkanPhysicalDevice * device,
     VkPhysicalDeviceVulkan11Features * features)
 {
-  /* *INDENT-OFF* */
+  /* clang-format off */
   DEBUG_BOOL_STRUCT ("support for (1.1)", features, storageBuffer16BitAccess);
   DEBUG_BOOL_STRUCT ("support for (1.1)", features, uniformAndStorageBuffer16BitAccess);
   DEBUG_BOOL_STRUCT ("support for (1.1)", features, storagePushConstant16);
@@ -396,14 +396,14 @@ dump_features11 (GstVulkanPhysicalDevice * device,
   DEBUG_BOOL_STRUCT ("support for (1.1)", features, protectedMemory);
   DEBUG_BOOL_STRUCT ("support for (1.1)", features, samplerYcbcrConversion);
   DEBUG_BOOL_STRUCT ("support for (1.1)", features, shaderDrawParameters);
-  /* *INDENT-ON* */
+  /* clang-format on */
 }
 
 static void
 dump_features12 (GstVulkanPhysicalDevice * device,
     VkPhysicalDeviceVulkan12Features * features)
 {
-  /* *INDENT-OFF* */
+  /* clang-format off */
   DEBUG_BOOL_STRUCT ("support for (1.2)", features, samplerMirrorClampToEdge);
   DEBUG_BOOL_STRUCT ("support for (1.2)", features, drawIndirectCount);
   DEBUG_BOOL_STRUCT ("support for (1.2)", features, storageBuffer8BitAccess);
@@ -449,7 +449,7 @@ dump_features12 (GstVulkanPhysicalDevice * device,
   DEBUG_BOOL_STRUCT ("support for (1.2)", features, shaderOutputViewportIndex);
   DEBUG_BOOL_STRUCT ("support for (1.2)", features, shaderOutputLayer);
   DEBUG_BOOL_STRUCT ("support for (1.2)", features, subgroupBroadcastDynamicId);
-  /* *INDENT-ON* */
+  /* clang-format on */
 }
 #endif
 
@@ -458,7 +458,7 @@ static void
 dump_features13 (GstVulkanPhysicalDevice * device,
     VkPhysicalDeviceVulkan13Features * features)
 {
-  /* *INDENT-OFF* */
+  /* clang-format off */
   DEBUG_BOOL_STRUCT ("support for (1.3)", features, robustImageAccess);
   DEBUG_BOOL_STRUCT ("support for (1.3)", features, inlineUniformBlock);
   DEBUG_BOOL_STRUCT ("support for (1.3)", features, descriptorBindingInlineUniformBlockUpdateAfterBind);
@@ -474,7 +474,7 @@ dump_features13 (GstVulkanPhysicalDevice * device,
   DEBUG_BOOL_STRUCT ("support for (1.3)", features, dynamicRendering);
   DEBUG_BOOL_STRUCT ("support for (1.3)", features, shaderIntegerDotProduct);
   DEBUG_BOOL_STRUCT ("support for (1.3)", features, maintenance4);
-  /* *INDENT-ON* */
+  /* clang-format on */
 }
 #endif
 
@@ -580,7 +580,7 @@ dump_limits (GstVulkanPhysicalDevice * device, GError ** error)
 {
   VkPhysicalDeviceLimits *limits = &device->properties.limits;
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   DEBUG_UINT32 ("limit", limits, maxImageDimension1D);
   DEBUG_UINT32 ("limit", limits, maxImageDimension2D);
   DEBUG_UINT32 ("limit", limits, maxImageDimension3D);
@@ -688,7 +688,7 @@ dump_limits (GstVulkanPhysicalDevice * device, GError ** error)
   DEBUG_UINT64 ("limit", limits, optimalBufferCopyOffsetAlignment);
   DEBUG_UINT64 ("limit", limits, optimalBufferCopyRowPitchAlignment);
   DEBUG_UINT64 ("limit", limits, nonCoherentAtomSize);
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   return TRUE;
 }
@@ -699,13 +699,13 @@ dump_sparse_properties (GstVulkanPhysicalDevice * device, GError ** error)
   VkPhysicalDeviceSparseProperties *props =
       &device->properties.sparseProperties;
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   DEBUG_BOOL_STRUCT ("sparse property", props, residencyStandard2DBlockShape);
   DEBUG_BOOL_STRUCT ("sparse property", props, residencyStandard2DMultisampleBlockShape);
   DEBUG_BOOL_STRUCT ("sparse property", props, residencyStandard3DBlockShape);
   DEBUG_BOOL_STRUCT ("sparse property", props, residencyAlignedMipSize);
   DEBUG_BOOL_STRUCT ("sparse property", props, residencyNonResidentStrict);
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   return TRUE;
 }
@@ -715,7 +715,7 @@ static void
 dump_properties11 (GstVulkanPhysicalDevice * device,
     VkPhysicalDeviceVulkan11Properties * properties)
 {
-  /* *INDENT-OFF* */
+  /* clang-format off */
 /*    uint8_t                    deviceUUID[VK_UUID_SIZE];
     uint8_t                    driverUUID[VK_UUID_SIZE];
     uint8_t                    deviceLUID[VK_LUID_SIZE];*/
@@ -731,14 +731,14 @@ dump_properties11 (GstVulkanPhysicalDevice * device,
   DEBUG_BOOL_STRUCT ("properties (1.1)", properties, protectedNoFault);
   DEBUG_UINT32 ("properties (1.1)", properties, maxPerSetDescriptors);
   DEBUG_SIZE ("properties (1.1)", properties, maxMemoryAllocationSize);
-  /* *INDENT-ON* */
+  /* clang-format on */
 }
 
 static void
 dump_properties12 (GstVulkanPhysicalDevice * device,
     VkPhysicalDeviceVulkan12Properties * properties)
 {
-  /* *INDENT-OFF* */
+  /* clang-format off */
 /*    VkDriverId                           driverID;*/
   DEBUG_STRING ("properties (1.2)", properties, driverName);
   DEBUG_STRING ("properties (1.2)", properties, driverInfo);
@@ -792,7 +792,7 @@ dump_properties12 (GstVulkanPhysicalDevice * device,
   DEBUG_BOOL_STRUCT ("properties (1.2)", properties, filterMinmaxImageComponentMapping);
   DEBUG_UINT64 ("properties (1.2)", properties, maxTimelineSemaphoreValueDifference);
   DEBUG_FLAGS ("properties (1.2)", properties, framebufferIntegerColorSampleCounts, sample_count);
-  /* *INDENT-ON* */
+  /* clang-format on */
 }
 #endif
 
@@ -801,7 +801,7 @@ static void
 dump_properties13 (GstVulkanPhysicalDevice * device,
     VkPhysicalDeviceVulkan13Properties * properties)
 {
-  /* *INDENT-OFF* */
+  /* clang-format off */
   DEBUG_UINT32 ("properties (1.3)", properties, minSubgroupSize);
   DEBUG_UINT32 ("properties (1.3)", properties, maxSubgroupSize);
   DEBUG_UINT32 ("properties (1.3)", properties, maxComputeWorkgroupSubgroups);
@@ -847,7 +847,7 @@ dump_properties13 (GstVulkanPhysicalDevice * device,
   DEBUG_SIZE ("properties (1.3)", properties, uniformTexelBufferOffsetAlignmentBytes);
   DEBUG_BOOL_STRUCT ("properties (1.3)", properties, uniformTexelBufferOffsetSingleTexelAlignment);
   DEBUG_SIZE ("properties (1.3)", properties, maxBufferSize);
-  /* *INDENT-ON* */
+  /* clang-format on */
 }
 #endif
 
@@ -973,12 +973,12 @@ gst_vulkan_physical_device_fill_info (GstVulkanPhysicalDevice * device,
     PFN_vkGetPhysicalDeviceQueueFamilyProperties2 get_queue_props2;
     VkPhysicalDeviceMemoryProperties2 mem_properties10;
 
-    /* *INDENT-OFF* */
+    /* clang-format off */
     mem_properties10 = (VkPhysicalDeviceMemoryProperties2) {
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_PROPERTIES_2,
       .pNext = NULL,
     };
-    /* *INDENT-ON* */
+    /* clang-format on */
 
     get_props2 = (PFN_vkGetPhysicalDeviceProperties2)
         gst_vulkan_instance_get_proc_address (device->instance,

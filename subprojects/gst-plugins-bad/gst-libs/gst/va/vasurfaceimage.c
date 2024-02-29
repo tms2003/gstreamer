@@ -70,7 +70,7 @@ va_create_surfaces (GstVaDisplay * display, guint rt_format, guint fourcc,
     VASurfaceID * surfaces, guint num_surfaces)
 {
   VADisplay dpy = gst_va_display_get_va_dpy (display);
-  /* *INDENT-OFF* */
+  /* clang-format off */
   VASurfaceAttrib attrs[6] = {
     {
       .type = VASurfaceAttribUsageHint,
@@ -97,7 +97,7 @@ va_create_surfaces (GstVaDisplay * display, guint rt_format, guint fourcc,
     .num_planes = 1,
     .pixel_format = fourcc,
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
   VAStatus status;
   guint num_attrs = 2;
 
@@ -106,47 +106,47 @@ va_create_surfaces (GstVaDisplay * display, guint rt_format, guint fourcc,
   g_return_val_if_fail (num_modifiers == 0 || modifiers, FALSE);
 
   if (fourcc > 0) {
-    /* *INDENT-OFF* */
+    /* clang-format off */
     attrs[num_attrs++] = (VASurfaceAttrib) {
       .type = VASurfaceAttribPixelFormat,
       .flags = VA_SURFACE_ATTRIB_SETTABLE,
       .value.type = VAGenericValueTypeInteger,
       .value.value.i = fourcc,
     };
-    /* *INDENT-ON* */
+    /* clang-format on */
   }
 
   if (desc && desc->num_objects > 0) {
-    /* *INDENT-OFF* */
+    /* clang-format off */
     attrs[num_attrs++] = (VASurfaceAttrib) {
       .type = VASurfaceAttribExternalBufferDescriptor,
       .flags = VA_SURFACE_ATTRIB_SETTABLE,
       .value.type = VAGenericValueTypePointer,
       .value.value.p = desc,
     };
-    /* *INDENT-ON* */
+    /* clang-format on */
   } else if (GST_VA_DISPLAY_IS_IMPLEMENTATION (display, INTEL_I965)
       && _rt_format_is_rgb (rt_format)) {
     /* HACK(victor): disable tiling for i965 driver for RGB formats */
-    /* *INDENT-OFF* */
+    /* clang-format off */
      attrs[num_attrs++] = (VASurfaceAttrib) {
        .type = VASurfaceAttribExternalBufferDescriptor,
        .flags = VA_SURFACE_ATTRIB_SETTABLE,
        .value.type = VAGenericValueTypePointer,
        .value.value.p = &extbuf,
      };
-    /* *INDENT-ON* */
+    /* clang-format on */
   }
 
   if (num_modifiers > 0 && modifiers) {
-    /* *INDENT-OFF* */
+    /* clang-format off */
     attrs[num_attrs++] = (VASurfaceAttrib) {
       .type = VASurfaceAttribDRMFormatModifiers,
       .flags = VA_SURFACE_ATTRIB_SETTABLE,
       .value.type = VAGenericValueTypePointer,
       .value.value.p = &modifier_list,
     };
-    /* *INDENT-ON* */
+    /* clang-format on */
   }
 
 retry:
@@ -387,7 +387,7 @@ gboolean
 va_copy_surface (GstVaDisplay * display, VASurfaceID dst, VASurfaceID src)
 {
   VADisplay dpy = gst_va_display_get_va_dpy (display);
-  /* *INDENT-OFF* */
+  /* clang-format off */
   VACopyObject obj_src = {
     .obj_type = VACopyObjectSurface,
     .object = {
@@ -406,7 +406,7 @@ va_copy_surface (GstVaDisplay * display, VASurfaceID dst, VASurfaceID src)
       .va_copy_mode = VA_EXEC_MODE_DEFAULT,
     },
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
   VAStatus status;
 
   status = vaCopy (dpy, &obj_dst, &obj_src, option);

@@ -282,7 +282,7 @@ gst_media_source_track_buffer_get_ranges (GstMediaSourceTrackBuffer * self)
     .current_range = {.start = 0,.end = 0},
   };
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   GstIterator *iter = gst_media_source_sample_map_iter_samples_by_pts (
       self->samples,
       &self->new_data_mutex,
@@ -290,7 +290,7 @@ gst_media_source_track_buffer_get_ranges (GstMediaSourceTrackBuffer * self)
       0,
       NULL
   );
-  /* *INDENT-ON* */
+  /* clang-format on */
   while (gst_iterator_fold (iter, (GstIteratorFoldFunction) get_ranges_fold,
           (GValue *) & acc, NULL) == GST_ITERATOR_RESYNC) {
     gst_iterator_resync (iter);
@@ -365,7 +365,7 @@ GstIterator *
 gst_media_source_track_buffer_iter_samples (GstMediaSourceTrackBuffer * self,
     GstClockTime start_dts, GstSample * start_sample)
 {
-  /* *INDENT-OFF* */
+  /* clang-format off */
   return gst_media_source_sample_map_iter_samples_by_dts (
       self->samples,
       &self->new_data_mutex,
@@ -373,5 +373,5 @@ gst_media_source_track_buffer_iter_samples (GstMediaSourceTrackBuffer * self,
       start_dts,
       start_sample
   );
-  /* *INDENT-ON* */
+  /* clang-format on */
 }

@@ -181,7 +181,7 @@ gst_v4l2_codec_vp8_dec_negotiate (GstVideoDecoder * decoder)
 {
   GstV4l2CodecVp8Dec *self = GST_V4L2_CODEC_VP8_DEC (decoder);
   GstVp8Decoder *vp8dec = GST_VP8_DECODER (decoder);
-  /* *INDENT-OFF* */
+  /* clang-format off */
   struct v4l2_ext_control control[] = {
     {
       .id = V4L2_CID_STATELESS_VP8_FRAME,
@@ -189,7 +189,7 @@ gst_v4l2_codec_vp8_dec_negotiate (GstVideoDecoder * decoder)
       .size = sizeof (self->frame_header),
     },
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
   GstCaps *filter, *caps;
 
   /* Ignore downstream renegotiation request. */
@@ -333,13 +333,13 @@ gst_v4l2_codec_vp8_dec_fill_segment (struct v4l2_vp8_segment
 {
   gint i;
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   segment->flags =
     (segmentation->segmentation_enabled ? V4L2_VP8_SEGMENT_FLAG_ENABLED : 0) |
     (segmentation->update_mb_segmentation_map ? V4L2_VP8_SEGMENT_FLAG_UPDATE_MAP : 0) |
     (segmentation->update_segment_feature_data ? V4L2_VP8_SEGMENT_FLAG_UPDATE_FEATURE_DATA : 0) |
     (segmentation->segment_feature_mode ? 0 : V4L2_VP8_SEGMENT_FLAG_DELTA_VALUE_MODE);
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   for (i = 0; i < 4; i++) {
     segment->quant_update[i] = segmentation->quantizer_update_value[i];
@@ -388,7 +388,7 @@ gst_v4l2_codec_vp8_dec_fill_frame_header (GstV4l2CodecVp8Dec * self,
 {
   gint i;
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   self->frame_header = (struct v4l2_ctrl_vp8_frame) {
     .lf = (struct v4l2_vp8_loop_filter) {
       .sharpness_level = frame_hdr->sharpness_level,
@@ -431,7 +431,7 @@ gst_v4l2_codec_vp8_dec_fill_frame_header (GstV4l2CodecVp8Dec * self,
              (frame_hdr->sign_bias_golden ? V4L2_VP8_FRAME_FLAG_SIGN_BIAS_GOLDEN : 0) |
              (frame_hdr->sign_bias_alternate ? V4L2_VP8_FRAME_FLAG_SIGN_BIAS_ALT : 0),
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   for (i = 0; i < 8; i++)
     self->frame_header.dct_part_sizes[i] = frame_hdr->partition_size[i];
@@ -600,7 +600,7 @@ gst_v4l2_codec_vp8_dec_end_picture (GstVp8Decoder * decoder,
   GstFlowReturn flow_ret = GST_FLOW_OK;
   gsize bytesused;
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   struct v4l2_ext_control control[] = {
     {
       .id = V4L2_CID_STATELESS_VP8_FRAME,
@@ -608,7 +608,7 @@ gst_v4l2_codec_vp8_dec_end_picture (GstVp8Decoder * decoder,
       .size = sizeof(self->frame_header),
     },
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   bytesused = self->bitstream_map.size;
   gst_memory_unmap (self->bitstream, &self->bitstream_map);

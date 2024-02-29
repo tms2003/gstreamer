@@ -364,7 +364,7 @@ gst_vulkan_operation_submit2 (GstVulkanOperation * self, GstVulkanFence * fence,
 
   GST_OBJECT_LOCK (self);
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   cmd_buf_info = (VkCommandBufferSubmitInfoKHR) {
     .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO_KHR,
     .commandBuffer = self->cmd_buf->cmd,
@@ -383,7 +383,7 @@ gst_vulkan_operation_submit2 (GstVulkanOperation * self, GstVulkanFence * fence,
     .signalSemaphoreInfoCount = priv->deps.signal_semaphores ?
         priv->deps.signal_semaphores->len : 0,
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   gst_vulkan_queue_submit_lock (priv->cmd_pool->queue);
   err = priv->QueueSubmit2 (priv->cmd_pool->queue->queue, 1, &submit_info,
@@ -415,7 +415,7 @@ gst_vulkan_operation_submit1 (GstVulkanOperation * self, GstVulkanFence * fence,
   VkResult err;
 
   GST_OBJECT_LOCK (self);
-  /* *INDENT-OFF* */
+  /* clang-format off */
 #if defined(VK_KHR_timeline_semaphore)
   if (priv->has_timeline) {
     semaphore_submit_info = (VkTimelineSemaphoreSubmitInfoKHR) {
@@ -451,7 +451,7 @@ gst_vulkan_operation_submit1 (GstVulkanOperation * self, GstVulkanFence * fence,
         (const VkPipelineStageFlags *)
         priv->deps.wait_dst_stage_mask->data : NULL,
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   gst_vulkan_queue_submit_lock (priv->cmd_pool->queue);
   err = vkQueueSubmit (priv->cmd_pool->queue->queue, 1, &submit_info,
@@ -926,7 +926,7 @@ gst_vulkan_operation_add_frame_barrier (GstVulkanOperation * self,
     else if (vkmem->barrier.parent.queue)
       queue_familiy_index = vkmem->barrier.parent.queue->family;
 
-    /* *INDENT-OFF* */
+      /* clang-format off */
 #if defined(VK_KHR_synchronization2)
     if (priv->has_sync2) {
       VkImageMemoryBarrier2KHR barrier2  = {
@@ -978,7 +978,7 @@ gst_vulkan_operation_add_frame_barrier (GstVulkanOperation * self,
 
       g_array_append_val (barriers, barrier);
     }
-    /* *INDENT-ON* */
+    /* clang-format on */
   }
 
   gst_vulkan_operation_update_frame_unlocked (self, frame, dst_stage,
@@ -1067,7 +1067,7 @@ gst_vulkan_operation_add_dependency_frame (GstVulkanOperation * self,
       if (vkmem->barrier.parent.semaphore == VK_NULL_HANDLE)
         break;
 
-      /* *INDENT-OFF* */
+      /* clang-format off */
       g_array_append_vals (priv->deps.wait_semaphores, &(VkSemaphoreSubmitInfoKHR) {
           .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR,
           .semaphore = vkmem->barrier.parent.semaphore,
@@ -1080,7 +1080,7 @@ gst_vulkan_operation_add_dependency_frame (GstVulkanOperation * self,
           .value = vkmem->barrier.parent.semaphore_value + 1,
           .stageMask = signal_stage,
         }, 1);
-      /* *INDENT-ON* */
+      /* clang-format on */
     }
 
     GST_OBJECT_UNLOCK (self);

@@ -39,7 +39,7 @@
 #include "gst-validate-internal.h"
 #include "gst-validate-override.h"
 
-/*  *INDENT-OFF* */
+/*  clang-format off */
 
 struct _GstValidateOverridePrivate
 {
@@ -57,7 +57,7 @@ G_DEFINE_TYPE_WITH_CODE (GstValidateOverride, gst_validate_override,
     GST_TYPE_OBJECT, G_ADD_PRIVATE (GstValidateOverride)
     G_IMPLEMENT_INTERFACE (GST_TYPE_VALIDATE_REPORTER, NULL))
 
-/*  *INDENT-ON* */
+/*  clang-format on */
 
 static void
 _get_property (GObject * object,

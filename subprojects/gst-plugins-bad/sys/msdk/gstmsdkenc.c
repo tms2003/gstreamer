@@ -2028,7 +2028,7 @@ gst_msdkenc_init (GstMsdkEnc * thiz)
       EC_PROPS_EXTBRC, G_TYPE_STRING, "off", NULL);
 }
 
-/* *INDENT-OFF* */
+/* clang-format off */
 #define UPDATE_PROPERTY                         \
   if (*old_val == new_val) {                    \
     return FALSE;                               \
@@ -2059,7 +2059,7 @@ gst_msdkenc_check_update_property_bool (GstMsdkEnc * thiz, gboolean * old_val,
 }
 
 #undef UPDATE_PROPERTY
-/* *INDENT-ON* */
+/* clang-format on */
 
 /* gst_msdkenc_set_common_property:
  *

@@ -73,12 +73,12 @@ struct _GstVaVp8Dec
 
 static GstElementClass *parent_class = NULL;
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static const gchar *src_caps_str =
     GST_VIDEO_CAPS_MAKE_WITH_FEATURES (GST_CAPS_FEATURE_MEMORY_VA,
         "{ NV12 }") " ;"
     GST_VIDEO_CAPS_MAKE ("{ NV12 }");
-/* *INDENT-ON* */
+/* clang-format on */
 
 static const gchar *sink_caps_str = "video/x-vp8";
 
@@ -242,7 +242,7 @@ _fill_picture (GstVp8Decoder * decoder, GstVp8Picture * picture,
   if (!_fill_probability_table (decoder, picture))
     return FALSE;
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   pic_param = (VAPictureParameterBufferVP8) {
     .frame_width = base->width,
     .frame_height = base->height,
@@ -277,7 +277,7 @@ _fill_picture (GstVp8Decoder * decoder, GstVp8Picture * picture,
     .bool_coder_ctx.value = frame_hdr->rd_value,
     .bool_coder_ctx.count = frame_hdr->rd_count,
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   if (!frame_hdr->key_frame) {
     if (decoder->last_picture) {
@@ -336,14 +336,14 @@ _add_slice (GstVp8Decoder * decoder, GstVp8Picture * picture,
   GstVaDecodePicture *va_pic;
   gint i;
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   slice_param = (VASliceParameterBufferVP8) {
     .slice_data_size = picture->size,
     .slice_data_offset = frame_hdr->data_chunk_size,
     .macroblock_offset = frame_hdr->header_size,
     .num_of_partitions = (1 << frame_hdr->log2_nbr_of_dct_partitions) + 1,
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   slice_param.partition_size[0] =
       frame_hdr->first_part_size - ((slice_param.macroblock_offset + 7) >> 3);

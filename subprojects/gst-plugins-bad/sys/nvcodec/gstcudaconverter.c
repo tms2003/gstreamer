@@ -43,7 +43,7 @@ typedef struct _GstCudaColorMatrix
 static gchar *
 gst_cuda_dump_color_matrix (GstCudaColorMatrix * matrix)
 {
-  /* *INDENT-OFF* */
+  /* clang-format off */
   static const gchar format[] =
       "[MATRIX]\n"
       "|% .6f, % .6f, % .6f|\n"
@@ -55,7 +55,7 @@ gst_cuda_dump_color_matrix (GstCudaColorMatrix * matrix)
       "|% .6f, % .6f, % .6f|\n"
       "[MAX]\n"
       "|% .6f, % .6f, % .6f|";
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   return g_strdup_printf (format,
       matrix->matrix[0][0], matrix->matrix[0][1], matrix->matrix[0][2],
@@ -679,7 +679,7 @@ typedef struct
 #define ROTATE_UL_LR "rotate_ul_lr"
 #define ROTATE_UR_LL "rotate_ur_ll"
 
-/* *INDENT-OFF* */
+/* clang-format off */
 const static gchar KERNEL_COMMON[] =
 "struct ColorMatrix\n"
 "{\n"
@@ -1462,7 +1462,7 @@ GST_CUDA_KERNEL_MAIN_FUNC "(cudaTextureObject_t tex0, cudaTextureObject_t tex1,\
 "  %s (dst0, dst1, dst2, dst3, sample, x_pos, y_pos, stride0, stride1);\n"
 "}\n"
 "}\n";
-/* *INDENT-ON* */
+/* clang-format on */
 
 typedef struct _TextureFormat
 {

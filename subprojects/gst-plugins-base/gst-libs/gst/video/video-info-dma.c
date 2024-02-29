@@ -625,7 +625,7 @@ gst_video_dma_drm_fourcc_to_string (guint32 fourcc, guint64 modifier)
   return s;
 }
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static const struct FormatMap
 {
   GstVideoFormat format;
@@ -669,7 +669,7 @@ static const struct FormatMap
   {GST_VIDEO_FORMAT_P012_LE, DRM_FORMAT_P012},
   {GST_VIDEO_FORMAT_BGR10A2_LE, DRM_FORMAT_ARGB2101010},
 };
-/* *INDENT-ON* */
+/* clang-format on */
 
 /**
  * gst_video_dma_drm_fourcc_from_format:

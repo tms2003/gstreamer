@@ -36,7 +36,7 @@ typedef struct
  * and 0x80 to 0x8F for the right channel. These bytes are grouped in the test
  * patterns according to their (non-)interleaved layout and grouping format. */
 
-/* *INDENT-OFF* */
+/* clang-format off */
 
 static const DsdTestPattern interleaved_dsd_test_patterns[] = {
   {
@@ -76,12 +76,12 @@ static const DsdTestPattern interleaved_dsd_test_patterns[] = {
   }
 };
 
-/* *INDENT-ON* */
+/* clang-format on */
 
 static const int num_interleaved_dsd_test_patterns =
     sizeof (interleaved_dsd_test_patterns) / sizeof (DsdTestPattern);
 
-/* *INDENT-OFF* */
+/* clang-format off */
 
 static const DsdTestPattern non_interleaved_dsd_test_patterns[] = {
   {
@@ -121,7 +121,7 @@ static const DsdTestPattern non_interleaved_dsd_test_patterns[] = {
   },
 };
 
-/* *INDENT-ON* */
+/* clang-format on */
 
 static const int num_non_interleaved_dsd_test_patterns =
     sizeof (non_interleaved_dsd_test_patterns) / sizeof (DsdTestPattern);

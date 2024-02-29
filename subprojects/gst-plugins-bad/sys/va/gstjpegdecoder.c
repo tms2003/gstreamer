@@ -288,7 +288,7 @@ decode_scan (GstJpegDecoder * self, GstJpegSegment * seg)
   if (size <= 0)
     return GST_FLOW_ERROR;
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   scan = (GstJpegDecoderScan) {
     .scan_hdr = &scan_hdr,
     .huffman_tables = &priv->huf_tables,
@@ -297,7 +297,7 @@ decode_scan (GstJpegDecoder * self, GstJpegSegment * seg)
     .mcus_per_row = mcus_per_row,
     .mcu_rows_in_scan = mcu_rows_in_scan,
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   g_assert (klass->decode_scan);
   ret = klass->decode_scan (self, &scan, data, size);

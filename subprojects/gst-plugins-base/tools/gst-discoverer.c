@@ -35,9 +35,9 @@
 
 #define MAX_INDENT 40
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static void my_g_string_append_printf (GString * str, int depth, const gchar * format, ...) G_GNUC_PRINTF (3, 4);
-/* *INDENT-ON* */
+/* clang-format on */
 
 static gboolean async = FALSE;
 static gboolean show_toc = FALSE;

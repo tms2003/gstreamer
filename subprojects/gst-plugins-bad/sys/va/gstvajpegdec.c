@@ -77,12 +77,12 @@ struct _GstVaJpegDec
 
 static GstElementClass *parent_class = NULL;
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static const gchar *src_caps_str =
     GST_VIDEO_CAPS_MAKE_WITH_FEATURES (GST_CAPS_FEATURE_MEMORY_VA,
         "{ NV12 }") " ;"
     GST_VIDEO_CAPS_MAKE ("{ NV12 }");
-/* *INDENT-ON* */
+/* clang-format on */
 
 static const gchar *sink_caps_str = "image/jpeg";
 
@@ -102,7 +102,7 @@ _get_profile (GstJpegMarker marker)
 /* taken from MediaSDK */
 #define RT_FORMAT_RGB (VA_RT_FORMAT_RGB16 | VA_RT_FORMAT_RGB32)
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static const struct sampling_rtformat {
   const gchar *sampling;
   guint32 rt_format;
@@ -114,7 +114,7 @@ static const struct sampling_rtformat {
   { "GRAYSCALE", VA_RT_FORMAT_YUV400 },
   { "YCbCr-4:1:1", VA_RT_FORMAT_YUV411 },
 };
-/* *INDENT-ON* */
+/* clang-format on */
 
 static guint32
 _get_rt_format (GstCaps * caps)
@@ -184,7 +184,7 @@ gst_va_jpeg_dec_new_picture (GstJpegDecoder * decoder,
 
   self->pic = gst_va_decode_picture_new (base->decoder, frame->output_buffer);
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   pic_param = (VAPictureParameterBufferJPEGBaseline) {
     .picture_width = frame_hdr->width,
     .picture_height = frame_hdr->height,
@@ -193,7 +193,7 @@ gst_va_jpeg_dec_new_picture (GstJpegDecoder * decoder,
     .color_space = (rt_format == RT_FORMAT_RGB) ? 1 : 0, /* TODO: BGR */
     .rotation = VA_ROTATION_NONE,
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   for (i = 0; i < frame_hdr->num_components; i++) {
     pic_param.components[i].component_id = frame_hdr->components[i].identifier;
@@ -278,7 +278,7 @@ gst_va_jpeg_dec_decode_scan (GstJpegDecoder * decoder,
           VAHuffmanTableBufferType, &huff, sizeof (huff)))
     return GST_FLOW_ERROR;
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   slice_param = (VASliceParameterBufferJPEGBaseline) {
     .slice_data_size = size,
     .slice_data_offset = 0,
@@ -289,7 +289,7 @@ gst_va_jpeg_dec_decode_scan (GstJpegDecoder * decoder,
     .num_mcus = scan->mcu_rows_in_scan * scan->mcus_per_row,
     .num_components = scan->scan_hdr->num_components,
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   for (i = 0; i < scan->scan_hdr->num_components; i++) {
     slice_param.components[i].component_selector =

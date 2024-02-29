@@ -118,7 +118,7 @@ typedef struct
 
 } GstTranscodeBinClass;
 
-/* *INDENT-OFF* */
+/* clang-format off */
 #define GST_TYPE_TRANSCODE_BIN (gst_transcode_bin_get_type ())
 #define GST_TRANSCODE_BIN(obj) (G_TYPE_CHECK_INSTANCE_CAST ((obj), GST_TYPE_TRANSCODE_BIN, GstTranscodeBin))
 
@@ -156,7 +156,7 @@ post_missing_plugin_error (GstElement * dec, const gchar * element_name)
       ("Missing element '%s' - check your GStreamer installation.",
           element_name), (NULL));
 }
-/* *INDENT-ON* */
+/* clang-format on */
 
 static gboolean
 filter_handles_any (GstElement * filter)

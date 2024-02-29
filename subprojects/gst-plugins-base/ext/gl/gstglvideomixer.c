@@ -671,7 +671,7 @@ static gboolean gst_gl_video_mixer_process_textures (GstGLMixer * mixer,
     GstGLMemory * out_tex);
 static gboolean gst_gl_video_mixer_callback (gpointer stuff);
 
-/* *INDENT-OFF* */
+/* clang-format off */
 
 /* fragment source */
 static const gchar *video_mixer_f_src =
@@ -711,7 +711,7 @@ static const gchar *checker_f_src =
     "      gl_FragColor = high;\n"
     "  }\n"
     "}\n";
-/* *INDENT-ON* */
+/* clang-format on */
 
 #define GST_TYPE_GL_VIDEO_MIXER_PAD (gst_gl_video_mixer_pad_get_type())
 #define GST_GL_VIDEO_MIXER_PAD(obj) \
@@ -1878,14 +1878,14 @@ _draw_checker_background (GstGLVideoMixer * video_mixer)
   const GstGLFuncs *gl = GST_GL_BASE_MIXER (mixer)->context->gl_vtable;
   gint attr_position_loc = 0;
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   gfloat v_vertices[] = {
     -1.0,-1.0, 0.0f,
      1.0,-1.0, 0.0f,
      1.0, 1.0, 0.0f,
     -1.0, 1.0, 0.0f,
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   if (!video_mixer->checker) {
     gchar *frag_str;
@@ -2158,14 +2158,14 @@ gst_gl_video_mixer_callback (gpointer stuff)
       gint pad_width, pad_height;
       gint pad_offset_x, pad_offset_y;
       gfloat w, h;
-      /* *INDENT-OFF* */
+      /* clang-format off */
       gfloat v_vertices[] = {
         -1.0,-1.0, 0.0f, 0.0f, 0.0f,
          1.0,-1.0, 0.0f, 1.0f, 0.0f,
          1.0, 1.0, 0.0f, 1.0f, 1.0f,
         -1.0, 1.0, 0.0f, 0.0f, 1.0f,
       };
-      /* *INDENT-ON* */
+      /* clang-format on */
 
       _mixer_pad_get_output_size (video_mixer, pad,
           GST_VIDEO_INFO_PAR_N (&vagg->info),

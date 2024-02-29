@@ -15,7 +15,7 @@
 #include "vp8utils.h"
 
 /*---- entropy.c ----*/
-/* *INDENT-OFF* */
+/* clang-format off */
 const guint8 vp8_norm[256] = {
   0, 7, 6, 6, 5, 5, 5, 5, 4, 4, 4, 4, 4, 4, 4, 4,
   3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
@@ -34,10 +34,10 @@ const guint8 vp8_norm[256] = {
   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
 };
-/* *INDENT-ON* */
+/* clang-format on */
 
 /*---- entropymv.c ----*/
-/* *INDENT-OFF* */
+/* clang-format off */
 static const guint8 vp8_mv_update_probs[2][19] = {
   {
     237,
@@ -52,9 +52,9 @@ static const guint8 vp8_mv_update_probs[2][19] = {
     254, 254, 254, 254, 254, 251, 251, 254, 254, 254
   }
 };
-/* *INDENT-ON* */
+/* clang-format on */
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static const guint8 vp8_default_mv_probs[2][19] = {
   {
     /* row */
@@ -71,7 +71,7 @@ static const guint8 vp8_default_mv_probs[2][19] = {
     128, 130, 130,  74, 148, 180, 203, 236, 254, 254 /* long bits */
   }
 };
-/* *INDENT-ON* */
+/* clang-format on */
 
 /*---- vp8_entropymodedata.h ----*/
 static const guint8 vp8_nk_y_mode_probs[4] = {
@@ -91,7 +91,7 @@ static const guint8 vp8_kf_uv_mode_probs[3] = {
 };
 
 /*--- coefupdateprobs.h ----*/
-/* *INDENT-OFF* */
+/* clang-format off */
 static const guint8 vp8_token_update_probs[4][8][3][11] = {
   {
     {
@@ -262,10 +262,10 @@ static const guint8 vp8_token_update_probs[4][8][3][11] = {
     },
   },
 };
-/* *INDENT-ON* */
+/* clang-format on */
 
 /*---- default_coef_probs.h ----*/
-/* *INDENT-OFF* */
+/* clang-format off */
 static const guint8 vp8_default_token_probs[4][8][3][11] = {
   { /* Block Type ( 0 ) */
     { /* Coeff Band ( 0 )*/
@@ -436,7 +436,7 @@ static const guint8 vp8_default_token_probs[4][8][3][11] = {
     }
   }
 };
-/* *INDENT-ON* */
+/* clang-format on */
 
 void
 gst_vp8_token_update_probs_init (GstVp8TokenProbs * probs)

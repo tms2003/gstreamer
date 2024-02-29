@@ -345,7 +345,7 @@ gst_gl_filter_cube_filter_texture (GstGLFilter * filter, GstGLMemory * in_tex,
       cube_filter);
 }
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static const GLfloat vertices[] = {
  /*|     Vertex     | TexCoord |*/ 
     /* front face */
@@ -394,7 +394,7 @@ static const GLushort indices[] = {
     20, 21, 22,
     20, 22, 23
 };
-/* *INDENT-ON* */
+/* clang-format on */
 
 static void
 _bind_buffer (GstGLFilterCube * cube_filter)

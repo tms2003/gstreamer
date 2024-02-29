@@ -314,7 +314,7 @@ av1_decoder_ensure_context (GstVaapiDecoderAV1 * decoder)
     if (priv->current_picture)
       gst_vaapi_picture_replace (&priv->current_picture, NULL);
 
-    /* *INDENT-OFF* */
+    /* clang-format off */
     info = (GstVaapiContextInfo) {
       .profile = priv->profile,
       .entrypoint = GST_VAAPI_ENTRYPOINT_VLD,
@@ -323,7 +323,7 @@ av1_decoder_ensure_context (GstVaapiDecoderAV1 * decoder)
       .height = priv->height,
       .ref_frames = GST_AV1_NUM_REF_FRAMES + 2,
     };
-    /* *INDENT-ON* */
+    /* clang-format on */
 
     if (!info.chroma_type)
       return GST_VAAPI_DECODER_STATUS_ERROR_UNSUPPORTED_CHROMA_FORMAT;

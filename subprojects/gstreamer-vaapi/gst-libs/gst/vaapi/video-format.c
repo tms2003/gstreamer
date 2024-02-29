@@ -71,7 +71,7 @@ typedef struct _GstVideoFormatMapMap
 /* XXX: The new added video format must be added to
  * GST_VAAPI_FORMATS_ALL in header file to make it available to all
  * vaapi element's pad cap template. */
-/* *INDENT-OFF* */
+/* clang-format off */
 static const GstVideoFormatMap gst_vaapi_video_default_formats[] = {
   /* LSB and MSB video formats definitions are unclear and ambiguous.
    *
@@ -180,7 +180,7 @@ static const GstVideoFormatMap gst_vaapi_video_default_formats[] = {
       0x3ff00000, 0x000ffc00, 0x000003ff, 0x30000000),
   {0,}
 };
-/* *INDENT-ON* */
+/* clang-format on */
 
 #undef DEF_RGB
 #undef DEF_YUV

@@ -253,7 +253,7 @@ ensure_context (GstVaapiDecoderJpeg * decoder)
     if (!get_chroma_type (frame_hdr, &chroma_type))
       return GST_VAAPI_DECODER_STATUS_ERROR_UNSUPPORTED_CHROMA_FORMAT;
 
-  /* *INDENT-OFF* */
+    /* clang-format off */
     info = (GstVaapiContextInfo) {
       .profile = priv->profile,
       .entrypoint = entrypoint,
@@ -262,7 +262,7 @@ ensure_context (GstVaapiDecoderJpeg * decoder)
       .height = priv->height,
       .ref_frames = 2,
     };
-  /* *INDENT-ON* */
+    /* clang-format on */
 
     reset_context =
         gst_vaapi_decoder_ensure_context (GST_VAAPI_DECODER (decoder), &info);

@@ -223,7 +223,7 @@ gst_vulkan_image_buffer_pool_set_config (GstBufferPool * pool,
   }
 
   /* get the size of the buffer to allocate */
-  /* *INDENT-OFF* */
+  /* clang-format off */
   image_info = (VkImageCreateInfo) {
     .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
     .pNext = NULL,
@@ -243,7 +243,7 @@ gst_vulkan_image_buffer_pool_set_config (GstBufferPool * pool,
                      ? VK_IMAGE_LAYOUT_PREINITIALIZED
                      : VK_IMAGE_LAYOUT_UNDEFINED,
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
   priv->v_info.size = 0;
   for (i = 0; i < priv->n_imgs; i++) {
     GstVulkanImageMemory *img_mem;
@@ -265,9 +265,9 @@ gst_vulkan_image_buffer_pool_set_config (GstBufferPool * pool,
     }
 
     image_info.format = priv->vk_fmts[i];
-    /* *INDENT-OFF* */
+    /* clang-format off */
     image_info.extent = (VkExtent3D) { width, height, 1 };
-    /* *INDENT-ON* */
+    /* clang-format on */
 #if GST_VULKAN_HAVE_VIDEO_EXTENSIONS
     if (priv->has_profile)
       image_info.pNext = &profile_list;
@@ -426,7 +426,7 @@ gst_vulkan_image_buffer_pool_alloc (GstBufferPool * pool, GstBuffer ** buffer,
   GstBuffer *buf;
   guint i;
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   image_info = (VkImageCreateInfo) {
     .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
     .pNext = NULL,
@@ -446,7 +446,7 @@ gst_vulkan_image_buffer_pool_alloc (GstBufferPool * pool, GstBuffer ** buffer,
                      ? VK_IMAGE_LAYOUT_PREINITIALIZED
                      : VK_IMAGE_LAYOUT_UNDEFINED,
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   if (!(buf = gst_buffer_new ())) {
     goto no_buffer;
@@ -472,9 +472,9 @@ gst_vulkan_image_buffer_pool_alloc (GstBufferPool * pool, GstBuffer ** buffer,
     }
 
     image_info.format = priv->vk_fmts[i];
-    /* *INDENT-OFF* */
+    /* clang-format off */
     image_info.extent = (VkExtent3D) { width, height, 1 };
-    /* *INDENT-ON* */
+    /* clang-format on */
 #if GST_VULKAN_HAVE_VIDEO_EXTENSIONS
     if (priv->has_profile)
       image_info.pNext = &profile_list;

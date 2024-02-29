@@ -238,7 +238,7 @@ do_stats (GstTracer * obj, guint64 ts)
    *   cpufreq-selector -g performance
    *   cpufreq-selector -g ondemand
    */
-  /* *INDENT-OFF* */
+  /* clang-format off */
   avg_cpuload = (guint) gst_util_uint64_scale (stats->tthread,
       G_GINT64_CONSTANT (1000), ts);
   update_trace_value (stats->tvs_thread, ts, stats->tthread, &dts, &dtproc);
@@ -256,7 +256,7 @@ do_stats (GstTracer * obj, guint64 ts)
       G_GINT64_CONSTANT (1000), dts);
   gst_tracer_record_log (tr_proc, (guint64) getpid (), ts,
       MIN (avg_cpuload, 1000), MIN (cur_cpuload, 1000), tproc);
-  /* *INDENT-ON* */
+  /* clang-format on */
 }
 
 /* tracer class */
@@ -316,7 +316,7 @@ gst_rusage_tracer_class_init (GstRUsageTracerClass * klass)
   GST_DEBUG ("rusage: num_cpus=%ld", num_cpus);
 
   /* announce trace formats */
-  /* *INDENT-OFF* */
+  /* clang-format off */
   tr_thread = gst_tracer_record_new ("thread-rusage.class",
       "thread-id", GST_TYPE_STRUCTURE, gst_structure_new ("scope",
           "type", G_TYPE_GTYPE, G_TYPE_UINT64,
@@ -377,7 +377,7 @@ gst_rusage_tracer_class_init (GstRUsageTracerClass * klass)
           "max", G_TYPE_UINT64, G_MAXUINT64,
           NULL),
       NULL);
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   GST_OBJECT_FLAG_SET (tr_thread, GST_OBJECT_FLAG_MAY_BE_LEAKED);
   GST_OBJECT_FLAG_SET (tr_proc, GST_OBJECT_FLAG_MAY_BE_LEAKED);

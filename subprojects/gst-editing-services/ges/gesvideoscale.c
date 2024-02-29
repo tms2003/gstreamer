@@ -42,7 +42,7 @@ struct _GESVideoScale
   gint width, height;
 };
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static GstStaticPadTemplate gst_video_scale_sink_template =
     GST_STATIC_PAD_TEMPLATE ("sink",
         GST_PAD_SINK,
@@ -59,7 +59,7 @@ static GstStaticPadTemplate gst_video_scale_src_template =
 
 GES_DECLARE_TYPE (VideoScale, video_scale, VIDEO_SCALE)
 G_DEFINE_TYPE (GESVideoScale, ges_video_scale, GST_TYPE_BIN);
-/* *INDENT-ON* */
+/* clang-format on */
 
 static void
 set_dimension (GESVideoScale * self, gint width, gint height)

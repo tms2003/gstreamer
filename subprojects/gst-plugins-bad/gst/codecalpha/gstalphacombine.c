@@ -51,7 +51,7 @@
 #define SUPPORTED_ALPHA_FORMATS "{ GRAY8, I420, I420_10LE, NV12 }"
 #define SUPPORTED_SRC_FORMATS "{ A420, A420_10LE, AV12 }"
 
-/* *INDENT-OFF* */
+/* clang-format off */
 struct {
   GstVideoFormat sink;
   GstVideoFormat alpha;
@@ -87,7 +87,7 @@ struct {
     .src = GST_VIDEO_FORMAT_A420_10LE
   },
 };
-/* *INDENT-ON* */
+/* clang-format on */
 
 GST_DEBUG_CATEGORY_STATIC (alphacombine_debug);
 #define GST_CAT_DEFAULT (alphacombine_debug)

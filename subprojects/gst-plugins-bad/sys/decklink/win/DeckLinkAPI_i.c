@@ -1,4 +1,4 @@
-/* *INDENT-OFF* */
+/* clang-format off */
 
 /* this ALWAYS GENERATED file contains the IIDs and CLSIDs */
 
@@ -452,4 +452,4 @@ MIDL_DEFINE_GUID(IID, IID_IDeckLinkInput_v7_1,0x2B54EDEF,0x5B32,0x429F,0xBA,0x11
 }
 #endif
 
-/* *INDENT-ON* */
+/* clang-format on */

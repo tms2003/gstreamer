@@ -68,14 +68,14 @@ GST_DEBUG_CATEGORY_EXTERN (gst_msdkmjpegdec_debug);
 #define GST_IS_MSDKMJPEGDEC_CLASS(klass) \
   (G_TYPE_CHECK_CLASS_TYPE((klass), G_TYPE_FROM_CLASS (klass)))
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static const gchar *doc_src_caps_str =
     GST_VIDEO_CAPS_MAKE ("{ NV12, YUY2, BGRA }") " ;"
     GST_VIDEO_CAPS_MAKE_WITH_FEATURES ("memory:DMABuf",
         "{ NV12, YUY2, BGRA }") " ;"
     GST_VIDEO_CAPS_MAKE_WITH_FEATURES ("memory:VAMemory", "{ NV12 }") " ;"
     GST_VIDEO_CAPS_MAKE_WITH_FEATURES ("memory:D3D11Memory", "{ NV12 }");
-/* *INDENT-ON* */
+/* clang-format on */
 
 static const gchar *doc_sink_caps_str = "image/jpeg";
 

@@ -53,7 +53,7 @@ typedef struct _GstGLCompositionOverlayClass GstGLCompositionOverlayClass;
 
 static GType gst_gl_composition_overlay_get_type (void);
 
-/* *INDENT-OFF* */
+/* clang-format off */
 const gchar *fragment_shader =
   "varying vec2 v_texcoord;\n"
   "uniform sampler2D tex;\n"
@@ -66,7 +66,7 @@ const gchar *fragment_shader =
   "  gl_FragColor = t.gbar;\n"
 #endif
   "}";
-/* *INDENT-ON* */
+/* clang-format on */
 
 struct _GstGLCompositionOverlay
 {
@@ -105,7 +105,7 @@ gst_gl_composition_overlay_init_vertex_buffer (GstGLContext * context,
   GstGLCompositionOverlay *overlay =
       (GstGLCompositionOverlay *) overlay_pointer;
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   static const GLfloat texcoords[] = {
       1.0f, 0.0f,
       0.0f, 0.0f,
@@ -116,7 +116,7 @@ gst_gl_composition_overlay_init_vertex_buffer (GstGLContext * context,
   static const GLushort indices[] = {
     0, 1, 2, 0, 2, 3
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   if (gl->GenVertexArrays) {
     gl->GenVertexArrays (1, &overlay->vao);

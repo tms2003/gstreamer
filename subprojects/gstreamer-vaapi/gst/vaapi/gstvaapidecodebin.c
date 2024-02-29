@@ -77,7 +77,7 @@ static GParamSpec *properties[PROP_LAST];
 
 /* Default templates */
 #define GST_CAPS_CODEC(CODEC) CODEC "; "
-/* *INDENT-OFF* */
+/* clang-format off */
 static const char gst_vaapi_decode_bin_sink_caps_str[] =
     GST_CAPS_CODEC("video/mpeg, mpegversion=2, systemstream=(boolean)false")
     GST_CAPS_CODEC("video/mpeg, mpegversion=4")
@@ -90,9 +90,9 @@ static const char gst_vaapi_decode_bin_sink_caps_str[] =
     GST_CAPS_CODEC("video/x-vp8")
     GST_CAPS_CODEC("video/x-vp9")
     ;
-/* *INDENT-ON* */
+/* clang-format on */
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static const char gst_vaapi_decode_bin_src_caps_str[] =
   GST_VAAPI_MAKE_SURFACE_CAPS ", "
   GST_CAPS_INTERLACED_FALSE "; "
@@ -102,7 +102,7 @@ static const char gst_vaapi_decode_bin_src_caps_str[] =
 #endif
   GST_VIDEO_CAPS_MAKE (GST_VIDEO_FORMATS_ALL) ", "
   GST_CAPS_INTERLACED_FALSE;
-/* *INDENT-ON* */
+/* clang-format on */
 
 static GstStaticPadTemplate gst_vaapi_decode_bin_sink_factory =
 GST_STATIC_PAD_TEMPLATE ("sink",

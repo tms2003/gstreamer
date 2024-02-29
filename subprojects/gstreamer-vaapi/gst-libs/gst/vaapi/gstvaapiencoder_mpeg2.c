@@ -464,13 +464,13 @@ ensure_control_rate_params (GstVaapiEncoderMpeg2 * encoder)
   /* RateControl params */
   GST_VAAPI_ENCODER_VA_RATE_CONTROL (encoder).initial_qp = encoder->cqp;
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   /* HRD params */
   GST_VAAPI_ENCODER_VA_HRD (encoder) = (VAEncMiscParameterHRD) {
     .buffer_size = base_encoder->bitrate * 1000 * 8,
     .initial_buffer_fullness = base_encoder->bitrate * 1000 * 4,
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   return TRUE;
 }
@@ -946,7 +946,7 @@ static struct
   int code;
   float value;
 } frame_rate_tab[] = {
-  /* *INDENT-OFF* */
+    /* clang-format off */
   { 1, 23.976 },
   { 2, 24.0   },
   { 3, 25.0   },
@@ -955,7 +955,7 @@ static struct
   { 6, 50     },
   { 7, 59.94  },
   { 8, 60     }
-  /* *INDENT-ON* */
+    /* clang-format on */
 };
 
 static int

@@ -154,13 +154,13 @@ gst_v4l2_codec_vp9_dec_fill_seg_params (GstV4l2CodecVp9Dec * self,
   for (i = 0; i < G_N_ELEMENTS (v4l2_segmentation->feature_enabled); i++) {
     /* see 3. Symbols (and abbreviated terms) for reference */
 
-    /* *INDENT-OFF* */
+    /* clang-format off */
     v4l2_segmentation->feature_enabled[i] =
         (s->feature_enabled[i][GST_VP9_SEG_LVL_ALT_Q]     ? V4L2_VP9_SEGMENT_FEATURE_ENABLED(V4L2_VP9_SEG_LVL_ALT_Q) : 0) |
         (s->feature_enabled[i][GST_VP9_SEG_LVL_ALT_L]     ? V4L2_VP9_SEGMENT_FEATURE_ENABLED(V4L2_VP9_SEG_LVL_ALT_L) : 0) |
         (s->feature_enabled[i][GST_VP9_SEG_LVL_REF_FRAME] ? V4L2_VP9_SEGMENT_FEATURE_ENABLED(V4L2_VP9_SEG_LVL_REF_FRAME) : 0) |
         (s->feature_enabled[i][GST_VP9_SEG_SEG_LVL_SKIP]  ? V4L2_VP9_SEGMENT_FEATURE_ENABLED(V4L2_VP9_SEG_LVL_SKIP) : 0);
-    /* *INDENT-ON* */
+    /* clang-format on */
   }
 
   memcpy (v4l2_segmentation->feature_data, s->feature_data,
@@ -294,7 +294,7 @@ static void
 gst_v4l2_codec_vp9_dec_fill_dec_params (GstV4l2CodecVp9Dec * self,
     const GstVp9FrameHeader * h, const GstVp9Dpb * reference_frames)
 {
-  /* *INDENT-OFF* */
+  /* clang-format off */
   self->v4l2_vp9_frame = (struct v4l2_ctrl_vp9_frame) {
     .flags =
         (h->frame_type == GST_VP9_KEY_FRAME ? V4L2_VP9_FRAME_FLAG_KEY_FRAME : 0) |
@@ -350,7 +350,7 @@ gst_v4l2_codec_vp9_dec_fill_dec_params (GstV4l2CodecVp9Dec * self,
         (h->segmentation_params.segmentation_abs_or_delta_update ? V4L2_VP9_SEGMENTATION_FLAG_ABS_OR_DELTA_UPDATE : 0),
     }
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   switch (h->reset_frame_context) {
     case 0:
@@ -452,7 +452,7 @@ gst_v4l2_codec_vp9_dec_negotiate (GstVideoDecoder * decoder)
   GstV4l2CodecVp9Dec *self = GST_V4L2_CODEC_VP9_DEC (decoder);
   GstVp9Decoder *vp9dec = GST_VP9_DECODER (decoder);
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   struct v4l2_ext_control control[] = {
     {
       .id = V4L2_CID_STATELESS_VP9_FRAME,
@@ -460,7 +460,7 @@ gst_v4l2_codec_vp9_dec_negotiate (GstVideoDecoder * decoder)
       .size = sizeof (self->v4l2_vp9_frame),
     },
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   GstCaps *filter, *caps;
   /* Ignore downstream renegotiation request. */
@@ -778,7 +778,7 @@ gst_v4l2_codec_vp9_dec_end_picture (GstVp9Decoder * decoder,
   gsize bytesused;
   guint num_controls = 1;
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   struct v4l2_ext_control decode_params_control[] = {
     {
       .id = V4L2_CID_STATELESS_VP9_FRAME,
@@ -797,7 +797,7 @@ gst_v4l2_codec_vp9_dec_end_picture (GstVp9Decoder * decoder,
       .size = sizeof (self->v4l2_delta_probs),
     };
   }
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   bytesused = self->bitstream_map.size;
   gst_memory_unmap (self->bitstream, &self->bitstream_map);

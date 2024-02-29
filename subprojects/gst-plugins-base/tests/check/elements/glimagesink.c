@@ -46,10 +46,10 @@ static GstPad *srcpad = NULL;
   return NULL; \
 }
 
-/* *INDENT-OFF* */
+/* clang-format off */
 PAD_FUNC (peer_query, GstQuery, query, TRUE)
 PAD_FUNC (push, GstBuffer, buf, GST_FLOW_OK)
-/* *INDENT-ON* */
+/* clang-format on */
 
 /* On OSX it's required to have a main loop running in the
  * main thread while using the display connection.

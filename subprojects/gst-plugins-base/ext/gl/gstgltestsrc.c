@@ -60,7 +60,7 @@ enum
       /* FILL ME */
 };
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static GstStaticPadTemplate src_factory = GST_STATIC_PAD_TEMPLATE ("src",
     GST_PAD_SRC,
     GST_PAD_ALWAYS,
@@ -71,7 +71,7 @@ static GstStaticPadTemplate src_factory = GST_STATIC_PAD_TEMPLATE ("src",
         "framerate = " GST_VIDEO_FPS_RANGE ","
         "texture-target = (string) 2D")
     );
-/* *INDENT-ON* */
+/* clang-format on */
 
 #define gst_gl_test_src_parent_class parent_class
 G_DEFINE_TYPE (GstGLTestSrc, gst_gl_test_src, GST_TYPE_GL_BASE_SRC);

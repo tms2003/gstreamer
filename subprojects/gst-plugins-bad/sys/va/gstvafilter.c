@@ -431,7 +431,7 @@ gst_va_filter_close (GstVaFilter * self)
   return TRUE;
 }
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static const struct VaFilterCapMap {
   VAProcFilterType type;
   guint count;
@@ -449,7 +449,7 @@ static const struct VaFilterCapMap {
   F(3DLUT, 16),
 #undef F
 };
-/* *INDENT-ON* */
+/* clang-format on */
 
 static const struct VaFilterCapMap *
 gst_va_filter_get_filter_cap (VAProcFilterType type)
@@ -553,7 +553,7 @@ bail:
   return ret;
 }
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static const struct _CBDesc {
   const char *name;
   const char *nick;
@@ -581,7 +581,7 @@ static const struct _CBDesc {
       { "auto-contrast", "Auto-Contrast", "Enable auto contrast",
         GST_VA_FILTER_PROP_AUTO_CONTRAST },
 };
-/* *INDENT-ON* */
+/* clang-format on */
 
 gboolean
 gst_va_filter_install_properties (GstVaFilter * self, GObjectClass * klass)
@@ -706,7 +706,7 @@ gst_va_filter_install_properties (GstVaFilter * self, GObjectClass * klass)
  *
  * Since: 1.20
  */
-/* *INDENT-OFF* */
+/* clang-format off */
 static const GEnumValue di_desc[] = {
   [GST_VA_DEINTERLACE_BOB] =
       { VAProcDeinterlacingBob,
@@ -723,7 +723,7 @@ static const GEnumValue di_desc[] = {
         "Compensation: Recreating missing lines by using motion vector.",
         "compensated" },
 };
-/* *INDENT-ON* */
+/* clang-format on */
 
 static GType
 gst_va_deinterlace_methods_get_type (guint num_caps,
@@ -742,9 +742,9 @@ gst_va_deinterlace_methods_get_type (guint num_caps,
       methods_types[j++] = di_desc[caps[i].type];
   }
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   methods_types[j] = (GEnumValue) { 0, NULL, NULL };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   deinterlace_methods_type = g_enum_register_static ("GstVaDeinterlaceMethods",
       (const GEnumValue *) methods_types);
@@ -846,7 +846,7 @@ gst_va_filter_get_filter_caps (GstVaFilter * self, VAProcFilterType type,
     guint * num_caps)
 {
   struct VaFilter *filter = NULL;
-  /* *INDENT-OFF* */
+  /* clang-format off */
   static const VAProcFilterCap i965_ste_caps = {
     .range = {
       .min_value = 0.0,
@@ -855,7 +855,7 @@ gst_va_filter_get_filter_caps (GstVaFilter * self, VAProcFilterType type,
       .step = 1.0,
     },
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
   gpointer ret = NULL;
   guint i;
 
@@ -1105,7 +1105,7 @@ fail:
 }
 
 /* from va_vpp.h */
-/* *INDENT-OFF* */
+/* clang-format off */
 static const struct ColorPropertiesMap
 {
   VAProcColorStandardType standard;
@@ -1127,12 +1127,12 @@ static const struct ColorPropertiesMap
   { VAProcColorStandardXVYCC709, 1, 11,  1 },
   { VAProcColorStandardBT2020, 9, 14,  9 },
 };
-  /* *INDENT-ON* */
+/* clang-format on */
 
 static guint8
 _get_chroma_siting (GstVideoChromaSite chrome_site)
 {
-  /* *INDENT-OFF* */
+  /* clang-format off */
   static const struct ChromaSiteMap {
     GstVideoChromaSite gst;
     guint8 va;
@@ -1155,7 +1155,7 @@ _get_chroma_siting (GstVideoChromaSite chrome_site)
     { GST_VIDEO_CHROMA_SITE_DV, VA_CHROMA_SITING_VERTICAL_TOP
                                 | VA_CHROMA_SITING_HORIZONTAL_LEFT },
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
   guint i;
 
   for (i = 0; i < G_N_ELEMENTS (chroma_site_map); i++) {
@@ -1169,7 +1169,7 @@ _get_chroma_siting (GstVideoChromaSite chrome_site)
 static guint8
 _get_color_range (GstVideoColorRange range)
 {
-  /* *INDENT-OFF* */
+  /* clang-format off */
   static const struct ColorRangeMap {
     GstVideoColorRange gst;
     guint8 va;
@@ -1178,7 +1178,7 @@ _get_color_range (GstVideoColorRange range)
     { GST_VIDEO_COLOR_RANGE_0_255, VA_SOURCE_RANGE_FULL },
     { GST_VIDEO_COLOR_RANGE_16_235, VA_SOURCE_RANGE_REDUCED },
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
   guint i;
 
   for (i = 0; i < G_N_ELEMENTS (color_range_map); i++) {
@@ -1294,7 +1294,7 @@ _config_color_properties (VAProcColorStandardType * std,
   }
 
 set_properties:
-  /* *INDENT-OFF* */
+  /* clang-format off */
   *props = (VAProcColorProperties) {
     .chroma_sample_location =
         _get_chroma_siting (GST_VIDEO_INFO_CHROMA_SITE (info)),
@@ -1306,7 +1306,7 @@ set_properties:
     .matrix_coefficients =
         gst_video_color_matrix_to_iso (colorimetry.matrix),
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 }
 
 gboolean
@@ -1320,7 +1320,7 @@ gst_va_filter_set_video_info (GstVaFilter * self, GstVideoInfo * in_info,
     return FALSE;
 
   GST_OBJECT_LOCK (self);
-  /* *INDENT-OFF* */
+  /* clang-format off */
   self->input_region = (VARectangle) {
     .width = GST_VIDEO_INFO_WIDTH (in_info),
     .height = GST_VIDEO_INFO_HEIGHT (in_info),
@@ -1330,7 +1330,7 @@ gst_va_filter_set_video_info (GstVaFilter * self, GstVideoInfo * in_info,
     .width = GST_VIDEO_INFO_WIDTH (out_info),
     .height = GST_VIDEO_INFO_HEIGHT (out_info),
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   _config_color_properties (&self->input_color_standard,
       &self->input_color_properties, in_info,
@@ -1555,14 +1555,14 @@ _fill_va_sample (GstVaFilter * self, GstVaSample * sample,
 
   GST_OBJECT_LOCK (self);
   if (crop && self->crop_enabled) {
-    /* *INDENT-OFF* */
+    /* clang-format off */
     sample->rect = (VARectangle) {
       .x = crop->x,
       .y = crop->y,
       .width = crop->width,
       .height = crop->height
     };
-    /* *INDENT-ON* */
+    /* clang-format on */
   } else {
     sample->rect = self->input_region;
   }
@@ -1583,7 +1583,7 @@ _create_pipeline_buffer (GstVaFilter * self, GstVaSample * src,
 
   GST_OBJECT_LOCK (self);
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   if (filters) {
     num_filters = filters->len;
     va_filters = (num_filters > 0) ? (VABufferID *) filters->data : NULL;
@@ -1611,7 +1611,7 @@ _create_pipeline_buffer (GstVaFilter * self, GstVaSample * src,
     /* output to SDR */
     .output_hdr_metadata = NULL,
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   GST_OBJECT_UNLOCK (self);
 
@@ -1784,7 +1784,7 @@ gst_va_filter_compose (GstVaFilter * self, GstVaComposeTransaction * tx)
     gst_buffer_unref (sample->buffer);
 
     GST_OBJECT_LOCK (self);
-    /* *INDENT-OFF* */
+    /* clang-format off */
     params = (VAProcPipelineParameterBuffer) {
       .surface = in_surface,
       .surface_region = &sample->input_region,
@@ -1792,18 +1792,18 @@ gst_va_filter_compose (GstVaFilter * self, GstVaComposeTransaction * tx)
       .output_background_color = 0xff000000,
       .filter_flags = self->scale_method,
     };
-    /* *INDENT-ON* */
+    /* clang-format on */
     GST_OBJECT_UNLOCK (self);
 
     /* only send blend state when sample is not fully opaque */
     if ((self->pipeline_caps.blend_flags & VA_BLEND_GLOBAL_ALPHA)
         && sample->alpha < 1.0) {
-      /* *INDENT-OFF* */
+      /* clang-format off */
       blend = (VABlendState) {
         .flags = VA_BLEND_GLOBAL_ALPHA,
         .global_alpha = sample->alpha,
       };
-      /* *INDENT-ON* */
+      /* clang-format on */
       params.blend_state = &blend;
     }
 

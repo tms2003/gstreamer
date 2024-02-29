@@ -682,11 +682,11 @@ gst_v4l2_decoder_queue_src_buffer (GstV4l2Decoder * self, GstBuffer * buffer)
     buf.m.planes = planes;
     for (i = 0; i < buf.length; i++) {
       GstMemory *mem = gst_buffer_peek_memory (buffer, i);
-      /* *INDENT-OFF* */
+      /* clang-format off */
       planes[i] = (struct v4l2_plane) {
         .bytesused = gst_memory_get_sizes (mem, NULL, NULL),
       };
-      /* *INDENT-ON* */
+      /* clang-format on */
     }
   } else {
     buf.bytesused = gst_buffer_get_size (buffer);
