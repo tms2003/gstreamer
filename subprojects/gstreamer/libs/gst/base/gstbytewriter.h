@@ -463,6 +463,9 @@ _gst_byte_writer_put_buffer_inline (GstByteWriter * writer, GstBuffer * buffer,
 
 #endif
 
+G_DEFINE_AUTOPTR_CLEANUP_FUNC (GstByteWriter, gst_byte_writer_free);
+G_DEFINE_AUTO_CLEANUP_CLEAR_FUNC (GstByteWriter, gst_byte_writer_reset);
+
 G_END_DECLS
 
 #endif /* __GST_BYTE_WRITER_H__ */

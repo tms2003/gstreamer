@@ -679,6 +679,8 @@ _gst_byte_reader_skip_inline (GstByteReader * reader, guint nbytes)
 
 #endif /* GST_BYTE_READER_DISABLE_INLINES */
 
+G_DEFINE_AUTOPTR_CLEANUP_FUNC (GstByteReader, gst_byte_reader_free);
+
 G_END_DECLS
 
 #endif /* __GST_BYTE_READER_H__ */
