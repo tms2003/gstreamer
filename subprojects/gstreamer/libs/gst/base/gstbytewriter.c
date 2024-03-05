@@ -92,6 +92,10 @@ gst_byte_writer_new (void)
  * Creates a new #GstByteWriter instance with the given
  * initial data size.
  *
+ * Note that allocated data is not zeroed (then not initialized
+ * for the parent reader), so in order to do that you may want to
+ * call gst_byte_writer_fill() with a 0 byte.
+ *
  * Free-function: gst_byte_writer_free
  *
  * Returns: (transfer full): a new #GstByteWriter instance
@@ -158,6 +162,10 @@ gst_byte_writer_init (GstByteWriter * writer)
  * @writer: #GstByteWriter instance
  * @size: Initial size of data
  * @fixed: If %TRUE the data can't be reallocated
+ *
+ * Note that allocated data is not zeroed (then not initialized
+ * for the parent reader), so in order to do that you may want to
+ * call gst_byte_writer_fill() with a 0 byte.
  *
  * Initializes @writer with the given initial data size.
  */
