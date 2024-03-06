@@ -1710,6 +1710,10 @@ check_collision (RTPSession * sess, RTPSource * source,
       } else {
         GST_LOG ("we have a third-party collision or loop ssrc:%x", ssrc);
         if (sess->favor_new) {
+          /* timeout collisions */
+          rtp_source_timeout_conflicting_addresses (source,
+              pinfo->current_time);
+
           if (rtp_source_find_conflicting_address (source,
                   pinfo->address, pinfo->current_time)) {
             gchar *buf1;
