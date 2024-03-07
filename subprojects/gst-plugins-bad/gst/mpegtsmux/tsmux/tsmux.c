@@ -1681,6 +1681,12 @@ tsmux_write_stream_packet (TsMux * mux, TsMuxStream * stream)
   gst_buffer_unmap (buf, &map);
 
   GST_DEBUG ("Writing PES of size %d", (int) gst_buffer_get_size (buf));
+
+  /* In some cases tsmux_packet_out calls tsmux_write_ts_header 
+     which may cause two sequential buffers with packet_start_unit_indicator
+     which breaks some decoders.
+   */
+  pi->packet_start_unit_indicator = FALSE;
   res = tsmux_packet_out (mux, buf, new_pcr);
 
   /* Reset all dynamic flags */
