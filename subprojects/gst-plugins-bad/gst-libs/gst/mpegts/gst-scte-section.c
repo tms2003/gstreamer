@@ -28,6 +28,7 @@
 #include "mpegts.h"
 #include "gstmpegts-private.h"
 #define MPEGTIME_TO_GSTTIME(t) ((t) * (guint64)100000 / 9)
+#define SEGMENT_DESCRIPTOR_IDENTIFIER 0x43554549
 
 /**
  * SECTION:gst-scte-section
@@ -261,6 +262,48 @@ G_DEFINE_BOXED_TYPE (GstMpegtsSCTESIT, gst_mpegts_scte_sit,
     (GBoxedCopyFunc) _gst_mpegts_scte_sit_copy,
     (GFreeFunc) _gst_mpegts_scte_sit_free);
 
+/**
+ * gst_mpegts_scte_segmentation_new:
+ *
+ * Allocates and initializes a #GstMpegtsSCTESegmentation.
+ *
+ * Returns: (transfer full): A newly allocated #GstMpegtsSCTESegmentation
+ */
+GstMpegtsSCTESegmentation *
+gst_mpegts_scte_segmentation_new (void)
+{
+  GstMpegtsSCTESegmentation *seg;
+
+  seg = g_slice_new0 (GstMpegtsSCTESegmentation);
+  /* Set all default values (which aren't already 0/NULL) */
+  seg->archive_allowed = TRUE;
+  seg->web_delivery_allowed = TRUE;
+  seg->no_regional_blackout = TRUE;
+  seg->device_restrictions = 0x3;
+  return seg;
+}
+
+static GstMpegtsSCTESegmentation *
+_gst_mpegts_scte_segmentation_copy (GstMpegtsSCTESegmentation * seg)
+{
+  GstMpegtsSCTESegmentation *copy =
+      g_slice_dup (GstMpegtsSCTESegmentation, seg);
+  if (seg->upid)
+    copy->upid = g_string_new_len (seg->upid->str, seg->upid->len);
+  return copy;
+}
+
+static void
+_gst_mpegts_scte_segmentation_free (GstMpegtsSCTESegmentation * seg)
+{
+  if (seg->upid)
+    g_string_free (seg->upid, TRUE);
+  g_slice_free (GstMpegtsSCTESegmentation, seg);
+}
+
+G_DEFINE_BOXED_TYPE (GstMpegtsSCTESegmentation, gst_mpegts_scte_segmentation,
+    (GBoxedCopyFunc) _gst_mpegts_scte_segmentation_copy,
+    (GFreeFunc) _gst_mpegts_scte_segmentation_free);
 
 static gpointer
 _parse_sit (GstMpegtsSection * section)
@@ -637,6 +680,24 @@ gst_mpegts_scte_splice_component_new (guint8 tag)
   return component;
 }
 
+/**
+ * gst_mpegts_scte_time_new:
+ *
+ * Allocates and initializes a new SCTE Time signal (SCTE command 6)
+ * @param timestamp splice time in muxer PTS units (90KHz scale)
+ * @return
+ */
+GstMpegtsSCTESIT *
+gst_mpegts_scte_time_new (guint64 timestamp)
+{
+  GstMpegtsSCTESIT *sit = gst_mpegts_scte_sit_new ();
+
+  sit->splice_command_type = GST_MTS_SCTE_SPLICE_COMMAND_TIME;
+  sit->splice_time_specified = TRUE;
+  sit->splice_time = timestamp;
+  return sit;
+}
+
 static gboolean
 _packetize_sit (GstMpegtsSection * section)
 {
@@ -906,4 +967,150 @@ gst_mpegts_section_from_scte_sit (GstMpegtsSCTESIT * sit, guint16 pid)
   section->short_section = TRUE;
 
   return section;
+}
+
+/**
+ * gst_mpegts_descriptor_from_segmentation
+ *
+ * Creates a %GST_MTS_SCTE_DESC_SEGMENTATION #GstMpegtsDescriptor
+ *
+ * Return: #GstMpegtsDescriptor, %NULL on failure
+ */
+GstMpegtsDescriptor *
+gst_mpegts_descriptor_from_segmentation (GstMpegtsSCTESegmentation *
+    segmentation)
+{
+  GstMpegtsDescriptor *descriptor;
+  guint8 size;
+  guint8 *data;
+  guint8 flags;
+
+  g_return_val_if_fail (segmentation->segmentation_event_id != 0, NULL);
+  size = 9;
+  if (!segmentation->cancel) {
+    size += 6;                  //flags, upid-type, upid-len, type, num, expected
+    if (segmentation->duration != 0)
+      size += 5;
+    if (segmentation->upid)
+      size += segmentation->upid->len;
+  }
+
+  descriptor = _new_descriptor (GST_MTS_SCTE_DESC_SEGMENTATION, size);
+
+  data = descriptor->data + 2;
+  GST_WRITE_UINT32_BE (data, SEGMENT_DESCRIPTOR_IDENTIFIER);
+  data += 4;
+  GST_WRITE_UINT32_BE (data, segmentation->segmentation_event_id);
+  data += 4;
+  *data++ = segmentation->cancel ? 0xff : 0x7f;
+  if (!segmentation->cancel) {
+    flags = 0x80;               //program segmentation is always 1
+    if (segmentation->duration)
+      flags |= 0x40;
+    if (segmentation->web_delivery_allowed)
+      flags |= 0x10;
+    if (segmentation->no_regional_blackout)
+      flags |= 0x08;
+    if (segmentation->archive_allowed)
+      flags |= 0x04;
+    flags |= (segmentation->device_restrictions & 0x03);
+    // no restrictions
+    if ((flags & 0x1F) == 0x1F)
+      flags |= 0x20;
+    *data++ = flags;
+    if (segmentation->duration) {
+      *data++ = (segmentation->duration >> 32) & 0xff;
+      GST_WRITE_UINT32_BE (data,
+          (guint32) (segmentation->duration & 0xffffffff));
+      data += 4;
+    }
+    *data++ = segmentation->upid_type;
+    if (segmentation->upid) {
+      *data++ = segmentation->upid->len;
+      memcpy (data, segmentation->upid->str, segmentation->upid->len);
+      data += segmentation->upid->len;
+    } else {
+      *data++ = 0;
+    }
+    *data++ = segmentation->segmentation_type_id;
+    *data++ = segmentation->segment_num;
+    *data++ = segmentation->segments_expected;
+  }
+
+  return descriptor;
+}
+
+GstMpegtsSCTESegmentation *
+gst_mpegts_segment_from_descriptor (GstMpegtsDescriptor * desc)
+{
+  GstMpegtsSCTESegmentation *result;
+  guint8 *data;
+  guint32 descriptor_id;
+  guint8 flags;
+  gboolean has_duration;
+  gint upid_len;
+  gint min_length = 9;
+
+  if (desc->tag != GST_MTS_SCTE_DESC_SEGMENTATION)
+    return NULL;
+  if (desc->length < min_length)
+    return NULL;
+
+  result = gst_mpegts_scte_segmentation_new ();
+
+  data = desc->data + 2;
+  descriptor_id = GST_READ_UINT32_BE (data);
+  data += 4;
+  if (descriptor_id != SEGMENT_DESCRIPTOR_IDENTIFIER)
+    goto bad_segment;
+
+  result->segmentation_event_id = GST_READ_UINT32_BE (data);
+  data += 4;
+  result->cancel = (*data & 0x80) != 0;
+  data++;
+  if (!result->cancel) {
+    min_length += 6;
+    if (desc->length < min_length)
+      goto bad_segment;
+    flags = *data;
+    data++;
+    if (!(flags & 0x80))
+      goto bad_segment;
+    has_duration = (flags & 0x40) != 0;
+    result->web_delivery_allowed = (flags & 0x10) != 0;
+    result->no_regional_blackout = (flags & 0x08) != 0;
+    result->archive_allowed = (flags & 0x04) != 0;
+    result->device_restrictions = (flags & 0x03);
+
+    if (has_duration) {
+      min_length += 5;
+      if (desc->length < min_length)
+        goto bad_segment;
+      result->duration = ((guint64) * data << 32);
+      data++;
+      result->duration |= GST_READ_UINT32_BE (data);
+      data += 4;
+    }
+
+    result->upid_type = *data++;
+    upid_len = *data++;
+    if (upid_len) {
+      min_length += upid_len;
+      if (desc->length < min_length)
+        goto bad_segment;
+      result->upid = g_string_new_len ((const gchar *) data, upid_len);
+      data += upid_len;
+    }
+
+    result->segmentation_type_id = *data++;
+    result->segment_num = *data++;
+    result->segments_expected = *data++;
+  }
+
+  return result;
+
+bad_segment:
+  if (result)
+    _gst_mpegts_scte_segmentation_free (result);
+  return NULL;
 }
