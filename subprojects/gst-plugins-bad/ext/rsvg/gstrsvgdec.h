@@ -44,6 +44,13 @@ G_BEGIN_DECLS
 typedef struct _GstRsvgDec GstRsvgDec;
 typedef struct _GstRsvgDecClass GstRsvgDecClass;
 
+typedef enum
+{
+  GST_RSVG_FIT_MODE_SCALE,
+  GST_RSVG_FIT_MODE_SCALE_NO_ASPECT,
+  GST_RSVG_FIT_MODE_CROP,
+} GstRsvgFitMode;
+
 struct _GstRsvgDec
 {
   GstVideoDecoder  decoder;
@@ -56,12 +63,20 @@ struct _GstRsvgDec
   GstClockTime first_timestamp;
   guint64 frame_count;
 
+  gboolean renegotiate;
   GstVideoCodecState *input_state;
+  RsvgDimensionData dimension;
 
   GstSegment segment;
   gboolean need_newsegment;
 
   GstAdapter *adapter;
+
+  GstRsvgFitMode fit_mode;
+  gdouble viewport_x, viewport_y;
+  gdouble viewport_width, viewport_height;
+  gboolean relative_viewport;
+  gdouble dpi;
 };
 
 struct _GstRsvgDecClass
