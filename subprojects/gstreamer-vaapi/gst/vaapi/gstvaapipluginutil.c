@@ -64,7 +64,7 @@ typedef struct
   GstVaapiDisplayCreateFromHandleFunc create_display_from_handle;
 } DisplayMap;
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static const DisplayMap g_display_map[] = {
 #if GST_VAAPI_USE_WAYLAND
   {"wayland",
@@ -94,7 +94,7 @@ static const DisplayMap g_display_map[] = {
 #endif
   {NULL,}
 };
-/* *INDENT-ON* */
+/* clang-format on */
 
 static GstVaapiDisplay *
 gst_vaapi_create_display (GstVaapiDisplayType display_type,

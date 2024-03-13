@@ -321,7 +321,7 @@ gst_gl_mosaic_callback (gpointer stuff)
       GL_FALSE, matrix);
 
   if (!mosaic->vertex_buffer) {
-    /* *INDENT-OFF* */
+    /* clang-format off */
     gfloat vertices[] = {
       /* front face */
        1.0f, 1.0f,-1.0f, 1.0f, 0.0f,
@@ -368,7 +368,7 @@ gst_gl_mosaic_callback (gpointer stuff)
       20, 21, 22,
       20, 22, 23,
     };
-    /* *INDENT-ON* */
+    /* clang-format on */
 
     if (gl->GenVertexArrays) {
       gl->GenVertexArrays (1, &mosaic->vao);

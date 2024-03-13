@@ -44,7 +44,7 @@ struct _GstEncoderBitrateProfileManager
   gboolean user_bitrate;
 };
 
-/* *INDENT-OFF* */
+/* clang-format off */
 /* Copied from https://support.google.com/youtube/answer/1722171?hl=en */
 static const GstEncoderBitrateTargetForPixelsMap youtube_bitrate_profiles[] = {
   {
@@ -83,7 +83,7 @@ static const GstEncoderBitrateTargetForPixelsMap youtube_bitrate_profiles[] = {
         .high_framerate_bitrate = 0,
   },
 };
-/* *INDENT-ON* */
+/* clang-format on */
 
 static void
 gst_encoder_bitrate_profile_free (GstEncoderBitrateProfile * profile)

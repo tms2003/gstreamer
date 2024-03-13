@@ -24,7 +24,7 @@
 
 #include "gstvaprofile.h"
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static const struct ProfileMap
 {
   VAProfile profile;
@@ -122,7 +122,7 @@ static const struct ProfileMap
 #undef P
 #undef Q
 };
-/* *INDENT-ON* */
+/* clang-format on */
 
 static const struct ProfileMap *
 get_profile_map (VAProfile profile)

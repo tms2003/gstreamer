@@ -44,7 +44,7 @@ _create_info_from_args (VkBufferCreateInfo * info, gsize size,
     VkBufferUsageFlags usage)
 {
   /* FIXME: validate these */
-  /* *INDENT-OFF* */
+  /* clang-format off */
   *info = (VkBufferCreateInfo) {
       .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
       .pNext = NULL,
@@ -55,7 +55,7 @@ _create_info_from_args (VkBufferCreateInfo * info, gsize size,
       .queueFamilyIndexCount = 0,
       .pQueueFamilyIndices = NULL,
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   return TRUE;
 }

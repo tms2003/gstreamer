@@ -259,7 +259,7 @@ GST_END_TEST;
 #define F_META GST_PBUTILS_CAPS_DESCRIPTION_FLAG_METADATA
 #define F_TAG GST_PBUTILS_CAPS_DESCRIPTION_FLAG_TAG
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static const struct FlagDescEntry
 {
   const gchar *caps_string;
@@ -276,7 +276,7 @@ static const struct FlagDescEntry
   {"application/x-onvif-metadata", F_META},
   {"random/x-nonsense, sense=false", 0},
 };
-/* *INDENT-ON* */
+/* clang-format on */
 
 GST_START_TEST (test_pb_utils_get_caps_description_flags)
 {

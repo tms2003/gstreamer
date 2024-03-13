@@ -98,9 +98,9 @@ static GstStaticPadTemplate audio_src_template =
 typedef struct _GstTestSrcBin GstTestSrcBin;
 typedef struct _GstTestSrcBinClass GstTestSrcBinClass;
 
-/* *INDENT-OFF* */
+/* clang-format off */
 GType gst_test_src_bin_get_type (void) G_GNUC_CONST;
-/* *INDENT-ON* */
+/* clang-format on */
 
 struct _GstTestSrcBinClass
 {
@@ -601,10 +601,10 @@ gst_test_src_bin_uri_handler_init (gpointer g_iface, gpointer unused)
   iface->set_uri = gst_test_src_bin_uri_handler_set_uri;
 }
 
-/* *INDENT-OFF* */
+/* clang-format off */
 G_DEFINE_TYPE_WITH_CODE (GstTestSrcBin, gst_test_src_bin, GST_TYPE_BIN,
     G_IMPLEMENT_INTERFACE (GST_TYPE_URI_HANDLER, gst_test_src_bin_uri_handler_init))
-/* *INDENT-ON* */
+/* clang-format on */
 
 GST_ELEMENT_REGISTER_DEFINE (testsrcbin, "testsrcbin",
     GST_RANK_NONE, gst_test_src_bin_get_type ());

@@ -41,7 +41,7 @@
 GST_DEBUG_CATEGORY (gst_debug_vulkan_view_convert);
 #define GST_CAT_DEFAULT gst_debug_vulkan_view_convert
 
-/* *INDENT-OFF* */
+/* clang-format off */
 /* These match the order and number of DOWNMIX_ANAGLYPH_* modes */
 static float downmix_matrices[][2][12] = {
   {                             /* Green-Magenta Dubois */
@@ -58,7 +58,7 @@ static float downmix_matrices[][2][12] = {
     {-0.016f, 0.006f, 0.094f, 0.0, -0.123f, 0.062f, 0.185f, 0.0, -0.017f, -0.017f, 0.911f}
   }
 };
-/* *INDENT-ON* */
+/* clang-format on */
 
 struct ViewUpdate
 {
@@ -320,7 +320,7 @@ update_descriptor_set (GstVulkanViewConvert * conv,
   }
 
   for (i = 0; i < n_mems * 2; i++) {
-    /* *INDENT-OFF* */
+    /* clang-format off */
     image_info[i] = (VkDescriptorImageInfo) {
         .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
         .imageView = views[i],
@@ -339,7 +339,7 @@ update_descriptor_set (GstVulkanViewConvert * conv,
         .descriptorCount = 1,
         .pImageInfo = &image_info[i]
     };
-    /* *INDENT-ON* */
+    /* clang-format on */
   }
   g_assert (i <= G_N_ELEMENTS (writes));
 
@@ -1790,7 +1790,7 @@ create_descriptor_set_layout (GstVulkanViewConvert * conv, guint n_mems,
   VkResult err;
   int i;
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   bindings[descriptor_n++] = (VkDescriptorSetLayoutBinding) {
       .binding = 0,
       .descriptorCount = 1,
@@ -1814,7 +1814,7 @@ create_descriptor_set_layout (GstVulkanViewConvert * conv, guint n_mems,
       .bindingCount = descriptor_n,
       .pBindings = bindings
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   err =
       vkCreateDescriptorSetLayout (vfilter->device->device, &layout_info,
@@ -1981,14 +1981,14 @@ gst_vulkan_view_convert_transform (GstBaseTransform * bt, GstBuffer * inbuf,
   {
     VkCommandBufferBeginInfo cmd_buf_info = { 0, };
 
-    /* *INDENT-OFF* */
+    /* clang-format off */
     cmd_buf_info = (VkCommandBufferBeginInfo) {
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
         .pNext = NULL,
         .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
         .pInheritanceInfo = NULL
     };
-    /* *INDENT-ON* */
+    /* clang-format on */
 
     gst_vulkan_command_buffer_lock (cmd_buf);
     err = vkBeginCommandBuffer (cmd_buf->cmd, &cmd_buf_info);

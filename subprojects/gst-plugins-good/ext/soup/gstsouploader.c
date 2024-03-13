@@ -61,7 +61,7 @@ typedef struct _GstSoupVTable
   gboolean loaded;
   guint lib_version;
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
 
   /* Symbols present only in libsoup 3 */
 #if GLIB_CHECK_VERSION(2, 66, 0)
@@ -131,7 +131,7 @@ typedef struct _GstSoupVTable
   void (*_soup_cookies_to_request) (GSList* cookies, SoupMessage* msg);
   void (*_soup_cookies_free) (GSList *cookies);
 
-  /* *INDENT-ON* */
+  /* clang-format on */
 } GstSoupVTable;
 
 static GstSoupVTable gst_soup_vtable = { 0, };

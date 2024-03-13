@@ -85,12 +85,12 @@ struct _GstVaH264Dec
 
 static GstElementClass *parent_class = NULL;
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static const gchar *src_caps_str =
     GST_VIDEO_CAPS_MAKE_WITH_FEATURES (GST_CAPS_FEATURE_MEMORY_VA,
         "{ NV12, P010_10LE }") " ;"
     GST_VIDEO_CAPS_MAKE ("{ NV12, P010_10LE }");
-/* *INDENT-ON* */
+/* clang-format on */
 
 static const gchar *sink_caps_str = "video/x-h264";
 
@@ -316,7 +316,7 @@ gst_va_h264_dec_decode_slice (GstH264Decoder * decoder,
   GstVaDecodePicture *va_pic;
   VASliceParameterBufferH264 slice_param;
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   slice_param = (VASliceParameterBufferH264) {
     .slice_data_size = nalu->size,
     .slice_data_offset = 0,
@@ -334,7 +334,7 @@ gst_va_h264_dec_decode_slice (GstH264Decoder * decoder,
     .num_ref_idx_l0_active_minus1 = header->num_ref_idx_l0_active_minus1,
     .num_ref_idx_l1_active_minus1 = header->num_ref_idx_l1_active_minus1,
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   _fill_ref_pic_list (slice_param.RefPicList0, ref_pic_list0, picture);
   _fill_ref_pic_list (slice_param.RefPicList1, ref_pic_list1, picture);
@@ -371,7 +371,7 @@ gst_va_h264_dec_start_picture (GstH264Decoder * decoder,
   pps = slice->header.pps;
   sps = pps->sequence;
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   pic_param = (VAPictureParameterBufferH264) {
     /* .CurrPic */
     /* .ReferenceFrames */
@@ -415,7 +415,7 @@ gst_va_h264_dec_start_picture (GstH264Decoder * decoder,
     },
     .frame_num = slice->header.frame_num,
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   _fill_vaapi_pic (&pic_param.CurrPic, picture, FALSE);
 
@@ -563,7 +563,7 @@ _get_rtformat (GstVaH264Dec * self, guint8 bit_depth_luma,
   }
 }
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static const struct
 {
   GstH264Profile profile_idc;
@@ -583,7 +583,7 @@ static const struct
   /* P (SCALABLE_HIGH, ), */
 #undef P
 };
-/* *INDENT-ON* */
+/* clang-format on */
 
 static VAProfile
 _get_profile (GstVaH264Dec * self, const GstH264SPS * sps, gint max_dpb_size)
@@ -716,7 +716,7 @@ gst_va_h264_dec_new_sequence (GstH264Decoder * decoder, const GstH264SPS * sps,
   base->need_valign = GST_VIDEO_INFO_WIDTH (info) < base->width ||
       GST_VIDEO_INFO_HEIGHT (info) < base->height;
   if (base->need_valign) {
-    /* *INDENT-OFF* */
+    /* clang-format off */
     if (base->valign.padding_left != padding_left ||
         base->valign.padding_right != padding_right ||
         base->valign.padding_top != padding_top ||
@@ -731,7 +731,7 @@ gst_va_h264_dec_new_sequence (GstH264Decoder * decoder, const GstH264SPS * sps,
       .padding_top = padding_top,
       .padding_bottom = padding_bottom,
     };
-    /* *INDENT-ON* */
+    /* clang-format on */
   }
 
   base->min_buffers = self->dpb_size + 4;       /* dpb size + scratch surfaces */

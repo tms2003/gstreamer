@@ -337,7 +337,7 @@ _execute_corrupt_socket_recv (GstValidateScenario * scenario,
 static gboolean
 socket_interposer_init (GstPlugin * plugin)
 {
-/*  *INDENT-OFF* */
+  /*  clang-format off */
   gst_validate_register_action_type_dynamic (plugin, "corrupt-socket-recv",
       GST_RANK_PRIMARY,
       _execute_corrupt_socket_recv, ((GstValidateActionParameter[]) {
@@ -365,7 +365,7 @@ socket_interposer_init (GstPlugin * plugin)
             {NULL}
           }),
       "corrupt the next socket receive", GST_VALIDATE_ACTION_TYPE_ASYNC);
-/*  *INDENT-ON* */
+  /*  clang-format on */
 
   return TRUE;
 }

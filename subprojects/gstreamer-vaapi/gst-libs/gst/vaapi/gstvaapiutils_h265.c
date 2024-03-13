@@ -36,7 +36,7 @@ struct map
 
 /* Profile string map */
 static const struct map gst_vaapi_h265_profile_map[] = {
-/* *INDENT-OFF* */
+    /* clang-format off */
   { GST_VAAPI_PROFILE_H265_MAIN,                 "main"                 },
   { GST_VAAPI_PROFILE_H265_MAIN10,               "main-10"              },
   { GST_VAAPI_PROFILE_H265_MAIN_STILL_PICTURE,   "main-still-picture"   },
@@ -49,21 +49,21 @@ static const struct map gst_vaapi_h265_profile_map[] = {
   { GST_VAAPI_PROFILE_H265_SCREEN_EXTENDED_MAIN_444,    "screen-extended-main-444"   },
   { GST_VAAPI_PROFILE_H265_SCREEN_EXTENDED_MAIN_444_10, "screen-extended-main-444-10"},
   { 0, NULL }
-/* *INDENT-ON* */
+    /* clang-format on */
 };
 
 /* Tier string map */
 static const struct map gst_vaapi_h265_tier_map[] = {
-/* *INDENT-OFF* */
+    /* clang-format off */
   { GST_VAAPI_TIER_H265_MAIN,    "main" },
   { GST_VAAPI_TIER_H265_HIGH,    "high"},
   { GST_VAAPI_TIER_H265_UNKNOWN, "unknown"}
-/* *INDENT-ON* */
+    /* clang-format on */
 };
 
 /* Level string map */
 static const struct map gst_vaapi_h265_level_map[] = {
-/* *INDENT-OFF* */
+    /* clang-format off */
   { GST_VAAPI_LEVEL_H265_L1,    "1"     },
   { GST_VAAPI_LEVEL_H265_L2,    "2"     },
   { GST_VAAPI_LEVEL_H265_L2_1,  "2.1"   },
@@ -78,11 +78,11 @@ static const struct map gst_vaapi_h265_level_map[] = {
   { GST_VAAPI_LEVEL_H265_L6_1,  "6.1"   },
   { GST_VAAPI_LEVEL_H265_L6_2,  "6.2"   },
   { 0, NULL }
-/* *INDENT-ON* */
+    /* clang-format on */
 };
 
 /* Table A-1 - Level limits */
-/* *INDENT-OFF* */
+/* clang-format off */
 static const GstVaapiH265LevelLimits gst_vaapi_h265_level_limits[] = {
   /* level                     idc   MaxLumaPs  MCPBMt  MCPBHt MSlSeg MTR MTC   MaxLumaSr   MBRMt   MBRHt MinCr*/
   { GST_VAAPI_LEVEL_H265_L1,    30,     36864,    350,      0,    16,  1,  1,     552960,    128,      0,  2},
@@ -100,7 +100,7 @@ static const GstVaapiH265LevelLimits gst_vaapi_h265_level_limits[] = {
   { GST_VAAPI_LEVEL_H265_L6_2,  186, 35651584, 240000, 800000,   600, 22, 20, 4278190080, 240000, 800000,  6},
   { 0, }
 };
-/* *INDENT-ON* */
+/* clang-format on */
 
 /* Lookup value in map */
 static const struct map *

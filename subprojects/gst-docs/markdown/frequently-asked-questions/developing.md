@@ -106,51 +106,8 @@ want it to do.
 
 ## What is the coding style for GStreamer code?
 
-Basically, the core and almost all plugin modules use K\&R with 2-space
-indenting. Just follow what's already there and you'll be fine. We only require
-code files to be indented, header may be indented manually for better
-readability. Please use spaces for indenting, not tabs, even in header files.
-
-Individual plugins in gst-plugins-\* or plugins that you want considered
-for addition to these modules should use the same style. It's easier if
-everything is consistent. Consistency is, of course, the goal.
-
-One way to make sure you are following our coding style is to run your code
-(remember, only the `*.c` files, not the headers) through GNU Indent using the
-following options:
-
-```
-indent \
-  --braces-on-if-line \
-  --case-brace-indentation0 \
-  --case-indentation2 \
-  --braces-after-struct-decl-line \
-  --line-length80 \
-  --no-tabs \
-  --cuddle-else \
-  --dont-line-up-parentheses \
-  --continuation-indentation4 \
-  --honour-newlines \
-  --tab-size8 \
-  --indent-level2
-```
-
-There is also a `gst-indent` script in the GStreamer core source tree in the
-tools directory which wraps GNU Indent and uses the right options.
-
-The easiest way to get the indenting right is probably to develop against a git
-checkout. The local git commit hook will ensure correct indentation.
-
-Comments should be in `/* ANSI C comment style */` and code should generally
-be compatible with ANSI C89, so please declare all variables at the beginning
-of the block, etc.
-
-Merge requests should ideally be made against git master or a recent release.
-Please don't send patches to the mailing list. They will likely get lost there.
-
-See [How to submit patches][submit-patches] for more details.
-
-[submit-patches]: contribute/index.md#how-to-submit-patches
+The indentation style for GStreamer C code is similar to K\&R with 2-space
+indenting. [Coding style details](contribute/index.md#coding-style).
 
 ## How do I get my translations included?
 

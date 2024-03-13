@@ -96,7 +96,7 @@ ensure_debug_category (void)
 
 
 /* Table used to address an 8x8 matrix in zig-zag order */
-/* *INDENT-OFF* */
+/* clang-format off */
 static const guint8 zigzag_index[64] = {
   0,   1,  8, 16,  9,  2,  3, 10,
   17, 24, 32, 25, 18, 11,  4,  5,
@@ -107,10 +107,10 @@ static const guint8 zigzag_index[64] = {
   58, 59, 52, 45, 38, 31, 39, 46,
   53, 60, 61, 54, 47, 55, 62, 63
 };
-/* *INDENT-ON* */
+/* clang-format on */
 
 /* Table K.1 - Luminance quantization table */
-/* *INDENT-OFF* */
+/* clang-format off */
 static const guint8 default_luminance_quant_table[64] = {
   16,  11,  10,  16,  24,  40,  51,  61,
   12,  12,  14,  19,  26,  58,  60,  55,
@@ -121,10 +121,10 @@ static const guint8 default_luminance_quant_table[64] = {
   49,  64,  78,  87, 103, 121, 120, 101,
   72,  92,  95,  98, 112, 100, 103,  99
 };
-/* *INDENT-ON* */
+/* clang-format on */
 
 /* Table K.2 - Chrominance quantization table */
-/* *INDENT-OFF* */
+/* clang-format off */
 static const guint8 default_chrominance_quant_table[64] = {
   17,  18,  24,  47,  99,  99,  99,  99,
   18,  21,  26,  66,  99,  99,  99,  99,
@@ -135,7 +135,7 @@ static const guint8 default_chrominance_quant_table[64] = {
   99,  99,  99,  99,  99,  99,  99,  99,
   99,  99,  99,  99,  99,  99,  99,  99
 };
-/* *INDENT-ON* */
+/* clang-format on */
 
 typedef struct _GstJpegHuffmanTableEntry GstJpegHuffmanTableEntry;
 struct _GstJpegHuffmanTableEntry
@@ -157,7 +157,7 @@ static const GstJpegHuffmanTableEntry default_chrominance_dc_table[] = {
 };
 
 /* Table K.5 - Table for luminance AC coefficients */
-/* *INDENT-OFF* */
+/* clang-format off */
 static const GstJpegHuffmanTableEntry default_luminance_ac_table[] = {
   {0x00,  4}, {0x01,  2}, {0x02,  2}, {0x03,  3}, {0x04,  4}, {0x05,  5},
   {0x06,  7}, {0x07,  8}, {0x08, 10}, {0x09, 16}, {0x0a, 16}, {0x11,  4},
@@ -187,10 +187,10 @@ static const GstJpegHuffmanTableEntry default_luminance_ac_table[] = {
   {0xea, 16}, {0xf0, 11}, {0xf1, 16}, {0xf2, 16}, {0xf3, 16}, {0xf4, 16},
   {0xf5, 16}, {0xf6, 16}, {0xf7, 16}, {0xf8, 16}, {0xf9, 16}, {0xfa, 16}
 };
-/* *INDENT-ON* */
+/* clang-format on */
 
 /* Table K.6 - Table for chrominance AC coefficients */
-/* *INDENT-OFF* */
+/* clang-format off */
 static const GstJpegHuffmanTableEntry default_chrominance_ac_table[] = {
   {0x00,  2}, {0x01,  2}, {0x02,  3}, {0x03,  4}, {0x04,  5}, {0x05,  5},
   {0x06,  6}, {0x07,  7}, {0x08,  9}, {0x09, 10}, {0x0a, 12}, {0x11,  4},
@@ -220,7 +220,7 @@ static const GstJpegHuffmanTableEntry default_chrominance_ac_table[] = {
   {0xea, 16}, {0xf0, 10}, {0xf1, 15}, {0xf2, 16}, {0xf3, 16}, {0xf4, 16},
   {0xf5, 16}, {0xf6, 16}, {0xf7, 16}, {0xf8, 16}, {0xf9, 16}, {0xfa, 16}
 };
-/* *INDENT-ON* */
+/* clang-format on */
 
 static gint gst_jpeg_scan_for_marker_code (const guint8 * data, gsize size,
     guint offset);

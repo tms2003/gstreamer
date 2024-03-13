@@ -34,7 +34,7 @@
    "precision highp float;\n" \
    "#endif\n"
 
-/* *INDENT-OFF* */
+/* clang-format off */
 const gchar *gst_gl_shader_string_fragment_mediump_precision = 
     MEDIUMP_PRECISION;
 
@@ -102,7 +102,7 @@ const gchar *gst_gl_shader_string_fragment_external_oes_default =
     MEDIUMP_PRECISION
     EXTERNAL_FRAGMENT_BODY;
 #endif
-/* *INDENT-ON* */
+/* clang-format on */
 
 /**
  * gst_gl_shader_string_get_highest_precision:

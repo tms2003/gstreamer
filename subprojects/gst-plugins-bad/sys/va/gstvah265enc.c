@@ -121,7 +121,7 @@ static GstObjectClass *parent_class = NULL;
 /* The max tiles in row according to spec A1 */
 #define MAX_ROW_TILES 22
 
-/* *INDENT-OFF* */
+/* clang-format off */
 struct _GstVaH265EncClass
 {
   GstVaBaseEncClass parent_class;
@@ -130,7 +130,7 @@ struct _GstVaH265EncClass
   char rate_control_type_name[64];
   GEnumValue rate_control[16];
 };
-/* *INDENT-ON* */
+/* clang-format on */
 
 struct _GstVaH265Enc
 {
@@ -387,7 +387,7 @@ struct _GstVaH265LevelLimits
 };
 
 /* Table A-1 - Level limits */
-/* *INDENT-OFF* */
+/* clang-format off */
 static const GstVaH265LevelLimits _va_h265_level_limits[] = {
   /* level    idc   MaxLumaPs  MCPBMt  MCPBHt  MSlSeg MTR MTC  MaxLumaSr   MBRMt   MBRHt  MinCr */
   {  "1",     30,    36864,    350,    0,       16,   1,  1,   552960,     128,    0,      2  },
@@ -404,7 +404,7 @@ static const GstVaH265LevelLimits _va_h265_level_limits[] = {
   {  "6.1",   183,   35651584, 120000, 480000,  600,  22, 20,  2139095040, 120000, 480000, 8  },
   {  "6.2",   186,   35651584, 240000, 800000,  600,  22, 20,  4278190080, 240000, 800000, 6  },
 };
-/* *INDENT-ON* */
+/* clang-format on */
 
 #ifndef GST_DISABLE_GST_DEBUG
 static const gchar *
@@ -531,7 +531,7 @@ _h265_fill_ptl (GstVaH265Enc * self,
 {
   GstVaBaseEnc *base = GST_VA_BASE_ENC (self);
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   *ptl = (GstH265ProfileTierLevel) {
     .profile_space = 0,
     .tier_flag = sequence->general_tier_flag,
@@ -544,7 +544,7 @@ _h265_fill_ptl (GstVaH265Enc * self,
 
     .level_idc = sequence->general_level_idc,
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   if (sequence->general_profile_idc == 1        /* Main profile */
       /* In A.3.4, NOTE: When general_profile_compatibility_flag[ 3 ] is equal
@@ -717,7 +717,7 @@ _h265_fill_vps (GstVaH265Enc * self,
 {
   guint max_dec_pic_buffering = self->gop.max_dpb_size;
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   self->vps_hdr = (GstH265VPS) {
     .id = 0,
     .base_layer_internal_flag = 1,
@@ -735,7 +735,7 @@ _h265_fill_vps (GstVaH265Enc * self,
     .timing_info_present_flag = 0,
     .vps_extension = 0,
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   if (!_h265_fill_ptl (self, seq_param, &self->vps_hdr.profile_tier_level))
     return FALSE;
@@ -750,7 +750,7 @@ _h265_fill_sps (GstVaH265Enc * self,
   guint max_dec_pic_buffering = self->gop.max_dpb_size;
 
   g_assert (self->gop.log2_max_pic_order_cnt >= 4);
-  /* *INDENT-OFF* */
+  /* clang-format off */
   self->sps_hdr = (GstH265SPS) {
     .id = 0,
     .vps = &self->vps_hdr,
@@ -897,7 +897,7 @@ _h265_fill_sps (GstVaH265Enc * self,
       .intra_boundary_filtering_disabled_flag = 0,
     },
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   if (!_h265_fill_ptl (self, seq_param, &self->sps_hdr.profile_tier_level))
     return FALSE;
@@ -910,7 +910,7 @@ _h265_fill_pps (GstVaH265Enc * self,
     VAEncPictureParameterBufferHEVC * pic_param,
     GstH265SPS * sps, GstH265PPS * pps)
 {
-  /* *INDENT-OFF* */
+  /* clang-format off */
   *pps = (GstH265PPS) {
     .id = 0,
     .sps = sps,
@@ -980,7 +980,7 @@ _h265_fill_pps (GstVaH265Enc * self,
       .pps_palette_predictor_initializers_present_flag = 0,
     },
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 }
 
 static gboolean
@@ -995,7 +995,7 @@ _h265_fill_slice_header (GstVaH265Enc * self, GstVaH265EncFrame * frame,
   gint i;
   gint delta_poc;
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   *slice_hdr = (GstH265SliceHdr) {
     .pps = pps,
     .first_slice_segment_in_pic_flag = first_slice_segment_in_pic,
@@ -1061,7 +1061,7 @@ _h265_fill_slice_header (GstVaH265Enc * self, GstVaH265EncFrame * frame,
     /* .offset_len_minus1,
        .entry_point_offset_minus1, */
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   if (slice_hdr->dependent_slice_segment_flag)
     return TRUE;
@@ -1350,7 +1350,7 @@ _h265_fill_sequence_parameter (GstVaH265Enc * self,
       return FALSE;
   }
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   *sequence = (VAEncSequenceParameterBufferHEVC) {
     .general_profile_idc = profile_idc,
     .general_level_idc = self->level_idc,
@@ -1418,7 +1418,7 @@ _h265_fill_sequence_parameter (GstVaH265Enc * self,
     .vui_time_scale = GST_VIDEO_INFO_FPS_N (&base->in_info),
     .scc_fields.bits.palette_mode_enabled_flag = _is_scc_enabled (self),
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   return TRUE;
 }
@@ -1462,7 +1462,7 @@ _h265_fill_picture_parameter (GstVaH265Enc * self, GstVaH265EncFrame * frame,
   guint hierarchical_level_plus1 = 0;
   guint i;
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   if (self->gop.b_pyramid) {
     /* I/P is the base hierarchical level 0, L0 level B is 1, and so on. */
     hierarchical_level_plus1 = 1;
@@ -1541,7 +1541,7 @@ _h265_fill_picture_parameter (GstVaH265Enc * self, GstVaH265EncFrame * frame,
     .scc_fields.bits.pps_curr_pic_ref_enabled_flag =
         _is_scc_enabled (self),
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   i = 0;
   if (frame->type != GST_H265_I_SLICE) {
@@ -1625,7 +1625,7 @@ _h265_fill_slice_parameter (GstVaH265Enc * self, GstVaH265EncFrame * frame,
   GstH265SliceType frame_type;
   gint i;
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   if (self->rc.rc_ctrl_mode == VA_RC_CQP) {
     if (frame->type == GST_H265_P_SLICE) {
       slice_qp_delta = self->rc.qp_p - self->rc.qp_i;
@@ -1713,7 +1713,7 @@ _h265_fill_slice_parameter (GstVaH265Enc * self, GstVaH265EncFrame * frame,
     .pred_weight_table_bit_offset = 0,
     .pred_weight_table_bit_length = 0,
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   if (frame_type == GST_H265_B_SLICE || frame_type == GST_H265_P_SLICE) {
     slice->slice_fields.bits.num_ref_idx_active_override_flag =
@@ -4669,12 +4669,12 @@ gst_va_h265_enc_prepare_output (GstVaBaseEnc * base,
   return TRUE;
 }
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static const gchar *sink_caps_str =
     GST_VIDEO_CAPS_MAKE_WITH_FEATURES (GST_CAPS_FEATURE_MEMORY_VA,
         "{ NV12 }") " ;"
     GST_VIDEO_CAPS_MAKE ("{ NV12 }");
-/* *INDENT-ON* */
+/* clang-format on */
 
 static const gchar *src_caps_str = "video/x-h265";
 

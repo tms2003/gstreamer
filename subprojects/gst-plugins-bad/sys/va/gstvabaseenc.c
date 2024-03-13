@@ -53,13 +53,13 @@ static GParamSpec *properties[N_PROPERTIES];
  *
  * Since: 1.22
  */
-/* *INDENT-OFF* */
+/* clang-format off */
 #define gst_va_base_enc_parent_class parent_class
 G_DEFINE_ABSTRACT_TYPE_WITH_CODE (GstVaBaseEnc, gst_va_base_enc,
     GST_TYPE_VIDEO_ENCODER, G_ADD_PRIVATE (GstVaBaseEnc)
     GST_DEBUG_CATEGORY_INIT (gst_va_base_enc_debug,
         "vabaseenc", 0, "vabaseenc element"););
-/* *INDENT-ON* */
+/* clang-format on */
 
 extern GRecMutex GST_VA_SHARED_LOCK;
 
@@ -966,7 +966,7 @@ gst_va_base_enc_add_rate_control_parameter (GstVaBaseEnc * base,
 
   window_size = rc_mode == VA_RC_VBR ? max_bitrate_bits / 2 : max_bitrate_bits;
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   rate_control = (struct VAEncMiscParameterRateControlWrap) {
     .type = VAEncMiscParameterTypeRateControl,
     .rate_control = {
@@ -980,7 +980,7 @@ gst_va_base_enc_add_rate_control_parameter (GstVaBaseEnc * base,
       .quality_factor = 0,
     },
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   if (!gst_va_encoder_add_param (base->encoder, picture,
           VAEncMiscParameterBufferType, &rate_control, sizeof (rate_control))) {
@@ -995,7 +995,7 @@ gboolean
 gst_va_base_enc_add_quality_level_parameter (GstVaBaseEnc * base,
     GstVaEncodePicture * picture, guint target_usage)
 {
-  /* *INDENT-OFF* */
+  /* clang-format off */
   struct
   {
     VAEncMiscParameterType type;
@@ -1004,7 +1004,7 @@ gst_va_base_enc_add_quality_level_parameter (GstVaBaseEnc * base,
     .type = VAEncMiscParameterTypeQualityLevel,
     .ql.quality_level = target_usage,
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   if (target_usage == 0)
     return TRUE;
@@ -1023,7 +1023,7 @@ gboolean
 gst_va_base_enc_add_frame_rate_parameter (GstVaBaseEnc * base,
     GstVaEncodePicture * picture)
 {
-  /* *INDENT-OFF* */
+  /* clang-format off */
   struct
   {
     VAEncMiscParameterType type;
@@ -1036,7 +1036,7 @@ gst_va_base_enc_add_frame_rate_parameter (GstVaBaseEnc * base,
         (GST_VIDEO_INFO_FPS_N (&base->in_info) & 0xffff) |
         ((GST_VIDEO_INFO_FPS_D (&base->in_info) & 0xffff) << 16)
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   if (!gst_va_encoder_add_param (base->encoder, picture,
           VAEncMiscParameterBufferType, &framerate, sizeof (framerate))) {
@@ -1051,7 +1051,7 @@ gboolean
 gst_va_base_enc_add_hrd_parameter (GstVaBaseEnc * base,
     GstVaEncodePicture * picture, guint32 rc_mode, guint cpb_length_bits)
 {
-  /* *INDENT-OFF* */
+  /* clang-format off */
   struct
   {
     VAEncMiscParameterType type;
@@ -1063,7 +1063,7 @@ gst_va_base_enc_add_hrd_parameter (GstVaBaseEnc * base,
       .initial_buffer_fullness = cpb_length_bits / 2,
     },
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   if (rc_mode == VA_RC_NONE || rc_mode == VA_RC_CQP || rc_mode == VA_RC_VCM)
     return TRUE;
@@ -1081,7 +1081,7 @@ gboolean
 gst_va_base_enc_add_trellis_parameter (GstVaBaseEnc * base,
     GstVaEncodePicture * picture, gboolean use_trellis)
 {
-  /* *INDENT-OFF* */
+  /* clang-format off */
   struct
   {
     VAEncMiscParameterType type;
@@ -1095,7 +1095,7 @@ gst_va_base_enc_add_trellis_parameter (GstVaBaseEnc * base,
        .enable_trellis_P = 1,
     },
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   if (!use_trellis)
     return TRUE;
@@ -1144,7 +1144,7 @@ gst_va_base_enc_reset_state (GstVaBaseEnc * base)
   klass->reset_state (base);
 }
 
-/* *INDENT-OFF* */
+/* clang-format off */
 #define UPDATE_PROPERTY                         \
   GST_OBJECT_LOCK (base);                       \
   if (*old_val == new_val) {                    \
@@ -1171,4 +1171,4 @@ gst_va_base_enc_update_property_bool (GstVaBaseEnc * base, gboolean * old_val,
 }
 
 #undef UPDATE_PROPERTY
-/* *INDENT-ON* */
+/* clang-format on */

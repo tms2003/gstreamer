@@ -907,9 +907,9 @@ gst_va_compositor_sample_next (gpointer data)
     generator->current = generator->current->next;
 
     /* reset sample */
-    /* *INDENT-OFF* */
+    /* clang-format off */
     generator->sample = (GstVaComposeSample) { 0, };
-    /* *INDENT-ON* */
+    /* clang-format on */
 
     /* current sinkpad may not be queueing buffers yet (e.g. timestamp-offset)
      * or it may have reached EOS */
@@ -926,7 +926,7 @@ gst_va_compositor_sample_next (gpointer data)
     crop = gst_buffer_get_video_crop_meta (buf);
 
     GST_OBJECT_LOCK (vaggpad);
-    /* *INDENT-OFF* */
+    /* clang-format off */
     generator->sample = (GstVaComposeSample) {
       .buffer = buf,
       .input_region = (VARectangle) {
@@ -945,7 +945,7 @@ gst_va_compositor_sample_next (gpointer data)
       },
       .alpha = pad->alpha,
     };
-    /* *INDENT-ON* */
+    /* clang-format on */
     GST_OBJECT_UNLOCK (vaggpad);
 
     return &generator->sample;
@@ -1012,7 +1012,7 @@ gst_va_compositor_aggregate_frames (GstVideoAggregator * vagg,
     vabuffer = gst_buffer_ref (outbuf);
   }
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   generator = (GstVaCompositorSampleGenerator) {
     .comp = self,
     .current = GST_ELEMENT (self)->sinkpads,
@@ -1022,7 +1022,7 @@ gst_va_compositor_aggregate_frames (GstVideoAggregator * vagg,
     .output = vabuffer,
     .user_data = (gpointer) &generator,
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   GST_OBJECT_LOCK (self);
 
@@ -1525,13 +1525,13 @@ gst_va_compositor_sink_event (GstAggregator * agg, GstAggregatorPad * bpad,
   return GST_AGGREGATOR_CLASS (parent_class)->sink_event (agg, bpad, event);
 }
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static const gchar *caps_str =
     GST_VIDEO_CAPS_MAKE_WITH_FEATURES (GST_CAPS_FEATURE_MEMORY_VA,
         "{ NV12, I420, YV12, YUY2, RGBA, BGRA, P010_10LE, ARGB, ABGR }") " ;"
     GST_VIDEO_CAPS_MAKE ("{ VUYA, GRAY8, NV12, NV21, YUY2, UYVY, YV12, "
         "I420, P010_10LE, RGBA, BGRA, ARGB, ABGR  }");
-/* *INDENT-ON* */
+/* clang-format on */
 
 static void
 gst_va_compositor_class_init (gpointer g_class, gpointer class_data)

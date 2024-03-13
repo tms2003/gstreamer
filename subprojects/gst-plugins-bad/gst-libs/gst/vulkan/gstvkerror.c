@@ -33,7 +33,7 @@
  * @see_also: #GstVulkanInstance, #GstVulkanDevice
  */
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static const struct
 {
   VkResult result;
@@ -55,7 +55,7 @@ static const struct
   {VK_ERROR_INCOMPATIBLE_DISPLAY_KHR, "Incompatible display"},
   {VK_ERROR_NATIVE_WINDOW_IN_USE_KHR, "Native window in use"},
 };
-/* *INDENT-ON* */
+/* clang-format on */
 
 GQuark
 gst_vulkan_error_quark (void)

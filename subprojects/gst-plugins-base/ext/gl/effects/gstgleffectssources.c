@@ -62,7 +62,7 @@ fill_gaussian_kernel (float *kernel, int size, float sigma)
   }
 }
 
-/* *INDENT-OFF* */
+/* clang-format off */
 
 /* Mirror effect */
 const gchar *mirror_fragment_source_opengl =
@@ -473,4 +473,4 @@ const gchar *conv9_fragment_source_gles2 =
   "  gl_FragColor = vec4 (abs(sum - vec3(float(invert))), 1.0);"
   "}";
 
-/* *INDENT-ON* */
+/* clang-format on */

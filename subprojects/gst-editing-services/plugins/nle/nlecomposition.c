@@ -222,13 +222,13 @@ typedef struct
   gboolean answered;
 } NleCompositionQueryNeedsInitializationSeek;
 
-/* *INDENT-OFF* */
+/* clang-format off */
 #define NLE_TYPE_COMPOSITION_QUERY_NEEDS_INITIALIZATION_SEEK nle_composition_query_needs_initialization_seek_get_type ()
 GType nle_composition_query_needs_initialization_seek_get_type (void) G_GNUC_CONST;
 G_DEFINE_BOXED_TYPE (NleCompositionQueryNeedsInitializationSeek,
     nle_composition_query_needs_initialization_seek,
     g_atomic_rc_box_acquire, g_atomic_rc_box_release);
-/* *INDENT-ON* */
+/* clang-format on */
 
 #define QUERY_PIPELINE_POSITION_STRUCT_NAME "nlecomposition-query-pipeline-position"
 typedef struct
@@ -239,13 +239,13 @@ typedef struct
   gboolean answered;
 } NleCompositionQueryPipelinePosition;
 
-/* *INDENT-OFF* */
+/* clang-format off */
 #define NLE_TYPE_COMPOSITION_QUERY_PIPELINE_POSITION nle_composition_query_pipeline_position_get_type ()
 GType nle_composition_query_pipeline_position_get_type (void) G_GNUC_CONST;
 G_DEFINE_BOXED_TYPE (NleCompositionQueryPipelinePosition,
     nle_composition_query_pipeline_position,
     g_atomic_rc_box_acquire, g_atomic_rc_box_release);
-/* *INDENT-ON* */
+/* clang-format on */
 
 static guint _signals[LAST_SIGNAL] = { 0 };
 

@@ -21,7 +21,7 @@
 #include <gst/check/gstcheck.h>
 #include <gst/codecparsers/gstav1bitwriter.h>
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static const GstAV1SequenceHeaderOBU sequence = {
   .seq_profile = 0,
   .still_picture = 0,
@@ -274,7 +274,7 @@ static const GstAV1MetadataOBU hdr_cll = {
     .max_fall = 22211,
   }
 };
-/* *INDENT-ON* */
+/* clang-format on */
 
 GST_START_TEST (test_av1_bitwriter_sequence_and_frame_hdr)
 {

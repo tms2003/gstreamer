@@ -231,7 +231,7 @@ ensure_context (GstVaapiDecoderMpeg4 * decoder)
 
   if (reset_context) {
     GstVaapiContextInfo info;
-    /* *INDENT-OFF* */
+    /* clang-format off */
     info = (GstVaapiContextInfo) {
       .profile = priv->profile,
       .entrypoint = entrypoint,
@@ -240,7 +240,7 @@ ensure_context (GstVaapiDecoderMpeg4 * decoder)
       .height = priv->height,
       .ref_frames = 2,
     };
-    /* *INDENT-ON* */
+    /* clang-format on */
 
     reset_context =
         gst_vaapi_decoder_ensure_context (GST_VAAPI_DECODER (decoder), &info);

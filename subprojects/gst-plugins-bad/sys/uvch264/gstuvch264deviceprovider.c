@@ -44,7 +44,7 @@ enum
   PROP_DEVICE_PATH = 1,
 };
 
-/* *INDENT-OFF* */
+/* clang-format off */
 
 struct _GstUvcH264Device
 {
@@ -53,7 +53,7 @@ struct _GstUvcH264Device
 };
 
 G_DEFINE_TYPE (GstUvcH264Device, gst_uvc_h264_device, GST_TYPE_DEVICE);
-/* *INDENT-ON* */
+/* clang-format on */
 GST_DEVICE_PROVIDER_REGISTER_DEFINE (uvch264deviceprovider,
     "uvch264deviceprovider", GST_RANK_PRIMARY,
     gst_uvc_h264_device_provider_get_type ());
@@ -135,7 +135,7 @@ gst_uvc_h264_device_init (GstUvcH264Device * device)
 {
 }
 
-/* *INDENT-OFF* */
+/* clang-format off */
 struct _GstUvcH264DeviceProvider
 {
   GstDeviceProvider parent;
@@ -147,7 +147,7 @@ struct _GstUvcH264DeviceProvider
 
 G_DEFINE_TYPE (GstUvcH264DeviceProvider, gst_uvc_h264_device_provider,
     GST_TYPE_DEVICE_PROVIDER);
-/* *INDENT-ON* */
+/* clang-format on */
 
 static GstDevice *
 create_device (GstUvcH264DeviceProvider * self, GstDevice * v4l2dev)

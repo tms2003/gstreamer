@@ -20,12 +20,12 @@
 #include "pam.h"
 #include "mempool.h"
 
-/* *INDENT-OFF* */
+/* clang-format off */
 LIQ_PRIVATE bool
 pam_computeacolorhash (struct acolorhash_table *acht,
     const rgba_pixel * const pixels[], unsigned int cols, unsigned int rows,
     const unsigned char *importance_map)
-/* *INDENT-ON* */
+/* clang-format on */
 {
   const unsigned int maxacolors = acht->maxcolors, ignorebits =
       acht->ignorebits;

@@ -21,7 +21,7 @@
 #include <gst/check/gstcheck.h>
 #include <gst/codecparsers/gsth264bitwriter.h>
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static const GstH264SPS sps = {
   .id = 0,
   .profile_idc = 100,
@@ -158,7 +158,7 @@ static const GstH264SliceHdr slice_hdr = {
 
   .pps = (GstH264PPS *) &pps,
 };
-/* *INDENT-ON* */
+/* clang-format on */
 
 GST_START_TEST (test_h264_bitwriter_sps_pps_slice_hdr)
 {

@@ -103,7 +103,7 @@ enum
   PROP_WHITE_SENSITIVITY,
 };
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static const gchar *alpha_frag =
   "varying vec2 v_texcoord;\n"
   "uniform sampler2D tex;\n"
@@ -208,7 +208,7 @@ static const gchar *chroma_key_frag =
   "  rgba.a = yuva.a;\n"
   "  gl_FragColor = rgba;\n"
   "}\n";
-/* *INDENT-ON* */
+/* clang-format on */
 
 static const gfloat cog_rgb_to_ycbcr_matrix_8bit_sdtv[] = {
   0.2578125, 0.50390625, 0.09765625, 0.0625f,

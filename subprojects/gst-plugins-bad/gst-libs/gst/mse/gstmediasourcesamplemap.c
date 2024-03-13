@@ -402,10 +402,10 @@ struct _SampleMapIterator
 {
   GstIterator iterator;
   GstMediaSourceSampleMap *map;
-/* *INDENT-OFF* */
+  /* clang-format off */
   GstClockTime   (*timestamp_func)      (GstSample *);
   GSequenceIter *(*resync_locator_func) (SampleMapIterator *);
-/* *INDENT-ON* */
+  /* clang-format on */
 
   GstClockTime start_time;
   GstClockTime current_time;
@@ -496,7 +496,7 @@ gst_media_source_sample_map_iter_samples_by_dts (GstMediaSourceSampleMap * map,
     GMutex * lock, guint32 * master_cookie, GstClockTime start_dts,
     GstSample * start_sample)
 {
-/* *INDENT-OFF* */
+  /* clang-format off */
   SampleMapIterator *it = (SampleMapIterator *) gst_iterator_new (
       sizeof (SampleMapIterator),
       GST_TYPE_SAMPLE,
@@ -508,7 +508,7 @@ gst_media_source_sample_map_iter_samples_by_dts (GstMediaSourceSampleMap * map,
       (GstIteratorResyncFunction) iter_resync,
       (GstIteratorFreeFunction) iter_free
   );
-/* *INDENT-ON* */
+  /* clang-format on */
 
   it->map = gst_object_ref (map);
   it->timestamp_func = sample_dts;
@@ -526,7 +526,7 @@ gst_media_source_sample_map_iter_samples_by_pts (GstMediaSourceSampleMap * map,
     GMutex * lock, guint32 * master_cookie, GstClockTime start_pts,
     GstSample * start_sample)
 {
-/* *INDENT-OFF* */
+  /* clang-format off */
   SampleMapIterator *it = (SampleMapIterator *) gst_iterator_new (
       sizeof (SampleMapIterator),
       GST_TYPE_SAMPLE,
@@ -538,7 +538,7 @@ gst_media_source_sample_map_iter_samples_by_pts (GstMediaSourceSampleMap * map,
       (GstIteratorResyncFunction) iter_resync,
       (GstIteratorFreeFunction) iter_free
   );
-/* *INDENT-ON* */
+  /* clang-format on */
 
   it->map = gst_object_ref (map);
   it->timestamp_func = sample_pts;

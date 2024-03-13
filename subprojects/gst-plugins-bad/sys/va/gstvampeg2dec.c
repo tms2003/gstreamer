@@ -76,12 +76,12 @@ struct _GstVaMpeg2Dec
 
 static GstElementClass *parent_class = NULL;
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static const gchar *src_caps_str =
     GST_VIDEO_CAPS_MAKE_WITH_FEATURES (GST_CAPS_FEATURE_MEMORY_VA,
         "{ NV12 }") " ;"
     GST_VIDEO_CAPS_MAKE ("{ NV12 }");
-/* *INDENT-ON* */
+/* clang-format on */
 
 static const gchar *sink_caps_str = "video/x-mpeg2";
 
@@ -394,7 +394,7 @@ gst_va_mpeg2_dec_start_picture (GstMpeg2Decoder * decoder,
 
   va_pic = gst_mpeg2_picture_get_user_data (picture);
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   pic_param = (VAPictureParameterBufferMPEG2) {
     .horizontal_size = base->width,
     .vertical_size = base->height,
@@ -416,7 +416,7 @@ gst_va_mpeg2_dec_start_picture (GstMpeg2Decoder * decoder,
       .progressive_frame = slice->pic_ext->progressive_frame,
     },
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   switch (picture->type) {
     case GST_MPEG_VIDEO_PICTURE_TYPE_B:{
@@ -466,7 +466,7 @@ gst_va_mpeg2_dec_decode_slice (GstMpeg2Decoder * decoder,
   GstVaDecodePicture *va_pic;
   VASliceParameterBufferMPEG2 slice_param;
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   slice_param = (VASliceParameterBufferMPEG2) {
     .slice_data_size = slice->size,
     .slice_data_offset = 0,
@@ -477,7 +477,7 @@ gst_va_mpeg2_dec_decode_slice (GstMpeg2Decoder * decoder,
     .quantiser_scale_code = header->quantiser_scale_code,
     .intra_slice_flag = header->intra_slice,
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   va_pic = gst_mpeg2_picture_get_user_data (picture);
   if (!gst_va_decoder_add_slice_buffer (base->decoder, va_pic,

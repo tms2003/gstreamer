@@ -482,7 +482,7 @@ _buffer_to_image_perform (gpointer impl, GstBuffer * inbuf, GstBuffer ** outbuf)
     else
       plane_aspect = aspects[i];
 
-    /* *INDENT-OFF* */
+    /* clang-format off */
     region = (VkBufferImageCopy) {
         .bufferOffset = 0,
         .bufferRowLength = GST_VIDEO_INFO_COMP_WIDTH (&raw->in_info, i),
@@ -811,7 +811,7 @@ _raw_to_image_perform (gpointer impl, GstBuffer * inbuf, GstBuffer ** outbuf)
     else
       plane_aspect = aspects[i];
 
-    /* *INDENT-OFF* */
+    /* clang-format off */
     region = (VkBufferImageCopy) {
         .bufferOffset = 0,
         .bufferRowLength = GST_VIDEO_INFO_COMP_WIDTH (&raw->in_info, i),
@@ -829,7 +829,7 @@ _raw_to_image_perform (gpointer impl, GstBuffer * inbuf, GstBuffer ** outbuf)
             .depth = 1,
         }
     };
-    /* *INDENT-ON* */
+    /* clang-format on */
 
     gst_vulkan_command_buffer_lock (cmd_buf);
     vkCmdCopyBufferToImage (cmd_buf->cmd, buf_mem->buffer, img_mem->image,

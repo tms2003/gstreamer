@@ -74,12 +74,12 @@ struct _GstVaVp9Dec
 
 static GstElementClass *parent_class = NULL;
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static const gchar *src_caps_str =
     GST_VIDEO_CAPS_MAKE_WITH_FEATURES (GST_CAPS_FEATURE_MEMORY_VA,
         "{ NV12 }") " ;"
     GST_VIDEO_CAPS_MAKE ("{ NV12 }");
-/* *INDENT-ON* */
+/* clang-format on */
 
 static const gchar *sink_caps_str = "video/x-vp9";
 
@@ -258,7 +258,7 @@ _fill_param (GstVp9Decoder * decoder, GstVp9Picture * picture, GstVp9Dpb * dpb)
   VADecPictureParameterBufferVP9 pic_param;
   guint i;
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   pic_param = (VADecPictureParameterBufferVP9) {
     .frame_width = base->width,
     .frame_height = base->height,
@@ -308,7 +308,7 @@ _fill_param (GstVp9Decoder * decoder, GstVp9Picture * picture, GstVp9Dpb * dpb)
     .profile = frame_hdr->profile,
     .bit_depth = frame_hdr->bit_depth
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   memcpy (pic_param.mb_segment_tree_probs, sp->segmentation_tree_probs,
       sizeof (sp->segmentation_tree_probs));
@@ -404,7 +404,7 @@ _update_segmentation (GstVaVp9Dec * self, GstVp9FrameHeader * header)
       }
     }
 
-    /* *INDENT-OFF* */
+    /* clang-format off */
     self->segmentation[i] = (GstVp9Segmentation) {
       .luma_dc_quant_scale = luma_dc_quant_scale,
       .luma_ac_quant_scale = luma_ac_quant_scale,
@@ -415,7 +415,7 @@ _update_segmentation (GstVaVp9Dec * self, GstVp9FrameHeader * header)
       .reference_frame = sp->feature_data[i][GST_VP9_SEG_LVL_REF_FRAME],
       .reference_skip = sp->feature_enabled[i][GST_VP9_SEG_SEG_LVL_SKIP],
     };
-    /* *INDENT-ON* */
+    /* clang-format on */
 
     memcpy (self->segmentation[i].filter_level, lvl_lookup,
         sizeof (lvl_lookup));
@@ -434,18 +434,18 @@ _fill_slice (GstVp9Decoder * decoder, GstVp9Picture * picture)
 
   _update_segmentation (self, &picture->frame_hdr);
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   slice_param = (VASliceParameterBufferVP9) {
     .slice_data_size = picture->size,
     .slice_data_offset = 0,
     .slice_data_flag = VA_SLICE_DATA_FLAG_ALL,
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   for (i = 0; i < GST_VP9_MAX_SEGMENTS; i++) {
     seg = &self->segmentation[i];
 
-    /* *INDENT-OFF* */
+    /* clang-format off */
     slice_param.seg_param[i] = (VASegmentParameterVP9) {
       .segment_flags.fields = {
         .segment_reference_enabled = seg->reference_frame_enabled,
@@ -457,7 +457,7 @@ _fill_slice (GstVp9Decoder * decoder, GstVp9Picture * picture)
       .chroma_dc_quant_scale = seg->chroma_dc_quant_scale,
       .chroma_ac_quant_scale = seg->chroma_ac_quant_scale,
      };
-     /* *INDENT-ON* */
+    /* clang-format on */
 
     memcpy (slice_param.seg_param[i].filter_level, seg->filter_level,
         sizeof (slice_param.seg_param[i].filter_level));

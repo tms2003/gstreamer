@@ -202,7 +202,7 @@ _execute_set_restriction (GstValidateScenario * scenario,
 static void
 _register_actions (void)
 {
-/* *INDENT-OFF* */
+  /* clang-format off */
   gst_validate_register_action_type ("set-restriction", "validate-transcoding", _execute_set_restriction,
       (GstValidateActionParameter []) {
         {
@@ -217,7 +217,7 @@ _register_actions (void)
       "Change the restriction caps on the fly",
       FALSE);
 
-/* *INDENT-ON* */
+  /* clang-format on */
 }
 
 int

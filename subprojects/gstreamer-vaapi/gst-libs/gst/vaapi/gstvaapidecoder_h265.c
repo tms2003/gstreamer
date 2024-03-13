@@ -1209,7 +1209,7 @@ ensure_context (GstVaapiDecoderH265 * decoder, GstH265SPS * sps)
     return GST_VAAPI_DECODER_STATUS_SUCCESS;
 
   /* XXX: fix surface size when cropping is implemented */
-  /* *INDENT-OFF* */
+  /* clang-format off */
   info = (GstVaapiContextInfo) {
     .profile = priv->profile,
     .entrypoint = priv->entrypoint,
@@ -1218,7 +1218,7 @@ ensure_context (GstVaapiDecoderH265 * decoder, GstH265SPS * sps)
     .height = sps->height,
     .ref_frames = dpb_size,
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   if (!gst_vaapi_decoder_ensure_context (GST_VAAPI_DECODER (decoder), &info))
     return GST_VAAPI_DECODER_STATUS_ERROR_UNKNOWN;

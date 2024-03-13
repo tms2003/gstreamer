@@ -162,13 +162,13 @@ enum
   VPP_CONVERT_DUMMY = 1 << 6,
 };
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static const gchar *caps_str =
     GST_VIDEO_CAPS_MAKE_WITH_FEATURES (GST_CAPS_FEATURE_MEMORY_VA,
         "{ NV12, I420, YV12, YUY2, RGBA, BGRA, P010_10LE, ARGB, ABGR }") " ;"
     GST_VIDEO_CAPS_MAKE ("{ VUYA, GRAY8, NV12, NV21, YUY2, UYVY, YV12, "
         "I420, P010_10LE, RGBA, BGRA, ARGB, ABGR  }");
-/* *INDENT-ON* */
+/* clang-format on */
 
 #define META_TAG_COLORSPACE meta_tag_colorspace_quark
 static GQuark meta_tag_colorspace_quark;
@@ -609,12 +609,12 @@ _add_filter_buffer (GstVaVpp * self, VAProcFilterType type,
   if (value == cap->range.default_value)
     return FALSE;
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   param = (VAProcFilterParameterBuffer) {
     .type = type,
     .value = value,
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   return gst_va_filter_add_filter_buffer (btrans->filter, &param,
       sizeof (param), 1);
@@ -675,13 +675,13 @@ _add_filter_cb_buffer (GstVaVpp * self,
     if (value == caps[i].range.default_value)
       continue;
 
-    /* *INDENT-OFF* */
+    /* clang-format off */
     param[c++] = (VAProcFilterParameterBufferColorBalance) {
       .type = VAProcFilterColorBalance,
       .attrib = caps[i].type,
       .value = value,
     };
-    /* *INDENT-ON* */
+    /* clang-format on */
   }
 
   if (c > 0) {
@@ -696,7 +696,7 @@ _add_filter_hdr_buffer (GstVaVpp * self,
     const VAProcFilterCapHighDynamicRange * caps)
 {
   GstVaBaseTransform *btrans = GST_VA_BASE_TRANSFORM (self);
-  /* *INDENT-OFF* */
+  /* clang-format off */
   VAProcFilterParameterBufferHDRToneMapping params = {
     .type = VAProcFilterHighDynamicRangeToneMapping,
     .data = {
@@ -705,7 +705,7 @@ _add_filter_hdr_buffer (GstVaVpp * self,
       .metadata_size = sizeof (self->hdr_meta),
     },
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   /* if not has hdr meta, it may try later again */
   if (!(self->has_hdr_meta && self->hdr_mapping))
@@ -860,7 +860,7 @@ gst_va_vpp_transform (GstBaseTransform * trans, GstBuffer * inbuf,
   if (self->pseudo_passthrough && (inbuf == buf))
     goto bail;
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   src = (GstVaSample) {
     .buffer = buf,
     .flags = gst_va_buffer_get_surface_flags (buf, &btrans->in_info),
@@ -872,7 +872,7 @@ gst_va_vpp_transform (GstBaseTransform * trans, GstBuffer * inbuf,
     .borders_w = self->borders_w,
     .flags = gst_va_buffer_get_surface_flags (outbuf, &btrans->out_info),
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   if (!gst_va_filter_process (btrans->filter, &src, &dst)) {
     gst_buffer_set_flags (outbuf, GST_BUFFER_FLAG_CORRUPTED);

@@ -7,9 +7,9 @@ struct _CustomICEAgent
   GstWebRTCNice *nice_agent;
 };
 
-/* *INDENT-OFF* */
+/* clang-format off */
 G_DEFINE_TYPE (CustomICEAgent, customice_agent, GST_TYPE_WEBRTC_ICE)
-/* *INDENT-ON* */
+/* clang-format on */
 
 GstWebRTCICEStream *
 customice_agent_add_stream (GstWebRTCICE * ice, guint session_id)

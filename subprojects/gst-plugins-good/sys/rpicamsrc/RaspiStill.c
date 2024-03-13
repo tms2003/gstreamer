@@ -1,4 +1,4 @@
-/* *INDENT-OFF* */
+/* clang-format off */
 /*
  * Copyright (c) 2013 Jan Schmidt <jan@centricular.com>
 Portions:
@@ -1514,4 +1514,4 @@ error:
 
    return exit_code;
 }
-/* *INDENT-ON* */
+/* clang-format on */

@@ -143,7 +143,7 @@ static void
 gst_factories_tracer_class_init (GstFactoriesTracerClass * klass)
 {
   /* announce trace formats */
-  /* *INDENT-OFF* */
+  /* clang-format off */
   tr_factory_used = gst_tracer_record_new ("factory-used.class",
       "thread-id", GST_TYPE_STRUCTURE, gst_structure_new ("scope",
           "type", G_TYPE_GTYPE, G_TYPE_UINT64,
@@ -170,7 +170,7 @@ gst_factories_tracer_class_init (GstFactoriesTracerClass * klass)
           "description", G_TYPE_STRING, "name of the source module this feature is from",
           NULL),
      NULL);
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   GST_OBJECT_FLAG_SET (tr_factory_used, GST_OBJECT_FLAG_MAY_BE_LEAKED);
 }

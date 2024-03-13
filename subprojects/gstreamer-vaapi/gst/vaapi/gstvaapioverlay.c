@@ -56,33 +56,33 @@ GST_DEBUG_CATEGORY_STATIC (gst_debug_vaapi_overlay);
 #endif
 
 /* Default templates */
-/* *INDENT-OFF* */
+/* clang-format off */
 static const char gst_vaapi_overlay_sink_caps_str[] =
   GST_VAAPI_MAKE_SURFACE_CAPS ";"
   GST_VIDEO_CAPS_MAKE (GST_VAAPI_FORMATS_ALL);
-/* *INDENT-ON* */
+/* clang-format on */
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static const char gst_vaapi_overlay_src_caps_str[] =
   GST_VAAPI_MAKE_SURFACE_CAPS ";"
   GST_VIDEO_CAPS_MAKE (GST_VAAPI_FORMATS_ALL);
-/* *INDENT-ON* */
+/* clang-format on */
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static GstStaticPadTemplate gst_vaapi_overlay_sink_factory =
   GST_STATIC_PAD_TEMPLATE ("sink_%u",
     GST_PAD_SINK,
     GST_PAD_REQUEST,
     GST_STATIC_CAPS (gst_vaapi_overlay_sink_caps_str));
-/* *INDENT-ON* */
+/* clang-format on */
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static GstStaticPadTemplate gst_vaapi_overlay_src_factory =
   GST_STATIC_PAD_TEMPLATE ("src",
     GST_PAD_SRC,
     GST_PAD_ALWAYS,
     GST_STATIC_CAPS (gst_vaapi_overlay_src_caps_str));
-/* *INDENT-ON* */
+/* clang-format on */
 
 G_DEFINE_TYPE (GstVaapiOverlaySinkPad, gst_vaapi_overlay_sink_pad,
     GST_TYPE_VIDEO_AGGREGATOR_PAD);

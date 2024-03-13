@@ -554,7 +554,7 @@ gst_stats_tracer_class_init (GstStatsTracerClass * klass)
   gobject_class->constructed = gst_stats_tracer_constructed;
 
   /* announce trace formats */
-  /* *INDENT-OFF* */
+  /* clang-format off */
   tr_buffer = gst_tracer_record_new ("buffer.class",
       "thread-id", GST_TYPE_STRUCTURE, gst_structure_new ("scope",
           "type", G_TYPE_GTYPE, G_TYPE_UINT64,
@@ -773,7 +773,7 @@ gst_stats_tracer_class_init (GstStatsTracerClass * klass)
           "description", G_TYPE_STRING, "ipad direction",
           NULL),
       NULL);
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   GST_OBJECT_FLAG_SET (tr_buffer, GST_OBJECT_FLAG_MAY_BE_LEAKED);
   GST_OBJECT_FLAG_SET (tr_event, GST_OBJECT_FLAG_MAY_BE_LEAKED);

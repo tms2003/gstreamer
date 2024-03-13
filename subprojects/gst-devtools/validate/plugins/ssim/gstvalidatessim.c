@@ -111,10 +111,10 @@ static GType validate_ssim_override_get_type (void);
 #define IS_VALIDATE_SSIM_OVERRIDE_CLASS(klass) (G_TYPE_CHECK_CLASS_TYPE ((klass), VALIDATE_SSIM_OVERRIDE_TYPE))
 #define VALIDATE_SSIM_OVERRIDE_GET_CLASS(obj) (G_TYPE_INSTANCE_GET_CLASS ((obj), VALIDATE_SSIM_OVERRIDE_TYPE, ValidateSsimOverrideClass))
 
-/*  *INDENT-OFF* */
+/*  clang-format off */
 G_DEFINE_TYPE_WITH_PRIVATE (ValidateSsimOverride, validate_ssim_override,
     GST_TYPE_VALIDATE_OVERRIDE)
-/*  *INDENT-ON* */
+/*  clang-format on */
 
 static void
 runner_stopping (GstValidateRunner * runner, ValidateSsimOverride * self)

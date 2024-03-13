@@ -487,7 +487,7 @@ gst_validate_gtk_init (GstPlugin * plugin)
 {
   gdk_event_handler_set (_process_event, NULL, NULL);
 
-/*  *INDENT-OFF* */
+  /*  clang-format off */
   gst_validate_register_action_type_dynamic (plugin, "gtk-put-event",
       GST_RANK_PRIMARY, _execute_put_events, ((GstValidateActionParameter[]) {
             {
@@ -531,7 +531,7 @@ gst_validate_gtk_init (GstPlugin * plugin)
       "Put a GdkEvent on the event list using gdk_put_event",
       GST_VALIDATE_ACTION_TYPE_NO_EXECUTION_NOT_FATAL |
       GST_VALIDATE_ACTION_TYPE_DOESNT_NEED_PIPELINE);
-/*  *INDENT-ON* */
+  /*  clang-format on */
 
   return TRUE;
 }

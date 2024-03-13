@@ -26,7 +26,7 @@
 
 #include <gst/gl/gl.h>
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static struct
 {
   GstGLAPI api;
@@ -49,7 +49,7 @@ static struct
   {GST_GL_API_ANY, NULL},
   {GST_GL_API_NONE, "invalid-api"},
 };
-/* *INDENT-ON* */
+/* clang-format on */
 
 GST_START_TEST (gl_api_serialization)
 {
@@ -74,7 +74,7 @@ GST_START_TEST (gl_api_serialization)
 
 GST_END_TEST;
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static struct
 {
   GstGLPlatform platform;
@@ -98,7 +98,7 @@ static struct
   {GST_GL_PLATFORM_ANY, NULL},
   {GST_GL_PLATFORM_NONE, "invalid-platform"},
 };
-/* *INDENT-ON* */
+/* clang-format on */
 
 GST_START_TEST (gl_platform_serialization)
 {

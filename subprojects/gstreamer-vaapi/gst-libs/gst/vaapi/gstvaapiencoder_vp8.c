@@ -271,13 +271,13 @@ ensure_control_rate_params (GstVaapiEncoderVP8 * encoder)
   GST_VAAPI_ENCODER_VA_RATE_CONTROL (encoder).initial_qp = encoder->yac_qi;
   GST_VAAPI_ENCODER_VA_RATE_CONTROL (encoder).min_qp = 1;
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   /* HRD params */
   GST_VAAPI_ENCODER_VA_HRD (encoder) = (VAEncMiscParameterHRD) {
     .buffer_size = base_encoder->bitrate * 1000 * 2,
     .initial_buffer_fullness = base_encoder->bitrate * 1000,
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   return TRUE;
 }

@@ -69,7 +69,7 @@ gst_auto_video_convert_class_init (GstAutoVideoConvertClass * klass)
 static void
 gst_auto_video_convert_init (GstAutoVideoConvert * autovideoconvert)
 {
-  /* *INDENT-OFF* */
+  /* clang-format off */
   static const GstAutoVideoFilterGenerator gen[] = {
     {
       .first_elements = { "bayer2rgb", NULL},
@@ -184,8 +184,7 @@ gst_auto_video_convert_init (GstAutoVideoConvert * autovideoconvert)
       .rank = 0,
     },
   };
-  /* *INDENT-ON* */
-
+  /* clang-format on */
 
   gst_auto_video_register_well_known_bins (GST_BASE_AUTO_CONVERT
       (autovideoconvert), gen);

@@ -28,7 +28,7 @@
 #include <gst/check/gstcheck.h>
 #include <gst/sdp/gstsdpmessage.h>
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static const gchar *sdp = "v=0\r\n"
     "o=- 123456 0 IN IP4 127.0.0.1\r\n"
     "s=TestSessionToCopy\r\n"
@@ -207,7 +207,7 @@ static const gchar caps_rid_params[] =
     "rid-0=(string)<\"send\",\"max-width=1920\",\"max-height=1080\">, "
     "rid-1=(string)<\"send\",\"max-width=1280\",\"max-height=720\">";
 
-/* *INDENT-ON* */
+/* clang-format on */
 
 GST_START_TEST (boxed)
 {

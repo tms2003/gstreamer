@@ -830,7 +830,7 @@ fill_shader_info (void)
   guint i, j;
 
   /* standard RGB with alpha conversion all components are copied */
-  /* *INDENT-OFF* */
+  /* clang-format off */
   for (i = 0; i < G_N_ELEMENTS (rgbs); i++) {
     const GstVideoFormatInfo *from_finfo = gst_video_format_get_info (rgbs[i]);
 
@@ -884,7 +884,7 @@ fill_shader_info (void)
       };
     }
   }
-  /* *INDENT-ON* */
+  /* clang-format on */
   GST_TRACE ("initialized %u formats", info_i);
 
   g_assert (info_i == N_SHADER_INFO);
@@ -1377,14 +1377,14 @@ gst_vulkan_color_convert_transform (GstBaseTransform * bt, GstBuffer * inbuf,
   {
     VkCommandBufferBeginInfo cmd_buf_info = { 0, };
 
-    /* *INDENT-OFF* */
+    /* clang-format off */
     cmd_buf_info = (VkCommandBufferBeginInfo) {
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
         .pNext = NULL,
         .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
         .pInheritanceInfo = NULL
     };
-    /* *INDENT-ON* */
+    /* clang-format on */
 
     gst_vulkan_command_buffer_lock (cmd_buf);
     err = vkBeginCommandBuffer (cmd_buf->cmd, &cmd_buf_info);
@@ -1402,7 +1402,7 @@ gst_vulkan_color_convert_transform (GstBaseTransform * bt, GstBuffer * inbuf,
       VkImageMemoryBarrier render_image_memory_barrier;
       VkImageBlit blit;
 
-      /* *INDENT-OFF* */
+      /* clang-format off */
       render_image_memory_barrier = (VkImageMemoryBarrier) {
           .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
           .pNext = NULL,
@@ -1459,7 +1459,7 @@ gst_vulkan_color_convert_transform (GstBaseTransform * bt, GstBuffer * inbuf,
               },
           },
       };
-      /* *INDENT-ON* */
+      /* clang-format on */
 
       GST_LOG_OBJECT (conv, "blitting plane %u from %p to %p", i,
           render_img_mems[i], out_img_mems[i]);

@@ -30,7 +30,7 @@ if cmdres.returncode() != 0
   error('Do not run `ninja reconfigure` or `meson` for gst-build inside the development environment, you will run into problems')
 endif
 
-# Install gst-indent pre-commit hook
+# Install clang-format pre-commit hook
 run_command(python3, '-c', 'import shutil; shutil.copy("scripts/git-hooks/multi-pre-commit.hook", ".git/hooks/pre-commit")', check: false)
 
 gitlint_req = '>= 0.18'

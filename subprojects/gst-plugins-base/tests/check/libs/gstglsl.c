@@ -37,7 +37,7 @@ teardown (void)
 {
 }
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static const struct {GstGLSLVersion version; const gchar * name;} glsl_versions[] = {
   {GST_GLSL_VERSION_100, "100"},
   {GST_GLSL_VERSION_110, "110"},
@@ -194,7 +194,7 @@ static const struct {const gchar *name; gboolean succeed; GstGLSLVersion version
   {"\n#version 100", TRUE, GST_GLSL_VERSION_100, GST_GLSL_PROFILE_ES},
   {"\r#version 100", TRUE, GST_GLSL_VERSION_100, GST_GLSL_PROFILE_ES},
 };
-/* *INDENT-ON* */
+/* clang-format on */
 
 GST_START_TEST (test_serialization)
 {

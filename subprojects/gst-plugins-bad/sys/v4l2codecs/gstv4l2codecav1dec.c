@@ -142,7 +142,7 @@ static gboolean
 gst_v4l2_decoder_av1_api_check (GstV4l2Decoder * decoder)
 {
   guint i, ret_size;
-  /* *INDENT-OFF* */
+  /* clang-format off */
   #define SET_ID(cid) .id = (cid), .name = #cid
   struct
   {
@@ -167,7 +167,7 @@ gst_v4l2_decoder_av1_api_check (GstV4l2Decoder * decoder)
     }
   };
   #undef SET_ID
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   /*
    * Compatibility check: make sure the pointer controls are
@@ -268,7 +268,7 @@ gst_v4l2_codec_av1_dec_negotiate (GstVideoDecoder * decoder)
   GstV4l2CodecAV1Dec *self = GST_V4L2_CODEC_AV1_DEC (decoder);
   GstAV1Decoder *av1dec = GST_AV1_DECODER (decoder);
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   struct v4l2_ext_control control[] = {
     {
       .id = V4L2_CID_STATELESS_AV1_SEQUENCE,
@@ -276,7 +276,7 @@ gst_v4l2_codec_av1_dec_negotiate (GstVideoDecoder * decoder)
       .size = sizeof (self->v4l2_sequence),
     },
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   GstCaps *filter, *caps;
   /* Ignore downstream renegotiation request. */
@@ -516,7 +516,7 @@ static void
 gst_v4l2_codec_av1_dec_fill_sequence_params (GstV4l2CodecAV1Dec * self,
     const GstAV1SequenceHeaderOBU * seq_hdr)
 {
-  /* *INDENT-OFF* */
+  /* clang-format off */
   self->v4l2_sequence = (struct v4l2_ctrl_av1_sequence) {
     .flags =
       (seq_hdr->still_picture ? V4L2_AV1_SEQUENCE_FLAG_STILL_PICTURE : 0) |
@@ -545,7 +545,7 @@ gst_v4l2_codec_av1_dec_fill_sequence_params (GstV4l2CodecAV1Dec * self,
       .max_frame_width_minus_1 = seq_hdr->max_frame_width_minus_1,
       .max_frame_height_minus_1 = seq_hdr->max_frame_height_minus_1,
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 }
 
 static void
@@ -807,8 +807,8 @@ gst_v4l2_codec_av1_dec_fill_frame_hdr (GstV4l2CodecAV1Dec * self,
   G_STATIC_ASSERT (sizeof (self->v4l2_frame.skip_mode_frame) ==
       sizeof (f->skip_mode_frame));
 
-  self->v4l2_frame = (struct v4l2_ctrl_av1_frame) {
-  /* *INDENT-OFF* */
+  self->v4l2_frame = (struct v4l2_ctrl_av1_frame){
+      /* clang-format off */
     .flags =
       (f->show_frame ? V4L2_AV1_FRAME_FLAG_SHOW_FRAME : 0) |
       (f->showable_frame ? V4L2_AV1_FRAME_FLAG_SHOWABLE_FRAME : 0) |
@@ -903,7 +903,7 @@ gst_v4l2_codec_av1_dec_fill_frame_hdr (GstV4l2CodecAV1Dec * self,
       .lr_unit_shift = lr->lr_unit_shift,
       .lr_uv_shift = lr->lr_uv_shift,
     }
-  /* *INDENT-ON* */
+      /* clang-format on */
   };
 
   switch (f->frame_type) {
@@ -1251,7 +1251,7 @@ gst_v4l2_codec_av1_dec_end_picture (GstAV1Decoder * decoder,
 
   struct v4l2_ctrl_av1_tile_group_entry tge = { };
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   struct v4l2_ext_control decode_params_control[] = {
     {
       .id = V4L2_CID_STATELESS_AV1_FRAME,
@@ -1263,7 +1263,7 @@ gst_v4l2_codec_av1_dec_end_picture (GstAV1Decoder * decoder,
     {}, /* sequence */
     {}, /* film grain */
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   if (self->tile_group_entries->len > 0) {
     decode_params_control[count++] = (struct v4l2_ext_control) {

@@ -65,7 +65,7 @@ _window_from_event (GstVulkanDisplayXCB * display_xcb,
   uint8_t event_code = event->response_type & 0x7f;
 
   switch (event_code) {
-/* *INDENT-OFF* */
+    /* clang-format off */
 #define WIN_FROM_EVENT(case_val,event_type,window_field) \
     case case_val:{ \
       event_type * real_event = (event_type *) event; \
@@ -80,7 +80,7 @@ _window_from_event (GstVulkanDisplayXCB * display_xcb,
     WIN_FROM_EVENT (XCB_BUTTON_RELEASE, xcb_button_release_event_t, event)
     WIN_FROM_EVENT (XCB_MOTION_NOTIFY, xcb_motion_notify_event_t, event)
 #undef WIN_FROM_EVENT
-/* *INDENT-ON* */
+      /* clang-format on */
     default:
       return NULL;
   }

@@ -1087,14 +1087,14 @@ gst_va_dmabuf_memories_setup (GstVaDisplay * display,
   GstVideoFormat format;
   GstVaBufferSurface *buf;
   GstVideoInfo *info = &drm_info->vinfo;
-  /* *INDENT-OFF* */
+  /* clang-format off */
   VADRMPRIMESurfaceDescriptor desc = {
     .width = GST_VIDEO_INFO_WIDTH (info),
     .height = GST_VIDEO_INFO_HEIGHT (info),
     /* GStreamer can only describe one PRIME layer */
     .num_layers = 1,
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
   VASurfaceID surface;
   guint32 fourcc, rt_format, drm_fourcc;
   guint64 drm_modifier;

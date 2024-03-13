@@ -899,7 +899,7 @@ G_PASTE(gst_gl_shader_set_uniform_,gl_suffix) (GstGLShader * shader,        \
 #endif /* G_HAVE_GNUC_VARARGS */
 #endif /* G_HAVE_ISO_VARARGS */
 
-/* *INDENT-OFF* */
+/* clang-format off */
 /**
  * gst_gl_shader_set_uniform_1f:
  * @shader: a #GstGLShader
@@ -1087,7 +1087,7 @@ set_uniform_body(4i, "%i, %i, %i, %i", v0, v1, v2, v3);
  * Perform `glUniform4iv()` for @name on @shader
  */
 set_uniform_v(4iv, int, 4, "%i, %i, %i, %i", item[0], item[1], item[2], item[3]);
-/* *INDENT-ON* */
+/* clang-format on */
 
 /**
  * gst_gl_shader_set_uniform_matrix_2fv:

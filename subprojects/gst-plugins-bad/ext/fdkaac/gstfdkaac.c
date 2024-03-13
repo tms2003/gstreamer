@@ -27,7 +27,7 @@
 #include "gstfdkaacenc.h"
 #include "gstfdkaacdec.h"
 
-/* *INDENT-OFF* */
+/* clang-format off */
 const GstFdkAacChannelLayout channel_layouts[] = {
   /* MPEG 1: Mono */
   {1, MODE_1, {GST_AUDIO_CHANNEL_POSITION_MONO}},
@@ -230,4 +230,4 @@ const GstFdkAacChannelLayout channel_layouts[] = {
   /* Iteration sentinel */
   {0, MODE_INVALID, {GST_AUDIO_CHANNEL_POSITION_INVALID}},
 };
-/* *INDENT-ON* */
+/* clang-format on */

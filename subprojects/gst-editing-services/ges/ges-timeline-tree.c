@@ -76,7 +76,7 @@ typedef struct _PositionData
   GstClockTime end;
 } PositionData;
 
-/*  *INDENT-OFF* */
+/*  clang-format off */
 struct _TreeIterationData
 {
   GNode *root;
@@ -122,7 +122,7 @@ struct _TreeIterationData
    .edge = GES_EDGE_NONE,
    .neighbours = NULL,
 };
-/*  *INDENT-ON* */
+/*  clang-format on */
 
 typedef struct _TreeIterationData TreeIterationData;
 

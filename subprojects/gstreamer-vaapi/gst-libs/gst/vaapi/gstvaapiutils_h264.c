@@ -36,7 +36,7 @@ struct map
 
 /* Profile string map */
 static const struct map gst_vaapi_h264_profile_map[] = {
-/* *INDENT-OFF* */
+    /* clang-format off */
   { GST_VAAPI_PROFILE_H264_CONSTRAINED_BASELINE, "constrained-baseline" },
   { GST_VAAPI_PROFILE_H264_BASELINE,             "baseline"             },
   { GST_VAAPI_PROFILE_H264_MAIN,                 "main"                 },
@@ -50,12 +50,12 @@ static const struct map gst_vaapi_h264_profile_map[] = {
   { GST_VAAPI_PROFILE_H264_MULTIVIEW_HIGH,       "multiview-high"       },
   { GST_VAAPI_PROFILE_H264_STEREO_HIGH,          "stereo-high"          },
   { 0, NULL }
-/* *INDENT-ON* */
+    /* clang-format on */
 };
 
 /* Level string map */
 static const struct map gst_vaapi_h264_level_map[] = {
-/* *INDENT-OFF* */
+    /* clang-format off */
   { GST_VAAPI_LEVEL_H264_L1,    "1"     },
   { GST_VAAPI_LEVEL_H264_L1b,   "1b"    },
   { GST_VAAPI_LEVEL_H264_L1_1,  "1.1"   },
@@ -77,11 +77,11 @@ static const struct map gst_vaapi_h264_level_map[] = {
   { GST_VAAPI_LEVEL_H264_L6_1,  "6.1"   },
   { GST_VAAPI_LEVEL_H264_L6_2,  "6.2"   },
   { 0, NULL }
-/* *INDENT-ON* */
+    /* clang-format on */
 };
 
 /* Table A-1 - Level limits */
-/* *INDENT-OFF* */
+/* clang-format off */
 static const GstVaapiH264LevelLimits gst_vaapi_h264_level_limits[] = {
   /* level                     idc   MaxMBPS   MaxFS MaxDpbMbs  MaxBR MaxCPB  MinCr */
   { GST_VAAPI_LEVEL_H264_L1,    10,     1485,     99,    396,     64,    175, 2 },
@@ -106,7 +106,7 @@ static const GstVaapiH264LevelLimits gst_vaapi_h264_level_limits[] = {
   { GST_VAAPI_LEVEL_H264_L6_2,  62, 16711680, 139264, 696320, 800000, 800000, 2 },
   { 0, }
 };
-/* *INDENT-ON* */
+/* clang-format on */
 
 /* Lookup value in map */
 static const struct map *

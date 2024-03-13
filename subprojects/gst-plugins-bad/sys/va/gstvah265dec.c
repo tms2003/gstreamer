@@ -99,12 +99,12 @@ struct _GstVaH265Dec
 
 static GstElementClass *parent_class = NULL;
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static const gchar *src_caps_str =
     GST_VIDEO_CAPS_MAKE_WITH_FEATURES (GST_CAPS_FEATURE_MEMORY_VA,
         "{ NV12, P010_10LE }") " ;"
     GST_VIDEO_CAPS_MAKE ("{ NV12, P010_10LE }");
-/* *INDENT-ON* */
+/* clang-format on */
 
 static const gchar *sink_caps_str = "video/x-h265";
 
@@ -491,7 +491,7 @@ gst_va_h265_dec_decode_slice (GstH265Decoder * decoder,
 
   slice_param = &self->prev_slice.param;
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   slice_param->base = (VASliceParameterBufferHEVC) {
     .slice_data_size = nalu->size,
     .slice_data_offset = 0,
@@ -527,11 +527,11 @@ gst_va_h265_dec_decode_slice (GstH265Decoder * decoder,
           header->loop_filter_across_slices_enabled_flag,
     },
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   if (_is_range_extension_profile (base->profile)
       || _is_screen_content_ext_profile (base->profile)) {
-    /* *INDENT-OFF* */
+    /* clang-format off */
     slice_param->rext = (VASliceParameterBufferHEVCRext) {
       .slice_ext_flags.bits = {
         .cu_chroma_qp_offset_enabled_flag = header->cu_chroma_qp_offset_enabled_flag,
@@ -541,7 +541,7 @@ gst_va_h265_dec_decode_slice (GstH265Decoder * decoder,
       .slice_act_cb_qp_offset = header->slice_act_cb_qp_offset,
       .slice_act_cr_qp_offset = header->slice_act_cr_qp_offset,
     };
-    /* *INDENT-ON* */
+    /* clang-format on */
   }
 
   _fill_ref_pic_list (decoder, picture, slice_param->base.RefPicList[0],
@@ -566,7 +566,7 @@ _fill_picture_range_ext_parameter (GstVaH265Dec * decoder,
   GstH265SPSExtensionParams *sps_ext = &sps->sps_extension_params;
   GstH265PPSExtensionParams *pps_ext = &pps->pps_extension_params;
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   *pic_param = (VAPictureParameterBufferHEVCRext) {
     .range_extension_pic_fields.bits = {
       .transform_skip_rotation_enabled_flag = sps_ext->transform_skip_rotation_enabled_flag,
@@ -587,7 +587,7 @@ _fill_picture_range_ext_parameter (GstVaH265Dec * decoder,
     .log2_sao_offset_scale_chroma = pps_ext->log2_sao_offset_scale_chroma,
     .log2_max_transform_skip_block_size_minus2 = pps_ext->log2_max_transform_skip_block_size_minus2,
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   memcpy (pic_param->cb_qp_offset_list, pps_ext->cb_qp_offset_list,
       sizeof (pic_param->cb_qp_offset_list));
@@ -605,7 +605,7 @@ _fill_screen_content_ext_parameter (GstVaH265Dec * decoder,
   guint32 num_comps;
   guint i, n;
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   *pic_param = (VAPictureParameterBufferHEVCScc) {
     .screen_content_pic_fields.bits = {
       .pps_curr_pic_ref_enabled_flag = pps_scc->pps_curr_pic_ref_enabled_flag,
@@ -621,7 +621,7 @@ _fill_screen_content_ext_parameter (GstVaH265Dec * decoder,
     .pps_act_cb_qp_offset_plus5 = pps_scc->pps_act_cb_qp_offset_plus5,
     .pps_act_cr_qp_offset_plus3 = pps_scc->pps_act_cr_qp_offset_plus3,
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   /* firstly use the pps, then sps */
   num_comps = sps->chroma_format_idc ? 3 : 1;
@@ -664,7 +664,7 @@ gst_va_h265_dec_start_picture (GstH265Decoder * decoder,
   pps = slice->header.pps;
   sps = pps->sps;
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   pic_param->base = (VAPictureParameterBufferHEVC) {
     .pic_width_in_luma_samples = sps->pic_width_in_luma_samples,
     .pic_height_in_luma_samples = sps->pic_height_in_luma_samples,
@@ -737,7 +737,7 @@ gst_va_h265_dec_start_picture (GstH265Decoder * decoder,
       .IntraPicFlag = GST_H265_IS_NAL_TYPE_IRAP (slice->nalu.type),
     },
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   if (_is_range_extension_profile (self->parent.profile)
       || _is_screen_content_ext_profile (self->parent.profile)) {
@@ -923,7 +923,7 @@ _get_rtformat (GstVaH265Dec * self, guint8 bit_depth_luma,
   }
 }
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static const struct
 {
   GstH265Profile profile;
@@ -975,7 +975,7 @@ static const struct
   P (3D_MAIN, ),*/
 #undef P
 };
-/* *INDENT-ON* */
+/* clang-format on */
 
 static VAProfile
 _get_profile (GstVaH265Dec * self, const GstH265SPS * sps, gint max_dpb_size)
@@ -1099,7 +1099,7 @@ gst_va_h265_dec_new_sequence (GstH265Decoder * decoder, const GstH265SPS * sps,
   base->need_valign = GST_VIDEO_INFO_WIDTH (info) < base->width ||
       GST_VIDEO_INFO_HEIGHT (info) < base->height;
   if (base->need_valign) {
-    /* *INDENT-OFF* */
+    /* clang-format off */
     if (base->valign.padding_left != padding_left ||
         base->valign.padding_right != padding_right ||
         base->valign.padding_top != padding_top ||
@@ -1114,7 +1114,7 @@ gst_va_h265_dec_new_sequence (GstH265Decoder * decoder, const GstH265SPS * sps,
       .padding_top = padding_top,
       .padding_bottom = padding_bottom,
     };
-    /* *INDENT-ON* */
+    /* clang-format on */
   }
 
   base->min_buffers = self->dpb_size + 4;       /* dpb size + scratch surfaces */

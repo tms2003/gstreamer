@@ -57,7 +57,7 @@ GST_DEBUG_CATEGORY_STATIC (gst_debug_vaapipostproc);
 #endif
 
 /* Default templates */
-/* *INDENT-OFF* */
+/* clang-format off */
 static const char gst_vaapipostproc_sink_caps_str[] =
   GST_VAAPI_MAKE_SURFACE_CAPS ", "
   GST_CAPS_INTERLACED_MODES "; "
@@ -66,9 +66,9 @@ static const char gst_vaapipostproc_sink_caps_str[] =
   GST_VIDEO_CAPS_MAKE_WITH_FEATURES (GST_CAPS_FEATURE_MEMORY_DMABUF,
       GST_VAAPI_FORMATS_ALL) ", "
   GST_CAPS_INTERLACED_MODES;
-/* *INDENT-ON* */
+/* clang-format on */
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static const char gst_vaapipostproc_src_caps_str[] =
   GST_VAAPI_MAKE_SURFACE_CAPS ", "
   GST_CAPS_INTERLACED_FALSE "; "
@@ -77,23 +77,23 @@ static const char gst_vaapipostproc_src_caps_str[] =
 #endif
   GST_VIDEO_CAPS_MAKE (GST_VAAPI_FORMATS_ALL) ", "
   GST_CAPS_INTERLACED_MODES;
-/* *INDENT-ON* */
+/* clang-format on */
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static GstStaticPadTemplate gst_vaapipostproc_sink_factory =
   GST_STATIC_PAD_TEMPLATE ("sink",
     GST_PAD_SINK,
     GST_PAD_ALWAYS,
     GST_STATIC_CAPS (gst_vaapipostproc_sink_caps_str));
-/* *INDENT-ON* */
+/* clang-format on */
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static GstStaticPadTemplate gst_vaapipostproc_src_factory =
   GST_STATIC_PAD_TEMPLATE ("src",
     GST_PAD_SRC,
     GST_PAD_ALWAYS,
     GST_STATIC_CAPS (gst_vaapipostproc_src_caps_str));
-/* *INDENT-ON* */
+/* clang-format on */
 
 static void gst_vaapipostproc_colorbalance_init (gpointer iface, gpointer data);
 

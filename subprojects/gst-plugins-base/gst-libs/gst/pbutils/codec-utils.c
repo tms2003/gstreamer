@@ -1041,11 +1041,11 @@ static const gchar *
 utils_get_format_range_extension_profile (GstH265ExtensionProfile * ext_profile)
 {
   static const GstH265ExtensionProfile profiles[] = {
-    /* FIXME 2.0: Consider ':' separated subsampling notation for consistency
-     * https://gitlab.freedesktop.org/gstreamer/gst-plugins-base/merge_requests/23
-     */
-    /* Rec. ITU-T H.265 Table A.2 format range extensions profiles */
-    /* *INDENT-OFF* */
+      /* FIXME 2.0: Consider ':' separated subsampling notation for consistency
+       * https://gitlab.freedesktop.org/gstreamer/gst-plugins-base/merge_requests/23
+       */
+      /* Rec. ITU-T H.265 Table A.2 format range extensions profiles */
+      /* clang-format off */
     {"monochrome",                    0, 1, 1, 1, 1, 1, 1, 0, 0, 1, 0},
     {"monochrome-10",                 0, 1, 1, 0, 1, 1, 1, 0, 0, 1, 1},
     {"monochrome-12",                 0, 1, 0, 0, 1, 1, 1, 0, 0, 1, 2},
@@ -1067,7 +1067,7 @@ utils_get_format_range_extension_profile (GstH265ExtensionProfile * ext_profile)
     {"main-444-16-intra",             0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 18},
     {"main-444-still-picture",        0, 1, 1, 1, 0, 0, 0, 1, 1, 0, 19},
     {"main-444-16-still-picture",     0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 20},
-    /* *INDENT-ON* */
+      /* clang-format on */
   };
 
   return utils_get_extension_profile (profiles, G_N_ELEMENTS (profiles),
@@ -1078,10 +1078,10 @@ static const gchar *
 utils_get_3d_profile (GstH265ExtensionProfile * ext_profile)
 {
   static const GstH265ExtensionProfile profiles[] = {
-    /* Rec. ITU-T H.265 I.11.1 3D Main profile */
-    /* *INDENT-OFF* */
+      /* Rec. ITU-T H.265 I.11.1 3D Main profile */
+      /* clang-format off */
     {"3d-main",                       0, 1, 1, 1, 1, 1, 0, 0, 0, 1, 0},
-    /* *INDENT-ON* */
+      /* clang-format on */
   };
 
   return utils_get_extension_profile (profiles, G_N_ELEMENTS (profiles),
@@ -1092,10 +1092,10 @@ static const gchar *
 utils_get_multiview_profile (GstH265ExtensionProfile * ext_profile)
 {
   static const GstH265ExtensionProfile profiles[] = {
-    /* Rec. ITU-T H.265 G.11.1 Multiview Main profile */
-    /* *INDENT-OFF* */
+      /* Rec. ITU-T H.265 G.11.1 Multiview Main profile */
+      /* clang-format off */
     {"multiview-main",                0, 1, 1, 1, 1, 1, 0, 0, 0, 1, 0},
-    /* *INDENT-ON* */
+      /* clang-format on */
   };
 
   return utils_get_extension_profile (profiles, G_N_ELEMENTS (profiles),
@@ -1106,11 +1106,11 @@ static const gchar *
 utils_get_scalable_profile (GstH265ExtensionProfile * ext_profile)
 {
   static const GstH265ExtensionProfile profiles[] = {
-    /* Rec. ITU-T H.265 H.11.1 */
-    /* *INDENT-OFF* */
+      /* Rec. ITU-T H.265 H.11.1 */
+      /* clang-format off */
     {"scalable-main",                 0, 1, 1, 1, 1, 1, 0, 0, 0, 1, 0},
     {"scalable-main-10",              0, 1, 1, 0, 1, 1, 0, 0, 0, 1, 1},
-    /* *INDENT-ON* */
+      /* clang-format on */
   };
 
   return utils_get_extension_profile (profiles, G_N_ELEMENTS (profiles),
@@ -1121,13 +1121,13 @@ static const gchar *
 utils_get_high_throughput_profile (GstH265ExtensionProfile * ext_profile)
 {
   static const GstH265ExtensionProfile profiles[] = {
-    /* Rec. ITU-T H.265 Table A.3 high throughput profiles */
-    /* *INDENT-OFF* */
+      /* Rec. ITU-T H.265 Table A.3 high throughput profiles */
+      /* clang-format off */
     {"high-throughput-444",           1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 0},
     {"high-throughput-444-10",        1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1},
     {"high-throughput-444-14",        1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2},
     {"high-throughput-444-16-intra",  0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 3},
-    /* *INDENT-ON* */
+      /* clang-format on */
   };
 
   return utils_get_extension_profile (profiles, G_N_ELEMENTS (profiles),
@@ -1139,8 +1139,8 @@ utils_get_screen_content_coding_extensions_profile (GstH265ExtensionProfile *
     ext_profile)
 {
   static const GstH265ExtensionProfile profiles[] = {
-    /* Rec. ITU-T H.265 Table A.5 screen content coding extensions profiles */
-    /* *INDENT-OFF* */
+      /* Rec. ITU-T H.265 Table A.5 screen content coding extensions profiles */
+      /* clang-format off */
     {"screen-extended-main",          1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 0},
     {"screen-extended-main-10",       1, 1, 1, 0, 1, 1, 0, 0, 0, 1, 1},
     {"screen-extended-main-444",      1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 2},
@@ -1153,7 +1153,7 @@ utils_get_screen_content_coding_extensions_profile (GstH265ExtensionProfile *
                                       1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 5},
     {"screen-extended-high-throughput-444-14",
                                       1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 6},
-    /* *INDENT-ON* */
+      /* clang-format on */
   };
 
   return utils_get_extension_profile (profiles, G_N_ELEMENTS (profiles),
@@ -1165,13 +1165,13 @@ utils_get_scalable_format_range_extensions_profile (GstH265ExtensionProfile *
     ext_profile)
 {
   static const GstH265ExtensionProfile profiles[] = {
-    /* Rec. ITU-T H.265 Table H.4 scalable range extensions profiles */
-    /* *INDENT-OFF* */
+      /* Rec. ITU-T H.265 Table H.4 scalable range extensions profiles */
+      /* clang-format off */
     {"scalable-monochrome",           1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 0},
     {"scalable-monochrome-12",        1, 1, 0, 0, 1, 1, 1, 0, 0, 1, 1},
     {"scalable-monochrome-16",        0, 0, 0, 0, 1, 1, 1, 0, 0, 1, 2},
     {"scalable-main-444",             1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 3},
-    /* *INDENT-ON* */
+      /* clang-format on */
   };
 
   return utils_get_extension_profile (profiles, G_N_ELEMENTS (profiles),

@@ -142,7 +142,7 @@ static const bool bool_true = true;
 static const int32_t int32_zero = 0;
 static const struct linger no_linger = { 0, 0 };
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static const struct srt_constant_params srt_params[] = {
   {"SRTO_SNDSYN",    SRTO_SNDSYN,    &bool_false, sizeof bool_false}, /* non-blocking */
   {"SRTO_RCVSYN",    SRTO_RCVSYN,    &bool_false, sizeof bool_false}, /* non-blocking */
@@ -151,7 +151,7 @@ static const struct srt_constant_params srt_params[] = {
   {"SRTO_IPV6ONLY",  SRTO_IPV6ONLY,  &int32_zero, sizeof int32_zero}, /* must be either 0 or 1 before binding to :: */
   {NULL, -1, NULL, 0},
 };
-/* *INDENT-ON* */
+/* clang-format on */
 
 typedef struct
 {

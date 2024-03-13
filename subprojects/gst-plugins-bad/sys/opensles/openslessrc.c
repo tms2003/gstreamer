@@ -41,7 +41,7 @@
 GST_DEBUG_CATEGORY_STATIC (opensles_src_debug);
 #define GST_CAT_DEFAULT opensles_src_debug
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static GstStaticPadTemplate src_factory = GST_STATIC_PAD_TEMPLATE ("src",
     GST_PAD_SRC,
     GST_PAD_ALWAYS,
@@ -51,7 +51,7 @@ static GstStaticPadTemplate src_factory = GST_STATIC_PAD_TEMPLATE ("src",
         "channels = (int) 1, "
         "layout = (string) interleaved")
     );
-/* *INDENT-ON* */
+/* clang-format on */
 
 #define _do_init \
   GST_DEBUG_CATEGORY_INIT (opensles_src_debug, "openslessrc", 0, \

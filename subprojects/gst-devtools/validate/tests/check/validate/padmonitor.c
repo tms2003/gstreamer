@@ -513,7 +513,7 @@ GST_START_TEST (issue_concatenation)
 
 GST_END_TEST;
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static const gchar * media_info =
 "<file duration='10031000000' frame-detection='1' uri='file:///I/am/so/fake.fakery' seekable='true'>"
 "  <streams caps='video/quicktime'>"
@@ -531,7 +531,7 @@ static const gchar * media_info =
 "    </stream>"
 "  </streams>"
 "</file>";
-/* *INDENT-ON* */
+/* clang-format on */
 
 typedef struct _BufferDesc
 {
@@ -665,7 +665,7 @@ GST_START_TEST(media_info_##name) { \
      _check_media_info (NULL, (bufs)); \
 } GST_END_TEST
 
-/* *INDENT-OFF* */
+/* clang-format off */
 MEDIA_INFO_TEST (1, -1,
       ((BufferDesc []) {
       {
@@ -758,7 +758,7 @@ MEDIA_INFO_TEST (5, 6,
       },
       { NULL}
     }));
-/* *INDENT-ON* */
+/* clang-format on */
 
 GST_START_TEST (caps_events)
 {

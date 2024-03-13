@@ -98,7 +98,7 @@ enum
   PROP_ALPHA
 };
 
-/* *INDENT-OFF* */
+/* clang-format off */
 /* vertex source */
 static const gchar *overlay_v_src =
     "attribute vec4 a_position;\n"
@@ -120,7 +120,7 @@ static const gchar *overlay_f_src =
     "  vec4 rgba = texture2D( texture, v_texcoord );\n"
     "  gl_FragColor = vec4(rgba.rgb, rgba.a * alpha);\n"
     "}\n";
-/* *INDENT-ON* */
+/* clang-format on */
 
 /* init resources that need a gl context */
 static gboolean
@@ -419,7 +419,7 @@ _bind_buffer (GstGLOverlay * overlay, GLuint vbo)
       GL_FALSE, 5 * sizeof (GLfloat), (void *) (3 * sizeof (GLfloat)));
 }
 
-/* *INDENT-OFF* */
+/* clang-format off */
 float v_vertices[] = {
 /*|      Vertex     | TexCoord  |*/
   -1.0f, -1.0f, 0.0f, 0.0f, 0.0f,
@@ -429,7 +429,7 @@ float v_vertices[] = {
 };
 
 static const GLushort indices[] = { 0, 1, 2, 0, 2, 3, };
-/* *INDENT-ON* */
+/* clang-format on */
 
 static gboolean
 gst_gl_overlay_callback (GstGLFilter * filter, GstGLMemory * in_tex,
@@ -503,14 +503,14 @@ gst_gl_overlay_callback (GstGLFilter * filter, GstGLMemory * in_tex,
     gint render_width, render_height;
     gfloat x, y, image_width, image_height;
 
-    /* *INDENT-OFF* */
+    /* clang-format off */
     float vertices[] = {
      -1.0f, -1.0f, 0.0f, 0.0f, 0.0f,
       1.0f, -1.0f, 0.0f, 1.0f, 0.0f,
       1.0f,  1.0f, 0.0f, 1.0f, 1.0f,
      -1.0f,  1.0f, 0.0f, 0.0,  1.0f,
     };
-    /* *INDENT-ON* */
+    /* clang-format on */
 
     /* scale from [0, 1] -> [-1, 1] */
     x = ((gfloat) overlay->offset_x / (gfloat) overlay->window_width +

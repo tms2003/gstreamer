@@ -31,7 +31,7 @@
 
 #include "gstkmsutils.h"
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static const struct
 {
   guint32 fourcc;
@@ -84,7 +84,7 @@ static const struct
 
 #undef DEF_FMT
 };
-/* *INDENT-ON* */
+/* clang-format on */
 
 GstVideoFormat
 gst_video_format_from_drm (guint32 drmfmt)

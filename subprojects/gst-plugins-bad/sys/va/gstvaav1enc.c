@@ -353,7 +353,7 @@ struct _GstVaAV1LevelLimits
 };
 
 /* A.3. Levels */
-/* *INDENT-OFF* */
+/* clang-format off */
 static const GstVaAV1LevelLimits _va_av1_level_limits[] = {
 /* level idx MaxPicSize MaxHSize MaxVSize MaxDisplayRate MaxDecodeRate MaxHeaderRate MainMbps  HighMbps  MainCR HighCR MaxTiles MaxTileCols*/
   {"2.0", 0, 147456,    2048,    1152,    4423680,       5529600,      150,          1500000,  0,        2,     0,     8,       4           },
@@ -371,7 +371,7 @@ static const GstVaAV1LevelLimits _va_av1_level_limits[] = {
   {"6.2", 18,35651584,  16384,   8704,    4278190080,    4379443200,   300,          160000000,800000000,8,     4,     128,     16          },
   {"6.3", 19,35651584,  16384,   8704,    4278190080,    4706009088,   300,          160000000,800000000,8,     4,     128,     16          },
 };
-/* *INDENT-ON* */
+/* clang-format on */
 
 static gboolean
 _av1_calculate_level_and_tier (GstVaAV1Enc * self)
@@ -2811,7 +2811,7 @@ _av1_fill_sequence_param (GstVaAV1Enc * self,
   if (order_hint_bits_minus_1 > MAX_ORDER_HINT_BITS_MINUS_1)
     order_hint_bits_minus_1 = MAX_ORDER_HINT_BITS_MINUS_1;
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   *sequence = (VAEncSequenceParameterBufferAV1) {
     .seq_profile = seq_profile,
     .seq_level_idx = self->level_idx,
@@ -2842,7 +2842,7 @@ _av1_fill_sequence_param (GstVaAV1Enc * self,
     },
     .order_hint_bits_minus_1 = order_hint_bits_minus_1,
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 }
 
 static void
@@ -2851,7 +2851,7 @@ _av1_fill_sequence_header (GstVaAV1Enc * self,
 {
   GstVaBaseEnc *base = GST_VA_BASE_ENC (self);
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   self->sequence_hdr = (GstAV1SequenceHeaderOBU) {
     .seq_profile = seq_param->seq_profile,
     .still_picture = 0,
@@ -2903,7 +2903,7 @@ _av1_fill_sequence_header (GstVaAV1Enc * self,
     },
     .film_grain_params_present = 0,
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 }
 
 static gboolean
@@ -2951,7 +2951,7 @@ _av1_add_sequence_header (GstVaAV1Enc * self, GstVaAV1EncFrame * frame,
 static guint8
 _av1_calculate_filter_level (guint32 base_qindex, gboolean chroma)
 {
-  /* *INDENT-OFF* */
+  /* clang-format off */
   static const guint8 loop_filter_levels_luma[256] = {
     0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
     0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
@@ -2989,7 +2989,7 @@ _av1_calculate_filter_level (guint32 base_qindex, gboolean chroma)
     31, 31, 31, 31, 31, 31, 31, 31, 31, 31, 31, 31, 31, 31, 31, 31,
     31, 31, 31, 31, 31, 31, 31, 31, 31, 31, 31, 31, 31, 31, 31, 31
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
   guint8 level = 0;
 
   if (!chroma) {
@@ -3068,7 +3068,7 @@ _av1_fill_frame_param (GstVaAV1Enc * self, GstVaAV1EncFrame * va_frame,
 
   g_assert (!(va_frame->type & FRAME_TYPE_REPEAT));
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   if (self->rc.rc_ctrl_mode == VA_RC_CQP) {
     loop_filter_level_y =
         _av1_calculate_filter_level (self->rc.base_qindex, FALSE);
@@ -3221,7 +3221,7 @@ _av1_fill_frame_param (GstVaAV1Enc * self, GstVaAV1EncFrame * va_frame,
     .number_skip_frames = 0,
     .skip_frames_reduced_size = 0,
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   _av1_calculate_cdef_param (self, pic_param);
 
@@ -3393,7 +3393,7 @@ _av1_fill_frame_header (GstVaAV1Enc * self,
   guint8 frame_is_intra = (va_frame->type == GST_AV1_INTRA_ONLY_FRAME
       || va_frame->type == GST_AV1_KEY_FRAME);
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   *frame_hdr = (GstAV1FrameHeaderOBU) {
     .frame_is_intra = frame_is_intra,
     .show_existing_frame = 0,
@@ -3504,7 +3504,7 @@ _av1_fill_frame_header (GstVaAV1Enc * self,
       .apply_grain = FALSE,
     },
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   for (i = 0; i < GST_AV1_CDEF_MAX; i++) {
     frame_hdr->cdef_params.cdef_y_pri_strength[i] =
@@ -3856,12 +3856,12 @@ gst_va_av1_enc_prepare_output (GstVaBaseEnc * base,
   return TRUE;
 }
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static const gchar *sink_caps_str =
     GST_VIDEO_CAPS_MAKE_WITH_FEATURES (GST_CAPS_FEATURE_MEMORY_VA,
         "{ NV12 }") " ;"
     GST_VIDEO_CAPS_MAKE ("{ NV12 }");
-/* *INDENT-ON* */
+/* clang-format on */
 
 static const gchar *src_caps_str = "video/x-av1,alignment=(string)frame,"
     "stream-format=(string)obu-stream";

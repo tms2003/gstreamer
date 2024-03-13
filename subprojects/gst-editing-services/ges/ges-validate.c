@@ -1135,7 +1135,7 @@ ges_validate_register_action_types (void)
   gst_validate_init ();
   validate_seek = gst_validate_get_action_type ("seek");
 
-  /*  *INDENT-OFF* */
+  /*  clang-format off */
   seek_override = gst_validate_register_action_type("seek", "ges", validate_seek->execute,
                                     validate_seek->parameters, validate_seek->description,
                                     validate_seek->flags);
@@ -1870,7 +1870,7 @@ ges_validate_register_action_types (void)
 
   gst_validate_register_action_type ("commit", "ges", _commit, NULL,
        "Commit the timeline.", GST_VALIDATE_ACTION_TYPE_ASYNC);
-  /*  *INDENT-ON* */
+  /*  clang-format on */
 
   return TRUE;
 #else

@@ -120,14 +120,14 @@ enum
 #define PROP_DBLK_IDC_DEFAULT                 0
 #define PROP_PIC_TIMING_SEI_DEFAULT           TRUE
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static const gchar *doc_sink_caps_str =
     GST_VIDEO_CAPS_MAKE ("{ NV12, YUY2, BGRA, VUYA }") " ;"
     GST_VIDEO_CAPS_MAKE_WITH_FEATURES ("memory:DMABuf",
         "{ NV12, YUY2, BGRA, VUYA }") " ;"
     GST_VIDEO_CAPS_MAKE_WITH_FEATURES ("memory:VAMemory", "{ NV12 }") " ;"
     GST_VIDEO_CAPS_MAKE_WITH_FEATURES ("memory:D3D11Memory", "{ NV12 }");
-/* *INDENT-ON* */
+/* clang-format on */
 
 static const gchar *doc_src_caps_str = "video/x-h264";
 

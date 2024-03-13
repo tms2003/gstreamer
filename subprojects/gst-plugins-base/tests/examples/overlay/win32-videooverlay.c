@@ -315,7 +315,7 @@ pipeline_runner_func (gpointer user_data)
 static void
 print_keyboard_help (void)
 {
-  /* *INDENT-OFF* */
+  /* clang-format off */
   static struct
   {
     const gchar *key_desc;
@@ -334,7 +334,7 @@ print_keyboard_help (void)
       "e", "expose overlay"}, {
       "k", "show keyboard shortcuts"},
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   guint i, chars_to_pad, desc_len, max_desc_len = 0;
 

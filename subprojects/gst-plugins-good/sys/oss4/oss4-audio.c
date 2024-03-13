@@ -56,7 +56,7 @@ typedef struct
   const gchar name[16];
 } GstOss4AudioFormat;
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static const GstOss4AudioFormat fmt_map[] = {
   /* note: keep sorted by preference, preferred formats first */
   {
@@ -87,7 +87,7 @@ static const GstOss4AudioFormat fmt_map[] = {
   GST_AUDIO_RING_BUFFER_FORMAT_TYPE_RAW, GST_AUDIO_FORMAT_U8,
       AFMT_U8, "audio/x-raw"}
 };
-/* *INDENT-ON* */
+/* clang-format on */
 
 /* formats we assume the OSS4 layer can always handle and convert internally */
 #define CONVERTIBLE_FORMATS (   \

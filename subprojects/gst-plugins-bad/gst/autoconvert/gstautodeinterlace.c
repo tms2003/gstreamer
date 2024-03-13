@@ -318,7 +318,7 @@ gst_auto_deinterlace_register_filters (GstAutoDeinterlace * self)
   /* Only the software deinterlacer supports all our properties so if we are using
    * defaults values for all of them, use hw deinterlacer otherwise ensure to use
    * our software one to respect what the user wants */
-  /* *INDENT-OFF* */
+  /* clang-format off */
   if (self->field_layout == DEFAULT_LAYOUT && self->fields == DEFAULT_FIELDS
       && self->mode == DEFAULT_MODE) {
     static const GstAutoVideoFilterGenerator gen[] = {
@@ -492,7 +492,7 @@ gst_auto_deinterlace_register_filters (GstAutoDeinterlace * self)
 
     g = gen;
   }
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   gst_auto_video_register_well_known_bins (GST_BASE_AUTO_CONVERT (self), g);
 }

@@ -68,7 +68,7 @@ enum
   PROP_MAX_ERRORS
 };
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static GstStaticPadTemplate gst_jpeg_dec_src_pad_template =
 GST_STATIC_PAD_TEMPLATE ("src",
     GST_PAD_SRC,
@@ -76,7 +76,7 @@ GST_STATIC_PAD_TEMPLATE ("src",
     GST_STATIC_CAPS (GST_VIDEO_CAPS_MAKE
         ("{ I420, RGB, BGR, RGBx, xRGB, BGRx, xBGR, GRAY8 }"))
     );
-/* *INDENT-ON* */
+/* clang-format on */
 
 /* FIXME: sof-marker is for IJG libjpeg 8, should be different for 6.2 */
 /* FIXME: add back "sof-marker = (int) { 0, 1, 2, 5, 6, 7, 9, 10, 13, 14 }"

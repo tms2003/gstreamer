@@ -350,14 +350,14 @@ _append_queue_create_info (GArray * array, int family_index,
   for (i = 0; i < queue_count; i++)
     priorities[i] = 1.0 / queue_count;
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   queue_info = (VkDeviceQueueCreateInfo) {
       .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
       .queueFamilyIndex = family_index,
       .queueCount = queue_count,
       .pQueuePriorities = priorities,
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   return g_array_append_val (array, queue_info);
 }

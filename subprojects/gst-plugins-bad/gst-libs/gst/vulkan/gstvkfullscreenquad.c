@@ -90,7 +90,7 @@ gushort indices[] = {
 static gboolean
 create_sampler (GstVulkanFullScreenQuad * self, GError ** error)
 {
-  /* *INDENT-OFF* */
+  /* clang-format off */
   VkSamplerCreateInfo samplerInfo = {
       .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
       .magFilter = VK_FILTER_LINEAR,
@@ -109,7 +109,7 @@ create_sampler (GstVulkanFullScreenQuad * self, GError ** error)
       .minLod = 0.0f,
       .maxLod = 0.0f
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
   VkSampler sampler;
   VkResult err;
 
@@ -149,7 +149,7 @@ get_and_update_descriptor_set (GstVulkanFullScreenQuad * self,
     int write_n = 0;
     int i;
 
-    /* *INDENT-OFF* */
+    /* clang-format off */
     if (priv->uniforms) {
       buffer_info = (VkDescriptorBufferInfo) {
           .buffer = ((GstVulkanBufferMemory *) priv->uniforms)->buffer,
@@ -187,7 +187,7 @@ get_and_update_descriptor_set (GstVulkanFullScreenQuad * self,
           .pImageInfo = &image_info[i]
       };
     }
-    /* *INDENT-ON* */
+    /* clang-format on */
     vkUpdateDescriptorSets (self->queue->device->device, write_n, writes, 0,
         NULL);
   }
@@ -206,7 +206,7 @@ create_descriptor_set_layout (GstVulkanFullScreenQuad * self, GError ** error)
   VkResult err;
   int i, n_mems;
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   bindings[descriptor_n++] = (VkDescriptorSetLayoutBinding) {
       .binding = 0,
       .descriptorCount = 1,
@@ -231,7 +231,7 @@ create_descriptor_set_layout (GstVulkanFullScreenQuad * self, GError ** error)
       .bindingCount = descriptor_n,
       .pBindings = bindings
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   err =
       vkCreateDescriptorSetLayout (self->queue->device->device, &layout_info,
@@ -261,7 +261,7 @@ create_pipeline_layout (GstVulkanFullScreenQuad * self, GError ** error)
     if (!create_descriptor_set_layout (self, error))
       return FALSE;
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   pipeline_layout_info = (VkPipelineLayoutCreateInfo) {
       .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
       .pNext = NULL,
@@ -270,7 +270,7 @@ create_pipeline_layout (GstVulkanFullScreenQuad * self, GError ** error)
       .pushConstantRangeCount = 0,
       .pPushConstantRanges = NULL,
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   err =
       vkCreatePipelineLayout (self->queue->device->device,
@@ -301,7 +301,7 @@ create_render_pass (GstVulkanFullScreenQuad * self, GError ** error)
 
   n_mems = gst_buffer_n_memory (priv->outbuf);
   for (i = 0; i < n_mems; i++) {
-    /* *INDENT-OFF* */
+    /* clang-format off */
     color_attachments[i] = (VkAttachmentDescription) {
         .format = gst_vulkan_format_from_video_info (&self->out_info, i),
         .samples = VK_SAMPLE_COUNT_1_BIT,
@@ -318,10 +318,10 @@ create_render_pass (GstVulkanFullScreenQuad * self, GError ** error)
       .attachment = i,
       .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
     };
-    /* *INDENT-ON* */
+    /* clang-format on */
   }
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   subpass = (VkSubpassDescription) {
       .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
       .colorAttachmentCount = n_mems,
@@ -336,7 +336,7 @@ create_render_pass (GstVulkanFullScreenQuad * self, GError ** error)
       .subpassCount = 1,
       .pSubpasses = &subpass
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   err =
       vkCreateRenderPass (self->queue->device->device, &render_pass_info, NULL,
@@ -386,7 +386,7 @@ create_pipeline (GstVulkanFullScreenQuad * self, GError ** error)
     if (!create_render_pass (self, error))
       return FALSE;
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   shader_create_info[0] = (VkPipelineShaderStageCreateInfo) {
       .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
       .pNext = NULL,
@@ -403,7 +403,7 @@ create_pipeline (GstVulkanFullScreenQuad * self, GError ** error)
       .pName = "main"
   };
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   vertex_binding = (VkVertexInputBindingDescription) {
       .binding = 0,
       .stride = sizeof (struct Vertex),
@@ -547,7 +547,7 @@ create_pipeline (GstVulkanFullScreenQuad * self, GError ** error)
       .subpass = 0,
       .basePipelineHandle = VK_NULL_HANDLE
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   err =
       vkCreateGraphicsPipelines (self->queue->device->device, VK_NULL_HANDLE, 1,
@@ -575,7 +575,7 @@ create_descriptor_pool (GstVulkanFullScreenQuad * self, GError ** error)
   GstVulkanDescriptorPool *ret;
   VkResult err;
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   pool_sizes[0] = (VkDescriptorPoolSize) {
       .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
       .descriptorCount = max_sets * gst_buffer_n_memory (priv->inbuf),
@@ -597,7 +597,7 @@ create_descriptor_pool (GstVulkanFullScreenQuad * self, GError ** error)
       .pPoolSizes = pool_sizes,
       .maxSets = max_sets
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   err =
       vkCreateDescriptorPool (self->queue->device->device, &pool_info, NULL,
@@ -630,7 +630,7 @@ create_framebuffer (GstVulkanFullScreenQuad * self, GstVulkanImageView ** views,
     attachments[i] = views[i]->view;
   }
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   framebuffer_info = (VkFramebufferCreateInfo) {
       .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
       .pNext = NULL,
@@ -641,7 +641,7 @@ create_framebuffer (GstVulkanFullScreenQuad * self, GstVulkanImageView ** views,
       .height = GST_VIDEO_INFO_HEIGHT (&self->out_info),
       .layers = 1
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   err =
       vkCreateFramebuffer (self->queue->device->device, &framebuffer_info, NULL,
@@ -1190,14 +1190,14 @@ gst_vulkan_full_screen_quad_draw (GstVulkanFullScreenQuad * self,
   {
     VkCommandBufferBeginInfo cmd_buf_info = { 0, };
 
-    /* *INDENT-OFF* */
+    /* clang-format off */
     cmd_buf_info = (VkCommandBufferBeginInfo) {
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
         .pNext = NULL,
         .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
         .pInheritanceInfo = NULL
     };
-    /* *INDENT-ON* */
+    /* clang-format on */
 
     gst_vulkan_command_buffer_lock (cmd);
     err = vkBeginCommandBuffer (cmd->cmd, &cmd_buf_info);
@@ -1503,7 +1503,7 @@ gst_vulkan_full_screen_quad_fill_command_buffer (GstVulkanFullScreenQuad * self,
   }
 
   for (i = 0; i < n_in_mems; i++) {
-    /* *INDENT-OFF* */
+    /* clang-format off */
     VkImageMemoryBarrier in_image_memory_barrier = {
         .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
         .pNext = NULL,
@@ -1517,7 +1517,7 @@ gst_vulkan_full_screen_quad_fill_command_buffer (GstVulkanFullScreenQuad * self,
         .image = in_views[i]->image->image,
         .subresourceRange = in_views[i]->image->barrier.subresource_range
     };
-    /* *INDENT-ON* */
+    /* clang-format on */
 
     vkCmdPipelineBarrier (cmd->cmd,
         in_views[i]->image->barrier.parent.pipeline_stages,
@@ -1533,7 +1533,7 @@ gst_vulkan_full_screen_quad_fill_command_buffer (GstVulkanFullScreenQuad * self,
   }
 
   for (i = 0; i < n_out_mems; i++) {
-    /* *INDENT-OFF* */
+    /* clang-format off */
     VkImageMemoryBarrier out_image_memory_barrier = {
         .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
         .pNext = NULL,
@@ -1547,7 +1547,7 @@ gst_vulkan_full_screen_quad_fill_command_buffer (GstVulkanFullScreenQuad * self,
         .image = out_views[i]->image->image,
         .subresourceRange = out_views[i]->image->barrier.subresource_range
     };
-    /* *INDENT-ON* */
+    /* clang-format on */
 
     vkCmdPipelineBarrier (cmd->cmd,
         out_views[i]->image->barrier.parent.pipeline_stages,
@@ -1563,7 +1563,7 @@ gst_vulkan_full_screen_quad_fill_command_buffer (GstVulkanFullScreenQuad * self,
   }
 
   {
-    /* *INDENT-OFF* */
+    /* clang-format off */
     VkClearValue clearColor = {{{ 0.0f, 0.0f, 0.0f, 1.0f }}};
     VkClearValue clearColors[GST_VIDEO_MAX_PLANES] = {
       clearColor, clearColor, clearColor, clearColor,
@@ -1580,7 +1580,7 @@ gst_vulkan_full_screen_quad_fill_command_buffer (GstVulkanFullScreenQuad * self,
         .clearValueCount = n_out_mems,
         .pClearValues = clearColors,
     };
-    /* *INDENT-ON* */
+    /* clang-format on */
     VkDeviceSize offsets[] = { 0 };
 
     vkCmdBindDescriptorSets (cmd->cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
@@ -1628,7 +1628,7 @@ gst_vulkan_full_screen_quad_submit (GstVulkanFullScreenQuad * self,
   g_return_val_if_fail (fence != NULL, FALSE);
 
   {
-    /* *INDENT-OFF* */
+    /* clang-format off */
     VkSubmitInfo submit_info = {
         .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
         .pNext = NULL,
@@ -1640,7 +1640,7 @@ gst_vulkan_full_screen_quad_submit (GstVulkanFullScreenQuad * self,
         .signalSemaphoreCount = 0,
         .pSignalSemaphores = NULL,
     };
-    /* *INDENT-ON* */
+    /* clang-format on */
 
     gst_vulkan_queue_submit_lock (self->queue);
     err =

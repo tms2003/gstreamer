@@ -426,24 +426,38 @@ In the simplest case, you might be able to get away with just doing a `git pull
 
 #### Coding Style
 
-Try to stick to the GStreamer indentation and coding style. There is a script
-called [`gst-indent`][gst-indent] which you can run over your `.c` or `.cpp`
-files if you want your code auto-indented before making the patch. The script
-requires GNU indent to be installed already. Please do _not_ run `gst-indent` on
-header files, our header file indentation is free-form. If you build GStreamer
-from git, a local commit hook will be installed that checks if your commit
-conforms to the required style (also using GNU indent).
+Try to stick to the GStreamer indentation and coding style. There is a
+`.clang-format` file at the root of this repository that can be used by most
+editors. Since different versions of clang-format could have slightly different
+output, we recommend using latest version available on PyPi (`pip install clang-format`),
+which is the version used by our CI.
 
-Different versions of GNU indent may occasionally yield slightly different
-indentations. If that happens, please ignore any indentation changes in
-sections of code that your patch does not touch. You can do that by staging
-changes selectively via `git add -p`. You can bypass the local indentation
-check hook by using `git commit -n`, but it will still be checked again later
-when you submit your changes through GitLab for merging.
+You can run `scripts/gst-indent [--staged]` to auto-indent your code before
+making the patch. Do not re-indent whole files as it could generate spurious
+changes caused by slightly different tools we were using in the past. Some IDEs
+can be configured to format only modifications (e.g. vscode `editor.formatOnSaveMode`
+setting).
 
-We are working on making this less hasslesome.
+To reformat a branch patch by patch, you can run:
+`git rebase -x 'scripts/gst-indent HEAD^' main`
 
-[gst-indent]: https://gitlab.freedesktop.org/gstreamer/gstreamer/-/blob/main/scripts/gst-indent-all
+Please do _not_ run `clang-format` on header files, our header file indentation
+is free-form.
+
+C++ source files (.cpp files) currently have inconsistent coding style.
+By default they follow the same style as C code, but since it's not a great fit
+for C++ code, some plugins might have a different `.clang-format` in their
+directory. New code should be using the LLVM style, existing code can be
+reformatted to that style as long as it's done in a separate commit that
+reformat the whole directory. That commit can then be added into
+`.git-blame-ignore-revs`.
+
+Rust source files (.rs files) are indented with the standard `rustfmt`.
+
+If you build GStreamer from git, a local commit hook will be installed that
+checks if your commit conforms to the required style. You can bypass that local
+indentation check hook by using `git commit -n`, but it will still be checked
+again later on the CI when you submit your changes through GitLab for merging.
 
 Compiler requirements:
  - we are targetting the C99 compiler and preprocesser feature subset
@@ -461,7 +475,6 @@ Other style guidelines:
    - declare variables inline (as opposed to only at the beginning of a block)
    - use advanced/nicer struct initialisers
 
-[gst-indent]: https://gitlab.freedesktop.org/gstreamer/gstreamer/tree/master/tools/gst-indent
 [bitreader]: https://gstreamer.freedesktop.org/documentation/base/gstbitreader.html?gi-language=c#GstBitReader
 [bytereader]: https://gstreamer.freedesktop.org/documentation/base/gstbytereader.html?gi-language=c#GstByteReader
 

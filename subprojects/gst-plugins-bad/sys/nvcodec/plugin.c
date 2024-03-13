@@ -92,11 +92,11 @@ plugin_deinit (gpointer data)
 static gboolean
 check_runtime_compiler (void)
 {
-  /* *INDENT-OFF* */
+  /* clang-format off */
   const gchar *nvrtc_test_source =
     "__global__ void\n"
     "my_kernel (void) {}";
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   gchar *test_ptx;
 

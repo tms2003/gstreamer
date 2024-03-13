@@ -116,7 +116,7 @@ void main()\n\
   gl_FragColor = texture2D(tex, v_texcoord);\n\
 }";
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static const float texture_vertices[] = {
 /*  X      Y      Z      S      T */
    0.1f,  0.4f,  0.0f,  0.0f,  0.0f,
@@ -133,7 +133,7 @@ static const float triangle_vertices[] = {
 };
 
 static const GLushort indices[] = { 0, 1, 2, 0, 2, 3 };
-/* *INDENT-ON* */
+/* clang-format on */
 
 static guint32 sdl_message_event = -1;
 static SDL_Window *sdl_window;

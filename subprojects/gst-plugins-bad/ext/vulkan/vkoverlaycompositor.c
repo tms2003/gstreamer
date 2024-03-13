@@ -179,7 +179,7 @@ vk_overlay_upload (struct vk_overlay *overlay, GstVideoInfo * out_info,
       VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
   img_mem = (GstVulkanImageMemory *) vkimage;
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   region = (VkBufferImageCopy) {
       .bufferOffset = 0,
       .bufferRowLength = GST_VIDEO_INFO_COMP_WIDTH (&vinfo, 0),
@@ -224,21 +224,21 @@ vk_overlay_upload (struct vk_overlay *overlay, GstVideoInfo * out_info,
       .image = img_mem->image,
       .subresourceRange = img_mem->barrier.subresource_range,
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   if (!(cmd_buf =
           gst_vulkan_command_pool_create (overlay->quad->cmd_pool, error)))
     goto error;
 
   {
-    /* *INDENT-OFF* */
+    /* clang-format off */
     VkCommandBufferBeginInfo cmd_buf_info = {
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
         .pNext = NULL,
         .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
         .pInheritanceInfo = NULL
     };
-    /* *INDENT-ON* */
+    /* clang-format on */
 
     gst_vulkan_command_buffer_lock (cmd_buf);
     err = vkBeginCommandBuffer (cmd_buf->cmd, &cmd_buf_info);
@@ -272,7 +272,7 @@ vk_overlay_upload (struct vk_overlay *overlay, GstVideoInfo * out_info,
   {
     VkSubmitInfo submit_info = { 0, };
 
-    /* *INDENT-OFF* */
+    /* clang-format off */
     submit_info = (VkSubmitInfo) {
         .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
         .pNext = NULL,
@@ -284,7 +284,7 @@ vk_overlay_upload (struct vk_overlay *overlay, GstVideoInfo * out_info,
         .signalSemaphoreCount = 0,
         .pSignalSemaphores = NULL,
     };
-    /* *INDENT-ON* */
+    /* clang-format on */
 
     fence =
         gst_vulkan_device_create_fence (overlay->quad->queue->device, error);

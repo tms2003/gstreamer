@@ -268,7 +268,7 @@ G_DEFINE_TYPE (GstAV1Enc, gst_av1_enc, GST_TYPE_VIDEO_ENCODER);
 GST_ELEMENT_REGISTER_DEFINE (av1enc, "av1enc", GST_RANK_PRIMARY,
     GST_TYPE_AV1_ENC);
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static GstStaticPadTemplate gst_av1_enc_sink_pad_template =
 GST_STATIC_PAD_TEMPLATE ("sink",
     GST_PAD_SINK,
@@ -279,7 +279,7 @@ GST_STATIC_PAD_TEMPLATE ("sink",
         "width = (int) [ 4, MAX ], "
         "height = (int) [ 4, MAX ]")
     );
-/* *INDENT-ON* */
+/* clang-format on */
 
 static GstStaticPadTemplate gst_av1_enc_src_pad_template =
 GST_STATIC_PAD_TEMPLATE ("src",

@@ -1,4 +1,4 @@
-/* *INDENT-OFF* */
+/* clang-format off */
 /*
  * Copyright (c) 2013-2016 Jan Schmidt <jan@centricular.com>
 Portions:
@@ -2037,4 +2037,4 @@ raspi_capture_update_config (RASPIVID_STATE *state, RASPIVID_CONFIG *config, gbo
   if (config->change_flags & PROP_CHANGE_ANNOTATION)
     update_annotation_data(state);
 }
-/* *INDENT-ON* */
+/* clang-format on */

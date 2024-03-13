@@ -170,7 +170,7 @@ descriptor_set_alloc (GstVulkanDescriptorPool * pool, guint n_layouts,
   for (i = 0; i < n_layouts; i++)
     vk_layouts[i] = (VkDescriptorSetLayout) layouts[i]->handle;
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   alloc_info = (VkDescriptorSetAllocateInfo) {
       .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
       .pNext = NULL,
@@ -178,7 +178,7 @@ descriptor_set_alloc (GstVulkanDescriptorPool * pool, guint n_layouts,
       .descriptorSetCount = n_layouts,
       .pSetLayouts = vk_layouts
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   err =
       vkAllocateDescriptorSets (pool->device->device, &alloc_info, &descriptor);

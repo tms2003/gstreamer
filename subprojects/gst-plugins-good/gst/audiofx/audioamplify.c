@@ -243,13 +243,13 @@ gst_audio_amplify_transform_##type##_noclip (GstAudioAmplify * filter,        \
     *d++ *= filter->amplification;                                            \
 }
 
-/* *INDENT-OFF* */
+/* clang-format off */
 MAKE_INT_FUNCS (gint8,gint)
 MAKE_INT_FUNCS (gint16,gint)
 MAKE_INT_FUNCS (gint32,gint64)
 MAKE_FLOAT_FUNCS (gfloat)
 MAKE_FLOAT_FUNCS (gdouble)
-/* *INDENT-ON* */
+/* clang-format on */
 
 /* GObject vmethod implementations */
 

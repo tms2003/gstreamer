@@ -48,7 +48,7 @@ typedef struct
 static void
 print_keyboard_help (void)
 {
-  /* *INDENT-OFF* */
+  /* clang-format off */
   static struct
   {
     const gchar *key_desc;
@@ -64,7 +64,7 @@ print_keyboard_help (void)
     "<", "Decrease bitrate by 100 kbit/sec"}, {
     "k", "show keyboard shortcuts"}
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   guint i, chars_to_pad, desc_len, max_desc_len = 0;
 
@@ -285,13 +285,13 @@ main (gint argc, gchar ** argv)
   TestCallbackData data = { 0, };
   GstPad *pad;
   gchar *encoder_name = NULL;
-  /* *INDENT-OFF* */
+  /* clang-format off */
   GOptionEntry options[] = {
     {"encoder", 0, 0, G_OPTION_ARG_STRING, &encoder_name,
         "MediaFoundation encoder element to test, default: mfh264enc"},
     {NULL}
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
 #define MAKE_ELEMENT_AND_ADD(elem, name) G_STMT_START { \
   GstElement *_elem = gst_element_factory_make (name, NULL); \

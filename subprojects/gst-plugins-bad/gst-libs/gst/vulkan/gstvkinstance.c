@@ -934,7 +934,7 @@ gst_vulkan_instance_open (GstVulkanInstance * instance, GError ** error)
     };
 #endif
 
-    /* *INDENT-OFF* */
+    /* clang-format off */
     app = (VkApplicationInfo) {
         .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
         .pNext = NULL,
@@ -955,7 +955,7 @@ gst_vulkan_instance_open (GstVulkanInstance * instance, GError ** error)
         .enabledExtensionCount = priv->enabled_extensions->len,
         .ppEnabledExtensionNames = (const char *const *) priv->enabled_extensions->pdata,
     };
-    /* *INDENT-ON* */
+    /* clang-format on */
 
 #if !defined (GST_DISABLE_DEBUG)
     vulkan_debug_level =
@@ -963,14 +963,14 @@ gst_vulkan_instance_open (GstVulkanInstance * instance, GError ** error)
 
 #if defined (VK_API_VERSION_1_2)
     if (vulkan_debug_level >= GST_LEVEL_ERROR) {
-      /* *INDENT-OFF* */
+      /* clang-format off */
       validation_features = (VkValidationFeaturesEXT) {
           .sType = VK_STRUCTURE_TYPE_VALIDATION_FEATURES_EXT,
           .pEnabledValidationFeatures = feat_list,
           .enabledValidationFeatureCount = G_N_ELEMENTS (feat_list),
       };
       inst_info.pNext = &validation_features;
-      /* *INDENT-ON* */
+      /* clang-format on */
     }
 #endif
 #endif

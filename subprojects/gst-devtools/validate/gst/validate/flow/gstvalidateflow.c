@@ -146,9 +146,9 @@ validate_flow_override_class_init (ValidateFlowOverrideClass * klass)
           GST_VALIDATE_REPORT_LEVEL_CRITICAL));
 }
 
-/* *INDENT-OFF* */
+/* clang-format off */
 G_GNUC_PRINTF (2, 0)
-/* *INDENT-ON* */
+/* clang-format on */
 
 static void
 validate_flow_override_vprintf (ValidateFlowOverride * flow, const char *format,
@@ -163,9 +163,9 @@ validate_flow_override_vprintf (ValidateFlowOverride * flow, const char *format,
   g_mutex_unlock (&flow->output_file_mutex);
 }
 
-/* *INDENT-OFF* */
+/* clang-format off */
 G_GNUC_PRINTF (2, 3)
-/* *INDENT-ON* */
+/* clang-format on */
 
 static void
 validate_flow_override_printf (ValidateFlowOverride * flow, const char *format,
@@ -680,7 +680,7 @@ gst_validate_flow_init ()
   for (tmp = all_overrides; tmp; tmp = tmp->next)
     validate_flow_setup_files (tmp->data, default_generate);
 
-/*  *INDENT-OFF* */
+  /*  clang-format off */
   gst_validate_register_action_type ("checkpoint", "validateflow",
       _execute_checkpoint, ((GstValidateActionParameter [])
       {
@@ -694,7 +694,7 @@ gst_validate_flow_init ()
       }),
       "Prints a line of text in validateflow logs so that it's easy to distinguish buffers and events ocurring before or after a given action.",
       GST_VALIDATE_ACTION_TYPE_NONE);
-/*  *INDENT-ON* */
+  /*  clang-format on */
 
   return TRUE;
 }

@@ -259,7 +259,7 @@ ensure_context (GstVaapiDecoderVp9 * decoder)
 
   if (reset_context) {
     GstVaapiContextInfo info;
-    /* *INDENT-OFF* */
+    /* clang-format off */
     info = (GstVaapiContextInfo) {
       .profile = priv->profile,
       .entrypoint = entrypoint,
@@ -267,7 +267,7 @@ ensure_context (GstVaapiDecoderVp9 * decoder)
       .height = priv->height,
       .ref_frames = 8,
     };
-    /* *INDENT-ON* */
+    /* clang-format on */
 
     if (!get_chroma_type (frame_hdr, parser, &info))
       return GST_VAAPI_DECODER_STATUS_ERROR_UNSUPPORTED_CHROMA_FORMAT;

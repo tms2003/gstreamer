@@ -77,7 +77,7 @@ static gboolean gst_gl_deinterlace_vfir_callback (GstGLFilter * filter,
 static gboolean gst_gl_deinterlace_greedyh_callback (GstGLFilter * filter,
     GstGLMemory * in_tex, gpointer stuff);
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static const gchar *greedyh_fragment_source =
   "uniform sampler2D tex;\n"
   "uniform sampler2D tex_prev;\n"
@@ -180,7 +180,7 @@ const gchar *vfir_fragment_source =
   "  bot_color = texture2D(tex, botcoord);\n"
   "  gl_FragColor = 0.5*cur_color + 0.25*top_color + 0.25*bot_color;\n"
   "}";
-/* *INDENT-ON* */
+/* clang-format on */
 
 /* dont' forget to edit the following when a new method is added */
 typedef enum

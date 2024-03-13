@@ -1019,7 +1019,7 @@ parse_one_option (gint opt, const gchar * arg, GError ** err)
   return TRUE;
 }
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static gboolean
 parse_goption_arg (const gchar * opt,
     const gchar * arg, gpointer data, GError ** err)
@@ -1061,7 +1061,7 @@ parse_goption_arg (const gchar * opt,
   return parse_one_option (val, arg, err);
 }
 #endif
-/* *INDENT-ON* */
+/* clang-format on */
 
 /**
  * gst_deinit:

@@ -899,14 +899,14 @@ _upload_vertices (GstGLTransformation * transformation)
   const GstGLFuncs *gl =
       GST_GL_BASE_FILTER (transformation)->context->gl_vtable;
 
-/* *INDENT-OFF* */
+  /* clang-format off */
   GLfloat vertices[] = {
      -transformation->aspect, -1.0,  0.0, 1.0, 0.0, 0.0,
       transformation->aspect, -1.0,  0.0, 1.0, 1.0, 0.0,
       transformation->aspect,  1.0,  0.0, 1.0, 1.0, 1.0,
      -transformation->aspect,  1.0,  0.0, 1.0, 0.0, 1.0,
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   gl->BindBuffer (GL_ARRAY_BUFFER, transformation->vertex_buffer);
 

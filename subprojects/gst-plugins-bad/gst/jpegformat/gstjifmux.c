@@ -479,7 +479,7 @@ gst_jif_mux_mangle_markers (GstJifMux * self)
   /* check if we don't have JFIF APP0 */
   if (!app0_jfif && (colorspace & (COLORSPACE_GRAYSCALE | COLORSPACE_YUV))) {
     /* build jfif header */
-    /* *INDENT-OFF* */
+    /* clang-format off */
     static const struct
     {
       gchar id[5];
@@ -494,7 +494,7 @@ gst_jif_mux_mangle_markers (GstJifMux * self)
         { 0, 1 },
         0, 0
     };
-    /* *INDENT-ON* */
+    /* clang-format on */
 
     m = gst_jif_mux_new_marker (GST_JPEG_MARKER_APP0, sizeof (jfif_data),
         (const guint8 *) &jfif_data, FALSE);

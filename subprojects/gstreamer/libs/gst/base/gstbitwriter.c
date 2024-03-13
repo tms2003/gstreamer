@@ -400,7 +400,7 @@ gst_bit_writer_set_pos (GstBitWriter * bitwriter, guint pos)
  * Returns: %TRUE if successful, %FALSE otherwise.
  */
 
-/* *INDENT-OFF* */
+/* clang-format off */
 #define GST_BIT_WRITER_WRITE_BITS(bits) \
 gboolean \
 gst_bit_writer_put_bits_uint##bits (GstBitWriter *bitwriter, guint##bits value, guint nbits) \
@@ -413,7 +413,7 @@ GST_BIT_WRITER_WRITE_BITS (16)
 GST_BIT_WRITER_WRITE_BITS (32)
 GST_BIT_WRITER_WRITE_BITS (64)
 #undef GST_BIT_WRITER_WRITE_BITS
-/* *INDENT-ON* */
+/* clang-format on */
 
 /**
  * gst_bit_writer_put_bytes:

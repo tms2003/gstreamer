@@ -338,11 +338,11 @@ gst_va_encoder_open (GstVaEncoder * self, VAProfile profile,
     gint coded_height, gint codedbuf_size, guint max_reconstruct_surfaces,
     guint rc_ctrl, guint32 packed_headers)
 {
-  /* *INDENT-OFF* */
+  /* clang-format off */
   VAConfigAttrib attribs[3] = {
     { .type = VAConfigAttribRTFormat, .value = rt_format, },
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
   VAConfigID config = VA_INVALID_ID;
   VAContextID context = VA_INVALID_ID;
   VADisplay dpy;
@@ -1305,8 +1305,8 @@ gst_va_encoder_get_rate_control_enum (GstVaEncoder * self,
   g_clear_pointer (&rcs, g_array_unref);
   if (k == 0)
     return FALSE;
-  /* *INDENT-OFF* */
+  /* clang-format off */
   ratectl[k] = (GEnumValue) { 0, NULL, NULL };
-  /* *INDENT-ON* */
+  /* clang-format on */
   return TRUE;
 }

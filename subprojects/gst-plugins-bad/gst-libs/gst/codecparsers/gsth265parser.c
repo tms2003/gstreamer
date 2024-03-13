@@ -3988,14 +3988,14 @@ append_profile (GstH265Profile profiles[GST_H265_PROFILE_MAX], guint * idx,
   (*idx)++;
 }
 
-/* *INDENT-OFF* */
+/* clang-format off */
 struct h265_profiles_map
 {
   GstH265ProfileIDC profile_idc;
   GstH265Profile (*get_profile) (const GstH265ProfileTierLevel *);
   GstH265Profile profile;
 };
-/* *INDENT-ON* */
+/* clang-format on */
 
 static const struct h265_profiles_map profiles_map[] = {
   /* keep profile check in asc order */
@@ -4859,7 +4859,7 @@ gst_h265_get_profile_from_sps (GstH265SPS * sps)
   return gst_h265_profile_tier_level_get_profile (&tmp_ptl);
 }
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static void
 gst_clear_h265_decoder_config_record_nalu_array (
     GstH265DecoderConfigRecordNalUnitArray * array)
@@ -4870,7 +4870,7 @@ gst_clear_h265_decoder_config_record_nalu_array (
   if (array->nalu)
     g_array_unref (array->nalu);
 }
-/* *INDENT-ON* */
+/* clang-format on */
 
 /**
  * gst_h265_decoder_config_record_free:

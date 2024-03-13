@@ -97,7 +97,7 @@ G_DEFINE_TYPE (GstJpegEnc, gst_jpegenc, GST_TYPE_VIDEO_ENCODER);
 GST_ELEMENT_REGISTER_DEFINE (jpegenc, "jpegenc", GST_RANK_PRIMARY,
     GST_TYPE_JPEGENC);
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static GstStaticPadTemplate gst_jpegenc_sink_pad_template =
 GST_STATIC_PAD_TEMPLATE ("sink",
     GST_PAD_SINK,
@@ -106,7 +106,7 @@ GST_STATIC_PAD_TEMPLATE ("sink",
         ("{ I420, YV12, YUY2, UYVY, Y41B, Y42B, YVYU, Y444, NV21, "
          "NV12, RGB, BGR, RGBx, xRGB, BGRx, xBGR, GRAY8 }"))
     );
-/* *INDENT-ON* */
+/* clang-format on */
 
 static GstStaticPadTemplate gst_jpegenc_src_pad_template =
 GST_STATIC_PAD_TEMPLATE ("src",

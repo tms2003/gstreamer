@@ -57,9 +57,9 @@ struct _GssimPrivate
   GstVideoInfo in_info, out_info;
 };
 
-/*  *INDENT-OFF* */
+/*  clang-format off */
 G_DEFINE_TYPE_WITH_PRIVATE (Gssim, gssim, GST_TYPE_OBJECT)
-/*  *INDENT-ON* */
+/*  clang-format on */
 
 enum
 {

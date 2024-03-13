@@ -53,7 +53,7 @@ gchar * G_PASTE(G_PASTE(gst_vulkan_,under_name),_flags_to_string) (VkType flag_b
   return g_string_free (s, FALSE);                                              \
 }
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static const struct 
 {
   VkMemoryPropertyFlagBits flag_bit;
@@ -141,7 +141,7 @@ static const struct
  * Since: 1.18
  */
 FLAGS_TO_STRING(sample_count, VkSampleCountFlags);
-/* *INDENT-ON* */
+/* clang-format on */
 
 /**
  * gst_vulkan_physical_device_type_to_string:

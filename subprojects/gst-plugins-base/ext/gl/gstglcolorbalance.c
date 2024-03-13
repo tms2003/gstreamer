@@ -87,7 +87,7 @@ GST_STATIC_PAD_TEMPLATE ("sink",
     GST_PAD_ALWAYS,
     GST_STATIC_CAPS (GST_GL_COLOR_BALANCE_VIDEO_CAPS_FULL));
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static const gchar glsl_external_image_extension[] =
     "#extension GL_OES_EGL_image_external : require\n";
 
@@ -112,7 +112,7 @@ static const gchar color_balance_frag_templ[] =
   "  yuva = clamp(yuva, 0.0, 1.0);\n"
   "  gl_FragColor = yuva * from_yuv_coeff_mat + from_yuv_bt601_offset * from_yuv_coeff_mat;\n"
   "}\n";
-/* *INDENT-ON* */
+/* clang-format on */
 
 enum
 {

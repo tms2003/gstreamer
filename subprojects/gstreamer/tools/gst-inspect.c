@@ -151,9 +151,9 @@ push_indent_n (int n)
   indent += n;
 }
 
-/* *INDENT-OFF* */
+/* clang-format off */
 G_GNUC_PRINTF (1, 2)
-/* *INDENT-ON* */
+/* clang-format on */
 
 static void
 n_print (const char *format, ...)

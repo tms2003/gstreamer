@@ -74,13 +74,13 @@ GST_START_TEST (serialize_message_logging)
   GstTracerRecord *tr;
   gchar *str;
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   tr = gst_tracer_record_new ("test.class",
       "string", GST_TYPE_STRUCTURE, gst_structure_new ("value",
           "type", G_TYPE_GTYPE, G_TYPE_STRING,
           NULL),
       NULL);
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   save_messages = TRUE;
   gst_tracer_record_log (tr, "test");
@@ -106,7 +106,7 @@ GST_START_TEST (serialize_static_record)
   gboolean bool_val;
   GstPadDirection enum_val;
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   tr = gst_tracer_record_new ("test.class",
       "string", GST_TYPE_STRUCTURE, gst_structure_new ("value",
           "type", G_TYPE_GTYPE, G_TYPE_STRING,
@@ -121,7 +121,7 @@ GST_START_TEST (serialize_static_record)
           "type", G_TYPE_GTYPE, GST_TYPE_PAD_DIRECTION,
           NULL),
       NULL);
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   save_messages = TRUE;
   gst_tracer_record_log (tr, "test", 1, TRUE, GST_PAD_SRC);

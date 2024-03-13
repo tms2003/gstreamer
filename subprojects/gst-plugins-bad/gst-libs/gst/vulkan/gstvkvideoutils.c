@@ -25,7 +25,7 @@
 #include "gstvkvideoutils.h"
 
 #if GST_VULKAN_HAVE_VIDEO_EXTENSIONS
-/* *INDENT-OFF* */
+/* clang-format off */
 static const struct {
   GstVulkanVideoOperation video_operation;
   VkVideoCodecOperationFlagBitsKHR codec;
@@ -89,7 +89,7 @@ static const struct {
   { STD_VIDEO_H265_PROFILE_IDC_SCC_EXTENSIONS, "scc-extensions" },
 };
 
-/* *INDENT-ON* */
+/* clang-format on */
 #endif
 
 /**

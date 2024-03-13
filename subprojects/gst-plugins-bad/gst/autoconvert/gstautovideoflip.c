@@ -232,7 +232,7 @@ gst_auto_video_flip_init (GstAutoVideoFlip * self)
 {
   self->direction = PROP_DIRECTION_DEFAULT;
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   static const GstAutoVideoFilterGenerator gen[] = {
     {
       .first_elements = { "bayer2rgb", NULL},
@@ -319,8 +319,7 @@ gst_auto_video_flip_init (GstAutoVideoFlip * self)
       .rank = 0,
     },
   };
-  /* *INDENT-ON* */
-
+  /* clang-format on */
 
   gst_auto_video_register_well_known_bins (GST_BASE_AUTO_CONVERT (self), gen);
 }

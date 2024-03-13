@@ -162,7 +162,7 @@ _io_surface_vulkan_memory_new (GstVulkanDevice * device, IOSurfaceRef surface,
       VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |
       VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT;
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   image_info = (VkImageCreateInfo) {
       .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
       .pNext = NULL,
@@ -182,7 +182,7 @@ _io_surface_vulkan_memory_new (GstVulkanDevice * device, IOSurfaceRef surface,
       .pQueueFamilyIndices = NULL,
       .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   gpu = gst_vulkan_device_get_physical_device (device);
 

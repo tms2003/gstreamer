@@ -32,9 +32,9 @@
 GST_DEBUG_CATEGORY (alsa_debug);
 
 /* ALSA debugging wrapper */
-/* *INDENT-OFF* */
+/* clang-format off */
 G_GNUC_PRINTF (5, 6)
-/* *INDENT-ON* */
+/* clang-format on */
 static void
 gst_alsa_error_wrapper (const char *file, int line, const char *function,
     int err, const char *fmt, ...)

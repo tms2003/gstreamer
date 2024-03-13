@@ -78,29 +78,29 @@
   "P010_10LE, Y410, P012_LE, Y212_LE, Y412_LE" \
   " }"
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static GstStaticPadTemplate gst_ffmpegvidcmp_src_tmpl =
   GST_STATIC_PAD_TEMPLATE ("src",
     GST_PAD_SRC,
     GST_PAD_ALWAYS,
     GST_STATIC_CAPS (GST_VIDEO_CAPS_MAKE (GST_FFMPEGVIDCMP_FORMATS)));
-/* *INDENT-ON* */
+/* clang-format on */
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static GstStaticPadTemplate gst_ffmpegvidcmp_sink1_tmpl =
   GST_STATIC_PAD_TEMPLATE ("sink_1",
     GST_PAD_SINK,
     GST_PAD_ALWAYS,
     GST_STATIC_CAPS (GST_VIDEO_CAPS_MAKE (GST_FFMPEGVIDCMP_FORMATS)));
-/* *INDENT-ON* */
+/* clang-format on */
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static GstStaticPadTemplate gst_ffmpegvidcmp_sink2_tmpl =
   GST_STATIC_PAD_TEMPLATE ("sink_2",
     GST_PAD_SINK,
     GST_PAD_ALWAYS,
     GST_STATIC_CAPS (GST_VIDEO_CAPS_MAKE (GST_FFMPEGVIDCMP_FORMATS)));
-/* *INDENT-ON* */
+/* clang-format on */
 
 typedef enum
 {
@@ -652,10 +652,10 @@ gst_ffmpegvidcmp_collected (GstCollectPads * pads, GstFFMpegVidCmp * self)
 
   /* compare */
   if (buf1 && buf2) {
-    /* *INDENT-OFF* */
+    /* clang-format off */
     AVFrame in1 = { {0,} };
     AVFrame in2 = { {0,} };
-    /* *INDENT-ON* */
+    /* clang-format on */
     GstVideoFrame frame1, frame2;
 
     if (!gst_video_frame_map (&frame1, &self->vinfo1, buf1, GST_MAP_READ))

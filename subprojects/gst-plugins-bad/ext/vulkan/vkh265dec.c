@@ -443,7 +443,7 @@ static void
 gst_vulkan_video_profile_from_h265_sps (GstVulkanVideoProfile * profile,
     const GstH265SPS * sps)
 {
-  /* *INDENT-OFF* */
+  /* clang-format off */
   *profile = (GstVulkanVideoProfile) {
     .profile = {
       .sType = VK_STRUCTURE_TYPE_VIDEO_PROFILE_INFO_KHR,
@@ -464,7 +464,7 @@ gst_vulkan_video_profile_from_h265_sps (GstVulkanVideoProfile * profile,
         _get_h265_profile (gst_h265_get_profile_from_sps ((GstH265SPS *) sps)),
     },
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 }
 
 static GstFlowReturn
@@ -796,7 +796,7 @@ static void
 _copy_profile_tier_level (const GstH265ProfileTierLevel * ptl,
     StdVideoH265ProfileTierLevel * vk_ptl)
 {
-  /* *INDENT-OFF* */
+  /* clang-format off */
   *vk_ptl = (StdVideoH265ProfileTierLevel) {
     .flags = {
       .general_tier_flag = ptl->tier_flag,
@@ -808,7 +808,7 @@ _copy_profile_tier_level (const GstH265ProfileTierLevel * ptl,
     .general_profile_idc = _get_h265_profile (ptl->profile_idc),
     .general_level_idc = _get_h265_level_idc (ptl->level_idc),
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 }
 
 static void
@@ -827,8 +827,8 @@ _fill_sps (const GstH265SPS * sps, struct SPS *std_sps)
     _copy_sub_layers_hrd_params (vui_params->hrd_params.sublayer_hrd_params,
         std_sps->vcl_hrd, STD_VIDEO_H265_SUBLAYERS_LIST_SIZE);
   }
-  std_sps->vui_header = (StdVideoH265HrdParameters) {
-    /* *INDENT-OFF* */
+  std_sps->vui_header = (StdVideoH265HrdParameters){
+      /* clang-format off */
     .flags = {
       .nal_hrd_parameters_present_flag =
           vui_params->hrd_params.nal_hrd_parameters_present_flag,
@@ -866,10 +866,10 @@ _fill_sps (const GstH265SPS * sps, struct SPS *std_sps)
         (const StdVideoH265SubLayerHrdParameters *) &std_sps->nal_hrd,
     .pSubLayerHrdParametersVcl =
         (const StdVideoH265SubLayerHrdParameters *) &std_sps->vcl_hrd,
-    /* *INDENT-ON* */
+      /* clang-format on */
   };
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   std_sps->vui = (StdVideoH265SequenceParameterSetVui) {
     .flags =  {
       .aspect_ratio_info_present_flag =
@@ -928,7 +928,7 @@ _fill_sps (const GstH265SPS * sps, struct SPS *std_sps)
     .log2_max_mv_length_vertical = vui_params->log2_max_mv_length_vertical,
     .pHrdParameters = &std_sps->vui_header,
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   _copy_profile_tier_level (&sps->profile_tier_level, &std_sps->ptl);
 
@@ -948,7 +948,7 @@ _fill_sps (const GstH265SPS * sps, struct SPS *std_sps)
       * sizeof (*std_sps->pal.PredictorPaletteEntries));
 
   for (i = 0; i < sps->num_short_term_ref_pic_sets; i++) {
-    /* *INDENT-OFF* */
+    /* clang-format off */
     std_sps->str[i] = (StdVideoH265ShortTermRefPicSet) {
       .flags = {
         .inter_ref_pic_set_prediction_flag =
@@ -972,7 +972,7 @@ _fill_sps (const GstH265SPS * sps, struct SPS *std_sps)
       .num_negative_pics = sps->short_term_ref_pic_set[i].NumNegativePics,
       .num_positive_pics = sps->short_term_ref_pic_set[i].NumPositivePics,
     };
-    /* *INDENT-ON* */
+    /* clang-format on */
   }
 
   std_sps->ltr.used_by_curr_pic_lt_sps_flag =
@@ -981,7 +981,7 @@ _fill_sps (const GstH265SPS * sps, struct SPS *std_sps)
   memcpy (std_sps->ltr.lt_ref_pic_poc_lsb_sps, sps->lt_ref_pic_poc_lsb_sps,
       32 * sizeof (*std_sps->ltr.lt_ref_pic_poc_lsb_sps));
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   std_sps->sps = (StdVideoH265SequenceParameterSet) {
     .flags = {
       .sps_temporal_id_nesting_flag = sps->temporal_id_nesting_flag,
@@ -1082,7 +1082,7 @@ _fill_sps (const GstH265SPS * sps, struct SPS *std_sps)
     .pSequenceParameterSetVui = &std_sps->vui,
     .pPredictorPaletteEntries = &std_sps->pal,
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 }
 
 static void
@@ -1092,7 +1092,7 @@ _fill_pps (const GstH265PPS * pps, const GstH265SPS * sps, struct PPS *std_pps)
 
   _copy_scaling_list (&pps->scaling_list, &std_pps->scaling);
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   std_pps->pps = (StdVideoH265PictureParameterSet) {
     .flags = {
       .dependent_slice_segments_enabled_flag =
@@ -1184,7 +1184,7 @@ _fill_pps (const GstH265PPS * pps, const GstH265SPS * sps, struct PPS *std_pps)
     .pScalingLists = &std_pps->scaling,
     .pPredictorPaletteEntries = &std_pps->pal,
   };
-  /* *INDENT-OFF* */
+  /* clang-format off */
 
   for (i = 0; i < (pps->pps_scc_extension_params.monochrome_palette_flag ? 1 : 3); i++) {
     for (j = 0; j < pps->pps_scc_extension_params.pps_num_palette_predictor_initializer; j++) {
@@ -1225,7 +1225,7 @@ _fill_vps (const GstH265VPS * vps, struct VPS * std_vps)
   }
 
   /* for (i = 0; i < vps->num_hrd_parameters; i++) { */
-  /* *INDENT-OFF* */
+  /* clang-format off */
   std_vps->hrd = (StdVideoH265HrdParameters) {
     .flags = {
       .nal_hrd_parameters_present_flag = hrd->nal_hrd_parameters_present_flag,
@@ -1252,7 +1252,7 @@ _fill_vps (const GstH265VPS * vps, struct VPS * std_vps)
     .pSubLayerHrdParametersNal = std_vps->nal_hdr,
     .pSubLayerHrdParametersVcl = std_vps->vcl_hdr,
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   _copy_profile_tier_level (&vps->profile_tier_level, &std_vps->ptl);
 
@@ -1266,7 +1266,7 @@ _fill_vps (const GstH265VPS * vps, struct VPS * std_vps)
       vps->max_num_reorder_pics, GST_H265_MAX_SUB_LAYERS
       * sizeof (*std_vps->dpbm.max_num_reorder_pics));
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   std_vps->vps = (StdVideoH265VideoParameterSet) {
     .flags = {
       .vps_temporal_id_nesting_flag = vps->temporal_id_nesting_flag,
@@ -1288,7 +1288,7 @@ _fill_vps (const GstH265VPS * vps, struct VPS * std_vps)
     .pHrdParameters = &std_vps->hrd,
     .pProfileTierLevel = &std_vps->ptl,
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 }
 
 static GstFlowReturn
@@ -1309,7 +1309,7 @@ _update_parameters (GstVulkanH265Decoder * self, const GstH265PPS * pps)
     .stdVPSCount = 1,
     .pStdVPSs = &std_vps.vps,
   };
-  /* *INDENT-OFF* */
+  /* clang-format off */
   GstVulkanDecoderParameters dec_params = {
     .h265 = {
       .sType = VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_SESSION_PARAMETERS_CREATE_INFO_KHR,
@@ -1319,7 +1319,7 @@ _update_parameters (GstVulkanH265Decoder * self, const GstH265PPS * pps)
       .pParametersAddInfo = &params,
     }
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
   GError *error = NULL;
 
   _fill_sps (sps, &std_sps);
@@ -1379,7 +1379,7 @@ _fill_ref_slot (GstVulkanH265Decoder * self, GstH265Picture * picture,
 {
   GstVulkanH265Picture *pic = gst_h265_picture_get_user_data (picture);
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   *stdh265_ref = (StdVideoDecodeH265ReferenceInfo) {
     .flags = {
       .used_for_long_term_reference = picture->ref && picture->long_term,
@@ -1407,7 +1407,7 @@ _fill_ref_slot (GstVulkanH265Decoder * self, GstH265Picture * picture,
     .slotIndex = pic->slot_idx,
     .pPictureResource = res,
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   if (ref)
     *ref = &pic->base;
@@ -1442,7 +1442,7 @@ gst_vulkan_h265_decoder_start_picture (GstH265Decoder * decoder,
   pic = gst_h265_picture_get_user_data (picture);
   g_assert (pic);
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   pic->std_h265pic = (StdVideoDecodeH265PictureInfo) {
     .flags = {
       .IrapPicFlag = GST_H265_IS_NAL_TYPE_IRAP (slice->nalu.type),
@@ -1467,7 +1467,7 @@ gst_vulkan_h265_decoder_start_picture (GstH265Decoder * decoder,
     .pStdPictureInfo = &pic->std_h265pic,
     .sliceSegmentCount = 0,
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   pic->slot_idx = _find_next_slot_idx (refs);
 
@@ -1530,8 +1530,7 @@ gst_vulkan_h265_decoder_start_picture (GstH265Decoder * decoder,
 
   g_array_unref (refs);
 
-
-  /* *INDENT-OFF* */
+  /* clang-format off */
   pic->base.decode_info = (VkVideoDecodeInfoKHR) {
     .sType = VK_STRUCTURE_TYPE_VIDEO_DECODE_INFO_KHR,
     .pNext = &pic->vk_h265pic,
@@ -1547,7 +1546,7 @@ gst_vulkan_h265_decoder_start_picture (GstH265Decoder * decoder,
       .imageViewBinding = pic->base.img_view_out->view,
     },
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   /* only wait if there's a buffer processed */
   if (GST_CODEC_PICTURE_FRAME_NUMBER (picture) > 0) {

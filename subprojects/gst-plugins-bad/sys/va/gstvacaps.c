@@ -600,13 +600,13 @@ gst_va_create_coded_caps (GstVaDisplay * display, VAProfile profile,
     VAEntrypoint entrypoint, guint32 * rt_formats_ptr)
 {
   GstCaps *caps;
-  /* *INDENT-OFF* */
+  /* clang-format off */
   VAConfigAttrib attribs[] = {
     { .type = VAConfigAttribMaxPictureWidth, },
     { .type = VAConfigAttribMaxPictureHeight, },
     { .type = VAConfigAttribRTFormat, },
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
   VADisplay dpy;
   VAStatus status;
   guint32 value, rt_formats = 0;

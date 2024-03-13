@@ -2094,7 +2094,7 @@ config_failed:
   }
 }
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static const GLfloat vertices[] = {
      1.0f,  1.0f, 0.0f, 1.0f, 0.0f,
     -1.0f,  1.0f, 0.0f, 0.0f, 0.0f,
@@ -2103,7 +2103,7 @@ static const GLfloat vertices[] = {
 };
 
 static const GLushort indices[] = { 0, 1, 2, 0, 2, 3 };
-/* *INDENT-ON* */
+/* clang-format on */
 
 static void
 _bind_buffer (GstGLImageSink * gl_sink)

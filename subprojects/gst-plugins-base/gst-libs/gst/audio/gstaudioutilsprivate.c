@@ -218,7 +218,7 @@ exit:
 }
 
 #ifdef G_OS_WIN32
-/* *INDENT-OFF* */
+/* clang-format off */
 static struct
 {
   HMODULE dll;
@@ -226,7 +226,7 @@ static struct
   FARPROC AvSetMmThreadCharacteristics;
   FARPROC AvRevertMmThreadCharacteristics;
 } _gst_audio_avrt_tbl = { 0 };
-/* *INDENT-ON* */
+/* clang-format on */
 #endif
 
 static gboolean

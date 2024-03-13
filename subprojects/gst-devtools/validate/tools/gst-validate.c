@@ -281,7 +281,7 @@ _execute_set_subtitles (GstValidateScenario * scenario,
 static void
 _register_playbin_actions (void)
 {
-/* *INDENT-OFF* */
+  /* clang-format off */
   gst_validate_register_action_type ("set-subtitle", "validate-launcher", _execute_set_subtitles,
       (GstValidateActionParameter []) {
         {
@@ -301,7 +301,7 @@ _register_playbin_actions (void)
       "and action looks like 'set-subtitle, subtitle-file=en.srt'\n"
       "the subtitle URI will be set to 'file:///some/uri.mov.en.srt'\n",
       FALSE);
-/* *INDENT-ON* */
+  /* clang-format on */
 }
 
 int main (int argc, gchar ** argv);

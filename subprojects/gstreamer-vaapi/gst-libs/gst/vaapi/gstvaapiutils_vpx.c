@@ -31,13 +31,13 @@ struct map
 
 /* Profile string map */
 static const struct map gst_vaapi_vp9_profile_map[] = {
-  /* *INDENT-OFF* */
+    /* clang-format off */
   { GST_VAAPI_PROFILE_VP9_0, "0" },
   { GST_VAAPI_PROFILE_VP9_1, "1" },
   { GST_VAAPI_PROFILE_VP9_2, "2" },
   { GST_VAAPI_PROFILE_VP9_3, "3" },
   { 0, NULL }
-  /* *INDENT-ON* */
+    /* clang-format on */
 };
 
 /* Lookup name in map */

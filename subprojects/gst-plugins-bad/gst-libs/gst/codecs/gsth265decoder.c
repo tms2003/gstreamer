@@ -434,7 +434,7 @@ typedef struct
   guint32 MaxLumaPs;
 } GstH265LevelLimits;
 
-/* *INDENT-OFF* */
+/* clang-format off */
 /* Table A.8 - General tier and level limits */
 static const GstH265LevelLimits level_limits[] = {
   /* level    idc                   MaxLumaPs */
@@ -452,7 +452,7 @@ static const GstH265LevelLimits level_limits[] = {
   {  "6.1",   GST_H265_LEVEL_L6_1,  35651584 },
   {  "6.2",   GST_H265_LEVEL_L6_2,  35651584 },
 };
-/* *INDENT-ON* */
+/* clang-format on */
 
 static gint
 gst_h265_decoder_get_max_dpb_size_from_sps (GstH265Decoder * self,

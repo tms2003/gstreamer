@@ -1,4 +1,4 @@
-/* *INDENT-OFF* */
+/* clang-format off */
 /*
 Copyright (c) 2013, Broadcom Europe Ltd
 Copyright (c) 2013, James Hughes
@@ -154,4 +154,4 @@ const char *raspicli_unmap_xref(const int en, const XREF_T *map, int num_refs)
    }
    return NULL;
 }
-/* *INDENT-ON* */
+/* clang-format on */

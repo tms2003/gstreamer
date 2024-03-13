@@ -303,13 +303,13 @@ ensure_control_rate_params (GstVaapiEncoderVP9 * encoder)
       encoder->bitrate_bits;
   GST_VAAPI_ENCODER_VA_RATE_CONTROL (encoder).window_size = encoder->cpb_length;
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   /* HRD params */
   GST_VAAPI_ENCODER_VA_HRD (encoder) = (VAEncMiscParameterHRD) {
     .buffer_size = encoder->bitrate_bits * 2,
     .initial_buffer_fullness = encoder->bitrate_bits,
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   return TRUE;
 }

@@ -97,7 +97,7 @@ typedef GtkApplicationWindowClass GtkPlayClass;
 GType gtk_play_get_type (void);
 G_DEFINE_TYPE (GtkPlay, gtk_play, GTK_TYPE_APPLICATION_WINDOW);
 
-/* *INDENT-OFF* */
+/* clang-format off */
 G_MODULE_EXPORT
 void rewind_button_clicked_cb (GtkButton * button, GtkPlay * play);
 G_MODULE_EXPORT
@@ -117,7 +117,7 @@ void seekbar_value_changed_cb (GtkRange * range, GtkPlay * play);
 G_MODULE_EXPORT
 void volume_button_value_changed_cb (GtkScaleButton * button, gdouble value,
     GtkPlay * play);
-/* *INDENT-ON* */
+/* clang-format on */
 
 enum
 {

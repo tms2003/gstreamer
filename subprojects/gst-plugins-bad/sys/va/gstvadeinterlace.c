@@ -112,13 +112,13 @@ struct CData
   gchar *description;
 };
 
-/* *INDENT-OFF* */
+/* clang-format off */
 static const gchar *caps_str =
     GST_VIDEO_CAPS_MAKE_WITH_FEATURES (GST_CAPS_FEATURE_MEMORY_VA,
         "{ NV12, I420, YV12, YUY2, RGBA, BGRA, P010_10LE, ARGB, ABGR }") " ;"
     GST_VIDEO_CAPS_MAKE ("{ VUYA, GRAY8, NV12, NV21, YUY2, UYVY, YV12, "
         "I420, P010_10LE, RGBA, BGRA, ARGB, ABGR  }");
-/* *INDENT-ON* */
+/* clang-format on */
 
 static void
 _reset_history (GstVaDeinterlace * self)
@@ -410,7 +410,7 @@ gst_va_deinterlace_transform (GstBaseTransform * trans, GstBuffer * inbuf,
         gst_va_buffer_get_surface (self->history[self->hcurr + i + 1]);
   }
 
-  /* *INDENT-OFF* */
+  /* clang-format off */
   src = (GstVaSample) {
     .buffer = inbuf,
     .flags = surface_flags,
@@ -422,7 +422,7 @@ gst_va_deinterlace_transform (GstBaseTransform * trans, GstBuffer * inbuf,
   dst = (GstVaSample) {
     .buffer = outbuf,
   };
-  /* *INDENT-ON* */
+  /* clang-format on */
 
   if (!gst_va_filter_process (btrans->filter, &src, &dst)) {
     gst_buffer_set_flags (outbuf, GST_BUFFER_FLAG_CORRUPTED);

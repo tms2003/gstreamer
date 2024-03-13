@@ -3461,7 +3461,7 @@ GST_START_TEST (test_reset_timers_does_not_stall)
 {
   GstHarness *h = gst_harness_new ("rtpjitterbuffer");
   BufferArrayCtx bufs[] = {
-    /* *INDENT-OFF* */
+      /* clang-format off */
     { 1, 0, FALSE, 0},
     { 2, 0, FALSE, 0},
     { 3, 0, FALSE, 0},
@@ -3472,7 +3472,7 @@ GST_START_TEST (test_reset_timers_does_not_stall)
     { 8, 0, FALSE, 0},
     { 9, 0, FALSE, 0},
     {10, 0, FALSE, 0},
-    /* *INDENT-ON* */
+      /* clang-format on */
   };
 
   g_object_set (h->element, "latency", 100,
@@ -3488,14 +3488,14 @@ GST_START_TEST (test_reset_timers_does_not_stall_2)
 {
   GstHarness *h = gst_harness_new ("rtpjitterbuffer");
   BufferArrayCtx bufs[] = {
-    /* *INDENT-OFF* */
+      /* clang-format off */
     {278, 21920, FALSE,  31695},
     { 37,  5920, FALSE,  89911},
     {173, 13600, FALSE, 108078},
     { 30, 27200, FALSE, 190920},
     {-20, 43840,  TRUE, 150552},
     { 42,  4480, FALSE, 131498},
-    /* *INDENT-ON* */
+      /* clang-format on */
   };
 
   g_object_set (h->element, "latency", 200,
@@ -3510,10 +3510,10 @@ GST_START_TEST (test_multiple_lost_do_not_stall)
 {
   GstHarness *h = gst_harness_new ("rtpjitterbuffer");
   BufferArrayCtx bufs[] = {
-    /* *INDENT-OFF* */
+      /* clang-format off */
     { 39,  4960, FALSE,   58},
     {-28, -5280, FALSE, 1000},
-    /* *INDENT-ON* */
+      /* clang-format on */
   };
 
   g_object_set (h->element, "latency", 200,
@@ -3528,7 +3528,7 @@ GST_START_TEST (test_reset_using_rtx_packets_does_not_stall)
 {
   GstHarness *h = gst_harness_new ("rtpjitterbuffer");
   BufferArrayCtx bufs[] = {
-    /* *INDENT-OFF* */
+      /* clang-format off */
     {  1,    1 * TEST_RTP_TS_DURATION, FALSE, 2000000},
     {  62,  62 * TEST_RTP_TS_DURATION, FALSE, 0},
     { -13, -13 * TEST_RTP_TS_DURATION, TRUE, 10000},
@@ -3537,7 +3537,7 @@ GST_START_TEST (test_reset_using_rtx_packets_does_not_stall)
     {   1,   1 * TEST_RTP_TS_DURATION, TRUE, 0},
     {   1,   1 * TEST_RTP_TS_DURATION, TRUE, 0},
     {   1,   1 * TEST_RTP_TS_DURATION, TRUE, 0},
-    /* *INDENT-ON* */
+      /* clang-format on */
   };
 
   g_object_set (h->element, "latency", 400,
@@ -3553,10 +3553,10 @@ GST_START_TEST (test_gap_using_rtx_does_not_stall)
   GstHarness *h = gst_harness_new ("rtpjitterbuffer");
 
   BufferArrayCtx bufs[] = {
-    /* *INDENT-OFF* */
+      /* clang-format off */
     { 201, -1440, FALSE, 185591 },
     { 265,     1, FALSE,      0 },
-    /* *INDENT-ON* */
+      /* clang-format on */
   };
 
   g_object_set (h->element, "do-lost", TRUE,

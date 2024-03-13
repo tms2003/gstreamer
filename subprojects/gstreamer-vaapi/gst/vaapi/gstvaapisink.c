@@ -65,7 +65,7 @@ GST_DEBUG_CATEGORY_STATIC (gst_debug_vaapisink);
 #endif
 
 /* Default template */
-/* *INDENT-OFF* */
+/* clang-format off */
 static const char gst_vaapisink_sink_caps_str[] =
     GST_VAAPI_MAKE_SURFACE_CAPS ";"
     GST_VIDEO_CAPS_MAKE_WITH_FEATURES (
@@ -76,7 +76,7 @@ static const char gst_vaapisink_sink_caps_str[] =
         GST_CAPS_FEATURE_META_GST_VIDEO_OVERLAY_COMPOSITION,
         GST_VIDEO_FORMATS_ALL) ";"
     GST_VIDEO_CAPS_MAKE (GST_VIDEO_FORMATS_ALL);
-/* *INDENT-ON* */
+/* clang-format on */
 
 static GstStaticPadTemplate gst_vaapisink_sink_factory =
 GST_STATIC_PAD_TEMPLATE ("sink",
