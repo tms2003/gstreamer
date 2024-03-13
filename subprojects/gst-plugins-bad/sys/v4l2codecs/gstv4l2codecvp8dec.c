@@ -54,11 +54,6 @@ GST_STATIC_PAD_TEMPLATE (GST_VIDEO_DECODER_SINK_NAME,
     GST_STATIC_CAPS ("video/x-vp8, codec-alpha = (boolean) true")
     );
 
-static GstStaticPadTemplate src_template =
-GST_STATIC_PAD_TEMPLATE (GST_VIDEO_DECODER_SRC_NAME,
-    GST_PAD_SRC, GST_PAD_ALWAYS,
-    GST_STATIC_CAPS (GST_VIDEO_CAPS_MAKE (GST_V4L2_DEFAULT_VIDEO_FORMATS)));
-
 struct _GstV4l2CodecVp8Dec
 {
   GstVp8Decoder parent;
@@ -904,7 +899,8 @@ gst_v4l2_codec_vp8_dec_subclass_init (GstV4l2CodecVp8DecClass * klass,
       "Nicolas Dufresne <nicolas.dufresne@collabora.com>");
 
   gst_element_class_add_static_pad_template (element_class, &sink_template);
-  gst_element_class_add_static_pad_template (element_class, &src_template);
+  gst_element_class_add_pad_template (element_class,
+      gst_v4l2_get_src_template ());
   element_class->change_state =
       GST_DEBUG_FUNCPTR (gst_v4l2_codec_vp8_dec_change_state);
 

@@ -203,3 +203,32 @@ gst_v4l2_format_from_video_format (GstVideoFormat format, guint32 * out_pix_fmt)
   *out_pix_fmt = entry->v4l2_pix_fmt;
   return TRUE;
 }
+
+GstPadTemplate *
+gst_v4l2_get_src_template (void)
+{
+  GstCaps *caps = gst_caps_new_simple ("video/x-raw",
+      "width", GST_TYPE_INT_RANGE, 1, G_MAXINT,
+      "height", GST_TYPE_INT_RANGE, 1, G_MAXINT,
+      "framerate", GST_TYPE_FRACTION_RANGE, 0, 1, G_MAXINT, 1,
+      NULL);
+
+  GValue format = G_VALUE_INIT;
+  GValue formats_list = G_VALUE_INIT;
+  g_value_init (&formats_list, GST_TYPE_LIST);
+
+  for (gint i = 0; format_map[i].v4l2_pix_fmt; i++) {
+    g_value_init (&format, G_TYPE_STRING);
+    const gchar *format_str =
+        gst_video_format_to_string (format_map[i].gst_fmt);
+    g_value_set_string (&format, format_str);
+    gst_value_list_append_value (&formats_list, &format);
+    g_value_unset (&format);
+  }
+
+  gst_caps_set_value (caps, "format", &formats_list);
+  g_value_unset (&formats_list);
+
+  return gst_pad_template_new (GST_VIDEO_DECODER_SRC_NAME,
+      GST_PAD_SRC, GST_PAD_ALWAYS, caps);
+}
