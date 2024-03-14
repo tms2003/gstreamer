@@ -109,18 +109,18 @@ export KERNEL_ENABLE=" \
 "
 
 # Build a linux image for arm64 device
-    bash ./ci/scripts/build-linux.sh \
+bash ./ci/scripts/build-linux.sh \
     "https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git" \
     "${KERNEL_TAG}" \
     /lava-files/Image.gz
 
-mkdir -p kernel # DEBUG
+#mkdir -p kernel # DEBUG
 
-#	ci-fairy s3cp --token-file "${CI_JOB_JWT_FILE}" /lava-files/${KERNEL_IMAGE_NAME} \
-#	      ${KERNEL_IMAGE_BASE}/${KERNEL_IMAGE_NAME}
+ci-fairy s3cp --token-file "${CI_JOB_JWT_FILE}" /lava-files/${KERNEL_IMAGE_NAME} \
+	"${KERNEL_IMAGE_BASE}/${KERNEL_IMAGE_NAME}"
 
-#	ci-fairy s3cp --token-file "${CI_JOB_JWT_FILE}" /lava-files/modules.tar.zstd \
-#		"${KERNEL_IMAGE_BASE}/modules.tar.zstd"
+ci-fairy s3cp --token-file "${CI_JOB_JWT_FILE}" /lava-files/modules.tar.zstd \
+	"${KERNEL_IMAGE_BASE}/modules.tar.zstd"
 
 mkdir -p tmp-dtbs
 pushd tmp-dtbs
@@ -129,22 +129,22 @@ tar xf /lava-files/dtbs.tar.zstd
 for dtb in ${DEVICE_TREES}; do
 	dtb_file=$(find -name $dtb)
 	if [ ! -z "${dtb_file}" ]; then
-		cp ${dtb_file} ../kernel/ # DEBUG
-#			ci-fairy s3cp --token-file "${CI_JOB_JWT_FILE}" \
-#			      ${dtb_file} \
-#			      ${KERNEL_IMAGE_BASE}/$(basename ${dtb_file})
+#		cp ${dtb_file} ../kernel/ # DEBUG
+			ci-fairy s3cp --token-file "${CI_JOB_JWT_FILE}" \
+			      ${dtb_file} \
+			      ${KERNEL_IMAGE_BASE}/$(basename ${dtb_file})
 	fi
 done
 
 popd
 rm -fr tmp-dtbs
 
-#touch done
-#	ci-fairy s3cp --token-file "${CI_JOB_JWT_FILE}" \
-#		"done"
-#		"${KERNEL_IMAGE_BASE}/done"
+touch done
+ci-fairy s3cp --token-file "${CI_JOB_JWT_FILE}" \
+	"done"
+	"${KERNEL_IMAGE_BASE}/done"
 
 
-cp /lava-files/${KERNEL_IMAGE_NAME} kernel/ # DEBUG
-cp /lava-files/modules.tar.zstd kernel/ # DEBUG
+#cp /lava-files/${KERNEL_IMAGE_NAME} kernel/ # DEBUG
+#cp /lava-files/modules.tar.zstd kernel/ # DEBUG
 

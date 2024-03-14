@@ -47,10 +47,16 @@ check_kernel()
 }
 
 # TODO: Reactivate once S3 access is available
-#check_minio "${FDO_UPSTREAM_REPO}"
-#check_minio "${CI_PROJECT_PATH}"
+check_minio "${FDO_UPSTREAM_REPO}"
+check_minio "${CI_PROJECT_PATH}"
 
-#check_kernel
+#echo "Hello world" > test.txt
+#S3_PATH="${S3_HOST}/gst-rootfs/${CI_PROJECT_PATH}/${DISTRIBUTION_TAG}/${DEBIAN_ARCH}"
+#ci-fairy s3cp --token-file "${CI_JOB_JWT_FILE}" test.txt https://${S3_PATH}/test.txt
+
+#exit 1
+
+check_kernel
 
 . ci/container/container_pre_build.sh
 
@@ -186,11 +192,11 @@ popd
 
 . ci/container/container_post_build.sh
 
-#ci-fairy s3cp --token-file "${CI_JOB_JWT_FILE}" /lava-files/"${ROOTFSTAR}" \
-#      https://${S3_PATH}/"${ROOTFSTAR}"
+ci-fairy s3cp --token-file "${CI_JOB_JWT_FILE}" /lava-files/"${ROOTFSTAR}" \
+      https://${S3_PATH}/"${ROOTFSTAR}"
 
 touch /lava-files/done
 # DEBUG
-cp /lava-files/"${ROOTFSTAR}" .
+#cp /lava-files/"${ROOTFSTAR}" .
 
-#ci-fairy s3cp --token-file "${CI_JOB_JWT_FILE}" /lava-files/done https://${S3_PATH}/done
+ci-fairy s3cp --token-file "${CI_JOB_JWT_FILE}" /lava-files/done https://${S3_PATH}/done
