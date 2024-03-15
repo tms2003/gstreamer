@@ -130,6 +130,7 @@ enum TsMuxStreamType {
   TSMUX_ST_PS_TELETEXT                = 0x8d,
   TSMUX_ST_PS_KLV                     = 0x8e,    /* only used internally */
   TSMUX_ST_PS_OPUS                    = 0x8f,    /* only used internally */
+  TSMUX_ST_PS_S302M                   = 0x90,    /* only used internally */
   TSMUX_ST_PS_DVD_SUBPICTURE          = 0xff,
 
   /* Non-standard definitions */
@@ -215,6 +216,9 @@ struct TsMuxStream {
   gboolean is_opus;
   guint8 opus_channel_config[1 + 2 + 1 + 1 + 255];
   gsize opus_channel_config_len;
+
+  /* SMPTE 302M */
+  gboolean is_s302m;
 
   /* Jpeg2000 */
   gint32 horizontal_size;

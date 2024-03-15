@@ -226,6 +226,13 @@ tsmux_stream_new (guint16 pid, guint stream_type, guint stream_number)
       stream->is_opus = TRUE;
       stream->pi.flags |= TSMUX_PACKET_FLAG_PES_FULL_HEADER;
       break;
+    case TSMUX_ST_PS_S302M:
+      /* FIXME: assign sequential extended IDs? */
+      stream->id = 0xBD;
+      stream->stream_type = TSMUX_ST_PRIVATE_DATA;
+      stream->is_s302m = TRUE;
+      stream->pi.flags |= TSMUX_PACKET_FLAG_PES_FULL_HEADER;
+      break;
     default:
       /* Might be a custom stream type implemented by a subclass */
       break;
@@ -942,6 +949,11 @@ tsmux_stream_default_get_es_descrs (TsMuxStream * stream,
       if (stream->is_meta) {
         descriptor = gst_mpegts_descriptor_from_registration ("KLVA", NULL, 0);
         GST_DEBUG ("adding KLVA registration descriptor");
+        g_ptr_array_add (pmt_stream->descriptors, descriptor);
+      }
+      if (stream->is_s302m) {
+        descriptor = gst_mpegts_descriptor_from_registration ("BSSD", NULL, 0);
+        GST_DEBUG ("adding SMPTE 302M registration descriptor");
         g_ptr_array_add (pmt_stream->descriptors, descriptor);
       }
     default:
