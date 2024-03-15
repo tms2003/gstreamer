@@ -144,6 +144,18 @@ gboolean        gst_update_registry             (void);
 GST_API
 const gchar *   gst_get_main_executable_path    (void);
 
+/**
+ * GstDeinitNotifyFunc:
+ * @user_data: User data registered along with this function via gst_deinit_register_notify()
+ *
+ * Since: 1.26
+ */
+typedef void  (*GstDeinitNotifyFunc)            (gpointer user_data);
+
+GST_API
+void            gst_deinit_register_notify      (GstDeinitNotifyFunc func,
+                                                 gpointer user_data);
+
 G_END_DECLS
 
 #endif /* __GST_H__ */

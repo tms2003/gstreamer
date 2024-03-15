@@ -172,6 +172,23 @@ static gboolean parse_goption_arg (const gchar * s_opt,
 
 GSList *_priv_gst_preload_plugins = NULL;
 
+/* deinit callbacks */
+static GList *_gst_deinit_notifies = NULL;
+
+typedef struct _GstDeinitNotify
+{
+  GstDeinitNotifyFunc func;
+  gpointer user_data;
+} GstDeinitNotify;
+
+static void
+gst_deinit_notify_free (GstDeinitNotify * cb)
+{
+  if (cb->func)
+    cb->func (cb->user_data);
+  g_free (cb);
+}
+
 enum
 {
   ARG_VERSION = 1,
@@ -1092,6 +1109,10 @@ gst_deinit (void)
   }
 
   GST_INFO ("deinitializing GStreamer");
+
+  g_list_free_full (_gst_deinit_notifies,
+      (GDestroyNotify) gst_deinit_notify_free);
+
   g_thread_pool_set_max_unused_threads (0);
   bin_class = (GstBinClass *) g_type_class_peek (gst_bin_get_type ());
   if (bin_class && bin_class->pool != NULL) {
@@ -1325,4 +1346,41 @@ void
 gst_segtrap_set_enabled (gboolean enabled)
 {
   _gst_disable_segtrap = !enabled;
+}
+
+/**
+ * gst_deinit_register_notify:
+ * @func: (scope async): a #GstDeinitNotifyFunc
+ * @user_data: (nullable): private user data
+ *
+ * Registers a callback notified when gst_deinit() is called.
+ * This could be useful for a GStreamer library where the library holds
+ * persistent resources but prefers the resources to be released
+ * when gst_deinit() is called, so that any expected resource leaks
+ * (either GStreamer object or native handle/memory) can be addressed.
+ *
+ * Applications or GStreamer components can register callbacks
+ * before GStreamer is initialized, but installing notify after gst_deinit()
+ * is not allowed.
+ *
+ * Since: 1.26
+ */
+void
+gst_deinit_register_notify (GstDeinitNotifyFunc func, gpointer user_data)
+{
+  GstDeinitNotify *cb;
+
+  g_rec_mutex_lock (&init_lock);
+  if (gst_deinitialized) {
+    g_warning ("GStreamer was deinitialized already.");
+    g_rec_mutex_unlock (&init_lock);
+    return;
+  }
+
+  cb = g_new0 (GstDeinitNotify, 1);
+  cb->func = func;
+  cb->user_data = user_data;
+
+  _gst_deinit_notifies = g_list_prepend (_gst_deinit_notifies, cb);
+  g_rec_mutex_unlock (&init_lock);
 }
