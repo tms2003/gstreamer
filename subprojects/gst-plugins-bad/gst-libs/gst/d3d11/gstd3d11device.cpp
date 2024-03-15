@@ -191,10 +191,10 @@ gst_d3d11_device_enable_d3d11_debug (void)
   /* If all below libraries are unavailable, d3d11 device would fail with
    * D3D11_CREATE_DEVICE_DEBUG flag */
   static const gchar *sdk_dll_names[] = {
-    "d3d11sdklayers.dll",
-    "d3d11_1sdklayers.dll",
-    "d3d11_2sdklayers.dll",
     "d3d11_3sdklayers.dll",
+    "d3d11_2sdklayers.dll",
+    "d3d11_1sdklayers.dll",
+    "d3d11sdklayers.dll",
   };
 
   GST_D3D11_CALL_ONCE_BEGIN {
@@ -276,6 +276,78 @@ gst_d3d11_device_d3d11_debug (GstD3D11Device * device,
   info_queue->ClearStoredMessages ();
 
   return;
+}
+
+/* *INDENT-OFF* */
+static ID3D11Debug *g_debug_device = nullptr;
+static ID3D11InfoQueue *g_debug_info_queue = nullptr;
+static std::recursive_mutex g_sdk_debug_lock;
+/* *INDENT-ON* */
+
+static void
+gst_d3d11_device_sdk_debug_init (ID3D11Debug * dbg, ID3D11InfoQueue * queue)
+{
+  std::lock_guard < std::recursive_mutex > lk (g_sdk_debug_lock);
+  if (g_debug_device)
+    return;
+
+  g_debug_device = dbg;
+  g_debug_device->AddRef ();
+
+  g_debug_info_queue = queue;
+  g_debug_info_queue->AddRef ();
+}
+
+static void
+gst_d3d11_device_sdk_debug_deinit (gpointer user_data)
+{
+  std::lock_guard < std::recursive_mutex > lk (g_sdk_debug_lock);
+  if (!g_debug_device)
+    return;
+
+  GST_CAT_INFO (gst_d3d11_debug_layer_debug, "Begin live object report");
+  auto hr = g_debug_device->ReportLiveDeviceObjects ((D3D11_RLDO_FLAGS)
+      GST_D3D11_RLDO_FLAGS);
+
+  if (SUCCEEDED (hr)) {
+    UINT64 num_msg = g_debug_info_queue->GetNumStoredMessages ();
+    for (UINT64 i = 0; num_msg; i++) {
+      GstDebugLevel level;
+      SIZE_T msg_len;
+
+      hr = g_debug_info_queue->GetMessage (i, nullptr, &msg_len);
+      if (FAILED (hr))
+        break;
+
+      if (msg_len == 0)
+        continue;
+
+      auto msg = (D3D11_MESSAGE *) g_malloc0 (msg_len);
+      hr = g_debug_info_queue->GetMessage (i, msg, &msg_len);
+      if (FAILED (hr)) {
+        g_free (msg);
+        break;
+      }
+
+      level = d3d11_message_severity_to_gst (msg->Severity);
+      if (msg->Category == D3D11_MESSAGE_CATEGORY_STATE_CREATION &&
+          level > GST_LEVEL_ERROR) {
+        level = GST_LEVEL_INFO;
+      }
+
+      gst_debug_log (gst_d3d11_debug_layer_debug, level, __FILE__, GST_FUNCTION,
+          __LINE__, nullptr, "D3D11InfoQueue: Severity (%d), %s",
+          msg->Severity, msg->pDescription);
+      g_free (msg);
+    }
+  }
+
+  g_debug_info_queue->ClearStoredMessages ();
+
+  GST_CAT_INFO (gst_d3d11_debug_layer_debug, "End live object report");
+
+  GST_D3D11_CLEAR_COM (g_debug_info_queue);
+  GST_D3D11_CLEAR_COM (g_debug_device);
 }
 #else
 void
@@ -444,6 +516,10 @@ gst_d3d11_device_class_init (GstD3D11DeviceClass * klass)
       G_SIGNAL_RUN_LAST, 0, NULL, NULL, NULL, G_TYPE_NONE, 1, G_TYPE_INT);
 
   gst_d3d11_memory_init_once ();
+
+#if HAVE_D3D11SDKLAYERS_H
+  gst_deinit_register_notify (gst_d3d11_device_sdk_debug_deinit, nullptr);
+#endif
 }
 
 static void
@@ -967,6 +1043,7 @@ gst_d3d11_device_setup_debug_layer (GstD3D11Device * self)
         GST_CAT_INFO_OBJECT (gst_d3d11_debug_layer_debug, self,
             "ID3D11InfoQueue interface available");
         priv->d3d11_info_queue = info_queue;
+        gst_d3d11_device_sdk_debug_init (debug, info_queue);
       }
     }
   }
