@@ -793,7 +793,7 @@ gboolean  gst_tag_list_take    (GstTagList ** old_taglist,
 /**
  * GST_TAG_TRACK_GAIN:
  *
- * track gain in db (double)
+ * track gain in dB (double)
  */
 #define GST_TAG_TRACK_GAIN             "replaygain-track-gain"
 /**
@@ -813,7 +813,7 @@ gboolean  gst_tag_list_take    (GstTagList ** old_taglist,
 /**
  * GST_TAG_ALBUM_GAIN:
  *
- * album gain in db (double)
+ * album gain in dB (double)
  */
 #define GST_TAG_ALBUM_GAIN             "replaygain-album-gain"
 /**
