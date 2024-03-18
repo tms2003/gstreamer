@@ -23,6 +23,8 @@
 #include <gst/gst.h>
 #include <gst/vulkan/gstvkapi.h>
 
+#include <gst/video/video.h>
+
 G_BEGIN_DECLS
 
 /**
@@ -103,5 +105,9 @@ gboolean                gst_vulkan_video_profile_is_valid       (GstVulkanVideoP
 GST_VULKAN_API
 gboolean                gst_vulkan_video_profile_is_equal       (const GstVulkanVideoProfile * a,
                                                                  const GstVulkanVideoProfile * b);
-
+GST_VULKAN_API
+gboolean                gst_vulkan_video_get_chroma_info_from_format (GstVideoFormat format,
+                                                                      VkVideoChromaSubsamplingFlagBitsKHR * chroma_format,
+                                                                      VkVideoComponentBitDepthFlagsKHR * bit_depth_luma,
+                                                                      VkVideoComponentBitDepthFlagsKHR * bit_depth_chroma);
 G_END_DECLS
