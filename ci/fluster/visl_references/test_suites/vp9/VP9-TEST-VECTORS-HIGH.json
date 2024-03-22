@@ -9,7 +9,7 @@
             "source_checksum": "d3f9379a229d170da71191da63c47794",
             "input_file": "vp92-2-20-10bit-yuv420.webm",
             "output_format": "yuv420p10le",
-            "result": "7cdfdc898d617421c5665290963f6568"
+            "result": "60fe91282f4b2c4b08fedbbdc7d7b5f2"
         },
         {
             "name": "vp92-2-20-12bit-yuv420.webm",
@@ -17,7 +17,7 @@
             "source_checksum": "bf1a456581f2fee88d65af81e3128cef",
             "input_file": "vp92-2-20-12bit-yuv420.webm",
             "output_format": "yuv420p12le",
-            "result": "e6dae0114bb0938cb088c491a2256538"
+            "result": "4ca6c7d8561a61c8769194bbfbfbc58f"
         },
         {
             "name": "vp93-2-20-10bit-yuv422.webm",
@@ -25,7 +25,7 @@
             "source_checksum": "b784b3dca0cf6e9a56532cd6b98e59ef",
             "input_file": "vp93-2-20-10bit-yuv422.webm",
             "output_format": "yuv422p10le",
-            "result": "e2f2f9a2e47ad5273dc26bd50b72c3fd"
+            "result": "e291d30c58387fc3daeeb012268d92bf"
         },
         {
             "name": "vp93-2-20-12bit-yuv422.webm",
@@ -33,7 +33,7 @@
             "source_checksum": "e092993216d707692b08e39a5238928f",
             "input_file": "vp93-2-20-12bit-yuv422.webm",
             "output_format": "yuv422p12le",
-            "result": "2f417ce58634dd6e358d04c2e2ca4181"
+            "result": "36a9464f5ff95da41a7fe06f219d620c"
         },
         {
             "name": "vp93-2-20-10bit-yuv444.webm",
@@ -41,7 +41,7 @@
             "source_checksum": "5b133ecf053915d9fb83349633639014",
             "input_file": "vp93-2-20-10bit-yuv444.webm",
             "output_format": "yuv444p10le",
-            "result": "699c8e8072d61453c8f808e2ecd72805"
+            "result": "fa9abc539d35b33290ea5bc74ea3e6b6"
         },
         {
             "name": "vp93-2-20-12bit-yuv444.webm",
@@ -49,7 +49,7 @@
             "source_checksum": "136ab9ecb239c29a37f50b8956efa7a0",
             "input_file": "vp93-2-20-12bit-yuv444.webm",
             "output_format": "yuv444p12le",
-            "result": "52f06edd5eaf9d42dc740d5f9baab6dd"
+            "result": "f220187ebeaa11530ea7ad70be46fcec"
         }
     ]
 }

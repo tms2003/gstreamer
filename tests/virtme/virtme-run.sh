@@ -57,8 +57,6 @@ virtme-run \
   --pwd \
   --kimg "$IMAGE" \
   --script-sh "sh -c \"$SCRIPT\"" \
-  -a visl.stable_output=true \
-  -a visl.codec_variability=true \
   --show-boot-console --show-command \
   --qemu-opts -cpu host,pdcm=off -smp 8
 VM_RESULT=$?
