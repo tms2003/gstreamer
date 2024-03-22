@@ -569,11 +569,19 @@ gst_ffmpegvidenc_send_frame (GstFFMpegVidEnc * ffmpegenc,
   gst_ffmpegvidenc_add_cc (frame->input_buffer, picture);
 
   if (GST_VIDEO_INFO_IS_INTERLACED (&ffmpegenc->input_state->info)) {
-    picture->interlaced_frame = TRUE;
-    picture->top_field_first =
+    const gboolean top_field_first =
         GST_BUFFER_FLAG_IS_SET (frame->input_buffer, GST_VIDEO_BUFFER_FLAG_TFF)
         || GST_VIDEO_INFO_FIELD_ORDER (&ffmpegenc->input_state->info) ==
         GST_VIDEO_FIELD_ORDER_TOP_FIELD_FIRST;
+#if LIBAVCODEC_VERSION_INT >= AV_VERSION_INT(60, 31, 100)
+    picture->flags |= AV_FRAME_FLAG_INTERLACED;
+    if (top_field_first) {
+      picture->flags |= AV_FRAME_FLAG_TOP_FIELD_FIRST;
+    }
+#else
+    picture->interlaced_frame = TRUE;
+    picture->top_field_first = top_field_first;
+#endif
     picture->repeat_pict =
         GST_BUFFER_FLAG_IS_SET (frame->input_buffer, GST_VIDEO_BUFFER_FLAG_RFF);
   }
@@ -631,9 +639,16 @@ gst_ffmpegvidenc_send_frame (GstFFMpegVidEnc * ffmpegenc,
     GST_ERROR_OBJECT (ffmpegenc, "PTS is going backwards");
     picture->pts = AV_NOPTS_VALUE;
   } else {
+#if LIBAVCODEC_VERSION_INT >= AV_VERSION_INT(60, 31, 100)
+    const gint ticks_per_frame = (ffmpegenc->context->codec_descriptor
+        && ffmpegenc->context->
+        codec_descriptor->props & AV_CODEC_PROP_FIELDS) ? 2 : 1;
+#else
+    const gint ticks_per_frame = ffmpegenc->context->ticks_per_frame;
+#endif
     picture->pts =
         gst_ffmpeg_time_gst_to_ff ((frame->pts - ffmpegenc->pts_offset) /
-        ffmpegenc->context->ticks_per_frame, ffmpegenc->context->time_base);
+        ticks_per_frame, ffmpegenc->context->time_base);
   }
 
 send_frame:

@@ -321,14 +321,14 @@ typedef struct
 {
   guint domain;
 
-  guint16 sync_seqnum;
+  guint32 sync_seqnum;
   GstClockTime sync_recv_time_local;    /* t2 */
   GstClockTime sync_send_time_remote;   /* t1, might be -1 if FOLLOW_UP pending */
   GstClockTime follow_up_recv_time_local;
 
   GSource *timeout_source;
   guint8 iface_idx;
-  guint16 delay_req_seqnum;
+  guint32 delay_req_seqnum;
   GstClockTime delay_req_send_time_local;       /* t3, -1 if we wait for FOLLOW_UP */
   GstClockTime delay_req_recv_time_remote;      /* t4, -1 if we wait */
   GstClockTime delay_resp_recv_time_local;
@@ -1668,6 +1668,7 @@ handle_sync_message (PtpMessage * msg, guint8 iface_idx,
   sync->delay_req_send_time_local = GST_CLOCK_TIME_NONE;
   sync->delay_req_recv_time_remote = GST_CLOCK_TIME_NONE;
   sync->delay_resp_recv_time_local = GST_CLOCK_TIME_NONE;
+  sync->delay_req_seqnum = G_MAXUINT32;
 
   /* 0.5 correction factor for division later */
   sync->correction_field_sync = msg->correction_field;
@@ -2569,6 +2570,8 @@ get_relocated_libgstnet (void)
 #elif defined(HAVE_DLADDR)
   {
     Dl_info info;
+    char *real_fname = NULL;
+    long path_max = 0;
 
     GST_DEBUG ("attempting to retrieve libgstnet-1.0 location using "
         "dladdr()");
@@ -2579,8 +2582,25 @@ get_relocated_libgstnet (void)
       if (!info.dli_fname) {
         return NULL;
       }
+#ifdef PATH_MAX
+      path_max = PATH_MAX;
+#else
+      path_max = pathconf (info.dli_fname, _PC_PATH_MAX);
+      if (path_max <= 0)
+        path_max = 4096;
+#endif
 
-      dir = g_path_get_dirname (info.dli_fname);
+      real_fname = g_malloc (path_max);
+      if (realpath (info.dli_fname, real_fname)) {
+        dir = g_path_get_dirname (real_fname);
+        GST_DEBUG ("real directory location: %s", dir);
+      } else {
+        GST_ERROR ("could not canonicalize path %s: %s", info.dli_fname,
+            g_strerror (errno));
+        dir = g_path_get_dirname (info.dli_fname);
+      }
+      g_free (real_fname);
+
     } else {
       GST_LOG ("dladdr() failed");
       return NULL;
@@ -3266,7 +3286,7 @@ gst_ptp_clock_get_internal_time (GstClock * clock)
 
 /**
  * gst_ptp_clock_new:
- * @name: Name of the clock
+ * @name: (nullable): Name of the clock
  * @domain: PTP domain
  *
  * Creates a new PTP clock instance that exports the PTP time of the master
@@ -3281,7 +3301,7 @@ gst_ptp_clock_get_internal_time (GstClock * clock)
  * check this with gst_clock_wait_for_sync(), the GstClock::synced signal and
  * gst_clock_is_synced().
  *
- * Returns: (transfer full): A new #GstClock
+ * Returns: (transfer full) (nullable): A new #GstClock
  *
  * Since: 1.6
  */

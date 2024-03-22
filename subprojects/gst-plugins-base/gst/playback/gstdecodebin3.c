@@ -486,7 +486,7 @@ gst_decodebin3_select_stream (GstDecodebin3 * dbin,
 static GstPad *gst_decodebin3_request_new_pad (GstElement * element,
     GstPadTemplate * temp, const gchar * name, const GstCaps * caps);
 static void gst_decodebin3_release_pad (GstElement * element, GstPad * pad);
-static void handle_stream_collection (GstDecodebin3 * dbin,
+static gboolean handle_stream_collection (GstDecodebin3 * dbin,
     GstStreamCollection * collection, DecodebinInput * input);
 static void gst_decodebin3_handle_message (GstBin * bin, GstMessage * message);
 static GstStateChangeReturn gst_decodebin3_change_state (GstElement * element,
@@ -679,6 +679,10 @@ gst_decodebin3_reset (GstDecodebin3 * dbin)
   dbin->current_mq_min_interleave = dbin->default_mq_min_interleave;
   dbin->upstream_selected = FALSE;
 
+  if (dbin->collection) {
+    gst_clear_object (&dbin->collection);
+  }
+
   g_list_free_full (dbin->requested_selection, g_free);
   dbin->requested_selection = NULL;
 
@@ -687,6 +691,8 @@ gst_decodebin3_reset (GstDecodebin3 * dbin)
 
   g_list_free (dbin->to_activate);
   dbin->to_activate = NULL;
+
+  dbin->select_streams_seqnum = GST_SEQNUM_INVALID;
 
   g_list_free (dbin->pending_select_streams);
   dbin->pending_select_streams = NULL;
@@ -1233,9 +1239,15 @@ reset_input (GstDecodebin3 * dbin, DecodebinInput * input)
   }
   if (input->identity) {
     GstPad *idpad = gst_element_get_static_pad (input->identity, "src");
-    DecodebinInputStream *stream = find_input_stream_for_pad (dbin, idpad);
-    gst_object_unref (idpad);
+    DecodebinInputStream *stream;
+
+    SELECTION_LOCK (dbin);
+    stream = find_input_stream_for_pad (dbin, idpad);
     remove_input_stream (dbin, stream);
+    SELECTION_UNLOCK (dbin);
+
+    gst_object_unref (idpad);
+
     gst_element_set_state (input->identity, GST_STATE_NULL);
     gst_bin_remove (GST_BIN (dbin), input->identity);
     gst_clear_object (&input->identity);
@@ -1406,22 +1418,25 @@ sink_event_function (GstPad * sinkpad, GstDecodebin3 * dbin, GstEvent * event)
 
       gst_event_parse_stream_collection (event, &collection);
       if (collection) {
+        gboolean post_collection;
         INPUT_LOCK (dbin);
-        handle_stream_collection (dbin, collection, input);
+        post_collection = handle_stream_collection (dbin, collection, input);
         gst_object_unref (collection);
         INPUT_UNLOCK (dbin);
         SELECTION_LOCK (dbin);
         /* Post the (potentially) updated collection */
-        if (dbin->collection) {
+        if (post_collection) {
           GstMessage *msg;
           msg =
               gst_message_new_stream_collection ((GstObject *) dbin,
               dbin->collection);
           SELECTION_UNLOCK (dbin);
           gst_element_post_message (GST_ELEMENT_CAST (dbin), msg);
-          update_requested_selection (dbin);
         } else
           SELECTION_UNLOCK (dbin);
+
+        /* In all cases we want to make sure the selection is valid */
+        update_requested_selection (dbin);
       }
 
       /* If we are waiting to create an identity passthrough, do it now */
@@ -1940,11 +1955,14 @@ stream_in_collection (GstDecodebin3 * dbin, gchar * sid)
   return NULL;
 }
 
-/* Call with INPUT_LOCK taken */
-static void
+/* Call with INPUT_LOCK taken.
+ * Returns TRUE if the dbin collection changed
+ */
+static gboolean
 handle_stream_collection (GstDecodebin3 * dbin,
     GstStreamCollection * collection, DecodebinInput * input)
 {
+  gboolean ret = TRUE;
 #ifndef GST_DISABLE_GST_DEBUG
   const gchar *upstream_id;
   guint i;
@@ -1952,7 +1970,7 @@ handle_stream_collection (GstDecodebin3 * dbin,
   if (!input) {
     GST_DEBUG_OBJECT (dbin,
         "Couldn't find corresponding input, most likely shutting down");
-    return;
+    return FALSE;
   }
 
   /* Replace collection in input */
@@ -1994,7 +2012,12 @@ handle_stream_collection (GstDecodebin3 * dbin,
   /* Store collection for later usage */
   SELECTION_LOCK (dbin);
   if (dbin->collection == NULL) {
+    GST_DEBUG_OBJECT (dbin, "Storing updated global collection");
     dbin->collection = collection;
+  } else if (dbin->collection == collection) {
+    GST_DEBUG_OBJECT (dbin, "Collection didn't change");
+    gst_object_unref (collection);
+    ret = FALSE;
   } else {
     /* We need to check who emitted this collection (the owner).
      * If we already had a collection from that user, this one is an update,
@@ -2006,8 +2029,11 @@ handle_stream_collection (GstDecodebin3 * dbin,
     gst_object_unref (dbin->collection);
     dbin->collection = collection;
   }
-  dbin->select_streams_seqnum = GST_SEQNUM_INVALID;
+  if (ret)
+    dbin->select_streams_seqnum = GST_SEQNUM_INVALID;
   SELECTION_UNLOCK (dbin);
+
+  return ret;
 }
 
 /* Must be called with the selection lock taken */
@@ -2101,13 +2127,12 @@ gst_decodebin3_handle_message (GstBin * bin, GstMessage * message)
       }
       gst_message_parse_stream_collection (message, &collection);
       if (collection) {
-        handle_stream_collection (dbin, collection, input);
-        posting_collection = TRUE;
+        posting_collection = handle_stream_collection (dbin, collection, input);
       }
       INPUT_UNLOCK (dbin);
 
       SELECTION_LOCK (dbin);
-      if (dbin->collection) {
+      if (posting_collection) {
         /* Replace collection message, we most likely aggregated it */
         GstMessage *new_msg;
         new_msg =
@@ -2404,16 +2429,32 @@ check_inputs_and_slots_for_eos (GstDecodebin3 * dbin, GstEvent * ev)
   }
 }
 
+/*
+ * Returns TRUE if there are no more streams to output and an ERROR message
+ * should be posted
+ */
+static inline gboolean
+no_more_streams_locked (GstDecodebin3 * dbin)
+{
+  return (!dbin->requested_selection && !dbin->active_selection
+      && !dbin->to_activate);
+}
+
 static void
 check_slot_reconfiguration (GstDecodebin3 * dbin, MultiQueueSlot * slot)
 {
   DecodebinOutputStream *output;
   GstMessage *msg = NULL;
+  gboolean no_more_streams;
 
   SELECTION_LOCK (dbin);
   output = get_output_for_slot (slot);
   if (!output) {
+    no_more_streams = no_more_streams_locked (dbin);
     SELECTION_UNLOCK (dbin);
+    if (no_more_streams)
+      GST_ELEMENT_ERROR (slot->dbin, STREAM, FAILED, (NULL),
+          ("No streams to output"));
     return;
   }
 
@@ -2423,10 +2464,20 @@ check_slot_reconfiguration (GstDecodebin3 * dbin, MultiQueueSlot * slot)
     slot->dbin->requested_selection =
         remove_from_list (slot->dbin->requested_selection,
         gst_stream_get_stream_id (slot->active_stream));
+    slot->dbin->active_selection =
+        remove_from_list (slot->dbin->active_selection,
+        gst_stream_get_stream_id (slot->active_stream));
+    no_more_streams = no_more_streams_locked (dbin);
     dbin->selection_updated = TRUE;
     SELECTION_UNLOCK (dbin);
     if (msg)
       gst_element_post_message ((GstElement *) slot->dbin, msg);
+    if (no_more_streams)
+      GST_ELEMENT_ERROR (slot->dbin, CORE, MISSING_PLUGIN, (NULL),
+          ("No suitable plugins found"));
+    else
+      GST_ELEMENT_WARNING (slot->dbin, CORE, MISSING_PLUGIN, (NULL),
+          ("Some plugins were missing"));
     reassign_slot (dbin, slot);
   } else {
     GstMessage *selection_msg = is_selection_done (dbin);
@@ -3056,7 +3107,10 @@ reconfigure_output_stream (DecodebinOutputStream * output,
 missing_decoder:
   {
     GstCaps *caps;
+
     caps = gst_stream_get_caps (slot->active_stream);
+    GST_DEBUG_OBJECT (slot->src_pad,
+        "We are missing a decoder for %" GST_PTR_FORMAT, caps);
     *msg = gst_missing_decoder_message_new (GST_ELEMENT_CAST (dbin), caps);
     gst_caps_unref (caps);
   }
@@ -3270,19 +3324,25 @@ handle_stream_switch (GstDecodebin3 * dbin, GList * select_streams,
   for (tmp = select_streams; tmp; tmp = tmp->next) {
     const gchar *sid = (const gchar *) tmp->data;
     MultiQueueSlot *slot;
-    GST_DEBUG_OBJECT (dbin, "Checking stream '%s'", sid);
+    GST_DEBUG_OBJECT (dbin, "Checking for requested stream '%s'", sid);
     slot = find_slot_for_stream_id (dbin, sid);
-    /* Find the corresponding slot */
-    if (slot == NULL) {
+
+    /* Find the multiqueue slot which is outputting, or will output, this stream
+     * id */
+    if (slot == NULL || slot->active_stream == NULL) {
+      /* There is no slot on which this stream is active */
       if (stream_in_collection (dbin, (gchar *) sid)) {
+        GST_DEBUG_OBJECT (dbin, "Adding to pending streams '%s'", sid);
         pending_streams = g_list_append (pending_streams, (gchar *) sid);
       } else {
         GST_DEBUG_OBJECT (dbin, "We don't have a slot for stream '%s'", sid);
         unknown = g_list_append (unknown, (gchar *) sid);
       }
     } else if (slot->output == NULL) {
-      GST_DEBUG_OBJECT (dbin, "We need to activate slot %p for stream '%s')",
-          slot, sid);
+      /* There is a slot on which this stream is active or pending */
+      GST_DEBUG_OBJECT (dbin,
+          "We need to activate slot %p %s:%s for stream '%s')", slot,
+          GST_DEBUG_PAD_NAME (slot->src_pad), sid);
       to_activate = g_list_append (to_activate, slot);
     } else {
       GST_DEBUG_OBJECT (dbin,

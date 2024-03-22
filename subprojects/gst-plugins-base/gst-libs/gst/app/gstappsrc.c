@@ -1025,6 +1025,7 @@ gst_app_src_send_event (GstElement * element, GstEvent * event)
     case GST_EVENT_FLUSH_STOP:
       g_mutex_lock (&priv->mutex);
       gst_app_src_flush_queued (appsrc, TRUE);
+      priv->is_eos = FALSE;
       g_mutex_unlock (&priv->mutex);
       break;
     default:
@@ -1621,12 +1622,18 @@ gst_app_src_create (GstBaseSrc * bsrc, guint64 offset, guint size,
           if (!gst_segment_is_equal (&priv->current_segment, segment)) {
             GST_DEBUG_OBJECT (appsrc,
                 "Update new segment %" GST_PTR_FORMAT, event);
+
+            /* Release lock temporarily during event push */
+            g_mutex_unlock (&priv->mutex);
             if (!gst_base_src_push_segment (bsrc, segment)) {
               GST_ERROR_OBJECT (appsrc,
                   "Couldn't set new segment %" GST_PTR_FORMAT, event);
               gst_event_unref (event);
+              g_mutex_lock (&priv->mutex);
               goto invalid_segment;
             }
+
+            g_mutex_lock (&priv->mutex);
             gst_segment_copy_into (segment, &priv->current_segment);
           }
 

@@ -80,7 +80,7 @@ static void gst_vtdec_finalize (GObject * object);
 
 static gboolean gst_vtdec_start (GstVideoDecoder * decoder);
 static gboolean gst_vtdec_stop (GstVideoDecoder * decoder);
-static void gst_vtdec_loop (GstVtdec * self);
+static void gst_vtdec_output_loop (GstVtdec * self);
 static gboolean gst_vtdec_negotiate (GstVideoDecoder * decoder);
 static gboolean gst_vtdec_set_format (GstVideoDecoder * decoder,
     GstVideoCodecState * state);
@@ -234,7 +234,7 @@ gst_vtdec_start (GstVideoDecoder * decoder)
   /* Create the output task, but pause it immediately */
   vtdec->pause_task = TRUE;
   if (!gst_pad_start_task (GST_VIDEO_DECODER_SRC_PAD (decoder),
-          (GstTaskFunction) gst_vtdec_loop, vtdec, NULL)) {
+          (GstTaskFunction) gst_vtdec_output_loop, vtdec, NULL)) {
     GST_ERROR_OBJECT (vtdec, "failed to start output thread");
     return FALSE;
   }
@@ -295,7 +295,7 @@ gst_vtdec_stop (GstVideoDecoder * decoder)
 }
 
 static void
-gst_vtdec_loop (GstVtdec * vtdec)
+gst_vtdec_output_loop (GstVtdec * vtdec)
 {
   GstVideoCodecFrame *frame;
   GstFlowReturn ret = GST_FLOW_OK;
@@ -340,6 +340,8 @@ gst_vtdec_loop (GstVtdec * vtdec)
         GST_LOG_OBJECT (vtdec, "dropping frame %d", frame->system_frame_number);
         gst_video_decoder_drop_frame (decoder, frame);
       } else {
+        GST_TRACE_OBJECT (vtdec, "pushing frame %d",
+            frame->system_frame_number);
         ret = gst_video_decoder_finish_frame (decoder, frame);
       }
 
@@ -826,13 +828,9 @@ gst_vtdec_handle_frame (GstVideoDecoder * decoder, GstVideoCodecFrame * frame)
   if (task_state == GST_TASK_STOPPED || task_state == GST_TASK_PAUSED) {
     /* Abort if our loop failed to push frames downstream... */
     if (vtdec->downstream_ret != GST_FLOW_OK) {
-      if (vtdec->downstream_ret == GST_FLOW_FLUSHING)
-        GST_DEBUG_OBJECT (vtdec,
-            "Output loop stopped because of flushing, ignoring frame");
-      else
-        GST_WARNING_OBJECT (vtdec,
-            "Output loop stopped with error (%s), leaving",
-            gst_flow_get_name (vtdec->downstream_ret));
+      GST_DEBUG_OBJECT (vtdec,
+          "Output loop stopped because of %s, ignoring frame",
+          gst_flow_get_name (vtdec->downstream_ret));
 
       ret = vtdec->downstream_ret;
       goto drop;
@@ -1181,6 +1179,7 @@ gst_vtdec_session_output_callback (void *decompression_output_ref_con,
   GstVtdec *vtdec = (GstVtdec *) decompression_output_ref_con;
   GstVideoCodecFrame *frame = (GstVideoCodecFrame *) source_frame_ref_con;
   GstVideoCodecState *state;
+  gboolean push_anyway = FALSE;
 
   GST_LOG_OBJECT (vtdec, "got output frame %p %d and VT buffer %p", frame,
       frame->decode_frame_number, image_buffer);
@@ -1224,9 +1223,15 @@ gst_vtdec_session_output_callback (void *decompression_output_ref_con,
    * to avoid processing too many frames ahead.
    * The DPB * 2 size limit is completely arbitrary. */
   g_mutex_lock (&vtdec->queue_mutex);
-  while (gst_queue_array_get_length (vtdec->reorder_queue) >
-      vtdec->dbp_size * 2) {
+  /* If negotiate() gets called from the output loop (via finish_frame()),
+   * it can attempt to drain and call VTDecompressionSessionWaitForAsynchronousFrames,
+   * which will lock up if we decide to wait in this callback, creating a deadlock. */
+  push_anyway = vtdec->is_flushing || vtdec->is_draining;
+  while (!push_anyway
+      && gst_queue_array_get_length (vtdec->reorder_queue) >
+      vtdec->dbp_size * 2 + 1) {
     g_cond_wait (&vtdec->queue_cond, &vtdec->queue_mutex);
+    push_anyway = vtdec->is_flushing || vtdec->is_draining;
   }
 
   gst_queue_array_push_sorted (vtdec->reorder_queue, frame, sort_frames_by_pts,
@@ -1249,7 +1254,9 @@ gst_vtdec_drain_decoder (GstVideoDecoder * decoder, gboolean flush)
   if (vtdec->session == NULL)
     return GST_FLOW_OK;
 
-  if (vtdec->downstream_ret != GST_FLOW_OK
+  /* Only early-return here if we're draining (as that needs to output frames).
+   * Flushing doesn't care about errors from downstream. */
+  if (!flush && vtdec->downstream_ret != GST_FLOW_OK
       && vtdec->downstream_ret != GST_FLOW_FLUSHING) {
     GST_WARNING_OBJECT (vtdec, "Output loop stopped with error (%s), leaving",
         gst_flow_get_name (vtdec->downstream_ret));

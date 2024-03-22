@@ -3971,12 +3971,18 @@ guess_stream_type_from_caps (GstCaps * caps)
 {
   GstStructure *s;
   const gchar *name;
+  GstPbUtilsCapsDescriptionFlags desc;
 
   if (gst_caps_get_size (caps) < 1)
     return GST_STREAM_TYPE_UNKNOWN;
 
   s = gst_caps_get_structure (caps, 0);
   name = gst_structure_get_name (s);
+
+  if (gst_structure_has_field (s, "original-media-type")) {
+    /* Caps describe an encrypted payload, use original-media-type to determine stream type. */
+    name = gst_structure_get_string (s, "original-media-type");
+  }
 
   if (g_str_has_prefix (name, "video/") || g_str_has_prefix (name, "image/"))
     return GST_STREAM_TYPE_VIDEO;
@@ -3988,7 +3994,19 @@ guess_stream_type_from_caps (GstCaps * caps)
       g_str_has_prefix (name, "closedcaption/"))
     return GST_STREAM_TYPE_TEXT;
 
-  return GST_STREAM_TYPE_UNKNOWN;
+  /* Use information from pbutils. Note that we only care about elementary
+   * streams which is why we check flag equality */
+  desc = gst_pb_utils_get_caps_description_flags (caps);
+  switch (desc) {
+    case GST_PBUTILS_CAPS_DESCRIPTION_FLAG_AUDIO:
+      return GST_STREAM_TYPE_AUDIO;
+    case GST_PBUTILS_CAPS_DESCRIPTION_FLAG_VIDEO:
+      return GST_STREAM_TYPE_VIDEO;
+    case GST_PBUTILS_CAPS_DESCRIPTION_FLAG_SUBTITLE:
+      return GST_STREAM_TYPE_TEXT;
+    default:
+      return GST_STREAM_TYPE_UNKNOWN;
+  }
 }
 
 static void

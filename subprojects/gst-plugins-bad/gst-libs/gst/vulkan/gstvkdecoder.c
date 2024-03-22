@@ -53,6 +53,8 @@ struct _GstVulkanDecoderPrivate
   GstVulkanVideoSession session;
   GstVulkanVideoCapabilities caps;
   VkVideoFormatPropertiesKHR format;
+
+  gboolean vk_populated;
   GstVulkanVideoFunctions vk;
 
   gboolean started;
@@ -71,24 +73,25 @@ static GstVulkanHandle *gst_vulkan_decoder_new_video_session_parameters
     (GstVulkanDecoder * self, GstVulkanDecoderParameters * params,
     GError ** error);
 
-static gpointer
-_populate_function_table (gpointer data)
+static gboolean
+_populate_function_table (GstVulkanDecoder * self)
 {
-  GstVulkanDecoder *self = GST_VULKAN_DECODER (data);
   GstVulkanDecoderPrivate *priv =
       gst_vulkan_decoder_get_instance_private (self);
   GstVulkanInstance *instance;
-  gboolean ret = FALSE;
+
+  if (priv->vk_populated)
+    return TRUE;
 
   instance = gst_vulkan_device_get_instance (self->queue->device);
   if (!instance) {
     GST_ERROR_OBJECT (self, "Failed to get instance from the device");
-    return GINT_TO_POINTER (FALSE);
+    return FALSE;
   }
 
-  ret = gst_vulkan_video_get_vk_functions (instance, &priv->vk);
+  priv->vk_populated = gst_vulkan_video_get_vk_functions (instance, &priv->vk);
   gst_object_unref (instance);
-  return GINT_TO_POINTER (ret);
+  return priv->vk_populated;
 }
 
 static void
@@ -144,7 +147,6 @@ gst_vulkan_decoder_start (GstVulkanDecoder * self,
   };
   VkVideoSessionCreateInfoKHR session_create;
   GstVulkanDecoderParameters empty_params;
-  static GOnce once = G_ONCE_INIT;
   guint i, maxlevel, n_fmts, codec_idx;
   GstVideoFormat format = GST_VIDEO_FORMAT_UNKNOWN;
   VkFormat vk_format = VK_FORMAT_UNDEFINED;
@@ -160,8 +162,7 @@ gst_vulkan_decoder_start (GstVulkanDecoder * self,
 
   g_assert (self->codec == profile->profile.videoCodecOperation);
 
-  g_once (&once, _populate_function_table, self);
-  if (GPOINTER_TO_INT (once.retval) == FALSE) {
+  if (!_populate_function_table (self)) {
     g_set_error (error, GST_VULKAN_ERROR, VK_ERROR_INITIALIZATION_FAILED,
         "Couldn't load Vulkan Video functions");
     return FALSE;
@@ -183,8 +184,8 @@ gst_vulkan_decoder_start (GstVulkanDecoder * self,
   }
 
   self->profile = *profile;
-  self->profile.profile.pNext = &self->profile.usage;
-  self->profile.usage.pNext = &self->profile.codec;
+  self->profile.profile.pNext = &self->profile.usage.decode;
+  self->profile.usage.decode.pNext = &self->profile.codec;
 
   switch (self->codec) {
     case VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR:
@@ -193,7 +194,7 @@ gst_vulkan_decoder_start (GstVulkanDecoder * self,
           .sType = VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_CAPABILITIES_KHR,
       };
       /* *INDENT-ON* */
-      codec_idx = 0;
+      codec_idx = GST_VK_VIDEO_EXTENSION_DECODE_H264;
       break;
     case VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR:
       /* *INDENT-OFF* */
@@ -201,7 +202,7 @@ gst_vulkan_decoder_start (GstVulkanDecoder * self,
           .sType = VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_CAPABILITIES_KHR,
       };
       /* *INDENT-ON* */
-      codec_idx = 1;
+      codec_idx = GST_VK_VIDEO_EXTENSION_DECODE_H265;
       break;
     default:
       g_assert_not_reached ();
@@ -588,7 +589,8 @@ gst_vulkan_decoder_create_dpb_pool (GstVulkanDecoder * self, GstCaps * caps)
   gst_buffer_pool_config_set_params (config, caps, 1024, min_buffers,
       max_buffers);
   gst_vulkan_image_buffer_pool_config_set_allocation_params (config, usage,
-      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR,
+      VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_TRANSFER_WRITE_BIT);
 
   if (self->layered_dpb) {
     gst_structure_set (config, "num-layers", G_TYPE_UINT,
@@ -916,7 +918,7 @@ gst_vulkan_decoder_new_video_session_parameters (GstVulkanDecoder * self,
 /**
  * gst_vulkan_decoder_update_video_session_parameters:
  * @self: a #GstVulkanDecoder
- * @params: a #GstVulkanDecoderParameters
+ * @params: a GstVulkanDecoderParameters union
  * @error: a #GError
  *
  * Update the internal codec parameters for the current video session.

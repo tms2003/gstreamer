@@ -190,7 +190,7 @@ gst_d3d12_buffer_pool_set_config (GstBufferPool * pool, GstStructure * config)
 
     auto alloc = (GstD3D12Allocator *)
         gst_d3d12_pool_allocator_new (self->device,
-        &heap_props, D3D12_HEAP_FLAG_NONE, &desc[0],
+        &heap_props, params->heap_flags, &desc[0],
         D3D12_RESOURCE_STATE_COMMON, nullptr);
     auto num_planes = D3D12GetFormatPlaneCount (device,
         params->d3d12_format.dxgi_format);
@@ -218,7 +218,7 @@ gst_d3d12_buffer_pool_set_config (GstBufferPool * pool, GstStructure * config)
 
       auto alloc = (GstD3D12Allocator *)
           gst_d3d12_pool_allocator_new (self->device,
-          &heap_props, D3D12_HEAP_FLAG_NONE, &desc[i],
+          &heap_props, params->heap_flags, &desc[i],
           D3D12_RESOURCE_STATE_COMMON, nullptr);
 
       UINT64 mem_size;
@@ -324,7 +324,6 @@ gst_d3d12_buffer_pool_start (GstBufferPool * pool)
   auto self = GST_D3D12_BUFFER_POOL (pool);
   auto priv = self->priv;
   guint i;
-  gboolean ret;
 
   GST_DEBUG_OBJECT (self, "Start");
 
@@ -338,22 +337,6 @@ gst_d3d12_buffer_pool_start (GstBufferPool * pool)
       GST_ERROR_OBJECT (self, "Failed to activate allocator");
       return FALSE;
     }
-  }
-
-  ret = GST_BUFFER_POOL_CLASS (parent_class)->start (pool);
-  if (!ret) {
-    GST_ERROR_OBJECT (self, "Failed to start");
-
-    for (i = 0; i < G_N_ELEMENTS (priv->alloc); i++) {
-      GstD3D12Allocator *alloc = priv->alloc[i];
-
-      if (!alloc)
-        break;
-
-      gst_d3d12_allocator_set_active (alloc, FALSE);
-    }
-
-    return FALSE;
   }
 
   return TRUE;

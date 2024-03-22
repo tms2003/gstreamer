@@ -433,6 +433,19 @@ typedef enum
 
 /**
  * GstH265Level:
+ * @GST_H265_LEVEL_L1: Level 1
+ * @GST_H265_LEVEL_L2: Level 2
+ * @GST_H265_LEVEL_L2_1: Level 2.1
+ * @GST_H265_LEVEL_L3: Level 3
+ * @GST_H265_LEVEL_L3_1: Level 3.1
+ * @GST_H265_LEVEL_L4: Level 4
+ * @GST_H265_LEVEL_L4_1: Level 4.1
+ * @GST_H265_LEVEL_L5: Level 5
+ * @GST_H265_LEVEL_L5_1: Level 5.1
+ * @GST_H265_LEVEL_L5_2: Level 5.2
+ * @GST_H265_LEVEL_L6: Level 6
+ * @GST_H265_LEVEL_L6_1: Level 6.1
+ * @GST_H265_LEVEL_L6_2: Level 6.2
  *
  * H.265 level
  *
@@ -2195,6 +2208,9 @@ const gchar * gst_h265_profile_to_string (GstH265Profile profile);
 
 GST_CODEC_PARSERS_API
 GstH265Profile gst_h265_profile_from_string (const gchar * string);
+
+GST_CODEC_PARSERS_API
+const gchar * gst_h265_slice_type_to_string (GstH265SliceType slice_type);
 
 GST_CODEC_PARSERS_API
 GstMemory * gst_h265_create_sei_memory (guint8 layer_id,

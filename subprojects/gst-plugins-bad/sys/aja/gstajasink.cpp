@@ -74,6 +74,7 @@ GST_DEBUG_CATEGORY_STATIC(gst_aja_sink_debug);
 #define DEFAULT_START_FRAME (0)
 #define DEFAULT_END_FRAME (0)
 #define DEFAULT_OUTPUT_CPU_CORE (G_MAXUINT)
+#define DEFAULT_HANDLE_ANCILLARY_META (FALSE)
 
 enum {
   PROP_0,
@@ -91,6 +92,7 @@ enum {
   PROP_START_FRAME,
   PROP_END_FRAME,
   PROP_OUTPUT_CPU_CORE,
+  PROP_HANDLE_ANCILLARY_META,
 };
 
 typedef enum {
@@ -271,6 +273,22 @@ static void gst_aja_sink_class_init(GstAjaSinkClass *klass) {
           (GParamFlags)(G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
                         G_PARAM_CONSTRUCT)));
 
+  /**
+   * GstAjaSink:handle-ancillary-meta:
+   *
+   * If set to %TRUE handle any #GstAncillaryMeta present on buffers
+   *
+   * Since: 1.24
+   */
+  g_object_class_install_property(
+      gobject_class, PROP_HANDLE_ANCILLARY_META,
+      g_param_spec_boolean(
+          "handle-ancillary-meta", "Handle Ancillary Meta",
+          "Handle ancillary meta on video frames",
+          DEFAULT_HANDLE_ANCILLARY_META,
+          (GParamFlags)(G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
+                        G_PARAM_CONSTRUCT)));
+
   element_class->change_state = GST_DEBUG_FUNCPTR(gst_aja_sink_change_state);
 
   basesink_class->set_caps = GST_DEBUG_FUNCPTR(gst_aja_sink_set_caps);
@@ -309,6 +327,7 @@ static void gst_aja_sink_init(GstAjaSink *self) {
   self->timecode_index = DEFAULT_TIMECODE_INDEX;
   self->reference_source = DEFAULT_REFERENCE_SOURCE;
   self->output_cpu_core = DEFAULT_OUTPUT_CPU_CORE;
+  self->handle_ancillary_meta = DEFAULT_HANDLE_ANCILLARY_META;
 
   self->queue =
       gst_queue_array_new_for_struct(sizeof(QueueItem), self->queue_size);
@@ -363,6 +382,9 @@ void gst_aja_sink_set_property(GObject *object, guint property_id,
     case PROP_OUTPUT_CPU_CORE:
       self->output_cpu_core = g_value_get_uint(value);
       break;
+    case PROP_HANDLE_ANCILLARY_META:
+      self->handle_ancillary_meta = g_value_get_boolean(value);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID(object, property_id, pspec);
       break;
@@ -415,6 +437,9 @@ void gst_aja_sink_get_property(GObject *object, guint property_id,
       break;
     case PROP_OUTPUT_CPU_CORE:
       g_value_set_uint(value, self->output_cpu_core);
+      break;
+    case PROP_HANDLE_ANCILLARY_META:
+      g_value_set_boolean(value, self->handle_ancillary_meta);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID(object, property_id, pspec);
@@ -699,7 +724,7 @@ static gboolean gst_aja_sink_set_caps(GstBaseSink *bsink, GstCaps *caps) {
 
   // Make sure to globally lock here as the routing settings and others are
   // global shared state
-  ShmMutexLocker locker;
+  GstAjaNtv2DeviceLocker locker(self->device);
 
   if (!::NTV2DeviceCanDoVideoFormat(self->device_id, video_format)) {
     GST_ERROR_OBJECT(self, "Device does not support mode %d",
@@ -1709,6 +1734,39 @@ static GstFlowReturn gst_aja_sink_render(GstBaseSink *bsink,
     }
   }
 
+  if (self->handle_ancillary_meta) {
+    GstAncillaryMeta *anc_meta;
+    iter = NULL;
+    while ((anc_meta = (GstAncillaryMeta *)gst_buffer_iterate_meta_filtered(
+                buffer, &iter, GST_ANCILLARY_META_API_TYPE))) {
+      const AJAAncillaryDataLocation loc(
+          AJAAncillaryDataLink_A,
+          anc_meta->c_not_y_channel ? AJAAncillaryDataChannel_C
+                                    : AJAAncillaryDataVideoStream_Y,
+          AJAAncillaryDataSpace_VANC, anc_meta->line, anc_meta->offset);
+
+      AJAAncillaryData pkt;
+      guint8 data[256];
+
+      pkt.SetDID(anc_meta->DID);
+      pkt.SetSID(anc_meta->SDID_block_number);
+      pkt.SetDataLocation(loc);
+      pkt.SetDataCoding(AJAAncillaryDataCoding_Digital);
+
+      for (gsize i = 0; i < (anc_meta->data_count & 0xff); i++) {
+        data[i] = anc_meta->data[i] & 0xff;
+      }
+      pkt.SetPayloadData(data, anc_meta->data_count & 0xff);
+
+      GST_TRACE_OBJECT(self,
+                       "Adding ANC of %" G_GSIZE_FORMAT " bytes at (%u,%u)",
+                       pkt.GetPayloadByteCount(), pkt.GetLocationLineNumber(),
+                       pkt.GetLocationHorizOffset());
+
+      anc_packet_list.AddAncillaryData(pkt);
+    }
+  }
+
   if (!anc_packet_list.IsEmpty()) {
     if (self->vanc_mode == ::NTV2_VANCMODE_OFF &&
         ::NTV2DeviceCanDoCustomAnc(self->device_id)) {
@@ -1779,33 +1837,7 @@ static GstFlowReturn gst_aja_sink_render(GstBaseSink *bsink,
     } else {
       NTV2_POINTER ptr(item.video_map.data, item.video_map.size);
 
-      // Work around bug in GetVANCTransmitData() for SD formats that
-      // truncates ADF packets that are not a multiple of 12 words long.
-      //
-      // See AJA SDK support ticket #4845.
-      if (format_desc.IsSDFormat()) {
-        guint32 n_vanc_packets = anc_packet_list.CountAncillaryData();
-        for (guint32 i = 0; i < n_vanc_packets; i++) {
-          AJAAncillaryData *packet = anc_packet_list.GetAncillaryDataAtIndex(i);
-
-          ULWord line_offset = 0;
-          if (!format_desc.GetLineOffsetFromSMPTELine(
-                  packet->GetLocationLineNumber(), line_offset))
-            continue;
-
-          UWordSequence data;
-          if (packet->GenerateTransmitData(data) != AJA_STATUS_SUCCESS)
-            continue;
-
-          // Pad to a multiple of 12 words
-          while (data.size() < 12 || data.size() % 12 != 0)
-            data.push_back(0x040);
-          ::YUVComponentsTo10BitYUVPackedBuffer(data, ptr, format_desc,
-                                                line_offset);
-        }
-      } else {
-        anc_packet_list.GetVANCTransmitData(ptr, format_desc);
-      }
+      anc_packet_list.GetVANCTransmitData(ptr, format_desc);
     }
   }
 
@@ -1899,7 +1931,7 @@ restart:
   {
     // Make sure to globally lock here as the routing settings and others are
     // global shared state
-    ShmMutexLocker locker;
+    GstAjaNtv2DeviceLocker locker(self->device);
 
     self->device->device->AutoCirculateStop(self->channel);
 
@@ -1984,21 +2016,23 @@ restart:
 
     self->device->device->AutoCirculateGetStatus(self->channel, status);
 
-    GST_TRACE_OBJECT(self,
-                     "Start frame %d "
-                     "end frame %d "
-                     "active frame %d "
-                     "start time %" G_GUINT64_FORMAT
-                     " "
-                     "current time %" G_GUINT64_FORMAT
-                     " "
-                     "frames processed %u "
-                     "frames dropped %u "
-                     "buffer level %u",
-                     status.acStartFrame, status.acEndFrame,
-                     status.acActiveFrame, status.acRDTSCStartTime,
-                     status.acRDTSCCurrentTime, status.acFramesProcessed,
-                     status.acFramesDropped, status.acBufferLevel);
+    GST_TRACE_OBJECT(
+        self,
+        "State %d "
+        "start frame %d "
+        "end frame %d "
+        "active frame %d "
+        "start time %" GST_TIME_FORMAT
+        " "
+        "current time %" GST_TIME_FORMAT
+        " "
+        "frames processed %u "
+        "frames dropped %u "
+        "buffer level %u",
+        status.acState, status.acStartFrame, status.acEndFrame,
+        status.acActiveFrame, GST_TIME_ARGS(status.acRDTSCStartTime * 100),
+        GST_TIME_ARGS(status.acRDTSCCurrentTime * 100),
+        status.acFramesProcessed, status.acFramesDropped, status.acBufferLevel);
 
     // Detect if we were too slow with providing frames and report if that was
     // the case together with the amount of frames dropped
@@ -2117,25 +2151,31 @@ restart:
         gst_buffer_unref(item.anc_buffer2);
       }
 
-      GST_TRACE_OBJECT(
-          self,
-          "Transferred frame. "
-          "frame time %" GST_TIME_FORMAT
-          " "
-          "current frame %u "
-          "current frame time %" GST_TIME_FORMAT
-          " "
-          "frames processed %u "
-          "frames dropped %u "
-          "buffer level %u",
-          GST_TIME_ARGS(transfer.acTransferStatus.acFrameStamp.acFrameTime *
-                        100),
-          transfer.acTransferStatus.acFrameStamp.acCurrentFrame,
-          GST_TIME_ARGS(
-              transfer.acTransferStatus.acFrameStamp.acCurrentFrameTime * 100),
-          transfer.acTransferStatus.acFramesProcessed,
-          transfer.acTransferStatus.acFramesDropped,
-          transfer.acTransferStatus.acBufferLevel);
+      const AUTOCIRCULATE_TRANSFER_STATUS &transfer_status =
+          transfer.GetTransferStatus();
+      const FRAME_STAMP &frame_stamp = transfer_status.GetFrameStamp();
+
+      GST_TRACE_OBJECT(self,
+                       "State %d "
+                       "transfer frame %d "
+                       "current frame %u "
+                       "frame time %" GST_TIME_FORMAT
+                       " "
+                       "current frame time %" GST_TIME_FORMAT
+                       " "
+                       "current time %" GST_TIME_FORMAT
+                       " "
+                       "frames processed %u "
+                       "frames dropped %u "
+                       "buffer level %u",
+                       transfer_status.acState, transfer_status.acTransferFrame,
+                       frame_stamp.acCurrentFrame,
+                       GST_TIME_ARGS(frame_stamp.acFrameTime * 100),
+                       GST_TIME_ARGS(frame_stamp.acCurrentFrameTime * 100),
+                       GST_TIME_ARGS(frame_stamp.acCurrentTime * 100),
+                       transfer_status.acFramesProcessed,
+                       transfer_status.acFramesDropped,
+                       transfer_status.acBufferLevel);
 
       // Trivial drift calculation
       //
@@ -2144,18 +2184,16 @@ restart:
       // FIXME: Add some compensation by dropping/duplicating frames as needed
       // but make this configurable
       if (frames_rendered_start_time == GST_CLOCK_TIME_NONE &&
-          transfer.acTransferStatus.acFrameStamp.acCurrentFrameTime != 0 &&
-          transfer.acTransferStatus.acFramesProcessed +
-                  transfer.acTransferStatus.acFramesDropped >
+          frame_stamp.acCurrentFrameTime != 0 &&
+          transfer_status.acFramesProcessed + transfer_status.acFramesDropped >
               self->queue_size &&
           clock) {
-        frames_rendered_start = transfer.acTransferStatus.acFramesProcessed +
-                                transfer.acTransferStatus.acFramesDropped;
+        frames_rendered_start =
+            transfer_status.acFramesProcessed + transfer_status.acFramesDropped;
 
         GstClockTime now_gst = gst_clock_get_time(clock);
         GstClockTime now_sys = g_get_real_time() * 1000;
-        GstClockTime render_time =
-            transfer.acTransferStatus.acFrameStamp.acCurrentFrameTime * 100;
+        GstClockTime render_time = frame_stamp.acCurrentFrameTime * 100;
 
         if (render_time < now_sys) {
           frames_rendered_start_time = now_gst - (now_sys - render_time);
@@ -2165,8 +2203,7 @@ restart:
       if (clock && frames_rendered_start_time != GST_CLOCK_TIME_NONE) {
         GstClockTime now_gst = gst_clock_get_time(clock);
         GstClockTime now_sys = g_get_real_time() * 1000;
-        GstClockTime render_time =
-            transfer.acTransferStatus.acFrameStamp.acCurrentFrameTime * 100;
+        GstClockTime render_time = frame_stamp.acCurrentFrameTime * 100;
 
         GstClockTime sys_diff;
         if (now_sys > render_time) {
@@ -2178,8 +2215,8 @@ restart:
         GstClockTime diff = now_gst - frames_rendered_start_time;
         if (sys_diff < diff) diff -= sys_diff;
 
-        guint64 frames_rendered = (transfer.acTransferStatus.acFramesProcessed +
-                                   transfer.acTransferStatus.acFramesDropped) -
+        guint64 frames_rendered = (transfer_status.acFramesProcessed +
+                                   transfer_status.acFramesDropped) -
                                   frames_rendered_start;
         guint64 frames_produced =
             gst_util_uint64_scale(diff, self->configured_info.fps_n,
@@ -2203,10 +2240,10 @@ restart:
     }
   }
 
-out : {
+out: {
   // Make sure to globally lock here as the routing settings and others are
   // global shared state
-  ShmMutexLocker locker;
+  GstAjaNtv2DeviceLocker locker(self->device);
 
   self->device->device->AutoCirculateStop(self->channel);
   self->device->device->UnsubscribeOutputVerticalEvent(self->channel);

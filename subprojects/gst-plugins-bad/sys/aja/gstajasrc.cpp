@@ -78,6 +78,7 @@ GST_DEBUG_CATEGORY_STATIC(gst_aja_src_debug);
 #define DEFAULT_START_FRAME (8)
 #define DEFAULT_END_FRAME (8)
 #define DEFAULT_CAPTURE_CPU_CORE (G_MAXUINT)
+#define DEFAULT_ATTACH_ANCILLARY_META (FALSE)
 
 enum {
   PROP_0,
@@ -98,6 +99,7 @@ enum {
   PROP_QUEUE_SIZE,
   PROP_CAPTURE_CPU_CORE,
   PROP_SIGNAL,
+  PROP_ATTACH_ANCILLARY_META,
 };
 
 // Make these plain C structs for usage in GstQueueArray
@@ -177,6 +179,7 @@ static void gst_aja_src_set_property(GObject *object, guint property_id,
                                      const GValue *value, GParamSpec *pspec);
 static void gst_aja_src_get_property(GObject *object, guint property_id,
                                      GValue *value, GParamSpec *pspec);
+static void gst_aja_src_constructed(GObject *object);
 static void gst_aja_src_finalize(GObject *object);
 
 static GstCaps *gst_aja_src_get_caps(GstBaseSrc *bsrc, GstCaps *filter);
@@ -192,6 +195,7 @@ static gboolean gst_aja_src_stop(GstAjaSrc *src);
 
 static GstStateChangeReturn gst_aja_src_change_state(GstElement *element,
                                                      GstStateChange transition);
+static GstClock *gst_aja_src_provide_clock(GstElement *element);
 
 static void capture_thread_func(AJAThread *thread, void *data);
 
@@ -207,6 +211,7 @@ static void gst_aja_src_class_init(GstAjaSrcClass *klass) {
 
   gobject_class->set_property = gst_aja_src_set_property;
   gobject_class->get_property = gst_aja_src_get_property;
+  gobject_class->constructed = gst_aja_src_constructed;
   gobject_class->finalize = gst_aja_src_finalize;
 
   g_object_class_install_property(
@@ -352,7 +357,24 @@ static void gst_aja_src_class_init(GstAjaSrcClass *klass) {
           "True if there is a valid input signal available", FALSE,
           (GParamFlags)(G_PARAM_READABLE | G_PARAM_STATIC_STRINGS)));
 
+  /**
+   * GstAjaSrc:attach-ancillary-meta:
+   *
+   * If set to %TRUE attach any ancillary data as #GstAncillaryMeta on buffers
+   *
+   * Since: 1.24
+   */
+  g_object_class_install_property(
+      gobject_class, PROP_ATTACH_ANCILLARY_META,
+      g_param_spec_boolean(
+          "attach-ancillary-meta", "Attach Ancillary Meta",
+          "Attach ancillary meta to video frames",
+          DEFAULT_ATTACH_ANCILLARY_META,
+          (GParamFlags)(G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
+                        G_PARAM_CONSTRUCT)));
+
   element_class->change_state = GST_DEBUG_FUNCPTR(gst_aja_src_change_state);
+  element_class->provide_clock = GST_DEBUG_FUNCPTR(gst_aja_src_provide_clock);
 
   basesrc_class->get_caps = GST_DEBUG_FUNCPTR(gst_aja_src_get_caps);
   basesrc_class->negotiate = NULL;
@@ -377,6 +399,9 @@ static void gst_aja_src_class_init(GstAjaSrcClass *klass) {
 }
 
 static void gst_aja_src_init(GstAjaSrc *self) {
+  GST_OBJECT_FLAG_SET(
+      self, GST_ELEMENT_FLAG_PROVIDE_CLOCK | GST_ELEMENT_FLAG_REQUIRE_CLOCK);
+
   g_mutex_init(&self->queue_lock);
   g_cond_init(&self->queue_cond);
 
@@ -394,6 +419,7 @@ static void gst_aja_src_init(GstAjaSrc *self) {
   self->reference_source = DEFAULT_REFERENCE_SOURCE;
   self->closed_caption_capture_mode = DEFAULT_CLOSED_CAPTION_CAPTURE_MODE;
   self->capture_cpu_core = DEFAULT_CAPTURE_CPU_CORE;
+  self->attach_ancillary_meta = DEFAULT_ATTACH_ANCILLARY_META;
 
   self->queue =
       gst_queue_array_new_for_struct(sizeof(QueueItem), self->queue_size);
@@ -459,6 +485,9 @@ void gst_aja_src_set_property(GObject *object, guint property_id,
     case PROP_CAPTURE_CPU_CORE:
       self->capture_cpu_core = g_value_get_uint(value);
       break;
+    case PROP_ATTACH_ANCILLARY_META:
+      self->attach_ancillary_meta = g_value_get_boolean(value);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID(object, property_id, pspec);
       break;
@@ -521,10 +550,25 @@ void gst_aja_src_get_property(GObject *object, guint property_id, GValue *value,
     case PROP_SIGNAL:
       g_value_set_boolean(value, self->signal);
       break;
+    case PROP_ATTACH_ANCILLARY_META:
+      g_value_set_boolean(value, self->attach_ancillary_meta);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID(object, property_id, pspec);
       break;
   }
+}
+
+void gst_aja_src_constructed(GObject *object) {
+  GstAjaSrc *self = GST_AJA_SRC(object);
+
+  G_OBJECT_CLASS(parent_class)->constructed(object);
+
+  gchar *aja_clock_name = g_strdup_printf("ajaclock-%s", GST_OBJECT_NAME(self));
+  self->clock =
+      GST_CLOCK(g_object_new(GST_TYPE_SYSTEM_CLOCK, "name", aja_clock_name,
+                             "clock-type", GST_CLOCK_TYPE_MONOTONIC, NULL));
+  g_free(aja_clock_name);
 }
 
 void gst_aja_src_finalize(GObject *object) {
@@ -533,6 +577,8 @@ void gst_aja_src_finalize(GObject *object) {
   g_assert(self->device == NULL);
   g_assert(gst_queue_array_get_length(self->queue) == 0);
   g_clear_pointer(&self->queue, gst_queue_array_free);
+
+  gst_clear_object(&self->clock);
 
   g_mutex_clear(&self->queue_lock);
   g_cond_clear(&self->queue_cond);
@@ -598,7 +644,7 @@ static gboolean gst_aja_src_close(GstAjaSrc *self) {
   return TRUE;
 }
 
-// Must be called with ShmMutexLocker
+// Must be called with GstAjaNtv2DeviceLocker
 static gboolean gst_aja_src_configure(GstAjaSrc *self) {
   GST_DEBUG_OBJECT(self, "Starting");
 
@@ -1609,6 +1655,12 @@ static GstStateChangeReturn gst_aja_src_change_state(
   return ret;
 }
 
+static GstClock *gst_aja_src_provide_clock(GstElement *element) {
+  GstAjaSrc *self = GST_AJA_SRC(element);
+
+  return GST_CLOCK(gst_object_ref(self->clock));
+}
+
 static GstCaps *gst_aja_src_get_caps(GstBaseSrc *bsrc, GstCaps *filter) {
   GstAjaSrc *self = GST_AJA_SRC(bsrc);
   GstCaps *caps;
@@ -2014,6 +2066,50 @@ next_item:
       gst_buffer_add_video_bar_meta(*buffer, field2 ? 1 : 0, is_letterbox, bar1,
                                     bar2);
     }
+
+    // Don't attach other ANC as ancillary meta if not requested to do so.
+    if (!self->attach_ancillary_meta) continue;
+
+    // Skip non-SMPTE 291M ancillary data
+    if (packet->GetDataCoding() != AJAAncillaryDataCoding_Digital) continue;
+
+    const guint8 *in_data = packet->GetPayloadData();
+    guint data_count = packet->GetDC();
+
+    guint16 line_number = packet->GetLocationLineNumber();
+    guint16 horiz_offset = packet->GetLocationHorizOffset();
+
+    if (!in_data || data_count == 0) {
+      GST_TRACE_OBJECT(self, "ANC %s (%04x) at (%u,%u) has no payload data",
+                       packet->IDAsString().c_str(), packet->GetDIDSID(),
+                       line_number, horiz_offset);
+      continue;
+    }
+
+    GST_TRACE_OBJECT(self,
+                     "Adding ANC meta for %s (%04x) at (%u,%u) of size %u",
+                     packet->IDAsString().c_str(), packet->GetDIDSID(),
+                     line_number, horiz_offset, data_count);
+    GstAncillaryMeta *anc_meta = gst_buffer_add_ancillary_meta(*buffer);
+
+    anc_meta->c_not_y_channel = packet->IsChromaChannel();
+    anc_meta->line = line_number;
+    anc_meta->offset = horiz_offset;
+
+    packet->GeneratePayloadData();
+    anc_meta->DID = AJAAncillaryData::AddEvenParity(packet->GetDID());
+    anc_meta->SDID_block_number =
+        AJAAncillaryData::AddEvenParity(packet->GetSID());
+
+    anc_meta->data_count = AJAAncillaryData::AddEvenParity(data_count);
+
+    guint16 *data = g_new(guint16, packet->GetDC());
+    for (guint i = 0; i < data_count; i++) {
+      data[i] = AJAAncillaryData::AddEvenParity(in_data[i]);
+    }
+    anc_meta->data = data;
+
+    anc_meta->checksum = packet->Calculate9BitChecksum();
   }
 
   bool caps_changed = false;
@@ -2182,6 +2278,7 @@ next_item:
 static void capture_thread_func(AJAThread *thread, void *data) {
   GstAjaSrc *self = GST_AJA_SRC(data);
   GstClock *clock = NULL;
+  GstClock *real_time_clock;
   AUTOCIRCULATE_TRANSFER transfer;
   guint64 frames_dropped_last = G_MAXUINT64;
   gboolean have_signal = TRUE, discont = TRUE;
@@ -2202,6 +2299,16 @@ static void capture_thread_func(AJAThread *thread, void *data) {
     }
   }
 
+  // We're getting a system clock for the real-time clock here because
+  // g_get_real_time() is less accurate generally.
+  real_time_clock = GST_CLOCK(g_object_new(GST_TYPE_SYSTEM_CLOCK, "clock-type",
+                                           GST_CLOCK_TYPE_REALTIME, NULL));
+
+  bool clock_is_monotonic_system_clock = false;
+  bool first_frame_after_start = true;
+  GstClockTime first_frame_time = 0;
+  guint64 first_frame_processed_plus_dropped_minus_buffered = 0;
+
   g_mutex_lock(&self->queue_lock);
 restart:
   GST_DEBUG_OBJECT(self, "Waiting for playing or shutdown");
@@ -2209,8 +2316,7 @@ restart:
     g_cond_wait(&self->queue_cond, &self->queue_lock);
   if (self->shutdown) {
     GST_DEBUG_OBJECT(self, "Shutting down");
-    g_mutex_unlock(&self->queue_lock);
-    return;
+    goto out;
   }
 
   GST_DEBUG_OBJECT(self, "Starting capture");
@@ -2219,6 +2325,20 @@ restart:
   gst_clear_object(&clock);
   clock = gst_element_get_clock(GST_ELEMENT_CAST(self));
 
+  clock_is_monotonic_system_clock = false;
+  if (G_OBJECT_TYPE(clock) == GST_TYPE_SYSTEM_CLOCK) {
+    GstClock *system_clock = gst_system_clock_obtain();
+
+    if (clock == system_clock) {
+      GstClockType clock_type;
+      g_object_get(clock, "clock-type", &clock_type, NULL);
+      clock_is_monotonic_system_clock = clock_type == GST_CLOCK_TYPE_MONOTONIC;
+    }
+    gst_clear_object(&system_clock);
+  }
+
+  first_frame_after_start = true;
+  first_frame_time = 0;
   frames_dropped_last = G_MAXUINT64;
   have_signal = TRUE;
 
@@ -2232,7 +2352,7 @@ restart:
 
       // Make sure to globally lock here as the routing settings and others are
       // global shared state
-      ShmMutexLocker locker;
+      GstAjaNtv2DeviceLocker locker(self->device);
 
       if (!gst_aja_src_configure(self)) {
         g_mutex_lock(&self->queue_lock);
@@ -2298,6 +2418,7 @@ restart:
       }
 
       self->device->device->AutoCirculateStart(self->channel);
+      first_frame_after_start = true;
     }
 
     // Check for valid signal first
@@ -2428,47 +2549,23 @@ restart:
 
     self->device->device->AutoCirculateGetStatus(self->channel, status);
 
-    GST_TRACE_OBJECT(self,
-                     "Start frame %d "
-                     "end frame %d "
-                     "active frame %d "
-                     "start time %" G_GUINT64_FORMAT
-                     " "
-                     "current time %" G_GUINT64_FORMAT
-                     " "
-                     "frames processed %u "
-                     "frames dropped %u "
-                     "buffer level %u",
-                     status.acStartFrame, status.acEndFrame,
-                     status.acActiveFrame, status.acRDTSCStartTime,
-                     status.acRDTSCCurrentTime, status.acFramesProcessed,
-                     status.acFramesDropped, status.acBufferLevel);
-
-    if (frames_dropped_last == G_MAXUINT64) {
-      frames_dropped_last = status.acFramesDropped;
-    } else if (frames_dropped_last < status.acFramesDropped) {
-      GST_WARNING_OBJECT(self, "Dropped %" G_GUINT64_FORMAT " frames",
-                         status.acFramesDropped - frames_dropped_last);
-
-      GstClockTime timestamp =
-          gst_util_uint64_scale(status.acFramesProcessed + frames_dropped_last,
-                                self->configured_info.fps_n,
-                                self->configured_info.fps_d * GST_SECOND);
-      GstClockTime timestamp_end = gst_util_uint64_scale(
-          status.acFramesProcessed + status.acFramesDropped,
-          self->configured_info.fps_n,
-          self->configured_info.fps_d * GST_SECOND);
-
-      QueueItem item = {.type = QUEUE_ITEM_TYPE_FRAMES_DROPPED,
-                        .frames_dropped = {.driver_side = TRUE,
-                                           .timestamp_start = timestamp,
-                                           .timestamp_end = timestamp_end}};
-      gst_queue_array_push_tail_struct(self->queue, &item);
-      g_cond_signal(&self->queue_cond);
-
-      frames_dropped_last = status.acFramesDropped;
-      discont = TRUE;
-    }
+    GST_TRACE_OBJECT(
+        self,
+        "State %d "
+        "start frame %d "
+        "end frame %d "
+        "active frame %d "
+        "start time %" GST_TIME_FORMAT
+        " "
+        "current time %" GST_TIME_FORMAT
+        " "
+        "frames processed %u "
+        "frames dropped %u "
+        "buffer level %u",
+        status.acState, status.acStartFrame, status.acEndFrame,
+        status.acActiveFrame, GST_TIME_ARGS(status.acRDTSCStartTime * 100),
+        GST_TIME_ARGS(status.acRDTSCCurrentTime * 100),
+        status.acFramesProcessed, status.acFramesDropped, status.acBufferLevel);
 
     if (status.IsRunning() && status.acBufferLevel > 1) {
       GstBuffer *video_buffer = NULL;
@@ -2570,6 +2667,189 @@ restart:
         continue;
       }
 
+      const AUTOCIRCULATE_TRANSFER_STATUS &transfer_status =
+          transfer.GetTransferStatus();
+      const FRAME_STAMP &frame_stamp = transfer_status.GetFrameStamp();
+
+      GST_TRACE_OBJECT(self,
+                       "State %d "
+                       "transfer frame %d "
+                       "current frame %u "
+                       "frame time %" GST_TIME_FORMAT
+                       " "
+                       "current frame time %" GST_TIME_FORMAT
+                       " "
+                       "current time %" GST_TIME_FORMAT
+                       " "
+                       "frames processed %u "
+                       "frames dropped %u "
+                       "buffer level %u",
+                       transfer_status.acState, transfer_status.acTransferFrame,
+                       frame_stamp.acCurrentFrame,
+                       GST_TIME_ARGS(frame_stamp.acFrameTime * 100),
+                       GST_TIME_ARGS(frame_stamp.acCurrentFrameTime * 100),
+                       GST_TIME_ARGS(frame_stamp.acCurrentTime * 100),
+                       transfer_status.acFramesProcessed,
+                       transfer_status.acFramesDropped,
+                       transfer_status.acBufferLevel);
+
+      GstClockTime frame_time_real = frame_stamp.acFrameTime * 100;
+
+      // Convert capture time from real-time clock to monotonic clock by
+      // sampling both and working with the difference. The monotonic clock is
+      // used for all further calculations because it is more reliable.
+      GstClockTime now_real_sys = gst_clock_get_time(real_time_clock);
+      GstClockTime now_monotonic_sys = gst_clock_get_internal_time(self->clock);
+      GstClockTime now_gst = gst_clock_get_time(clock);
+
+      GstClockTime frame_time_monotonic;
+      if (now_real_sys > now_monotonic_sys) {
+        GstClockTime diff = now_real_sys - now_monotonic_sys;
+
+        if (frame_time_real > diff)
+          frame_time_monotonic = frame_time_real - diff;
+        else
+          frame_time_monotonic = 0;
+      } else {
+        GstClockTime diff = now_monotonic_sys - now_real_sys;
+
+        frame_time_monotonic = frame_time_real + diff;
+      }
+
+      GstClockTime frame_src_time;
+
+      // Update clock mapping
+      if (first_frame_after_start) {
+        GstClockTime internal, external;
+        guint64 num, denom;
+
+        // FIXME: Workaround to get rid of all previous observations
+        g_object_set(self->clock, "window-size", 32, NULL);
+
+        // Use the monotonic frame time converted back to our clock as base.
+        // In the beginning this would be equal to the monotonic clock, at
+        // later times this is needed to avoid jumps (possibly backwards!) of
+        // the clock time when the framerate changes.
+        //
+        // We manually adjust with the calibration here because otherwise the
+        // clock will clamp it to the last returned clock time, which most
+        // likely is in the future.
+        gst_clock_get_calibration(self->clock, &internal, &external, &num,
+                                  &denom);
+        first_frame_time = frame_src_time = gst_clock_adjust_with_calibration(
+            NULL, frame_time_monotonic, internal, external, num, denom);
+        first_frame_processed_plus_dropped_minus_buffered =
+            transfer_status.acFramesProcessed +
+            transfer_status.acFramesDropped - transfer_status.acBufferLevel;
+      } else {
+        gdouble r_squared;
+
+        frame_src_time =
+            first_frame_time +
+            gst_util_uint64_scale_ceil(
+                transfer_status.acFramesProcessed +
+                    transfer_status.acFramesDropped -
+                    transfer_status.acBufferLevel -
+                    first_frame_processed_plus_dropped_minus_buffered,
+                self->configured_info.fps_d * GST_SECOND,
+                self->configured_info.fps_n);
+
+        gst_clock_add_observation(self->clock, frame_time_monotonic,
+                                  frame_src_time, &r_squared);
+      }
+      first_frame_after_start = false;
+
+      GstClockTime capture_time;
+      if (self->clock == clock) {
+        // If the pipeline is using our clock then we can directly use the
+        // frame counter based time as capture time.
+        capture_time = frame_src_time;
+      } else {
+        GstClockTime internal, external;
+        guint64 num, denom;
+
+        // Otherwise convert the frame counter based time to the monotonic
+        // clock via our clock, which should give a smoother time than just
+        // the raw capture time.
+        //
+        // We manually adjust with the calibration here because otherwise the
+        // clock will clamp it to the last returned clock time, which most
+        // likely is in the future.
+        gst_clock_get_calibration(self->clock, &internal, &external, &num,
+                                  &denom);
+        GstClockTime capture_time_monotonic =
+            gst_clock_unadjust_with_calibration(NULL, frame_src_time, internal,
+                                                external, num, denom);
+
+        if (clock_is_monotonic_system_clock) {
+          // If the pipeline is using the monotonic system clock then we can
+          // just use this.
+          GST_OBJECT_LOCK(clock);
+          capture_time = capture_time_monotonic;
+          GST_OBJECT_UNLOCK(clock);
+        } else {
+          // If the pipeline clock is neither the monotonic clock nor the system
+          // clock we calculate the difference between the monotonic clock and
+          // the pipeline clock and work with that.
+
+          if (now_monotonic_sys > now_gst) {
+            GstClockTime diff = now_monotonic_sys - now_gst;
+
+            if (capture_time_monotonic > diff)
+              capture_time = capture_time_monotonic - diff;
+            else
+              capture_time = 0;
+          } else {
+            GstClockTime diff = now_gst - now_monotonic_sys;
+
+            capture_time = capture_time_monotonic + diff;
+          }
+        }
+      }
+
+      GstClockTime base_time = GST_ELEMENT_CAST(self)->base_time;
+      GstClockTime pts = GST_CLOCK_TIME_NONE;
+      if (capture_time != GST_CLOCK_TIME_NONE) {
+        if (capture_time > base_time)
+          pts = capture_time - base_time;
+        else
+          pts = 0;
+      }
+
+      GST_BUFFER_PTS(video_buffer) = pts;
+      GST_BUFFER_DURATION(video_buffer) = gst_util_uint64_scale(
+          GST_SECOND, self->configured_info.fps_d, self->configured_info.fps_n);
+      GST_BUFFER_PTS(audio_buffer) = pts;
+      GST_BUFFER_DURATION(audio_buffer) = gst_util_uint64_scale(
+          GST_SECOND, self->configured_info.fps_d, self->configured_info.fps_n);
+
+      if (frames_dropped_last == G_MAXUINT64) {
+        frames_dropped_last = transfer_status.acFramesDropped;
+      } else if (frames_dropped_last < transfer_status.acFramesDropped) {
+        GST_WARNING_OBJECT(
+            self, "Dropped %" G_GUINT64_FORMAT " frames",
+            transfer_status.acFramesDropped - frames_dropped_last);
+
+        GstClockTime timestamp = gst_util_uint64_scale(
+            transfer_status.acFramesProcessed + frames_dropped_last,
+            self->configured_info.fps_n,
+            self->configured_info.fps_d * GST_SECOND);
+        GstClockTime timestamp_end = gst_util_uint64_scale(
+            transfer_status.acFramesProcessed + transfer_status.acFramesDropped,
+            self->configured_info.fps_n,
+            self->configured_info.fps_d * GST_SECOND);
+
+        QueueItem item = {.type = QUEUE_ITEM_TYPE_FRAMES_DROPPED,
+                          .frames_dropped = {.driver_side = TRUE,
+                                             .timestamp_start = timestamp,
+                                             .timestamp_end = timestamp_end}};
+        gst_queue_array_push_tail_struct(self->queue, &item);
+        g_cond_signal(&self->queue_cond);
+
+        frames_dropped_last = transfer_status.acFramesDropped;
+        discont = TRUE;
+      }
+
       gst_buffer_set_size(audio_buffer, transfer.GetCapturedAudioByteCount());
       if (anc_buffer)
         gst_buffer_set_size(anc_buffer,
@@ -2600,34 +2880,7 @@ restart:
       }
 
       NTV2_RP188 time_code;
-      transfer.acTransferStatus.acFrameStamp.GetInputTimeCode(time_code,
-                                                              tc_index);
-
-      gint64 frame_time = transfer.acTransferStatus.acFrameStamp.acFrameTime;
-      gint64 now_sys = g_get_real_time();
-      GstClockTime now_gst = gst_clock_get_time(clock);
-      if (now_sys * 10 > frame_time) {
-        GstClockTime diff = now_sys * 1000 - frame_time * 100;
-        if (now_gst > diff)
-          now_gst -= diff;
-        else
-          now_gst = 0;
-      }
-
-      GstClockTime base_time =
-          gst_element_get_base_time(GST_ELEMENT_CAST(self));
-      if (now_gst > base_time)
-        now_gst -= base_time;
-      else
-        now_gst = 0;
-
-      // TODO: Drift detection and compensation
-      GST_BUFFER_PTS(video_buffer) = now_gst;
-      GST_BUFFER_DURATION(video_buffer) = gst_util_uint64_scale(
-          GST_SECOND, self->configured_info.fps_d, self->configured_info.fps_n);
-      GST_BUFFER_PTS(audio_buffer) = now_gst;
-      GST_BUFFER_DURATION(audio_buffer) = gst_util_uint64_scale(
-          GST_SECOND, self->configured_info.fps_d, self->configured_info.fps_n);
+      frame_stamp.GetInputTimeCode(time_code, tc_index);
 
       while (self->queue_num_frames >= self->queue_size) {
         guint n = gst_queue_array_get_length(self->queue);
@@ -2668,7 +2921,7 @@ restart:
 
       QueueItem item = {
           .type = QUEUE_ITEM_TYPE_FRAME,
-          .frame = {.capture_time = now_gst,
+          .frame = {.capture_time = capture_time,
                     .video_buffer = video_buffer,
                     .audio_buffer = audio_buffer,
                     .anc_buffer = anc_buffer,
@@ -2681,7 +2934,7 @@ restart:
                     .vpid = vpid_a}};
 
       GST_TRACE_OBJECT(self, "Queuing frame %" GST_TIME_FORMAT,
-                       GST_TIME_ARGS(now_gst));
+                       GST_TIME_ARGS(capture_time));
       gst_queue_array_push_tail_struct(self->queue, &item);
       self->queue_num_frames += 1;
       GST_TRACE_OBJECT(self, "%u frames queued", self->queue_num_frames);
@@ -2716,10 +2969,10 @@ restart:
     }
   }
 
-out : {
+out: {
   // Make sure to globally lock here as the routing settings and others are
   // global shared state
-  ShmMutexLocker locker;
+  GstAjaNtv2DeviceLocker locker(self->device);
 
   self->device->device->AutoCirculateStop(self->channel);
   self->device->device->UnsubscribeInputVerticalEvent(self->channel);
@@ -2737,6 +2990,7 @@ out : {
   g_mutex_unlock(&self->queue_lock);
 
   gst_clear_object(&clock);
+  gst_clear_object(&real_time_clock);
 
   GST_DEBUG_OBJECT(self, "Stopped");
 }

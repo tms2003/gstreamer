@@ -24,6 +24,7 @@
 #include "gstd3d12.h"
 #include "gstd3d12-private.h"
 #include "gstd3d11on12.h"
+#include <directx/d3dx12.h>
 #include <wrl.h>
 #include <vector>
 #include <string.h>
@@ -37,10 +38,23 @@
 #include <memory>
 #include <queue>
 #include <unordered_map>
+#include <thread>
 
-GST_DEBUG_CATEGORY_STATIC (gst_d3d12_device_debug);
 GST_DEBUG_CATEGORY_STATIC (gst_d3d12_sdk_debug);
-#define GST_CAT_DEFAULT gst_d3d12_device_debug
+
+#ifndef GST_DISABLE_GST_DEBUG
+#define GST_CAT_DEFAULT ensure_debug_category()
+static GstDebugCategory *
+ensure_debug_category (void)
+{
+  static GstDebugCategory *cat = nullptr;
+  GST_D3D12_CALL_ONCE_BEGIN {
+    cat = _gst_debug_category_new ("d3d12device", 0, "d3d12device");
+  } GST_D3D12_CALL_ONCE_END;
+
+  return cat;
+}
+#endif /* GST_DISABLE_GST_DEBUG */
 
 enum
 {
@@ -53,27 +67,14 @@ enum
   PROP_DESCRIPTION,
 };
 
-/* d3d12 devices are singtones per adapter. Keep track of live objects and
- * reuse already created object if possible */
 /* *INDENT-OFF* */
-std::mutex device_list_lock_;
-std::vector<GstD3D12Device*> live_devices_;
-
 using namespace Microsoft::WRL;
 
-struct _GstD3D12DevicePrivate
+struct DeviceInner
 {
-  ~_GstD3D12DevicePrivate ()
+  ~DeviceInner ()
   {
-    auto hr = device->GetDeviceRemovedReason ();
-    /* If device were not removed, make sure no pending command in queue */
-    if (hr == S_OK) {
-      if (direct_queue)
-        gst_d3d12_command_queue_fence_wait (direct_queue, G_MAXUINT64, nullptr);
-
-      if (copy_queue)
-        gst_d3d12_command_queue_fence_wait (copy_queue, G_MAXUINT64, nullptr);
-    }
+    Drain ();
 
     gst_clear_object (&direct_queue);
     gst_clear_object (&copy_queue);
@@ -83,6 +84,64 @@ struct _GstD3D12DevicePrivate
 
     gst_clear_object (&copy_ca_pool);
     gst_clear_object (&copy_cl_pool);
+
+    factory = nullptr;
+    adapter = nullptr;
+    d3d11on12 = nullptr;
+
+    ReportLiveObjects ();
+  }
+
+  void Drain ()
+  {
+    if (direct_queue)
+      gst_d3d12_command_queue_drain (direct_queue);
+
+    if (copy_queue)
+      gst_d3d12_command_queue_drain (copy_queue);
+  }
+
+  void ReportLiveObjects ()
+  {
+    if (!info_queue || !device)
+      return;
+
+    ComPtr <ID3D12DebugDevice> debug_dev;
+    device.As (&debug_dev);
+    if (!debug_dev)
+      return;
+
+    debug_dev->ReportLiveDeviceObjects (D3D12_RLDO_DETAIL |
+        D3D12_RLDO_IGNORE_INTERNAL);
+
+    GST_DEBUG ("Begin live object report %s", description.c_str ());
+
+    UINT64 num_msg = info_queue->GetNumStoredMessages ();
+    for (UINT64 i = 0; i < num_msg; i++) {
+      HRESULT hr;
+      SIZE_T msg_len;
+      D3D12_MESSAGE *msg;
+
+      hr = info_queue->GetMessage (i, nullptr, &msg_len);
+      if (FAILED (hr) || msg_len == 0)
+        continue;
+
+      msg = (D3D12_MESSAGE *) g_malloc0 (msg_len);
+      hr = info_queue->GetMessage (i, msg, &msg_len);
+      if (FAILED (hr) || msg_len == 0) {
+        g_free (msg);
+        continue;
+      }
+
+      gst_debug_log (gst_d3d12_sdk_debug, GST_LEVEL_INFO,
+          __FILE__, GST_FUNCTION, __LINE__, nullptr,
+          "D3D12InfoQueue: %s", msg->pDescription);
+      g_free (msg);
+    }
+
+    GST_DEBUG ("End live object report %s", description.c_str ());
+
+    info_queue->ClearStoredMessages ();
   }
 
   ComPtr<ID3D12Device> device;
@@ -105,11 +164,132 @@ struct _GstD3D12DevicePrivate
   GstD3D12CommandListPool *copy_cl_pool = nullptr;
   GstD3D12CommandAllocatorPool *copy_ca_pool = nullptr;
 
+  guint rtv_inc_size;
+
   guint adapter_index = 0;
   guint device_id = 0;
   guint vendor_id = 0;
   std::string description;
   gint64 adapter_luid = 0;
+};
+
+typedef std::shared_ptr<DeviceInner> DeviceInnerPtr;
+
+struct _GstD3D12DevicePrivate
+{
+  DeviceInnerPtr inner;
+};
+
+enum GstD3D12DeviceConstructType
+{
+  GST_D3D12_DEVICE_CONSTRUCT_FOR_INDEX,
+  GST_D3D12_DEVICE_CONSTRUCT_FOR_LUID,
+};
+
+struct GstD3D12DeviceConstructData
+{
+  union
+  {
+    guint index;
+    gint64 luid;
+  } data;
+  GstD3D12DeviceConstructType type;
+};
+
+static GstD3D12Device *
+gst_d3d12_device_new_internal (const GstD3D12DeviceConstructData * data);
+
+class DeviceCacheManager
+{
+public:
+  DeviceCacheManager (const DeviceCacheManager &) = delete;
+  DeviceCacheManager& operator= (const DeviceCacheManager &) = delete;
+  static DeviceCacheManager * GetInstance()
+  {
+    static DeviceCacheManager *inst = nullptr;
+    GST_D3D12_CALL_ONCE_BEGIN {
+      inst = new DeviceCacheManager ();
+    } GST_D3D12_CALL_ONCE_END;
+
+    return inst;
+  }
+
+  GstD3D12Device * GetDevice (const GstD3D12DeviceConstructData * data)
+  {
+    std::lock_guard <std::mutex> lk (lock_);
+    auto it = std::find_if (list_.begin (), list_.end (),
+        [&] (const auto & device) {
+          if (data->type == GST_D3D12_DEVICE_CONSTRUCT_FOR_INDEX)
+            return device->adapter_index == data->data.index;
+
+          return device->adapter_luid == data->data.luid;
+        });
+
+    if (it != list_.end ()) {
+      auto device = (GstD3D12Device *)
+          g_object_new (GST_TYPE_D3D12_DEVICE, nullptr);
+      gst_object_ref_sink (device);
+      device->priv->inner = *it;
+
+      auto name = buildObjectName ((*it)->adapter_index);
+      gst_object_set_name (GST_OBJECT (device), name.c_str ());
+
+      GST_DEBUG_OBJECT (device, "Reusing created device");
+
+      return device;
+    }
+
+    auto device = gst_d3d12_device_new_internal (data);
+    if (!device)
+      return nullptr;
+
+    auto name = buildObjectName (device->priv->inner->adapter_index);
+    gst_object_set_name (GST_OBJECT (device), name.c_str ());
+
+    GST_DEBUG_OBJECT (device, "Created new device");
+
+    list_.push_back (device->priv->inner);
+
+    return device;
+  }
+
+  void ReleaseDevice (guint64 luid)
+  {
+    std::lock_guard <std::mutex> lk (lock_);
+    for (const auto & it : list_) {
+      if (it->adapter_luid == luid) {
+        if (it.use_count () == 1) {
+          it->Drain ();
+          it->ReportLiveObjects ();
+        }
+        return;
+      }
+    }
+  }
+
+private:
+  DeviceCacheManager () {}
+  ~DeviceCacheManager () {}
+
+  std::string buildObjectName (UINT adapter_index)
+  {
+    auto name_it = name_map_.find (adapter_index);
+    UINT idx = 0;
+    if (name_it == name_map_.end ()) {
+      name_map_.insert ({adapter_index, 0});
+    } else {
+      name_it->second++;
+      idx = name_it->second;
+    }
+
+    return std::string ("d3d11device") + std::to_string (adapter_index) + "-" +
+        std::to_string (idx);
+  }
+
+private:
+  std::mutex lock_;
+  std::vector<DeviceInnerPtr> list_;
+  std::unordered_map<UINT,UINT> name_map_;
 };
 /* *INDENT-ON* */
 
@@ -219,7 +399,14 @@ gst_d3d12_device_finalize (GObject * object)
 
   GST_DEBUG_OBJECT (self, "Finalize");
 
+  guint64 luid = 0;
+  if (self->priv->inner)
+    luid = self->priv->inner->adapter_luid;
+
   delete self->priv;
+
+  auto manager = DeviceCacheManager::GetInstance ();
+  manager->ReleaseDevice (luid);
 
   G_OBJECT_CLASS (parent_class)->finalize (object);
 }
@@ -228,8 +415,8 @@ static void
 gst_d3d12_device_get_property (GObject * object, guint prop_id,
     GValue * value, GParamSpec * pspec)
 {
-  GstD3D12Device *self = GST_D3D12_DEVICE (object);
-  GstD3D12DevicePrivate *priv = self->priv;
+  auto self = GST_D3D12_DEVICE (object);
+  auto priv = self->priv->inner;
 
   switch (prop_id) {
     case PROP_ADAPTER_INDEX:
@@ -257,7 +444,7 @@ static gboolean
 check_format_support (GstD3D12Device * self, DXGI_FORMAT format,
     guint flags, D3D12_FEATURE_DATA_FORMAT_SUPPORT * support)
 {
-  ID3D12Device *device = self->priv->device.Get ();
+  auto device = self->priv->inner->device;
   HRESULT hr;
 
   support->Format = format;
@@ -283,7 +470,7 @@ check_format_support (GstD3D12Device * self, DXGI_FORMAT format,
 static void
 gst_d3d12_device_setup_format_table (GstD3D12Device * self)
 {
-  auto priv = self->priv;
+  auto priv = self->priv->inner;
 
   for (guint i = 0; i < GST_D3D12_N_FORMATS; i++) {
     const auto iter = &g_gst_d3d12_default_format_map[i];
@@ -422,48 +609,11 @@ gst_d3d12_device_setup_format_table (GstD3D12Device * self)
   }
 }
 
-static void
-gst_d3d12_device_weak_ref_notify (gpointer data, GstD3D12Device * device)
-{
-  std::lock_guard < std::mutex > lk (device_list_lock_);
-  auto it = std::find (live_devices_.begin (), live_devices_.end (), device);
-  if (it != live_devices_.end ())
-    live_devices_.erase (it);
-  else
-    GST_WARNING ("Could not find %p from list", device);
-}
-
-typedef enum
-{
-  GST_D3D12_DEVICE_CONSTRUCT_FOR_INDEX,
-  GST_D3D12_DEVICE_CONSTRUCT_FOR_LUID,
-} GstD3D12DeviceConstructType;
-
-typedef struct
-{
-  union
-  {
-    guint index;
-    gint64 luid;
-  } data;
-  GstD3D12DeviceConstructType type;
-} GstD3D12DeviceConstructData;
-
 static HRESULT
 gst_d3d12_device_find_adapter (const GstD3D12DeviceConstructData * data,
     IDXGIFactory2 * factory, guint * index, IDXGIAdapter1 ** rst)
 {
   HRESULT hr;
-  UINT factory_flags = 0;
-
-  if (gst_d3d12_device_enable_debug ())
-    factory_flags |= DXGI_CREATE_FACTORY_DEBUG;
-
-  hr = CreateDXGIFactory2 (factory_flags, IID_PPV_ARGS (&factory));
-  if (FAILED (hr)) {
-    GST_WARNING ("cannot create dxgi factory, hr: 0x%x", (guint) hr);
-    return hr;
-  }
 
   switch (data->type) {
     case GST_D3D12_DEVICE_CONSTRUCT_FOR_INDEX:{
@@ -516,11 +666,7 @@ gst_d3d12_device_new_internal (const GstD3D12DeviceConstructData * data)
   UINT factory_flags = 0;
   guint index = 0;
 
-  GST_DEBUG_CATEGORY_INIT (gst_d3d12_device_debug,
-      "d3d12device", 0, "d3d12 device object");
-
-  if (gst_d3d12_device_enable_debug ())
-    factory_flags |= DXGI_CREATE_FACTORY_DEBUG;
+  gst_d3d12_device_enable_debug ();
 
   hr = CreateDXGIFactory2 (factory_flags, IID_PPV_ARGS (&factory));
   if (FAILED (hr)) {
@@ -548,9 +694,10 @@ gst_d3d12_device_new_internal (const GstD3D12DeviceConstructData * data)
     return nullptr;
   }
 
-  GstD3D12Device *self = (GstD3D12Device *)
-      g_object_new (GST_TYPE_D3D12_DEVICE, nullptr);
-  GstD3D12DevicePrivate *priv = self->priv;
+  auto self = (GstD3D12Device *) g_object_new (GST_TYPE_D3D12_DEVICE, nullptr);
+  gst_object_ref_sink (self);
+  self->priv->inner = std::make_shared < DeviceInner > ();
+  auto priv = self->priv->inner;
 
   priv->factory = factory;
   priv->adapter = adapter;
@@ -577,39 +724,51 @@ gst_d3d12_device_new_internal (const GstD3D12DeviceConstructData * data)
     priv->info_queue = info_queue;
   }
 
-
   D3D12_COMMAND_QUEUE_DESC queue_desc = { };
   queue_desc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
   queue_desc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
 
-  priv->direct_queue = gst_d3d12_command_queue_new (self, &queue_desc, 0);
+  priv->direct_queue = gst_d3d12_command_queue_new (device.Get (),
+      &queue_desc, 0);
   if (!priv->direct_queue)
     goto error;
 
-  priv->direct_cl_pool = gst_d3d12_command_list_pool_new (self,
+  priv->direct_cl_pool = gst_d3d12_command_list_pool_new (device.Get (),
       D3D12_COMMAND_LIST_TYPE_DIRECT);
   if (!priv->direct_cl_pool)
     goto error;
 
-  priv->direct_ca_pool = gst_d3d12_command_allocator_pool_new (self,
+  priv->direct_ca_pool = gst_d3d12_command_allocator_pool_new (device.Get (),
       D3D12_COMMAND_LIST_TYPE_DIRECT);
   if (!priv->direct_ca_pool)
     goto error;
 
   queue_desc.Type = D3D12_COMMAND_LIST_TYPE_COPY;
-  priv->copy_queue = gst_d3d12_command_queue_new (self, &queue_desc, 0);
+  priv->copy_queue = gst_d3d12_command_queue_new (device.Get (),
+      &queue_desc, 0);
   if (!priv->copy_queue)
     goto error;
 
-  priv->copy_cl_pool = gst_d3d12_command_list_pool_new (self,
+  priv->copy_cl_pool = gst_d3d12_command_list_pool_new (device.Get (),
       D3D12_COMMAND_LIST_TYPE_COPY);
   if (!priv->copy_cl_pool)
     goto error;
 
-  priv->copy_ca_pool = gst_d3d12_command_allocator_pool_new (self,
+  priv->copy_ca_pool = gst_d3d12_command_allocator_pool_new (device.Get (),
       D3D12_COMMAND_LIST_TYPE_COPY);
   if (!priv->copy_ca_pool)
     goto error;
+
+  priv->rtv_inc_size =
+      device->GetDescriptorHandleIncrementSize (D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+
+  GST_OBJECT_FLAG_SET (priv->direct_queue, GST_OBJECT_FLAG_MAY_BE_LEAKED);
+  GST_OBJECT_FLAG_SET (priv->direct_cl_pool, GST_OBJECT_FLAG_MAY_BE_LEAKED);
+  GST_OBJECT_FLAG_SET (priv->direct_ca_pool, GST_OBJECT_FLAG_MAY_BE_LEAKED);
+
+  GST_OBJECT_FLAG_SET (priv->copy_queue, GST_OBJECT_FLAG_MAY_BE_LEAKED);
+  GST_OBJECT_FLAG_SET (priv->copy_cl_pool, GST_OBJECT_FLAG_MAY_BE_LEAKED);
+  GST_OBJECT_FLAG_SET (priv->copy_ca_pool, GST_OBJECT_FLAG_MAY_BE_LEAKED);
 
   return self;
 
@@ -621,72 +780,23 @@ error:
 GstD3D12Device *
 gst_d3d12_device_new (guint adapter_index)
 {
-  GstD3D12Device *self = nullptr;
-  std::lock_guard < std::mutex > lk (device_list_lock_);
+  auto manager = DeviceCacheManager::GetInstance ();
+  GstD3D12DeviceConstructData data;
+  data.data.index = adapter_index;
+  data.type = GST_D3D12_DEVICE_CONSTRUCT_FOR_INDEX;
 
-  /* *INDENT-OFF* */
-  for (auto iter: live_devices_) {
-    if (iter->priv->adapter_index == adapter_index) {
-      self = (GstD3D12Device *) gst_object_ref (iter);
-      break;
-    }
-  }
-  /* *INDENT-ON* */
-
-  if (!self) {
-    GstD3D12DeviceConstructData data;
-    data.data.index = adapter_index;
-    data.type = GST_D3D12_DEVICE_CONSTRUCT_FOR_INDEX;
-
-    self = gst_d3d12_device_new_internal (&data);
-    if (!self) {
-      GST_INFO ("Could not create device for index %d", adapter_index);
-      return nullptr;
-    }
-
-    gst_object_ref_sink (self);
-    g_object_weak_ref (G_OBJECT (self),
-        (GWeakNotify) gst_d3d12_device_weak_ref_notify, nullptr);
-    live_devices_.push_back (self);
-  }
-
-  return self;
+  return manager->GetDevice (&data);
 }
 
 GstD3D12Device *
 gst_d3d12_device_new_for_adapter_luid (gint64 adapter_luid)
 {
-  GstD3D12Device *self = nullptr;
-  std::lock_guard < std::mutex > lk (device_list_lock_);
+  auto manager = DeviceCacheManager::GetInstance ();
+  GstD3D12DeviceConstructData data;
+  data.data.luid = adapter_luid;
+  data.type = GST_D3D12_DEVICE_CONSTRUCT_FOR_LUID;
 
-  /* *INDENT-OFF* */
-  for (auto iter: live_devices_) {
-    if (iter->priv->adapter_luid == adapter_luid) {
-      self = (GstD3D12Device *) gst_object_ref (iter);
-      break;
-    }
-  }
-  /* *INDENT-ON* */
-
-  if (!self) {
-    GstD3D12DeviceConstructData data;
-    data.data.luid = adapter_luid;
-    data.type = GST_D3D12_DEVICE_CONSTRUCT_FOR_LUID;
-
-    self = gst_d3d12_device_new_internal (&data);
-    if (!self) {
-      GST_INFO ("Could not create device for LUID %" G_GINT64_FORMAT,
-          adapter_luid);
-      return nullptr;
-    }
-
-    gst_object_ref_sink (self);
-    g_object_weak_ref (G_OBJECT (self),
-        (GWeakNotify) gst_d3d12_device_weak_ref_notify, nullptr);
-    live_devices_.push_back (self);
-  }
-
-  return self;
+  return manager->GetDevice (&data);
 }
 
 ID3D12Device *
@@ -694,7 +804,7 @@ gst_d3d12_device_get_device_handle (GstD3D12Device * device)
 {
   g_return_val_if_fail (GST_IS_D3D12_DEVICE (device), nullptr);
 
-  return device->priv->device.Get ();
+  return device->priv->inner->device.Get ();
 }
 
 IDXGIAdapter1 *
@@ -702,7 +812,7 @@ gst_d3d12_device_get_adapter_handle (GstD3D12Device * device)
 {
   g_return_val_if_fail (GST_IS_D3D12_DEVICE (device), nullptr);
 
-  return device->priv->adapter.Get ();
+  return device->priv->inner->adapter.Get ();
 }
 
 IDXGIFactory2 *
@@ -710,7 +820,7 @@ gst_d3d12_device_get_factory_handle (GstD3D12Device * device)
 {
   g_return_val_if_fail (GST_IS_D3D12_DEVICE (device), nullptr);
 
-  return device->priv->factory.Get ();
+  return device->priv->inner->factory.Get ();
 }
 
 gboolean
@@ -720,7 +830,7 @@ gst_d3d12_device_get_d3d11on12_device (GstD3D12Device * device,
   g_return_val_if_fail (GST_IS_D3D12_DEVICE (device), FALSE);
   g_return_val_if_fail (d3d11on12, FALSE);
 
-  auto priv = device->priv;
+  auto priv = device->priv->inner;
 
   std::lock_guard < std::mutex > lk (priv->lock);
   if (!priv->d3d11on12) {
@@ -745,7 +855,7 @@ gst_d3d12_device_lock (GstD3D12Device * device)
 {
   g_return_if_fail (GST_IS_D3D12_DEVICE (device));
 
-  auto priv = device->priv;
+  auto priv = device->priv->inner;
   priv->extern_lock.lock ();
 }
 
@@ -754,7 +864,7 @@ gst_d3d12_device_unlock (GstD3D12Device * device)
 {
   g_return_if_fail (GST_IS_D3D12_DEVICE (device));
 
-  auto priv = device->priv;
+  auto priv = device->priv->inner;
   priv->extern_lock.unlock ();
 }
 
@@ -765,7 +875,7 @@ gst_d3d12_device_get_format (GstD3D12Device * device,
   g_return_val_if_fail (GST_IS_D3D12_DEVICE (device), FALSE);
   g_return_val_if_fail (device_format != nullptr, FALSE);
 
-  auto priv = device->priv;
+  auto priv = device->priv->inner;
   const auto & target = priv->format_table.find (format);
   if (target == priv->format_table.end ())
     return FALSE;
@@ -782,7 +892,7 @@ gst_d3d12_device_get_command_queue (GstD3D12Device * device,
 {
   g_return_val_if_fail (GST_IS_D3D12_DEVICE (device), nullptr);
 
-  auto priv = device->priv;
+  auto priv = device->priv->inner;
 
   switch (queue_type) {
     case D3D12_COMMAND_LIST_TYPE_DIRECT:
@@ -805,7 +915,7 @@ gst_d3d12_device_execute_command_lists (GstD3D12Device * device,
 {
   g_return_val_if_fail (GST_IS_D3D12_DEVICE (device), FALSE);
 
-  auto priv = device->priv;
+  auto priv = device->priv->inner;
   GstD3D12CommandQueue *queue;
 
   switch (queue_type) {
@@ -832,7 +942,7 @@ gst_d3d12_device_get_completed_value (GstD3D12Device * device,
 {
   g_return_val_if_fail (GST_IS_D3D12_DEVICE (device), G_MAXUINT64);
 
-  auto priv = device->priv;
+  auto priv = device->priv->inner;
   GstD3D12CommandQueue *queue;
 
   switch (queue_type) {
@@ -853,11 +963,12 @@ gst_d3d12_device_get_completed_value (GstD3D12Device * device,
 gboolean
 gst_d3d12_device_set_fence_notify (GstD3D12Device * device,
     D3D12_COMMAND_LIST_TYPE queue_type, guint64 fence_value,
-    gpointer fence_data, GDestroyNotify notify)
+    GstD3D12FenceData * fence_data)
 {
   g_return_val_if_fail (GST_IS_D3D12_DEVICE (device), FALSE);
+  g_return_val_if_fail (fence_data, FALSE);
 
-  auto priv = device->priv;
+  auto priv = device->priv->inner;
   GstD3D12CommandQueue *queue;
 
   switch (queue_type) {
@@ -872,7 +983,8 @@ gst_d3d12_device_set_fence_notify (GstD3D12Device * device,
       return FALSE;
   }
 
-  gst_d3d12_command_queue_set_notify (queue, fence_value, fence_data, notify);
+  gst_d3d12_command_queue_set_notify (queue, fence_value, fence_data,
+      (GDestroyNotify) gst_d3d12_fence_data_unref);
 
   return TRUE;
 }
@@ -884,7 +996,7 @@ gst_d3d12_device_fence_wait (GstD3D12Device * device,
 {
   g_return_val_if_fail (GST_IS_D3D12_DEVICE (device), FALSE);
 
-  auto priv = device->priv;
+  auto priv = device->priv->inner;
   GstD3D12CommandQueue *queue;
 
   switch (queue_type) {
@@ -915,7 +1027,7 @@ gst_d3d12_device_copy_texture_region (GstD3D12Device * device,
   g_return_val_if_fail (args, FALSE);
 
   HRESULT hr;
-  auto priv = device->priv;
+  auto priv = device->priv->inner;
   GstD3D12CommandAllocatorPool *ca_pool;
   GstD3D12CommandAllocator *gst_ca = nullptr;
   GstD3D12CommandListPool *cl_pool;
@@ -1024,10 +1136,9 @@ gst_d3d12_device_d3d12_debug (GstD3D12Device * device, const gchar * file,
 {
   g_return_if_fail (GST_IS_D3D12_DEVICE (device));
 
-  if (!device->priv->info_queue)
+  auto priv = device->priv->inner;
+  if (!priv->info_queue)
     return;
-
-  GstD3D12DevicePrivate *priv = device->priv;
 
   std::lock_guard < std::recursive_mutex > lk (priv->extern_lock);
   ID3D12InfoQueue *info_queue = priv->info_queue.Get ();
@@ -1066,4 +1177,80 @@ gst_d3d12_device_d3d12_debug (GstD3D12Device * device, const gchar * file,
   }
 
   info_queue->ClearStoredMessages ();
+}
+
+void
+gst_d3d12_device_clear_yuv_texture (GstD3D12Device * device, GstMemory * mem)
+{
+  auto priv = device->priv->inner;
+  auto dmem = GST_D3D12_MEMORY_CAST (mem);
+  ComPtr < ID3D12DescriptorHeap > heap;
+
+  auto resource = gst_d3d12_memory_get_resource_handle (dmem);
+  auto desc = resource->GetDesc ();
+
+  if (desc.Format != DXGI_FORMAT_NV12 && desc.Format != DXGI_FORMAT_P010 &&
+      desc.Format != DXGI_FORMAT_P016) {
+    return;
+  }
+
+  gst_d3d12_memory_get_render_target_view_heap (dmem, &heap);
+  if (!heap)
+    return;
+
+  D3D12_RECT rect = { };
+  if (!gst_d3d12_memory_get_plane_rectangle (dmem, 1, &rect))
+    return;
+
+  GstD3D12CommandAllocator *gst_ca = nullptr;
+  gst_d3d12_command_allocator_pool_acquire (priv->direct_ca_pool, &gst_ca);
+  if (!gst_ca)
+    return;
+
+  ComPtr < ID3D12CommandAllocator > ca;
+  gst_d3d12_command_allocator_get_handle (gst_ca, &ca);
+
+  GstD3D12CommandList *gst_cl = nullptr;
+  gst_d3d12_command_list_pool_acquire (priv->direct_cl_pool,
+      ca.Get (), &gst_cl);
+  if (!gst_cl) {
+    gst_d3d12_command_allocator_unref (gst_ca);
+    return;
+  }
+
+  ComPtr < ID3D12CommandList > cl_base;
+  ComPtr < ID3D12GraphicsCommandList > cl;
+
+  gst_d3d12_command_list_get_handle (gst_cl, &cl_base);
+  cl_base.As (&cl);
+
+  auto rtv_handle =
+      CD3DX12_CPU_DESCRIPTOR_HANDLE (heap->GetCPUDescriptorHandleForHeapStart
+      (),
+      priv->rtv_inc_size);
+
+  const FLOAT clear_color[4] = { 0.5f, 0.5f, 0.5f, 1.0f };
+  cl->ClearRenderTargetView (rtv_handle, clear_color, 1, &rect);
+
+  auto hr = cl->Close ();
+  if (!gst_d3d12_result (hr, device)) {
+    gst_clear_d3d12_command_list (&gst_cl);
+    gst_clear_d3d12_command_allocator (&gst_ca);
+    return;
+  }
+
+  ID3D12CommandList *cmd_list[] = { cl.Get () };
+  guint64 fence_val = 0;
+  hr = gst_d3d12_command_queue_execute_command_lists (priv->direct_queue,
+      1, cmd_list, &fence_val);
+  auto ret = gst_d3d12_result (hr, device);
+  gst_d3d12_command_list_unref (gst_cl);
+
+  if (ret) {
+    gst_d3d12_command_queue_set_notify (priv->direct_queue, fence_val,
+        gst_ca, (GDestroyNotify) gst_d3d12_command_allocator_unref);
+    dmem->fence_value = fence_val;
+  } else {
+    gst_d3d12_command_allocator_unref (gst_ca);
+  }
 }

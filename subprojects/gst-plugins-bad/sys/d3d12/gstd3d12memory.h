@@ -104,6 +104,9 @@ gboolean                   gst_d3d12_allocation_params_set_resource_flags (GstD3
 gboolean                   gst_d3d12_allocation_params_unset_resource_flags (GstD3D12AllocationParams * params,
                                                                              D3D12_RESOURCE_FLAGS resource_flags);
 
+gboolean                   gst_d3d12_allocation_params_set_heap_flags (GstD3D12AllocationParams * params,
+                                                                       D3D12_HEAP_FLAGS heap_flags);
+
 gboolean                   gst_d3d12_allocation_params_set_array_size (GstD3D12AllocationParams * params,
                                                                        guint size);
 
@@ -136,12 +139,26 @@ gboolean          gst_d3d12_memory_get_subresource_index (GstD3D12Memory * mem,
 
 guint             gst_d3d12_memory_get_plane_count       (GstD3D12Memory * mem);
 
+gboolean          gst_d3d12_memory_get_plane_rectangle   (GstD3D12Memory * mem,
+                                                          guint plane,
+                                                          D3D12_RECT * rect);
+
 gboolean          gst_d3d12_memory_get_shader_resource_view_heap (GstD3D12Memory * mem,
                                                                   ID3D12DescriptorHeap ** heap);
 
 gboolean          gst_d3d12_memory_get_render_target_view_heap (GstD3D12Memory * mem,
                                                                 ID3D12DescriptorHeap ** heap);
 
+gboolean          gst_d3d12_memory_get_nt_handle (GstD3D12Memory * mem,
+                                                  HANDLE * handle);
+
+void              gst_d3d12_memory_set_token_data (GstD3D12Memory * mem,
+                                                   gint64 token,
+                                                   gpointer data,
+                                                   GDestroyNotify notify);
+
+gpointer          gst_d3d12_memory_get_token_data (GstD3D12Memory * mem,
+                                                   gint64 token);
 
 struct _GstD3D12Allocator
 {
@@ -214,9 +231,6 @@ GstD3D12PoolAllocator * gst_d3d12_pool_allocator_new (GstD3D12Device * device,
 
 GstFlowReturn           gst_d3d12_pool_allocator_acquire_memory (GstD3D12PoolAllocator * allocator,
                                                                  GstMemory ** memory);
-
-gboolean                gst_d3d12_pool_allocator_get_pool_size  (GstD3D12PoolAllocator * allocator,
-                                                                 guint * max_size, guint * outstanding_size);
 
 G_END_DECLS
 

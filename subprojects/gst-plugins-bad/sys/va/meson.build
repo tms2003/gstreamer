@@ -1,10 +1,11 @@
 va_sources = [
   'plugin.c',
   'gstjpegdecoder.c',
+  'gstvaav1dec.c',
   'gstvabase.c',
   'gstvabasedec.c',
-  'gstvabasetransform.c',
   'gstvabaseenc.c',
+  'gstvabasetransform.c',
   'gstvacaps.c',
   'gstvacompositor.c',
   'gstvadecoder.c',
@@ -22,6 +23,7 @@ va_sources = [
   'gstvaprofile.c',
   'gstvavp8dec.c',
   'gstvavp9dec.c',
+  'gstvavp9enc.c',
   'gstvavpp.c',
 ]
 
@@ -70,8 +72,8 @@ if cc.get_id() == 'msvc'
   c_std_arg = ['c_std=c11']
 endif
 
-if libva_dep.version().version_compare('>= 1.8')
-  va_sources += 'gstvaav1dec.c'
+if libva_dep.version().version_compare('>= 1.15')
+  va_sources += 'gstvaav1enc.c'
 endif
 
 gstva = library('gstva',
@@ -79,7 +81,7 @@ gstva = library('gstva',
   c_args : gst_plugins_bad_args + extra_args,
   cpp_args : gst_plugins_bad_args + extra_args,
   include_directories : [configinc],
-  dependencies : [gstcodecs_dep, gstva_dep, libgudev_dep] + extra_dep,
+  dependencies : [gstcodecs_dep, gstva_dep, libgudev_dep, libm] + extra_dep,
   override_options : c_std_arg,
   install : true,
   install_dir : plugins_install_dir,

@@ -34,8 +34,9 @@
  *
  * An example player is available in gst-examples/playback/player/gst-play/.
  *
- * Internally the GstPlay makes use of the `playbin` element. `playbin3` can be
- * selected if the `GST_PLAY_USE_PLAYBIN3=1` environment variable has been set.
+ * Internally the GstPlay makes use of the `playbin3` element. The legacy
+ * `playbin2` can be selected if the `GST_PLAY_USE_PLAYBIN3=0` environment
+ * variable has been set.
  *
  * **Important note**: If your application relies on the GstBus to get
  * notifications from GstPlay, you need to add some explicit clean-up code in
@@ -980,7 +981,11 @@ on_error (GstPlay * self, GError * err, const GstStructure * details)
       g_quark_to_string (err->domain), err->code);
 
 #ifndef GST_DISABLE_GST_DEBUG
-  extra_details = gst_structure_copy (details);
+  if (details != NULL) {
+    extra_details = gst_structure_copy (details);
+  } else {
+    extra_details = gst_structure_new_empty ("error-details");
+  }
   if (gst_play_config_get_pipeline_dump_in_error_details (self->config)) {
     dot_data = gst_debug_bin_to_dot_data (GST_BIN_CAST (self->playbin),
         GST_DEBUG_GRAPH_SHOW_ALL);
@@ -2578,7 +2583,9 @@ gst_play_main (gpointer data)
   g_source_unref (source);
 
   env = g_getenv ("GST_PLAY_USE_PLAYBIN3");
-  if (env && g_str_has_prefix (env, "1"))
+  if (env && g_str_has_prefix (env, "0"))
+    self->use_playbin3 = FALSE;
+  else
     self->use_playbin3 = TRUE;
 
   if (self->use_playbin3) {
@@ -3247,7 +3254,7 @@ gst_play_set_subtitle_uri (GstPlay * self, const gchar * suburi)
  * gst_play_get_subtitle_uri:
  * @play: #GstPlay instance
  *
- * current subtitle URI
+ * Current subtitle URI
  *
  * Returns: (transfer full) (nullable): URI of the current external subtitle.
  *   g_free() after usage.
@@ -3749,7 +3756,7 @@ gst_play_set_subtitle_track_enabled (GstPlay * self, gboolean enabled)
  * @name: (nullable): visualization element obtained from
  * #gst_play_visualizations_get()
  *
- * Returns: %TRUE if the visualizations was set correctly. Otherwise,
+ * Returns: %TRUE if the visualization was set correctly. Otherwise,
  * %FALSE.
  * Since: 1.20
  */
@@ -4329,7 +4336,7 @@ gst_play_error_get_name (GstPlayError error)
  * @config: (transfer full): a #GstStructure
  *
  * Set the configuration of the play. If the play is already configured, and
- * the configuration haven't change, this function will return %TRUE. If the
+ * the configuration hasn't changed, this function will return %TRUE. If the
  * play is not in the GST_PLAY_STATE_STOPPED, this method will return %FALSE
  * and active configuration will remain.
  *
@@ -4440,8 +4447,8 @@ gst_play_config_get_user_agent (const GstStructure * config)
  * @config: a #GstPlay configuration
  * @interval: interval in ms
  *
- * set desired interval in milliseconds between two position-updated messages.
- * pass 0 to stop updating the position.
+ * Set desired interval in milliseconds between two position-updated messages.
+ * Pass 0 to stop updating the position.
  * Since: 1.20
  */
 void
@@ -4575,7 +4582,7 @@ gst_play_config_get_pipeline_dump_in_error_details (const GstStructure * config)
  * @config: (allow-none): Additional configuration
  *
  * Get a snapshot of the currently selected video stream, if any. The format can be
- * selected with @format and optional configuration is possible with @config
+ * selected with @format and optional configuration is possible with @config.
  * Currently supported settings are:
  * - width, height of type G_TYPE_INT
  * - pixel-aspect-ratio of type GST_TYPE_FRACTION
@@ -4669,7 +4676,7 @@ gst_play_get_video_snapshot (GstPlay * self,
  * gst_play_is_play_message:
  * @msg: A #GstMessage
  *
- * Returns: A #gboolean indicating wheter the passes message represents a #GstPlay message or not.
+ * Returns: A #gboolean indicating whether the passed message represents a #GstPlay message or not.
  *
  * Since: 1.20
  */

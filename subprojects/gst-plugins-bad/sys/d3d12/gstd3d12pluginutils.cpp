@@ -23,6 +23,13 @@
 
 #include "gstd3d12pluginutils.h"
 
+#define _XM_NO_INTRINSICS_
+#include <DirectXMath.h>
+
+/* *INDENT-OFF* */
+using namespace DirectX;
+/* *INDENT-ON* */
+
 GType
 gst_d3d12_sampling_method_get_type (void)
 {
@@ -70,6 +77,25 @@ gst_d3d12_sampling_method_to_native (GstD3D12SamplingMethod method)
   return D3D12_FILTER_MIN_MAG_MIP_POINT;
 }
 
+GType
+gst_d3d12_msaa_mode_get_type (void)
+{
+  static GType type = 0;
+  static const GEnumValue msaa_mode[] = {
+    {GST_D3D12_MSAA_DISABLED, "Disabled", "disabled"},
+    {GST_D3D12_MSAA_2X, "2x MSAA", "2x"},
+    {GST_D3D12_MSAA_4X, "4x MSAA", "4x"},
+    {GST_D3D12_MSAA_8X, "8x MSAA", "8x"},
+    {0, nullptr, nullptr},
+  };
+
+  GST_D3D12_CALL_ONCE_BEGIN {
+    type = g_enum_register_static ("GstD3D12MSAAMode", msaa_mode);
+  } GST_D3D12_CALL_ONCE_END;
+
+  return type;
+}
+
 void
 gst_d3d12_buffer_after_write (GstBuffer * buffer, guint64 fence_value)
 {
@@ -82,4 +108,21 @@ gst_d3d12_buffer_after_write (GstBuffer * buffer, guint64 fence_value)
     GST_MINI_OBJECT_FLAG_SET (dmem, GST_D3D12_MEMORY_TRANSFER_NEED_DOWNLOAD);
     GST_MINI_OBJECT_FLAG_UNSET (dmem, GST_D3D12_MEMORY_TRANSFER_NEED_UPLOAD);
   }
+}
+
+gboolean
+gst_d3d12_need_transform (gfloat rotation_x, gfloat rotation_y,
+    gfloat rotation_z, gfloat scale_x, gfloat scale_y)
+{
+  const gfloat min_diff = 0.00001f;
+
+  if (!XMScalarNearEqual (rotation_x, 0.0f, min_diff) ||
+      !XMScalarNearEqual (rotation_y, 0.0f, min_diff) ||
+      !XMScalarNearEqual (rotation_z, 0.0f, min_diff) ||
+      !XMScalarNearEqual (scale_x, 1.0f, min_diff) ||
+      !XMScalarNearEqual (scale_y, 1.0f, min_diff)) {
+    return TRUE;
+  }
+
+  return FALSE;
 }

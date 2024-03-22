@@ -301,17 +301,15 @@ gst_msdkdec_set_context (GstElement * element, GstContext * context)
     gst_object_unref (msdk_context);
   } else
 #ifndef _WIN32
-    if (gst_msdk_context_from_external_va_display (context,
-          thiz->hardware, 0 /* GST_MSDK_JOB_DECODER will be set later */ ,
-          &msdk_context)) {
+  if (gst_msdk_context_from_external_va_display (context,
+          thiz->hardware, GST_MSDK_JOB_DECODER, &msdk_context)) {
     gst_object_replace ((GstObject **) & thiz->context,
         (GstObject *) msdk_context);
     gst_object_unref (msdk_context);
   }
 #else
-    if (gst_msdk_context_from_external_d3d11_device (context,
-          thiz->hardware, 0 /* GST_MSDK_JOB_DECODER will be set later */ ,
-          &msdk_context)) {
+  if (gst_msdk_context_from_external_d3d11_device (context,
+          thiz->hardware, GST_MSDK_JOB_DECODER, &msdk_context)) {
     gst_object_replace ((GstObject **) & thiz->context,
         (GstObject *) msdk_context);
     gst_object_unref (msdk_context);
@@ -334,9 +332,6 @@ gst_msdkdec_init_decoder (GstMsdkDec * thiz)
   mfxExtDecVideoProcessing ext_dec_video_proc;
 #endif
 
-  GstVideoCodecState *output_state =
-      gst_video_decoder_get_output_state (GST_VIDEO_DECODER (thiz));
-
   if (thiz->initialized)
     return TRUE;
 
@@ -350,7 +345,7 @@ gst_msdkdec_init_decoder (GstMsdkDec * thiz)
     return FALSE;
   }
   info = &thiz->input_state->info;
-  output_info = &output_state->info;
+  output_info = &thiz->output_state->info;
 
   GST_OBJECT_LOCK (thiz);
 
@@ -536,6 +531,7 @@ pad_accept_memory (GstMsdkDec * thiz, const gchar * mem_type, GstCaps ** filter)
           gst_video_dma_drm_fourcc_to_string (fourcc, thiz->modifier);
       gst_msdkcaps_set_strings (caps, mem_type, "drm-format", drm_str);
       gst_caps_set_simple (caps, "format", G_TYPE_STRING, "DMA_DRM", NULL);
+      g_free (drm_str);
     }
   }
 #endif
@@ -546,11 +542,13 @@ pad_accept_memory (GstMsdkDec * thiz, const gchar * mem_type, GstCaps ** filter)
     goto done;
 
   if (gst_msdkcaps_has_feature (out_caps, mem_type)) {
-    *filter = caps;
+    gst_caps_replace (filter, caps);
     ret = TRUE;
   }
 
 done:
+  if (caps)
+    gst_caps_unref (caps);
   if (out_caps)
     gst_caps_unref (out_caps);
   return ret;
@@ -598,6 +596,7 @@ gst_msdkdec_fixate_format (GstMsdkDec * thiz, GstCaps * caps,
       gchar *drm_str =
           gst_video_dma_drm_fourcc_to_string (fourcc, thiz->modifier);
       g_value_set_string (&gfmt, drm_str);
+      g_free (drm_str);
       if (!gst_value_can_intersect (&gfmt, drm_fmts))
         goto failed;
       gst_structure_set_value (s, "drm-format", &gfmt);
@@ -623,7 +622,6 @@ failed:
 static gboolean
 gst_msdkdec_set_src_caps (GstMsdkDec * thiz, gboolean need_allocation)
 {
-  GstVideoCodecState *output_state;
   GstVideoInfo vinfo;
   GstVideoAlignment align;
   GstCaps *allocation_caps = NULL;
@@ -656,17 +654,13 @@ gst_msdkdec_set_src_caps (GstMsdkDec * thiz, gboolean need_allocation)
     GST_WARNING_OBJECT (thiz, "Failed to find a valid video format");
     return FALSE;
   }
-
-  src_caps = gst_pad_query_caps (GST_VIDEO_DECODER (thiz)->srcpad, NULL);
-  temp_caps = gst_caps_make_writable (src_caps);
-
-
 #ifndef _WIN32
   /* Get possible modifier before negotiation really happens */
   GstVaDisplay *display =
       (GstVaDisplay *) gst_msdk_context_get_va_display (thiz->context);
   thiz->modifier = gst_va_dmabuf_get_modifier_for_format (display, format,
       VA_SURFACE_ATTRIB_USAGE_HINT_DECODER);
+  gst_object_unref (display);
 #endif
 
 #if (MFX_VERSION >= 1022)
@@ -680,6 +674,9 @@ gst_msdkdec_set_src_caps (GstMsdkDec * thiz, gboolean need_allocation)
    * and let SFC work. */
   if (thiz->param.mfx.CodecId == MFX_CODEC_AVC ||
       thiz->param.mfx.CodecId == MFX_CODEC_HEVC) {
+    temp_caps = gst_pad_query_caps (GST_VIDEO_DECODER (thiz)->srcpad, NULL);
+    temp_caps = gst_caps_make_writable (temp_caps);
+
     if (!gst_msdkdec_fixate_format (thiz, temp_caps, format)) {
       GST_ERROR_OBJECT (thiz, "Format is not negotiable");
       gst_caps_unref (temp_caps);
@@ -694,14 +691,20 @@ gst_msdkdec_set_src_caps (GstMsdkDec * thiz, gboolean need_allocation)
     gst_caps_set_value (temp_caps, "width", &v_width);
     gst_caps_set_value (temp_caps, "height", &v_height);
 
-    if (gst_caps_is_empty (gst_pad_peer_query_caps (GST_VIDEO_DECODER
-                (thiz)->srcpad, temp_caps))) {
+    g_value_unset (&v_width);
+    g_value_unset (&v_height);
+
+    src_caps = gst_pad_peer_query_caps (GST_VIDEO_DECODER
+        (thiz)->srcpad, temp_caps);
+    gst_caps_unref (temp_caps);
+
+    if (gst_caps_is_empty (src_caps)) {
       if (!gst_util_fraction_multiply (width, height,
               GST_VIDEO_INFO_PAR_N (&thiz->input_state->info),
               GST_VIDEO_INFO_PAR_D (&thiz->input_state->info),
               &dar_n, &dar_d)) {
         GST_ERROR_OBJECT (thiz, "Error to calculate the output scaled size");
-        gst_caps_unref (temp_caps);
+        gst_caps_unref (src_caps);
         return FALSE;
       }
 
@@ -753,14 +756,15 @@ gst_msdkdec_set_src_caps (GstMsdkDec * thiz, gboolean need_allocation)
       }
       gst_caps_unref (allowed_caps);
     }
+    gst_caps_unref (src_caps);
   }
 #endif
-  gst_caps_unref (temp_caps);
 
-  output_state =
+  thiz->output_state =
       gst_video_decoder_set_output_state (GST_VIDEO_DECODER (thiz),
       format, width, height, thiz->input_state);
-  if (!output_state)
+
+  if (!thiz->output_state)
     return FALSE;
 
   /* Find allocation width and height */
@@ -773,7 +777,7 @@ gst_msdkdec_set_src_caps (GstMsdkDec * thiz, gboolean need_allocation)
 
   /* Ensure output_state->caps and info have same width and height
    * Also, mandate 32 bit alignment */
-  vinfo = output_state->info;
+  vinfo = thiz->output_state->info;
   if (width == out_width || height == out_height)
     gst_msdk_set_video_alignment (&vinfo, 0, 0, &align);
   else
@@ -794,25 +798,25 @@ gst_msdkdec_set_src_caps (GstMsdkDec * thiz, gboolean need_allocation)
     GST_INFO_OBJECT (thiz, "Decoder src pad accepts D3D11Memory caps");
   }
 #endif
-  output_state->caps = out_caps;
+  thiz->output_state->caps = out_caps;
 
   if (need_allocation) {
     /* Find allocation width and height */
     width =
         GST_ROUND_UP_16 (thiz->param.mfx.FrameInfo.Width ? thiz->param.mfx.
-        FrameInfo.Width : GST_VIDEO_INFO_WIDTH (&output_state->info));
+        FrameInfo.Width : GST_VIDEO_INFO_WIDTH (&thiz->output_state->info));
     height =
         GST_ROUND_UP_32 (thiz->param.mfx.FrameInfo.Height ? thiz->param.mfx.
-        FrameInfo.Height : GST_VIDEO_INFO_HEIGHT (&output_state->info));
+        FrameInfo.Height : GST_VIDEO_INFO_HEIGHT (&thiz->output_state->info));
 
     /* set allocation width and height in allocation_caps,
      * which may or may not be similar to the output_state caps */
-    allocation_caps = gst_caps_copy (output_state->caps);
+    allocation_caps = gst_caps_copy (thiz->output_state->caps);
     gst_caps_set_simple (allocation_caps, "width", G_TYPE_INT, width, "height",
         G_TYPE_INT, height, NULL);
     GST_INFO_OBJECT (thiz, "new alloc caps = %" GST_PTR_FORMAT,
         allocation_caps);
-    gst_caps_replace (&output_state->allocation_caps, allocation_caps);
+    gst_caps_replace (&thiz->output_state->allocation_caps, allocation_caps);
     gst_caps_unref (allocation_caps);
   } else {
     /* We keep the allocation parameters as it is to avoid pool re-negotiation.
@@ -820,7 +824,6 @@ gst_msdkdec_set_src_caps (GstMsdkDec * thiz, gboolean need_allocation)
      * reset if the new video frame resolution is lower than the
      * already configured one */
   }
-  gst_video_codec_state_unref (output_state);
 
   return TRUE;
 
@@ -920,10 +923,8 @@ _copy_to_sys_mem (GstMsdkDec * thiz, GstMsdkSurface * surface,
   GstVideoFrame dst_frame;
   GstVideoInfo *src_info;
   GstVideoInfo dst_info;
-  GstVideoCodecState *output_state =
-      gst_video_decoder_get_output_state (GST_VIDEO_DECODER (thiz));
 
-  src_info = &output_state->info;
+  src_info = &thiz->output_state->info;
   gst_video_info_set_format (&dst_info, GST_VIDEO_INFO_FORMAT (src_info),
       GST_VIDEO_INFO_WIDTH (src_info), GST_VIDEO_INFO_HEIGHT (src_info));
 
@@ -960,7 +961,6 @@ _copy_to_sys_mem (GstMsdkDec * thiz, GstMsdkSurface * surface,
   frame->output_buffer = buffer;
   gst_video_frame_unmap (&src_frame);
   gst_video_frame_unmap (&dst_frame);
-  gst_video_codec_state_unref (output_state);
 
   return TRUE;
 
@@ -970,7 +970,6 @@ error:
   gst_object_unref (thiz->other_pool);
 
 error_active:
-  gst_video_codec_state_unref (output_state);
   return FALSE;
 }
 
@@ -1003,22 +1002,20 @@ gst_msdkdec_finish_task (GstMsdkDec * thiz, MsdkDecTask * task)
     pts = surface->surface->Data.TimeStamp;
 
     if (thiz->param.mfx.CodecId == MFX_CODEC_VP9) {
-      GstVideoCodecState *output_state =
-          gst_video_decoder_get_output_state (GST_VIDEO_DECODER (thiz));
       /* detect whether the resolution change and negotiate with downstream if so */
       if ((surface->surface->Info.CropW && surface->surface->Info.CropH)
-          && ((output_state->info.width != surface->surface->Info.CropW)
-              || (output_state->info.height != surface->surface->Info.CropH))) {
-        output_state->info.width = surface->surface->Info.CropW;
-        output_state->info.height = surface->surface->Info.CropH;
-        output_state->caps = gst_video_info_to_caps (&output_state->info);
+          && ((thiz->output_state->info.width != surface->surface->Info.CropW)
+              || (thiz->output_state->info.height !=
+                  surface->surface->Info.CropH))) {
+        thiz->output_state->info.width = surface->surface->Info.CropW;
+        thiz->output_state->info.height = surface->surface->Info.CropH;
+        thiz->output_state->caps =
+            gst_video_info_to_caps (&thiz->output_state->info);
         if (!gst_video_decoder_negotiate (GST_VIDEO_DECODER (thiz))) {
           GST_ERROR_OBJECT (thiz, "Failed to negotiate");
-          gst_video_codec_state_unref (output_state);
           return GST_FLOW_NOT_NEGOTIATED;
         }
       }
-      gst_video_codec_state_unref (output_state);
     }
   }
 
@@ -1165,6 +1162,7 @@ gst_msdkdec_stop (GstVideoDecoder * decoder)
     gst_video_codec_state_unref (thiz->input_state);
     thiz->input_state = NULL;
   }
+  g_clear_pointer (&thiz->output_state, gst_video_codec_state_unref);
   if (thiz->pool) {
     gst_object_unref (thiz->pool);
     thiz->pool = NULL;
@@ -1173,6 +1171,8 @@ gst_msdkdec_stop (GstVideoDecoder * decoder)
     gst_object_unref (thiz->other_pool);
     thiz->other_pool = NULL;
   }
+  gst_object_replace ((GstObject **) & thiz->alloc_pool, NULL);
+
   gst_video_info_init (&thiz->non_msdk_pool_info);
 
   gst_msdkdec_close_decoder (thiz, TRUE);
@@ -1511,12 +1511,10 @@ gst_msdkdec_handle_frame (GstVideoDecoder * decoder, GstVideoCodecFrame * frame)
     if (!thiz->initialized)
       hard_reset = TRUE;
     else {
-      GstVideoCodecState *output_state =
-          gst_video_decoder_get_output_state (GST_VIDEO_DECODER (thiz));
-      if (output_state) {
-        if (output_state->allocation_caps) {
-          if (!gst_msdkcaps_video_info_from_caps (output_state->allocation_caps,
-                  &alloc_info, NULL)) {
+      if (thiz->output_state) {
+        if (thiz->output_state->allocation_caps) {
+          if (!gst_msdkcaps_video_info_from_caps
+              (thiz->output_state->allocation_caps, &alloc_info, NULL)) {
             GST_ERROR_OBJECT (thiz, "Failed to get video info from caps");
             flow = GST_FLOW_ERROR;
             goto error;
@@ -1529,7 +1527,6 @@ gst_msdkdec_handle_frame (GstVideoDecoder * decoder, GstVideoCodecFrame * frame)
               GST_VIDEO_INFO_HEIGHT (&alloc_info))
             hard_reset = TRUE;
         }
-        gst_video_codec_state_unref (output_state);
       }
 
     }
@@ -1757,6 +1754,8 @@ gst_msdk_create_va_pool (GstMsdkDec * thiz, GstVideoInfo * info,
     allocator = gst_va_allocator_new (display, formats);
   }
 
+  gst_object_unref (display);
+
   if (!allocator) {
     GST_ERROR_OBJECT (thiz, "Failed to create allocator");
     if (formats)
@@ -1851,6 +1850,8 @@ gst_msdkdec_create_buffer_pool (GstMsdkDec * thiz, GstVideoInfo * info,
   gst_buffer_pool_config_add_option (config,
       GST_BUFFER_POOL_OPTION_VIDEO_ALIGNMENT);
   gst_buffer_pool_config_set_video_alignment (config, &align);
+
+  gst_caps_unref (caps);
 
   if (!gst_buffer_pool_set_config (pool, config))
     goto error_pool_config;
@@ -1974,13 +1975,10 @@ gst_msdkdec_decide_allocation (GstVideoDecoder * decoder, GstQuery * query)
   /* Decoder always use its own pool. So we create a pool if msdk APIs
    * previously requested for allocation (do_realloc = TRUE) */
   if (thiz->do_realloc || !thiz->pool) {
-    GstVideoCodecState *output_state =
-        gst_video_decoder_get_output_state (GST_VIDEO_DECODER (thiz));
     gst_clear_object (&thiz->pool);
     GST_INFO_OBJECT (decoder, "create new MSDK bufferpool");
-    thiz->pool =
-        gst_msdkdec_create_buffer_pool (thiz, &output_state->info, min_buffers);
-    gst_video_codec_state_unref (output_state);
+    thiz->pool = gst_msdkdec_create_buffer_pool
+        (thiz, &thiz->output_state->info, min_buffers);
     if (!thiz->pool) {
       GST_ERROR_OBJECT (decoder, "failed to create new pool");
       goto failed_to_create_pool;
@@ -2022,8 +2020,6 @@ gst_msdkdec_decide_allocation (GstVideoDecoder * decoder, GstQuery * query)
      * or downstream pool is va/d3d pool,we will use downstream pool
      * and keep decoder's own pool as side-pool.
      */
-    GstVideoCodecState *output_state = NULL;
-
     GST_INFO_OBJECT (decoder, "Keep MSDK bufferpool as a side-pool");
 
     /* Update params to downstream's pool */
@@ -2035,14 +2031,10 @@ gst_msdkdec_decide_allocation (GstVideoDecoder * decoder, GstQuery * query)
     thiz->non_msdk_pool_info = vinfo;
 
     /* update width and height with actual negotiated values */
-    output_state =
-        gst_video_decoder_get_output_state (GST_VIDEO_DECODER (thiz));
     GST_VIDEO_INFO_WIDTH (&thiz->non_msdk_pool_info) =
-        GST_VIDEO_INFO_WIDTH (&output_state->info);
+        GST_VIDEO_INFO_WIDTH (&thiz->output_state->info);
     GST_VIDEO_INFO_HEIGHT (&thiz->non_msdk_pool_info) =
-        GST_VIDEO_INFO_HEIGHT (&output_state->info);
-
-    gst_video_codec_state_unref (output_state);
+        GST_VIDEO_INFO_HEIGHT (&thiz->output_state->info);
   }
 
   gst_msdk_context_set_alloc_pool (thiz->context, pool);
@@ -2065,35 +2057,29 @@ gst_msdkdec_decide_allocation (GstVideoDecoder * decoder, GstQuery * query)
      * (3) negotiated caps is raw.
      */
     thiz->do_copy = TRUE;
-    GstVideoCodecState *output_state =
-        gst_video_decoder_get_output_state (GST_VIDEO_DECODER (thiz));
     thiz->other_pool =
-        gst_msdkdec_create_buffer_pool (thiz, &output_state->info, min_buffers);
-    gst_video_codec_state_unref (output_state);
+        gst_msdkdec_create_buffer_pool (thiz, &thiz->output_state->info,
+        min_buffers);
   }
 
   gst_query_set_nth_allocation_pool (query, 0, pool, size, min_buffers,
       max_buffers);
 
-  gst_caps_unref (pool_caps);
   gst_object_unref (pool);
 
   return TRUE;
 
 failed_to_parse_caps:
   GST_ERROR_OBJECT (decoder, "failed to set buffer pool config");
-  gst_caps_unref (pool_caps);
   return FALSE;
 
 failed_to_create_pool:
   GST_ERROR_OBJECT (decoder, "failed to set buffer pool config");
-  gst_caps_unref (pool_caps);
   gst_object_unref (pool);
   return FALSE;
 
 error_set_config:
   GST_ERROR_OBJECT (decoder, "failed to set buffer pool config");
-  gst_caps_unref (pool_caps);
   gst_object_unref (pool);
   return FALSE;
 }
@@ -2431,6 +2417,7 @@ gst_msdkdec_init (GstMsdkDec * thiz)
 #endif
   thiz->adapter = gst_adapter_new ();
   thiz->input_state = NULL;
+  thiz->output_state = NULL;
   thiz->pool = NULL;
   thiz->context = NULL;
 }

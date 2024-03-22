@@ -150,7 +150,7 @@ enum
   PROP_MAX_DISPLAY_DELAY,
 };
 
-#define DEFAULT_NUM_OUTPUT_SURFACES 0
+#define DEFAULT_NUM_OUTPUT_SURFACES 1
 #define DEFAULT_MAX_DISPLAY_DELAY -1
 
 static GTypeClass *parent_class = nullptr;
@@ -215,7 +215,7 @@ gst_nv_h264_dec_class_init (GstNvH264DecClass * klass,
   object_class->get_property = gst_nv_h264_dec_get_property;
 
   /**
-   * GstNvH264SLDec:cuda-device-id:
+   * GstNvH264Dec:cuda-device-id:
    *
    * Assigned CUDA device id
    *
@@ -227,24 +227,25 @@ gst_nv_h264_dec_class_init (GstNvH264DecClass * klass,
           (GParamFlags) (G_PARAM_READABLE | G_PARAM_STATIC_STRINGS)));
 
   /**
-   * GstNvH264SLDec:num-output-surfaces:
+   * GstNvH264Dec:num-output-surfaces:
    *
-   * The number of output surfaces (0 = auto). This property will be used to
-   * calculate the CUVIDDECODECREATEINFO.ulNumOutputSurfaces parameter
-   * in case of CUDA output mode
+   * The number of output surfaces (0 = auto, 1 = always copy).
+   * This property will be used to calculate
+   * the CUVIDDECODECREATEINFO.ulNumOutputSurfaces parameter in case of
+   * CUDA output mode.
    *
    * Since: 1.24
    */
   g_object_class_install_property (object_class, PROP_NUM_OUTPUT_SURFACES,
       g_param_spec_uint ("num-output-surfaces", "Num Output Surfaces",
           "Maximum number of output surfaces simultaneously mapped in CUDA "
-          "output mode (0 = auto)",
+          "output mode (0 = auto, 1 = always copy)",
           0, 64, DEFAULT_NUM_OUTPUT_SURFACES,
           (GParamFlags) (GST_PARAM_MUTABLE_READY | G_PARAM_READWRITE |
               G_PARAM_STATIC_STRINGS)));
 
   /**
-   * GstNvH264SLDec:init-max-width:
+   * GstNvH264Dec:init-max-width:
    *
    * Initial CUVIDDECODECREATEINFO.ulMaxWidth value
    *
@@ -260,7 +261,7 @@ gst_nv_h264_dec_class_init (GstNvH264DecClass * klass,
               G_PARAM_STATIC_STRINGS)));
 
   /**
-   * GstNvH264SLDec:init-max-height:
+   * GstNvH264Dec:init-max-height:
    *
    * Initial CUVIDDECODECREATEINFO.ulMaxHeight value
    *

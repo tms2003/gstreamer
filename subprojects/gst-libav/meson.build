@@ -1,6 +1,6 @@
 project('gst-libav', 'c',
-  version : '1.23.0.1',
-  meson_version : '>= 0.62',
+  version : '1.25.0.1',
+  meson_version : '>= 1.1',
   default_options : [ 'warning_level=1',
                       'buildtype=debugoptimized' ])
 
@@ -133,6 +133,10 @@ if cc.get_id() == 'msvc'
       '/we4053', # one void operand for '?:'
       '/we4062', # enumerator 'identifier' in switch of enum 'enumeration' is not handled
       '/we4098', # 'function' : void function returning a value
+      '/we4101', # 'identifier' : unreferenced local variable
+      '/we4189', # 'identifier' : local variable is initialized but not referenced
+      '/we4996', # 'identifier': was declared deprecated
+      '-D_CRT_SECURE_NO_WARNINGS', #  error C4996: 'identifier': This function or variable may be unsafe. Consider using identifier_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
     ])
   endif
   add_project_arguments(msvc_args, language: ['c', 'cpp'])
@@ -242,7 +246,7 @@ endif
 
 configure_file(output: 'config.h', configuration: cdata)
 
-meson.add_dist_script('scripts/gen-changelog.py', meson.project_name(), '1.20.0', meson.project_version())
+meson.add_dist_script('scripts/gen-changelog.py', meson.project_name(), '1.22.0', meson.project_version())
 
 gst_plugins = []
 foreach plugin: plugins

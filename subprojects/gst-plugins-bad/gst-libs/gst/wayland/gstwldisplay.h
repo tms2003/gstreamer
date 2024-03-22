@@ -53,6 +53,13 @@ GST_WL_API
 void gst_wl_display_unregister_buffer (GstWlDisplay * self, gpointer gstmem);
 
 GST_WL_API
+struct wl_callback * gst_wl_display_sync(GstWlDisplay * self, const struct wl_callback_listener *listener,
+	gpointer data);
+
+GST_WL_API
+void gst_wl_display_callback_destroy(GstWlDisplay * self, struct wl_callback ** callback);
+
+GST_WL_API
 gpointer gst_wl_display_lookup_buffer (GstWlDisplay * self, gpointer gstmem);
 
 GST_WL_API
@@ -98,6 +105,9 @@ GArray *gst_wl_display_get_dmabuf_modifiers (GstWlDisplay * self);
 
 GST_WL_API
 struct zwp_linux_dmabuf_v1 *gst_wl_display_get_dmabuf_v1 (GstWlDisplay * self);
+
+GST_WL_API
+struct wp_single_pixel_buffer_manager_v1 * gst_wl_display_get_single_pixel_buffer_manager_v1 (GstWlDisplay * self);
 
 GST_WL_API
 gboolean gst_wl_display_has_own_display (GstWlDisplay * self);

@@ -474,6 +474,8 @@ static GstFlowReturn gst_rtspsrc_push_backchannel_buffer (GstRTSPSrc * src,
 static GstFlowReturn gst_rtspsrc_push_backchannel_sample (GstRTSPSrc * src,
     guint id, GstSample * sample);
 
+static void gst_rtspsrc_reset_flows (GstRTSPSrc * src);
+
 typedef struct
 {
   guint8 pt;
@@ -508,7 +510,7 @@ static guint gst_rtspsrc_signals[LAST_SIGNAL] = { 0 };
 #define gst_rtspsrc_parent_class parent_class
 G_DEFINE_TYPE_WITH_CODE (GstRTSPSrc, gst_rtspsrc, GST_TYPE_BIN,
     G_IMPLEMENT_INTERFACE (GST_TYPE_URI_HANDLER, gst_rtspsrc_uri_handler_init));
-GST_ELEMENT_REGISTER_DEFINE_WITH_CODE (rtspsrc, "rtspsrc", GST_RANK_NONE,
+GST_ELEMENT_REGISTER_DEFINE_WITH_CODE (rtspsrc, "rtspsrc", GST_RANK_PRIMARY,
     GST_TYPE_RTSPSRC, rtsp_element_init (plugin));
 
 #ifndef GST_DISABLE_GST_DEBUG
@@ -1256,7 +1258,7 @@ gst_rtspsrc_class_init (GstRTSPSrcClass * klass)
    * @sample: RTP sample to send back
    *
    * Deprecated: 1.22: Use action signal GstRTSPSrc::push-backchannel-sample instead.
-   * IMPORTANT: Please note that this signal decrements the reference count 
+   * IMPORTANT: Please note that this signal decrements the reference count
    *            of sample internally! So it cannot be used from other
    *            language bindings in general.
    *
@@ -1277,9 +1279,9 @@ gst_rtspsrc_class_init (GstRTSPSrcClass * klass)
    */
   gst_rtspsrc_signals[SIGNAL_PUSH_BACKCHANNEL_SAMPLE] =
       g_signal_new ("push-backchannel-sample", G_TYPE_FROM_CLASS (klass),
-      G_SIGNAL_RUN_LAST | G_SIGNAL_ACTION | G_SIGNAL_DEPRECATED,
-      G_STRUCT_OFFSET (GstRTSPSrcClass, push_backchannel_sample), NULL, NULL,
-      NULL, GST_TYPE_FLOW_RETURN, 2, G_TYPE_UINT, GST_TYPE_SAMPLE);
+      G_SIGNAL_RUN_LAST | G_SIGNAL_ACTION, G_STRUCT_OFFSET (GstRTSPSrcClass,
+          push_backchannel_sample), NULL, NULL, NULL,
+      GST_TYPE_FLOW_RETURN, 2, G_TYPE_UINT, GST_TYPE_SAMPLE);
 
   /**
    * GstRTSPSrc::get-parameter:
@@ -2852,6 +2854,7 @@ gst_rtspsrc_flush (GstRTSPSrc * src, gboolean flush, gboolean playing)
       state = GST_STATE_PAUSED;
   }
   gst_rtspsrc_push_event (src, event);
+  gst_rtspsrc_reset_flows (src);
   gst_rtspsrc_loop_send_cmd (src, cmd, CMD_LOOP);
   gst_rtspsrc_set_state (src, state);
 }
@@ -4401,7 +4404,13 @@ gst_rtspsrc_stream_configure_tcp (GstRTSPSrc * src, GstRTSPStream * stream,
     /* create a new pad we will use to stream to */
     name = g_strdup_printf ("stream_%u", stream->id);
     template = gst_static_pad_template_get (&rtptemplate);
-    stream->channelpad[0] = gst_pad_new_from_template (template, name);
+    pad0 = gst_pad_new_from_template (template, name);
+    stream->channelpad[0] = pad0;
+
+    gst_pad_set_event_function (pad0, gst_rtspsrc_handle_internal_src_event);
+    gst_pad_set_query_function (pad0, gst_rtspsrc_handle_internal_src_query);
+    gst_pad_set_element_private (pad0, src);
+
     gst_object_unref (template);
     g_free (name);
 
@@ -4776,6 +4785,9 @@ gst_rtspsrc_stream_configure_udp_sinks (GstRTSPSrc * src,
     /* no sync or async state changes needed */
     g_object_set (G_OBJECT (stream->udpsink[0]), "auto-multicast", FALSE,
         "loop", FALSE, "sync", FALSE, "async", FALSE, NULL);
+    if (src->multi_iface != NULL)
+      g_object_set (G_OBJECT (stream->udpsink[0]), "multicast-iface",
+          src->multi_iface, NULL);
     if (ttl > 0)
       g_object_set (G_OBJECT (stream->udpsink[0]), "ttl", ttl, NULL);
 
@@ -4839,8 +4851,11 @@ gst_rtspsrc_stream_configure_udp_sinks (GstRTSPSrc * src,
     /* no sync or async state changes needed */
     g_object_set (G_OBJECT (stream->udpsink[1]), "auto-multicast", FALSE,
         "loop", FALSE, "sync", FALSE, "async", FALSE, NULL);
+    if (src->multi_iface != NULL)
+      g_object_set (G_OBJECT (stream->udpsink[1]), "multicast-iface",
+          src->multi_iface, NULL);
     if (ttl > 0)
-      g_object_set (G_OBJECT (stream->udpsink[0]), "ttl", ttl, NULL);
+      g_object_set (G_OBJECT (stream->udpsink[1]), "ttl", ttl, NULL);
 
     if (stream->udpsrc[1]) {
       /* configure socket, we give it the same UDP socket as the udpsrc for RTCP
@@ -5223,6 +5238,15 @@ done:
   return ret;
 }
 
+static void
+gst_rtspsrc_reset_flows (GstRTSPSrc * src)
+{
+  for (GList * streams = src->streams; streams; streams = g_list_next (streams)) {
+    GstRTSPStream *ostream = (GstRTSPStream *) streams->data;
+    ostream->last_ret = GST_FLOW_OK;
+  }
+}
+
 static gboolean
 gst_rtspsrc_stream_push_event (GstRTSPSrc * src, GstRTSPStream * stream,
     GstEvent * event)
@@ -5345,6 +5369,8 @@ gst_rtsp_conninfo_connect (GstRTSPSrc * src, GstRTSPConnInfo * info,
   GstRTSPResult res;
   GstRTSPMessage response;
   gboolean retry = FALSE;
+  GstRTSPUrl *url;
+  gchar *new_url;
   memset (&response, 0, sizeof (response));
   gst_rtsp_message_init (&response);
   do {
@@ -5425,7 +5451,19 @@ gst_rtsp_conninfo_connect (GstRTSPSrc * src, GstRTSPConnInfo * info,
 
       if (res == GST_RTSP_OK)
         info->connected = TRUE;
-      else if (!retry)
+      else if (res == GST_RTSP_OK_REDIRECT) {
+        url = gst_rtsp_connection_get_url (info->connection);
+
+        if (url == NULL || info->url_str == NULL)
+          goto could_not_connect;
+
+        new_url = gst_rtsp_url_get_request_uri (url);
+        GST_DEBUG_OBJECT (src, "redirected from %s to %s", info->url_str,
+            new_url);
+        g_free (info->url_str);
+        info->url_str = new_url;
+        info->connected = TRUE;
+      } else if (!retry)
         goto could_not_connect;
     }
   } while (!info->connected && retry);
@@ -7792,6 +7830,7 @@ gst_rtspsrc_setup_streams_start (GstRTSPSrc * src, gboolean async)
       case GST_RTSP_STS_NOT_FOUND:
       case GST_RTSP_STS_METHOD_NOT_VALID_IN_THIS_STATE:
       case GST_RTSP_STS_PARAMETER_NOT_UNDERSTOOD:
+      case GST_RTSP_STS_SERVICE_UNAVAILABLE:
         /* There are various non-compliant servers that don't require control
          * URLs that are not resolved correctly but instead are just appended.
          * See e.g.
@@ -8591,9 +8630,8 @@ close:
   }
 
   /* cleanup */
-  gst_rtspsrc_cleanup (src);
-
   src->state = GST_RTSP_STATE_INVALID;
+  gst_rtspsrc_cleanup (src);
 
   if (async)
     gst_rtspsrc_loop_end_cmd (src, CMD_CLOSE, res);
@@ -9061,12 +9099,6 @@ restart:
 
     gst_rtsp_message_unset (&request);
 
-    /* parse RTP npt field. This is the current position in the stream (Normal
-     * Play Time) and should be put in the NEWSEGMENT position field. */
-    if (gst_rtsp_message_get_header (&response, GST_RTSP_HDR_RANGE, &hval,
-            0) == GST_RTSP_OK)
-      gst_rtspsrc_parse_range (src, hval, segment, FALSE);
-
     /* assume 1.0 rate now, overwrite when the SCALE or SPEED headers are present. */
     segment->rate = 1.0;
 
@@ -9079,6 +9111,12 @@ restart:
             &hval, 0) == GST_RTSP_OK) {
       segment->rate = gst_rtspsrc_get_float (hval);
     }
+
+    /* parse RTP npt field. This is the current position in the stream (Normal
+     * Play Time) and should be put in the NEWSEGMENT position field. */
+    if (gst_rtsp_message_get_header (&response, GST_RTSP_HDR_RANGE, &hval,
+            0) == GST_RTSP_OK)
+      gst_rtspsrc_parse_range (src, hval, segment, FALSE);
 
     /* parse the RTP-Info header field (if ANY) to get the base seqnum and timestamp
      * for the RTP packets. If this is not present, we assume all starts from 0...
@@ -9517,8 +9555,10 @@ gst_rtspsrc_stop (GstRTSPSrc * src)
 
   GST_DEBUG_OBJECT (src, "stopping");
 
-  /* also cancels pending task */
-  gst_rtspsrc_loop_send_cmd (src, CMD_WAIT, CMD_ALL);
+  /* If we've already started cleanup, we only need to stop the task */
+  if (src->state != GST_RTSP_STATE_INVALID)
+    /* also cancels pending task */
+    gst_rtspsrc_loop_send_cmd (src, CMD_WAIT, CMD_ALL);
 
   GST_OBJECT_LOCK (src);
   if ((task = src->task)) {
@@ -9541,8 +9581,10 @@ gst_rtspsrc_stop (GstRTSPSrc * src)
   }
   GST_OBJECT_UNLOCK (src);
 
-  /* ensure synchronously all is closed and clean */
-  gst_rtspsrc_close (src, FALSE, TRUE);
+  /* ensure synchronously all is closed and clean if we haven't started
+   * cleanup yet */
+  if (src->state != GST_RTSP_STATE_INVALID)
+    gst_rtspsrc_close (src, FALSE, TRUE);
 
   return TRUE;
 }
@@ -9615,8 +9657,10 @@ gst_rtspsrc_change_state (GstElement * element, GstStateChange transition)
       if (rtspsrc->is_live) {
         /* send pause request and keep the idle task around */
         gst_rtspsrc_loop_send_cmd (rtspsrc, CMD_PAUSE, CMD_LOOP);
+        ret = GST_STATE_CHANGE_NO_PREROLL;
+      } else {
+        ret = GST_STATE_CHANGE_SUCCESS;
       }
-      ret = GST_STATE_CHANGE_SUCCESS;
       break;
     case GST_STATE_CHANGE_PAUSED_TO_READY:
       rtspsrc->seek_seqnum = GST_SEQNUM_INVALID;

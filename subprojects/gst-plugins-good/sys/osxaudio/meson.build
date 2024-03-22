@@ -5,7 +5,9 @@ osxaudio_sources = [
   'gstosxaudiosrc.c',
   'gstosxcoreaudiocommon.c',
   'gstosxcoreaudio.c',
-  'gstosxaudio.c'
+  'gstosxaudio.c',
+  'gstatdec.c',
+  'gstatenc.c',
 ]
 
 have_osxaudio = false
@@ -37,7 +39,7 @@ if have_osxaudio
     osxaudio_sources,
     c_args : gst_plugins_good_args,
     include_directories : [configinc, libsinc],
-    dependencies : [gstaudio_dep, osxaudio_dep],
+    dependencies : [gstaudio_dep, gstpbutils_dep, osxaudio_dep],
     install : true,
     install_dir : plugins_install_dir)
   plugins += [gstosxaudio]

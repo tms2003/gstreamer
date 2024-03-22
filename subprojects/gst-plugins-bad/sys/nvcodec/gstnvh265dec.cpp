@@ -149,7 +149,7 @@ enum
   PROP_MAX_DISPLAY_DELAY,
 };
 
-#define DEFAULT_NUM_OUTPUT_SURFACES 0
+#define DEFAULT_NUM_OUTPUT_SURFACES 1
 #define DEFAULT_MAX_DISPLAY_DELAY -1
 
 static GTypeClass *parent_class = nullptr;
@@ -211,7 +211,7 @@ gst_nv_h265_dec_class_init (GstNvH265DecClass * klass,
   object_class->get_property = gst_nv_h265_dec_get_property;
 
   /**
-   * GstNvH265SLDec:cuda-device-id:
+   * GstNvH265Dec:cuda-device-id:
    *
    * Assigned CUDA device id
    *
@@ -223,24 +223,25 @@ gst_nv_h265_dec_class_init (GstNvH265DecClass * klass,
           (GParamFlags) (G_PARAM_READABLE | G_PARAM_STATIC_STRINGS)));
 
   /**
-   * GstNvH265SLDec:num-output-surfaces:
+   * GstNvH265Dec:num-output-surfaces:
    *
-   * The number of output surfaces (0 = auto). This property will be used to
-   * calculate the CUVIDDECODECREATEINFO.ulNumOutputSurfaces parameter
-   * in case of CUDA output mode
+   * The number of output surfaces (0 = auto, 1 = always copy).
+   * This property will be used to calculate
+   * the CUVIDDECODECREATEINFO.ulNumOutputSurfaces parameter in case of
+   * CUDA output mode.
    *
    * Since: 1.24
    */
   g_object_class_install_property (object_class, PROP_NUM_OUTPUT_SURFACES,
       g_param_spec_uint ("num-output-surfaces", "Num Output Surfaces",
           "Maximum number of output surfaces simultaneously mapped in CUDA "
-          "output mode (0 = auto)",
+          "output mode (0 = auto, 1 = always copy)",
           0, 64, DEFAULT_NUM_OUTPUT_SURFACES,
           (GParamFlags) (GST_PARAM_MUTABLE_READY | G_PARAM_READWRITE |
               G_PARAM_STATIC_STRINGS)));
 
   /**
-   * GstNvH265SLDec:init-max-width:
+   * GstNvH265Dec:init-max-width:
    *
    * Initial CUVIDDECODECREATEINFO.ulMaxWidth value
    *
@@ -256,7 +257,7 @@ gst_nv_h265_dec_class_init (GstNvH265DecClass * klass,
               G_PARAM_STATIC_STRINGS)));
 
   /**
-   * GstNvH265SLDec:init-max-height:
+   * GstNvH265Dec:init-max-height:
    *
    * Initial CUVIDDECODECREATEINFO.ulMaxHeight value
    *
@@ -632,9 +633,11 @@ gst_nv_h265_dec_new_sequence (GstH265Decoder * decoder, const GstH265SPS * sps,
   }
 
   if (self->out_format != out_format) {
-    GST_INFO_OBJECT (self, "Output format changed %s -> %s",
-        gst_video_format_to_string (self->out_format),
-        gst_video_format_to_string (out_format));
+    if (self->out_format != GST_VIDEO_FORMAT_UNKNOWN) {
+      GST_INFO_OBJECT (self, "Output format changed %s -> %s",
+          gst_video_format_to_string (self->out_format),
+          gst_video_format_to_string (out_format));
+    }
     self->out_format = out_format;
     modified = TRUE;
   }

@@ -1652,6 +1652,179 @@ gst_h264_parser_identify_nalu_avc (GstH264NalParser * nalparser,
 }
 
 /**
+ * gst_h264_parser_identify_and_split_nalu_avc:
+ * @nalparser: a #GstH264NalParser
+ * @data: The data to parse, containing an AVC coded NAL unit
+ * @offset: the offset in @data from which to parse the NAL unit
+ * @size: the size of @data
+ * @nal_length_size: the size in bytes of the AVC nal length prefix.
+ * @nalus: a caller allocated GArray of #GstH264NalUnit where to store parsed nal headers
+ * @consumed: (out): the size of consumed bytes
+ *
+ * Parses @data for packetized (e.g., avc/avc3) bitstream and
+ * sets @nalus. In addition to nal identifying process,
+ * this method scans start-code prefix to split malformed packet into
+ * actual nal chunks.
+ *
+ * Returns: a #GstH264ParserResult
+ *
+ * Since: 1.22.9
+ */
+GstH264ParserResult
+gst_h264_parser_identify_and_split_nalu_avc (GstH264NalParser * nalparser,
+    const guint8 * data, guint offset, gsize size, guint8 nal_length_size,
+    GArray * nalus, gsize * consumed)
+{
+  GstBitReader br;
+  guint nalu_size;
+  guint remaining;
+  guint off;
+  guint sc_size;
+
+  g_return_val_if_fail (data != NULL, GST_H264_PARSER_ERROR);
+  g_return_val_if_fail (nalus != NULL, GST_H264_PARSER_ERROR);
+  g_return_val_if_fail (nal_length_size > 0 && nal_length_size < 5,
+      GST_H264_PARSER_ERROR);
+
+  g_array_set_size (nalus, 0);
+
+  if (consumed)
+    *consumed = 0;
+
+  /* Would overflow guint below otherwise: the callers needs to ensure that
+   * this never happens */
+  if (offset > G_MAXUINT32 - nal_length_size) {
+    GST_WARNING ("offset + nal_length_size overflow");
+    return GST_H264_PARSER_BROKEN_DATA;
+  }
+
+  if (size < offset + nal_length_size) {
+    GST_DEBUG ("Can't parse, buffer has too small size %" G_GSIZE_FORMAT
+        ", offset %u", size, offset);
+    return GST_H264_PARSER_ERROR;
+  }
+
+  /* Read nal unit size and unwrap the size field */
+  gst_bit_reader_init (&br, data + offset, size - offset);
+  nalu_size = gst_bit_reader_get_bits_uint32_unchecked (&br,
+      nal_length_size * 8);
+
+  if (nalu_size < 1) {
+    GST_WARNING ("too small nal size %d", nalu_size);
+    return GST_H264_PARSER_BROKEN_DATA;
+  }
+
+  if (size < (gsize) nalu_size + nal_length_size) {
+    GST_WARNING ("larger nalu size %d than data size %" G_GSIZE_FORMAT,
+        nalu_size + nal_length_size, size);
+    return GST_H264_PARSER_BROKEN_DATA;
+  }
+
+  if (consumed)
+    *consumed = nalu_size + nal_length_size;
+
+  off = offset + nal_length_size;
+  remaining = nalu_size;
+  sc_size = nal_length_size;
+
+  /* Drop trailing start-code since it will not be scanned */
+  if (remaining >= 3) {
+    if (data[off + remaining - 1] == 0x01 && data[off + remaining - 2] == 0x00
+        && data[off + remaining - 3] == 0x00) {
+      remaining -= 3;
+
+      /* 4 bytes start-code */
+      if (remaining > 0 && data[off + remaining - 1] == 0x00)
+        remaining--;
+    }
+  }
+
+  /* Looping to split malformed nal units. nal-length field was dropped above
+   * so expected bitstream structure are:
+   *
+   * <complete nalu>
+   * | nalu |
+   * sc scan result will be -1 and handled in CONDITION-A
+   *
+   * <nalu with startcode prefix>
+   * | SC | nalu |
+   * Hit CONDITION-C first then terminated in CONDITION-A
+   *
+   * <first nal has no startcode but others have>
+   * | nalu | SC | nalu | ...
+   * CONDITION-B handles those cases
+   */
+  do {
+    GstH264NalUnit nalu;
+    gint sc_offset = -1;
+    guint skip_size = 0;
+
+    memset (&nalu, 0, sizeof (GstH264NalUnit));
+
+    /* startcode 3 bytes + minimum nal size 1 */
+    if (remaining >= 4)
+      sc_offset = scan_for_start_codes (data + off, remaining);
+
+    if (sc_offset < 0) {
+      if (remaining >= 1) {
+        /* CONDITION-A */
+        /* Last chunk */
+        nalu.size = remaining;
+        nalu.sc_offset = off - sc_size;
+        nalu.offset = off;
+        nalu.data = (guint8 *) data;
+        nalu.valid = TRUE;
+
+        gst_h264_parse_nalu_header (&nalu);
+        g_array_append_val (nalus, nalu);
+      }
+      break;
+    } else if ((sc_offset == 2 && data[off + sc_offset - 1] != 0)
+        || sc_offset > 2) {
+      /* CONDITION-B */
+      /* Found trailing startcode prefix */
+
+      nalu.size = sc_offset;
+      if (data[off + sc_offset - 1] == 0) {
+        /* 4 bytes start code */
+        nalu.size--;
+      }
+
+      nalu.sc_offset = off - sc_size;
+      nalu.offset = off;
+      nalu.data = (guint8 *) data;
+      nalu.valid = TRUE;
+
+      gst_h264_parse_nalu_header (&nalu);
+      g_array_append_val (nalus, nalu);
+    } else {
+      /* CONDITION-C */
+      /* startcode located at beginning of this chunk without actual nal data.
+       * skip this start code */
+    }
+
+    skip_size = sc_offset + 3;
+    if (skip_size >= remaining)
+      break;
+
+    /* no more nal-length bytes but 3bytes startcode */
+    sc_size = 3;
+    if (sc_offset > 0 && data[off + sc_offset - 1] == 0)
+      sc_size++;
+
+    remaining -= skip_size;
+    off += skip_size;
+  } while (remaining >= 1);
+
+  if (nalus->len > 0)
+    return GST_H264_PARSER_OK;
+
+  GST_WARNING ("No nal found");
+
+  return GST_H264_PARSER_BROKEN_DATA;
+}
+
+/**
  * gst_h264_parser_parse_nal:
  * @nalparser: a #GstH264NalParser
  * @nalu: The #GstH264NalUnit to parse
@@ -2432,7 +2605,8 @@ gst_h264_parser_parse_slice_hdr (GstH264NalParser * nalparser,
     guint32 PicHeightInMapUnits = sps->pic_height_in_map_units_minus1 + 1;
     guint32 PicSizeInMapUnits = PicWidthInMbs * PicHeightInMapUnits;
     guint32 SliceGroupChangeRate = pps->slice_group_change_rate_minus1 + 1;
-    const guint n = ceil_log2 (PicSizeInMapUnits / SliceGroupChangeRate + 1);
+    const guint n =
+        gst_util_ceil_log2 (PicSizeInMapUnits / SliceGroupChangeRate + 1);
     READ_UINT16 (&nr, slice->slice_group_change_cycle, n);
   }
 
@@ -3716,4 +3890,82 @@ error:
 
 #undef READ_CONFIG_UINT8
 #undef SKIP_CONFIG_BITS
+}
+
+typedef struct
+{
+  const gchar *name;
+  GstH264Profile profile;
+} H264ProfileMapping;
+
+
+static const H264ProfileMapping h264_profiles[] = {
+  {"baseline", GST_H264_PROFILE_BASELINE},
+  {"main", GST_H264_PROFILE_MAIN},
+  {"high", GST_H264_PROFILE_HIGH},
+  {"high-10", GST_H264_PROFILE_HIGH10},
+  {"high-4:2:2", GST_H264_PROFILE_HIGH_422},
+  {"high-4:4:4", GST_H264_PROFILE_HIGH_444},
+  {"multiview-high", GST_H264_PROFILE_MULTIVIEW_HIGH},
+  {"stereo-high", GST_H264_PROFILE_STEREO_HIGH},
+  {"scalable-baseline", GST_H264_PROFILE_SCALABLE_BASELINE},
+  {"scalable-high", GST_H264_PROFILE_SCALABLE_HIGH},
+};
+
+/**
+ * gst_h264_profile_from_string:
+ * @string: the descriptive name for #GstH264Profile
+ *
+ * Returns a #GstH264Profile for the @string.
+ *
+ * Returns: the #GstH264Profile of @string or %GST_H265_PROFILE_INVALID on error
+ *
+ * Since: 1.24
+ */
+GstH264Profile
+gst_h264_profile_from_string (const gchar * string)
+{
+  guint i;
+
+  if (string == NULL)
+    return GST_H264_PROFILE_INVALID;
+
+  for (i = 0; i < G_N_ELEMENTS (h264_profiles); i++) {
+    if (g_strcmp0 (string, h264_profiles[i].name) == 0) {
+      return h264_profiles[i].profile;
+    }
+  }
+
+  return GST_H264_PROFILE_INVALID;
+}
+
+/**
+ * gst_h264_slice_type_to_string:
+ * @slice_type: a #GstH264SliceType
+ *
+ * Returns the descriptive name for the #GstH264SliceType.
+ *
+ * Returns: (nullable): the name for @slice_type or %NULL on error
+ *
+ * Since: 1.24
+ */
+const gchar *
+gst_h264_slice_type_to_string (GstH264SliceType slice_type)
+{
+  switch (slice_type) {
+    case GST_H264_P_SLICE:
+      return "P";
+    case GST_H264_B_SLICE:
+      return "B";
+    case GST_H264_I_SLICE:
+      return "I";
+    case GST_H264_SP_SLICE:
+      return "SP";
+    case GST_H264_SI_SLICE:
+      return "SI";
+    default:
+      GST_ERROR ("unknown %d slice type", slice_type);
+  }
+
+  return NULL;
 }

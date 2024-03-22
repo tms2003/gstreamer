@@ -37,7 +37,7 @@ mod rand;
 mod thread;
 
 use error::{Context, Error};
-use parse::{PtpClockIdentity, PtpMessagePayload, ReadBytesBEExt, WriteBytesBEExt};
+use parse::{PtpClockIdentity, PtpMessagePayload, PtpMessageType, ReadBytesBEExt, WriteBytesBEExt};
 use rand::rand;
 
 /// PTP Multicast group.
@@ -240,12 +240,16 @@ fn run() -> Result<(), Error> {
                     trace!("Received PTP message {:#?}", ptp_message);
                 }
 
-                if ptp_message.source_port_identity.clock_identity == u64::from_be_bytes(clock_id) {
+                // The delay request is the only message that is sent
+                // from PTP clock implementation, if others are added
+                // additional match arms should be added.
+                if [PtpMessageType::DELAY_REQ].contains(&ptp_message.message_type) {
                     if args.verbose {
                         trace!("Ignoring our own PTP message");
                     }
                     continue 'next_packet;
                 }
+
                 if let PtpMessagePayload::DelayResp {
                     requesting_port_identity: PtpClockIdentity { clock_identity, .. },
                     ..

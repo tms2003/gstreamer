@@ -47,12 +47,18 @@ struct DecoderFormat
 };
 
 static const DecoderFormat format_list[] = {
+  {GST_DXVA_CODEC_MPEG2, D3D12_VIDEO_DECODE_PROFILE_MPEG2,
+      {DXGI_FORMAT_NV12, DXGI_FORMAT_UNKNOWN,}},
+  {GST_DXVA_CODEC_MPEG2, D3D12_VIDEO_DECODE_PROFILE_MPEG1_AND_MPEG2,
+      {DXGI_FORMAT_NV12, DXGI_FORMAT_UNKNOWN,}},
   {GST_DXVA_CODEC_H264, D3D12_VIDEO_DECODE_PROFILE_H264,
       {DXGI_FORMAT_NV12, DXGI_FORMAT_UNKNOWN,}},
   {GST_DXVA_CODEC_H265, D3D12_VIDEO_DECODE_PROFILE_HEVC_MAIN,
       {DXGI_FORMAT_NV12, DXGI_FORMAT_UNKNOWN,}},
   {GST_DXVA_CODEC_H265, D3D12_VIDEO_DECODE_PROFILE_HEVC_MAIN10,
       DXGI_FORMAT_P010},
+  {GST_DXVA_CODEC_VP8, D3D12_VIDEO_DECODE_PROFILE_VP8,
+      {DXGI_FORMAT_NV12, DXGI_FORMAT_UNKNOWN,}},
   {GST_DXVA_CODEC_VP9, D3D12_VIDEO_DECODE_PROFILE_VP9,
       {DXGI_FORMAT_NV12, DXGI_FORMAT_UNKNOWN,}},
   {GST_DXVA_CODEC_VP9, D3D12_VIDEO_DECODE_PROFILE_VP9_10BIT_PROFILE2,
@@ -216,9 +222,6 @@ struct DecoderCmdData
 
   ~DecoderCmdData ()
   {
-    if (queue)
-      gst_d3d12_command_queue_fence_wait (queue, G_MAXUINT64, event_handle);
-
     CloseHandle (event_handle);
     gst_clear_object (&ca_pool);
     gst_clear_object (&queue);
@@ -439,13 +442,13 @@ gst_d3d12_decoder_open (GstD3D12Decoder * decoder, GstElement * element)
   D3D12_COMMAND_QUEUE_DESC desc = { };
   desc.Type = D3D12_COMMAND_LIST_TYPE_VIDEO_DECODE;
   desc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
-  cmd->queue = gst_d3d12_command_queue_new (decoder->device, &desc, 4);
+  cmd->queue = gst_d3d12_command_queue_new (cmd->device.Get (), &desc, 4);
   if (!cmd->queue) {
     GST_ERROR_OBJECT (element, "Couldn't create command queue");
     return FALSE;
   }
 
-  cmd->ca_pool = gst_d3d12_command_allocator_pool_new (decoder->device,
+  cmd->ca_pool = gst_d3d12_command_allocator_pool_new (cmd->device.Get (),
       D3D12_COMMAND_LIST_TYPE_VIDEO_DECODE);
 
   priv->cmd = std::move (cmd);
@@ -503,6 +506,14 @@ gst_d3d12_decoder_close (GstD3D12Decoder * decoder)
 {
   auto priv = decoder->priv;
 
+  GST_DEBUG_OBJECT (decoder, "Close");
+
+  if (priv->cmd) {
+    gst_d3d12_command_queue_fence_wait (priv->cmd->queue, priv->cmd->fence_val,
+        priv->cmd->event_handle);
+  }
+
+  priv->session = nullptr;
   priv->cmd = nullptr;
 
   gst_clear_object (&decoder->device);
@@ -712,6 +723,8 @@ gst_d3d12_decoder_configure (GstD3D12Decoder * decoder,
   auto params = gst_d3d12_allocation_params_new (decoder->device, info,
       GST_D3D12_ALLOCATION_FLAG_DEFAULT, resource_flags);
   gst_d3d12_allocation_params_alignment (params, &align);
+  gst_d3d12_allocation_params_set_heap_flags (params,
+      D3D12_HEAP_FLAG_CREATE_NOT_ZEROED);
   if (!session->array_of_textures)
     gst_d3d12_allocation_params_set_array_size (params, session->dpb_size);
 
@@ -743,6 +756,8 @@ gst_d3d12_decoder_configure (GstD3D12Decoder * decoder,
         GST_D3D12_ALLOCATION_FLAG_DEFAULT,
         D3D12_RESOURCE_FLAG_ALLOW_SIMULTANEOUS_ACCESS);
     gst_d3d12_allocation_params_alignment (params, &align);
+    gst_d3d12_allocation_params_set_heap_flags (params,
+        D3D12_HEAP_FLAG_CREATE_NOT_ZEROED);
     gst_buffer_pool_config_set_d3d12_allocation_params (config, params);
     gst_d3d12_allocation_params_free (params);
     gst_buffer_pool_config_set_params (config, caps, info->size, 0, 0);
@@ -775,6 +790,8 @@ gst_d3d12_decoder_stop (GstD3D12Decoder * decoder)
 {
   auto priv = decoder->priv;
 
+  GST_DEBUG_OBJECT (decoder, "Stop");
+
   priv->flushing = true;
   if (priv->cmd) {
     gst_d3d12_command_queue_fence_wait (priv->cmd->queue, priv->cmd->fence_val,
@@ -790,6 +807,8 @@ gst_d3d12_decoder_stop (GstD3D12Decoder * decoder)
 
   g_clear_pointer (&priv->output_thread, g_thread_join);
   priv->flushing = false;
+
+  priv->session = nullptr;
 
   return TRUE;
 }
@@ -970,7 +989,7 @@ gst_d3d12_decoder_upload_bitstream (GstD3D12Decoder * self, gpointer data,
     D3D12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Buffer (alloc_size);
     hr = priv->cmd->device->CreateCommittedResource (&heap_prop,
         D3D12_HEAP_FLAG_CREATE_NOT_ZEROED, &desc,
-        D3D12_RESOURCE_STATE_COMMON, nullptr, IID_PPV_ARGS (&bitstream));
+        D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS (&bitstream));
     if (!gst_d3d12_result (hr, self->device)) {
       GST_ERROR_OBJECT (self, "Failed to create bitstream buffer");
       return FALSE;
@@ -1247,11 +1266,9 @@ gst_d3d12_decoder_end_picture (GstD3D12Decoder * decoder,
 
   GstD3D12FenceData *fence_data;
   gst_d3d12_fence_data_pool_acquire (priv->fence_data_pool, &fence_data);
-  gst_d3d12_fence_data_add_notify (fence_data,
-      gst_mini_object_ref (decoder_pic),
-      (GDestroyNotify) gst_mini_object_unref);
-  gst_d3d12_fence_data_add_notify (fence_data, gst_ca,
-      (GDestroyNotify) gst_d3d12_command_allocator_unref);
+  gst_d3d12_fence_data_add_notify_mini_object (fence_data,
+      gst_mini_object_ref (decoder_pic));
+  gst_d3d12_fence_data_add_notify_mini_object (fence_data, gst_ca);
 
   gst_d3d12_command_queue_set_notify (priv->cmd->queue, priv->cmd->fence_val,
       fence_data, (GDestroyNotify) gst_d3d12_fence_data_unref);
@@ -1312,12 +1329,7 @@ gst_d3d12_decoder_can_direct_render (GstD3D12Decoder * self,
   if (priv->session->need_crop && !priv->session->use_crop_meta)
     return FALSE;
 
-  /* we can do direct render in this case, since there is no DPB pool size
-   * limit, or output picture does not use texture array */
-  if (priv->session->array_of_textures || priv->session->reference_only)
-    return TRUE;
-
-  return FALSE;
+  return TRUE;
 }
 
 static GstFlowReturn
@@ -1518,7 +1530,10 @@ gst_d3d12_decoder_process_output (GstD3D12Decoder * self,
   }
 
   priv->session->lock.unlock ();
+
+  GST_BUFFER_FLAG_SET (frame->output_buffer, buffer_flags);
   gst_codec_picture_unref (picture);
+
   return gst_video_decoder_finish_frame (videodec, frame);
 
 error:
@@ -1569,7 +1584,8 @@ gst_d3d12_decoder_output_loop (GstD3D12Decoder * self)
           output_data.decoder, output_data.frame, output_data.picture,
           output_data.buffer_flags, output_data.width, output_data.height);
 
-      if (priv->last_flow != GST_FLOW_OK) {
+      if (priv->last_flow != GST_FLOW_FLUSHING &&
+          priv->last_flow != GST_FLOW_OK) {
         GST_WARNING_OBJECT (self, "Last flow was %s",
             gst_flow_get_name (priv->last_flow));
       }
@@ -1898,7 +1914,11 @@ static void
 gst_d3d12_decoder_get_profiles (const GUID & profile,
     std::vector < std::string > &list)
 {
-  if (profile == D3D12_VIDEO_DECODE_PROFILE_H264) {
+  if (profile == D3D12_VIDEO_DECODE_PROFILE_MPEG2 ||
+      profile == D3D12_VIDEO_DECODE_PROFILE_MPEG1_AND_MPEG2) {
+    list.push_back ("main");
+    list.push_back ("simple");
+  } else if (profile == D3D12_VIDEO_DECODE_PROFILE_H264) {
     list.push_back ("high");
     list.push_back ("progressive-high");
     list.push_back ("constrained-high");
@@ -1909,6 +1929,8 @@ gst_d3d12_decoder_get_profiles (const GUID & profile,
     list.push_back ("main");
   } else if (profile == D3D12_VIDEO_DECODE_PROFILE_HEVC_MAIN10) {
     list.push_back ("main-10");
+  } else if (profile == D3D12_VIDEO_DECODE_PROFILE_VP8) {
+    /* skip profile field */
   } else if (profile == D3D12_VIDEO_DECODE_PROFILE_VP9) {
     list.push_back ("0");
   } else if (profile == D3D12_VIDEO_DECODE_PROFILE_VP9_10BIT_PROFILE2) {
@@ -2024,6 +2046,10 @@ gst_d3d12_decoder_check_feature_support (GstD3D12Device * device,
   std::string profile_string;
 
   switch (codec) {
+    case GST_DXVA_CODEC_MPEG2:
+      sink_caps_string = "video/mpeg, "
+          "mpegversion = (int) 2, systemstream = (boolean) false";
+      break;
     case GST_DXVA_CODEC_H264:
       sink_caps_string = "video/x-h264, "
           "stream-format=(string) { avc, avc3, byte-stream }, "
@@ -2033,6 +2059,9 @@ gst_d3d12_decoder_check_feature_support (GstD3D12Device * device,
       sink_caps_string = "video/x-h265, "
           "stream-format=(string) { hev1, hvc1, byte-stream }, "
           "alignment=(string) au";
+      break;
+    case GST_DXVA_CODEC_VP8:
+      sink_caps_string = "video/x-vp8";
       break;
     case GST_DXVA_CODEC_VP9:
       if (profiles.size () > 1) {
@@ -2058,7 +2087,7 @@ gst_d3d12_decoder_check_feature_support (GstD3D12Device * device,
   }
 
   /* *INDENT-OFF* */
-  if (codec != GST_DXVA_CODEC_VP9) {
+  if (codec != GST_DXVA_CODEC_VP9 && codec != GST_DXVA_CODEC_VP8) {
     if (profiles.size () > 1) {
       profile_string = "{ ";
       bool first = true;

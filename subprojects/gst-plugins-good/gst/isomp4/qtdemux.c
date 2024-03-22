@@ -3267,7 +3267,7 @@ qtdemux_parse_trex (GstQTDemux * qtdemux, QtDemuxStream * stream,
 
   /* even then, above values are better than random ... */
   if (G_UNLIKELY (!stream->parsed_trex)) {
-    GST_WARNING_OBJECT (qtdemux,
+    GST_INFO_OBJECT (qtdemux,
         "failed to find fragment defaults for stream %d", stream->track_id);
     return FALSE;
   }
@@ -4033,7 +4033,7 @@ qtdemux_parse_sgpd (GstQTDemux * qtdemux, QtDemuxStream * stream,
       skip_byte_block = possible_pattern_info & 0x0f;
     }
 
-    kid_buf = _gst_buffer_new_wrapped ((guint8 *) kid, 16, NULL);
+    kid_buf = gst_buffer_new_memdup (kid, 16);
 
     props = gst_structure_new ("application/x-cenc",
         "iv_size", G_TYPE_UINT, iv_size,
@@ -4050,8 +4050,8 @@ qtdemux_parse_sgpd (GstQTDemux * qtdemux, QtDemuxStream * stream,
       }
 
       if (constant_iv != NULL) {
-        GstBuffer *constant_iv_buf = _gst_buffer_new_wrapped (
-            (guint8 *) constant_iv, constant_iv_size, NULL);
+        GstBuffer *constant_iv_buf = gst_buffer_new_memdup (
+            (guint8 *) constant_iv, constant_iv_size);
         gst_structure_set (props,
             "constant_iv_size", G_TYPE_UINT, constant_iv_size,
             "iv", GST_TYPE_BUFFER, constant_iv_buf, NULL);
@@ -9583,13 +9583,8 @@ gst_qtdemux_configure_stream (GstQTDemux * qtdemux, QtDemuxStream * stream)
       if (CUR_STREAM (stream)->n_channels > 0)
         gst_caps_set_simple (CUR_STREAM (stream)->caps,
             "channels", G_TYPE_INT, CUR_STREAM (stream)->n_channels, NULL);
-      if (CUR_STREAM (stream)->n_channels > 2) {
-        /* FIXME: Need to parse the 'chan' atom to get channel layouts
-         * correctly; this is just the minimum we can do - assume
-         * we don't actually have any channel positions. */
-        gst_caps_set_simple (CUR_STREAM (stream)->caps,
-            "channel-mask", GST_TYPE_BITMASK, G_GUINT64_CONSTANT (0), NULL);
-      }
+      /* FIXME: Need to parse the 'chan' atom to get channel layouts
+       * correctly. */
     }
   }
 
@@ -14133,6 +14128,18 @@ qtdemux_parse_trak (GstQTDemux * qtdemux, GNode * trak)
     lang_code = gst_tag_get_language_code (stream->lang_id);
     gst_tag_list_add (stream->stream_tags, GST_TAG_MERGE_REPLACE,
         GST_TAG_LANGUAGE_CODE, (lang_code) ? lang_code : stream->lang_id, NULL);
+  }
+
+  /* https://dev.w3.org/html5/html-sourcing-inband-tracks/#mpeg4
+   * FIXME: For CEA 608 and CEA 708 we should use the channel_number and
+   * service_number respectively.
+   */
+  if (stream->track_id) {
+    gchar *track_id_str =
+        g_strdup_printf ("%" G_GUINT32_FORMAT, stream->track_id);
+    gst_tag_list_add (stream->stream_tags, GST_TAG_MERGE_REPLACE,
+        GST_TAG_CONTAINER_SPECIFIC_TRACK_ID, track_id_str, NULL);
+    g_free (track_id_str);
   }
 
   /* Check for UDTA tags */

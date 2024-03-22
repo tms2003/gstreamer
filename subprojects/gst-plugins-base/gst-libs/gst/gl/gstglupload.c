@@ -315,6 +315,85 @@ struct _UploadMethod
   void (*free) (gpointer impl);
 } _UploadMethod;
 
+struct PassthroughUpload
+{
+  GstGLUpload *upload;
+};
+
+static gpointer
+_passthrough_upload_new (GstGLUpload * upload)
+{
+  struct PassthroughUpload *passthrough = g_new0 (struct PassthroughUpload, 1);
+
+  passthrough->upload = upload;
+
+  return passthrough;
+}
+
+static GstStaticCaps _passthrough_upload_caps =
+GST_STATIC_CAPS (GST_VIDEO_DMA_DRM_CAPS_MAKE);
+
+static GstCaps *
+_passthrough_upload_transform_caps (gpointer impl, GstGLContext * context,
+    GstPadDirection direction, GstCaps * caps)
+{
+  GstCaps *passthrough_caps = gst_static_caps_get (&_passthrough_upload_caps);
+  GstCaps *out_caps;
+
+  out_caps = gst_caps_intersect_full (caps, passthrough_caps,
+      GST_CAPS_INTERSECT_FIRST);
+  gst_caps_unref (passthrough_caps);
+
+  return out_caps;
+}
+
+static gboolean
+_passthrough_upload_accept (gpointer impl, GstBuffer * buffer,
+    GstCaps * in_caps, GstCaps * out_caps)
+{
+  GstCaps *caps;
+  gboolean res;
+
+  caps = gst_caps_intersect (in_caps, out_caps);
+  res = !gst_caps_is_empty (caps);
+  gst_caps_unref (caps);
+
+  return res;
+}
+
+static void
+_passthrough_upload_propose_allocation (gpointer impl, GstQuery * decide_query,
+    GstQuery * query)
+{
+}
+
+static GstGLUploadReturn
+_passthrough_upload_perform (gpointer impl, GstBuffer * buffer,
+    GstBuffer ** outbuf)
+{
+  *outbuf = gst_buffer_ref (buffer);
+
+  return GST_GL_UPLOAD_DONE;
+}
+
+static void
+_passthrough_upload_free (gpointer impl)
+{
+  g_free (impl);
+}
+
+static const UploadMethod _passthrough_upload = {
+  "Dmabuf Passthrough",
+  0,
+  &_passthrough_upload_caps,
+  &_passthrough_upload_new,
+  &_passthrough_upload_transform_caps,
+  &_passthrough_upload_accept,
+  &_passthrough_upload_propose_allocation,
+  &_passthrough_upload_perform,
+  &_passthrough_upload_free
+};
+
 struct GLMemoryUpload
 {
   GstGLUpload *upload;
@@ -446,7 +525,7 @@ _gl_memory_upload_propose_allocation (gpointer impl, GstQuery * decide_query,
   guint n_pools, i;
   GstCaps *caps;
   GstCapsFeatures *features_gl, *features_sys;
-  GstAllocator *allocator;
+  GstAllocator *allocator = NULL;
   GstAllocationParams params;
   gboolean use_sys_mem = FALSE;
   const gchar *target_pool_option_str = NULL;
@@ -488,20 +567,26 @@ _gl_memory_upload_propose_allocation (gpointer impl, GstQuery * decide_query,
 
   gst_allocation_params_init (&params);
 
-  allocator =
-      GST_ALLOCATOR (gst_gl_memory_allocator_get_default (upload->
-          upload->context));
+
+  if (!use_sys_mem) {
+    allocator =
+        GST_ALLOCATOR (gst_gl_memory_allocator_get_default (upload->
+            upload->context));
+  }
+
   gst_query_add_allocation_param (query, allocator, &params);
-  gst_object_unref (allocator);
+  gst_clear_object (&allocator);
 
 #if GST_GL_HAVE_PLATFORM_EGL
   if (upload->upload->context
       && gst_gl_context_get_gl_platform (upload->upload->context) ==
       GST_GL_PLATFORM_EGL) {
-    allocator =
-        GST_ALLOCATOR (gst_allocator_find (GST_GL_MEMORY_EGL_ALLOCATOR_NAME));
+    if (!use_sys_mem) {
+      allocator =
+          GST_ALLOCATOR (gst_allocator_find (GST_GL_MEMORY_EGL_ALLOCATOR_NAME));
+    }
     gst_query_add_allocation_param (query, allocator, &params);
-    gst_object_unref (allocator);
+    gst_clear_object (&allocator);
   }
 #endif
 
@@ -2569,7 +2654,8 @@ _directviv_upload_perform_gl_thread (GstGLContext * context,
 
   gl->BindTexture (GL_TEXTURE_2D, out_gl_mem->tex_id);
   directviv->TexDirectVIVMap (GL_TEXTURE_2D, width, height,
-      gl_format, (void **) &unmap_data->map.data, &unmap_data->phys_addr);
+      gl_format, (void **) &unmap_data->map.data,
+      (GLuint *) & unmap_data->phys_addr);
   directviv->TexDirectInvalidateVIV (GL_TEXTURE_2D);
 }
 
@@ -3114,7 +3200,9 @@ static const UploadMethod _nvmm_upload = {
 
 #endif /* HAVE_NVMM */
 
-static const UploadMethod *upload_methods[] = { &_gl_memory_upload,
+static const UploadMethod *upload_methods[] = {
+  &_passthrough_upload,
+  &_gl_memory_upload,
 #if GST_GL_HAVE_DMABUF
   &_direct_dma_buf_upload,
   &_direct_dma_buf_external_upload,

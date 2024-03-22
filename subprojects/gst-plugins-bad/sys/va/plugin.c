@@ -28,6 +28,7 @@
 #endif
 
 #include "gstvaav1dec.h"
+#include "gstvaav1enc.h"
 #include "gstvacaps.h"
 #include "gstvacompositor.h"
 #include "gstvadeinterlace.h"
@@ -42,6 +43,7 @@
 #include "gstvaprofile.h"
 #include "gstvavp8dec.h"
 #include "gstvavp9dec.h"
+#include "gstvavp9enc.h"
 #include "gstvavpp.h"
 
 #define GST_CAT_DEFAULT gstva_debug
@@ -207,6 +209,22 @@ plugin_register_encoders (GstPlugin * plugin, GstVaDevice * device,
               device->render_device_path);
         }
         break;
+      case VP9:
+        if (!gst_va_vp9_enc_register (plugin, device, sinkcaps, srccaps,
+                GST_RANK_NONE, entrypoint)) {
+          GST_WARNING ("Failed to register VP9 encoder: %s",
+              device->render_device_path);
+        }
+        break;
+#if VA_CHECK_VERSION(1, 15, 0)
+      case AV1:
+        if (!gst_va_av1_enc_register (plugin, device, sinkcaps, srccaps,
+                GST_RANK_NONE, entrypoint)) {
+          GST_WARNING ("Failed to register AV1 encoder: %s",
+              device->render_device_path);
+        }
+        break;
+#endif
       default:
         GST_DEBUG ("No encoder implementation for %" GST_FOURCC_FORMAT,
             GST_FOURCC_ARGS (codec));

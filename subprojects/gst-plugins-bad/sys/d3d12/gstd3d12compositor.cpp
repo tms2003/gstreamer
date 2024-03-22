@@ -227,20 +227,23 @@ static const D3D12_ROOT_SIGNATURE_FLAGS g_rs_flags =
     D3D12_ROOT_SIGNATURE_FLAG_DENY_AMPLIFICATION_SHADER_ROOT_ACCESS |
     D3D12_ROOT_SIGNATURE_FLAG_DENY_MESH_SHADER_ROOT_ACCESS;
 
+/* *INDENT-OFF* */
 struct PadContext
 {
   PadContext (GstD3D12Device * dev)
   {
     event_handle = CreateEventEx (nullptr, nullptr, 0, EVENT_ALL_ACCESS);
     device = (GstD3D12Device *) gst_object_ref (dev);
-    ca_pool = gst_d3d12_command_allocator_pool_new (device,
+    auto device_handle = gst_d3d12_device_get_device_handle (device);
+    ca_pool = gst_d3d12_command_allocator_pool_new (device_handle,
         D3D12_COMMAND_LIST_TYPE_DIRECT);
     gst_video_info_init (&info);
   }
 
   PadContext () = delete;
 
-  ~PadContext () {
+  ~PadContext ()
+  {
     gst_d3d12_device_fence_wait (device, D3D12_COMMAND_LIST_TYPE_DIRECT,
         fence_val, event_handle);
 
@@ -261,6 +264,7 @@ struct PadContext
   HANDLE event_handle;
   guint64 fence_val = 0;
 };
+/* *INDENT-ON* */
 
 struct GstD3D12CompositorPadPrivate
 {
@@ -315,13 +319,15 @@ struct VertexData
   } texture;
 };
 
+/* *INDENT-OFF* */
 struct BackgroundRender
 {
   BackgroundRender (GstD3D12Device * dev, const GstVideoInfo & info)
   {
     event_handle = CreateEventEx (nullptr, nullptr, 0, EVENT_ALL_ACCESS);
     device = (GstD3D12Device *) gst_object_ref (dev);
-    ca_pool = gst_d3d12_command_allocator_pool_new (device,
+    auto device_handle = gst_d3d12_device_get_device_handle (device);
+    ca_pool = gst_d3d12_command_allocator_pool_new (device_handle,
         D3D12_COMMAND_LIST_TYPE_DIRECT);
 
     D3D12_VERSIONED_ROOT_SIGNATURE_DESC rs_desc = { };
@@ -342,7 +348,6 @@ struct BackgroundRender
       return;
     }
 
-    auto device_handle = gst_d3d12_device_get_device_handle (device);
     hr = device_handle->CreateRootSignature (0, rs_blob->GetBufferPointer (),
         rs_blob->GetBufferSize (), IID_PPV_ARGS (&rs));
     if (!gst_d3d12_result (hr, device)) {
@@ -458,8 +463,7 @@ struct BackgroundRender
     heap_prop = CD3DX12_HEAP_PROPERTIES (D3D12_HEAP_TYPE_DEFAULT);
     hr = device_handle->CreateCommittedResource (&heap_prop,
         D3D12_HEAP_FLAG_CREATE_NOT_ZEROED, &buffer_desc,
-        D3D12_RESOURCE_STATE_COPY_DEST,
-        nullptr, IID_PPV_ARGS (&vertex_index_buf));
+        D3D12_RESOURCE_STATE_COMMON, nullptr, IID_PPV_ARGS (&vertex_index_buf));
     if (!gst_d3d12_result (hr, device)) {
       GST_ERROR_OBJECT (device, "Couldn't create index buffer");
       return;
@@ -492,7 +496,8 @@ struct BackgroundRender
   }
   BackgroundRender () = delete;
 
-  ~BackgroundRender () {
+  ~BackgroundRender ()
+  {
     gst_d3d12_device_fence_wait (device, D3D12_COMMAND_LIST_TYPE_DIRECT,
         fence_val, event_handle);
 
@@ -519,6 +524,7 @@ struct BackgroundRender
   HANDLE event_handle;
   guint64 fence_val = 0;
 };
+/* *INDENT-ON* */
 
 struct ClearColor
 {
@@ -1110,8 +1116,7 @@ gst_d3d12_compositor_preprare_func (GstVideoAggregatorPad * pad,
 
   GstD3D12FenceData *fence_data;
   gst_d3d12_fence_data_pool_acquire (self->priv->fence_data_pool, &fence_data);
-  gst_d3d12_fence_data_add_notify (fence_data, gst_ca,
-      (GDestroyNotify) gst_d3d12_command_allocator_unref);
+  gst_d3d12_fence_data_add_notify_mini_object (fence_data, gst_ca);
 
   ComPtr < ID3D12CommandAllocator > ca;
   gst_d3d12_command_allocator_get_handle (gst_ca, &ca);
@@ -1203,7 +1208,7 @@ gst_d3d12_compositor_pad_clean_frame (GstVideoAggregatorPad * pad,
   if (priv->ctx && priv->ctx->fence_data) {
     gst_d3d12_device_set_fence_notify (priv->ctx->device,
         D3D12_COMMAND_LIST_TYPE_DIRECT, priv->ctx->fence_val,
-        priv->ctx->fence_data, (GDestroyNotify) gst_d3d12_fence_data_unref);
+        priv->ctx->fence_data);
     priv->ctx->fence_data = nullptr;
   }
 }
@@ -2173,13 +2178,6 @@ gst_d3d12_compositor_decide_allocation (GstAggregator * agg, GstQuery * query)
   return TRUE;
 }
 
-static void
-resource_free_func (ID3D12Resource * resource)
-{
-  if (resource)
-    resource->Release ();
-}
-
 static gboolean
 gst_d3d12_compositor_draw_background (GstD3D12Compositor * self)
 {
@@ -2187,6 +2185,7 @@ gst_d3d12_compositor_draw_background (GstD3D12Compositor * self)
   ClearColor *color = &priv->clear_color[0];
   auto bg_render = priv->bg_render.get ();
   auto & rtv_handles = priv->rtv_handles;
+  std::vector < D3D12_RECT > rtv_rects;
 
   rtv_handles.clear ();
   for (guint i = 0; i < gst_buffer_n_memory (priv->generated_output_buf); i++) {
@@ -2205,6 +2204,9 @@ gst_d3d12_compositor_draw_background (GstD3D12Compositor * self)
         (rtv_heap->GetCPUDescriptorHandleForHeapStart ());
 
     for (guint plane = 0; plane < num_planes; plane++) {
+      D3D12_RECT rect = { };
+      gst_d3d12_memory_get_plane_rectangle (mem, plane, &rect);
+      rtv_rects.push_back (rect);
       rtv_handles.push_back (cpu_handle);
       cpu_handle.Offset (bg_render->rtv_inc_size);
     }
@@ -2218,8 +2220,7 @@ gst_d3d12_compositor_draw_background (GstD3D12Compositor * self)
 
   GstD3D12FenceData *fence_data;
   gst_d3d12_fence_data_pool_acquire (priv->fence_data_pool, &fence_data);
-  gst_d3d12_fence_data_add_notify (fence_data, gst_ca,
-      (GDestroyNotify) gst_d3d12_command_allocator_unref);
+  gst_d3d12_fence_data_add_notify_mini_object (fence_data, gst_ca);
 
   ComPtr < ID3D12CommandAllocator > ca;
   gst_d3d12_command_allocator_get_handle (gst_ca, &ca);
@@ -2273,8 +2274,10 @@ gst_d3d12_compositor_draw_background (GstD3D12Compositor * self)
     cl->DrawIndexedInstanced (6, 1, 0, 0, 0);
 
     /* clear U and V components if needed */
-    for (size_t i = 1; i < rtv_handles.size (); i++)
-      cl->ClearRenderTargetView (rtv_handles[i], color->color[i], 0, nullptr);
+    for (size_t i = 1; i < rtv_handles.size (); i++) {
+      cl->ClearRenderTargetView (rtv_handles[i], color->color[i], 1,
+          &rtv_rects[i]);
+    }
   } else {
     switch (priv->background) {
       case GST_D3D12_COMPOSITOR_BACKGROUND_BLACK:
@@ -2292,8 +2295,8 @@ gst_d3d12_compositor_draw_background (GstD3D12Compositor * self)
     }
 
     for (size_t i = 0; i < priv->rtv_handles.size (); i++) {
-      cl->ClearRenderTargetView (priv->rtv_handles[i], color->color[i],
-          0, nullptr);
+      cl->ClearRenderTargetView (rtv_handles[i], color->color[i], 1,
+          &rtv_rects[i]);
     }
   }
 
@@ -2318,14 +2321,12 @@ gst_d3d12_compositor_draw_background (GstD3D12Compositor * self)
       bg_render->fence_val);
 
   if (bg_render->vertex_index_upload) {
-    gst_d3d12_fence_data_add_notify (fence_data,
-        bg_render->vertex_index_upload.Detach (),
-        (GDestroyNotify) resource_free_func);
+    gst_d3d12_fence_data_add_notify_com (fence_data,
+        bg_render->vertex_index_upload.Detach ());
   }
 
   gst_d3d12_device_set_fence_notify (self->device,
-      D3D12_COMMAND_LIST_TYPE_DIRECT, priv->bg_render->fence_val,
-      fence_data, (GDestroyNotify) gst_d3d12_fence_data_unref);
+      D3D12_COMMAND_LIST_TYPE_DIRECT, priv->bg_render->fence_val, fence_data);
 
   return TRUE;
 }

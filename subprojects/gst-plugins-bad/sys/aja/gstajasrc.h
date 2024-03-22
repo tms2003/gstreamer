@@ -60,6 +60,8 @@ struct _GstAjaSrc {
   GstBufferPool *audio_buffer_pool;
   GstBufferPool *anc_buffer_pool;
 
+  GstClock *clock;
+
   // Properties
   gchar *device_identifier;
   NTV2Channel channel;
@@ -77,6 +79,7 @@ struct _GstAjaSrc {
   guint start_frame, end_frame;
   guint capture_cpu_core;
   gboolean signal;
+  gboolean attach_ancillary_meta;
 
   NTV2AudioSystem audio_system;
   NTV2VideoFormat video_format;

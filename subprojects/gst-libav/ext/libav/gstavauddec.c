@@ -364,10 +364,14 @@ settings_changed (GstFFMpegAudDec * ffmpegdec, AVFrame * frame)
 {
   GstAudioFormat format;
   GstAudioLayout layout;
+#if LIBAVUTIL_VERSION_INT >= AV_VERSION_INT(57, 28, 100)
+  const gint channels = frame->ch_layout.nb_channels;
+#else
   gint channels = av_get_channel_layout_nb_channels (frame->channel_layout);
 
   if (channels == 0)
     channels = frame->channels;
+#endif
 
   format = gst_ffmpeg_smpfmt_to_audioformat (frame->format, &layout);
   if (format == GST_AUDIO_FORMAT_UNKNOWN)
@@ -394,9 +398,13 @@ gst_ffmpegauddec_negotiate (GstFFMpegAudDec * ffmpegdec,
   format = gst_ffmpeg_smpfmt_to_audioformat (frame->format, &layout);
   if (format == GST_AUDIO_FORMAT_UNKNOWN)
     goto no_caps;
+#if LIBAVUTIL_VERSION_INT >= AV_VERSION_INT(57, 28, 100)
+  channels = frame->ch_layout.nb_channels;
+#else
   channels = av_get_channel_layout_nb_channels (frame->channel_layout);
   if (channels == 0)
     channels = frame->channels;
+#endif
   if (channels == 0)
     goto no_caps;
 
@@ -412,7 +420,11 @@ gst_ffmpegauddec_negotiate (GstFFMpegAudDec * ffmpegdec,
       frame->sample_rate, channels, format,
       layout == GST_AUDIO_LAYOUT_INTERLEAVED);
 
+#if LIBAVUTIL_VERSION_INT >= AV_VERSION_INT(57, 28, 100)
+  gst_ffmpeg_channel_layout_to_gst (&frame->ch_layout, channels, pos);
+#else
   gst_ffmpeg_channel_layout_to_gst (frame->channel_layout, channels, pos);
+#endif
   memcpy (ffmpegdec->ffmpeg_layout, pos,
       sizeof (GstAudioChannelPosition) * channels);
 
@@ -578,7 +590,11 @@ gst_ffmpegauddec_frame (GstFFMpegAudDec * ffmpegdec, GstFlowReturn * ret,
     goto no_codec;
 
   *ret = GST_FLOW_OK;
+#if LIBAVCODEC_VERSION_MAJOR >= 60
+  ffmpegdec->context->frame_num++;
+#else
   ffmpegdec->context->frame_number++;
+#endif
 
   oclass = (GstFFMpegAudDecClass *) (G_OBJECT_GET_CLASS (ffmpegdec));
 
@@ -943,6 +959,8 @@ gst_ffmpegauddec_register (GstPlugin * plugin)
       case AV_CODEC_ID_RA_288:
       case AV_CODEC_ID_COOK:
       case AV_CODEC_ID_AAC:
+      case AV_CODEC_ID_MUSEPACK7:
+      case AV_CODEC_ID_MUSEPACK8:
         rank = GST_RANK_PRIMARY;
         break;
         /* SIPR: decoder should have a higher rank than realaudiodec.

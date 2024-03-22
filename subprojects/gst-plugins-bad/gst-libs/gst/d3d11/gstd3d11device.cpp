@@ -101,6 +101,16 @@ enum
 #define DEFAULT_ADAPTER 0
 #define DEFAULT_CREATE_FLAGS 0
 
+enum
+{
+  /* signals */
+  SIGNAL_DEVICE_REMOVED,
+  LAST_SIGNAL
+};
+
+static guint gst_d3d11_device_signals[LAST_SIGNAL] = { 0, };
+
+
 /* *INDENT-OFF* */
 struct _GstD3D11DevicePrivate
 {
@@ -146,6 +156,8 @@ struct _GstD3D11DevicePrivate
   IDXGIDebug *dxgi_debug = nullptr;
   IDXGIInfoQueue *dxgi_info_queue = nullptr;
 #endif
+
+  gboolean device_removed = FALSE;
 };
 /* *INDENT-ON* */
 
@@ -416,6 +428,20 @@ gst_d3d11_device_class_init (GstD3D11DeviceClass * klass)
       g_param_spec_int64 ("adapter-luid", "Adapter LUID",
           "DXGI Adapter LUID (Locally Unique Identifier) of created device",
           G_MININT64, G_MAXINT64, 0, readable_flags));
+
+  /**
+   * GstD3D11Device::device-removed:
+   * @device: the #d3d11device
+   *
+   * Emitted when the D3D11Device gets suspended by the DirectX (error
+   * DXGI_ERROR_DEVICE_REMOVED or DXGI_ERROR_DEVICE_RESET have been returned
+   * after one of the DirectX operations).
+   *
+   * Since: 1.26
+   */
+  gst_d3d11_device_signals[SIGNAL_DEVICE_REMOVED] =
+      g_signal_new ("device-removed", G_TYPE_FROM_CLASS (klass),
+      G_SIGNAL_RUN_LAST, 0, NULL, NULL, NULL, G_TYPE_NONE, 1, G_TYPE_INT);
 
   gst_d3d11_memory_init_once ();
 }
@@ -834,7 +860,6 @@ _gst_d3d11_device_get_adapter (const GstD3D11DeviceConstructData * data,
       ComPtr < IDXGIDevice > dxgi_device;
       ComPtr < IDXGIAdapter > adapter;
       ID3D11Device *device = data->data.device;
-      guint luid;
 
       hr = device->QueryInterface (IID_PPV_ARGS (&dxgi_device));
       if (FAILED (hr))
@@ -852,7 +877,7 @@ _gst_d3d11_device_get_adapter (const GstD3D11DeviceConstructData * data,
       if (FAILED (hr))
         return hr;
 
-      luid = gst_d3d11_luid_to_int64 (&desc.AdapterLuid);
+      auto luid = gst_d3d11_luid_to_int64 (&desc.AdapterLuid);
 
       for (guint i = 0;; i++) {
         DXGI_ADAPTER_DESC tmp_desc;
@@ -1394,6 +1419,18 @@ gst_d3d11_device_get_format (GstD3D11Device * device, GstVideoFormat format,
     *device_format = target->second;
 
   return TRUE;
+}
+
+void
+gst_d3d11_device_mark_removed (GstD3D11Device * device, HRESULT reason)
+{
+  g_return_if_fail (GST_IS_D3D11_DEVICE (device));
+
+  if (!device->priv->device_removed) {
+    g_signal_emit (device, gst_d3d11_device_signals[SIGNAL_DEVICE_REMOVED], 0,
+        reason);
+    device->priv->device_removed = TRUE;
+  }
 }
 
 GST_DEFINE_MINI_OBJECT_TYPE (GstD3D11Fence, gst_d3d11_fence);

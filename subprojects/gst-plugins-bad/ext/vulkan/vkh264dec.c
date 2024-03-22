@@ -99,7 +99,7 @@ GST_DEBUG_CATEGORY (gst_debug_vulkan_h264_decoder);
 G_DEFINE_TYPE_WITH_CODE (GstVulkanH264Decoder, gst_vulkan_h264_decoder,
     GST_TYPE_H264_DECODER,
     GST_DEBUG_CATEGORY_INIT (gst_debug_vulkan_h264_decoder,
-        "vulkanh264dec", 0, "Vulkan H.H264 Decoder"));
+        "vulkanh264dec", 0, "Vulkan H.264 Decoder"));
 GST_ELEMENT_REGISTER_DEFINE_WITH_CODE (vulkanh264dec, "vulkanh264dec",
     GST_RANK_NONE, GST_TYPE_VULKAN_H264_DECODER, vulkan_element_init (plugin));
 
@@ -111,7 +111,6 @@ _find_queues (GstVulkanDevice * device, GstVulkanQueue * queue, gpointer data)
       device->physical_device->queue_family_props[queue->family].queueFlags;
   guint32 codec =
       device->physical_device->queue_family_ops[queue->family].video;
-  gboolean ret;
 
   if (!self->graphic_queue
       && ((flags & VK_QUEUE_GRAPHICS_BIT) == VK_QUEUE_GRAPHICS_BIT)) {
@@ -126,13 +125,7 @@ _find_queues (GstVulkanDevice * device, GstVulkanQueue * queue, gpointer data)
     self->decode_queue = gst_object_ref (queue);
   }
 
-  ret = self->decode_queue && self->graphic_queue;
-
-  /* if graphic and decoder queues are the same, just keep one */
-  if (ret && (self->decode_queue == self->graphic_queue))
-    gst_clear_object (&self->graphic_queue);
-
-  return !ret;
+  return !(self->decode_queue && self->graphic_queue);
 }
 
 static gboolean
@@ -370,7 +363,8 @@ gst_vulkan_h264_decoder_decide_allocation (GstVideoDecoder * decoder,
   gst_buffer_pool_config_set_params (config, new_caps, size, min, max);
 
   gst_vulkan_image_buffer_pool_config_set_allocation_params (config, usage,
-      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_IMAGE_LAYOUT_VIDEO_DECODE_DST_KHR,
+      VK_ACCESS_TRANSFER_WRITE_BIT);
   gst_vulkan_image_buffer_pool_config_set_decode_caps (config, profile_caps);
 
   gst_caps_unref (profile_caps);
@@ -540,7 +534,7 @@ gst_vulkan_video_profile_from_h264_sps (GstVulkanVideoProfile * profile,
       .lumaBitDepth = _get_component_bit_depth (sps->bit_depth_luma_minus8 + 8),
       .chromaBitDepth = _get_component_bit_depth (sps->bit_depth_chroma_minus8 + 8),
     },
-    .usage = {
+    .usage.decode = {
       .sType = VK_STRUCTURE_TYPE_VIDEO_DECODE_USAGE_INFO_KHR,
       .videoUsageHints = VK_VIDEO_DECODE_USAGE_DEFAULT_KHR,
       .pNext = &profile->codec,
@@ -1316,7 +1310,6 @@ gst_vulkan_h264_decoder_init (GstVulkanH264Decoder * self)
 static void
 gst_vulkan_h264_decoder_class_init (GstVulkanH264DecoderClass * klass)
 {
-  /* GObjectClass *gobject_class = G_OBJECT_CLASS (klass); */
   GstElementClass *element_class = GST_ELEMENT_CLASS (klass);
   GstVideoDecoderClass *decoder_class = GST_VIDEO_DECODER_CLASS (klass);
   GstH264DecoderClass *h264decoder_class = GST_H264_DECODER_CLASS (klass);

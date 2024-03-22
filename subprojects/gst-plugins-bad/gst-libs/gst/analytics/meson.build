@@ -14,13 +14,13 @@ install_headers(analytics_headers, subdir : 'gstreamer-1.0/gst/analytics')
 pkg_name = 'gstreamer-analytics-1.0'
 gstanalytics = library('gstanalytics-' + api_version,
   analytics_sources,
-  c_args : gst_plugins_bad_args + ['-DGST_USE_UNSTABLE_API', '-DBUILDING_GST_ANALYTIC_META', '-DG_LOG_DOMAIN="Gstreamer-Analytic"'],
+  c_args : gst_plugins_bad_args + ['-DGST_USE_UNSTABLE_API', '-DBUILDING_GST_ANALYTICS', '-DG_LOG_DOMAIN="GStreamer-Analytics"'],
   include_directories : [configinc, libsinc],
   version : libversion,
   soversion : soversion,
   darwin_versions : osxversion,
   install : true,
-  dependencies : [gstbase_dep])
+  dependencies : [gstbase_dep, gstvideo_dep])
 
 gst_libraries += [[pkg_name, {'lib': gstanalytics}]]
 pkgconfig.generate(gstanalytics,
@@ -43,13 +43,13 @@ if build_gir
     'includes' : ['Gst-1.0', 'GstBase-1.0'],
     'install' : true,
     'extra_args' : gir_init_section + ['-DGST_USE_UNSTABLE_API'],
-    'dependencies' : [gstbase_dep]
+    'dependencies' : [gstbase_dep, gstvideo_dep]
   }
   library_def += {'gir': [gir]}
   if not static_build
-    analyticsmeta_gir = gnome.generate_gir(gstanalytics, kwargs: gir)
-    library_def += {'gir_targets':  library_def.get('gir_targets', []) + [analyticsmeta_gir]}
-    gen_sources += analyticsmeta_gir
+    analytics_gir = gnome.generate_gir(gstanalytics, kwargs: gir)
+    library_def += {'gir_targets':  library_def.get('gir_targets', []) + [analytics_gir]}
+    gen_sources += analytics_gir
   endif
 endif
 gst_libraries += [[pkg_name, library_def]]
@@ -59,6 +59,6 @@ gst_libraries += [[pkg_name, library_def]]
 gstanalytics_dep = declare_dependency(link_with : gstanalytics,
   include_directories : [libsinc],
   sources: gen_sources,
-  dependencies : [gstbase_dep])
+  dependencies : [gstbase_dep, gstvideo_dep])
 
 meson.override_dependency(pkg_name, gstanalytics_dep)

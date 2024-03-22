@@ -24,13 +24,26 @@
 
 #include "gstanalyticsobjecttrackingmtd.h"
 
-#define GST_RELATABLE_MTD_TRACKING_TYPE_NAME "object-tracking"
+/**
+ * SECTION:gstanalyticsobjecttrackingmtd
+ * @title: GstAnalyticsTrackingMtd
+ * @short_description: An analytics metadata for tracking inside a #GstAnalyticsRelationMeta
+ * @symbols:
+ * - GstAnalyticsTrackingMtd
+ * @see_also: #GstAnalyticsMtd, #GstAnalyticsRelationMeta
+ *
+ * This type of metadata holds tracking information. In many cases, it is
+ * desired to track an object across many frames. This type of metadata holds
+ * information about the tracking, for example, it can be used alongside a
+ * #GstAnalyticsODMtd to track an object.
+ *
+ * Since: 1.24
+ */
 
 typedef struct _GstAnalyticsTrackingMtdData GstAnalyticsTrackingMtdData;
 
 /**
  * GstAnalyticsTrackingMtd:
- * @parent: parent #GstAnalyticsMtd
  * @tracking_id: Tracking identifier
  * @tracking_first_seen: Tracking creation time
  * @tracking_last_seen: Tracking last observation
@@ -42,7 +55,6 @@ typedef struct _GstAnalyticsTrackingMtdData GstAnalyticsTrackingMtdData;
  */
 struct _GstAnalyticsTrackingMtdData
 {
-  GstAnalyticsRelatableMtdData parent;
   guint64 tracking_id;
   GstClockTime tracking_first_seen;
   GstClockTime tracking_last_seen;
@@ -50,48 +62,24 @@ struct _GstAnalyticsTrackingMtdData
 };
 
 
-static char type[] = GST_RELATABLE_MTD_TRACKING_TYPE_NAME;
-
-static GstAnalyticsTrackingMtdData *
-gst_analytics_tracking_mtd_get_data (GstAnalyticsTrackingMtd * instance)
-{
-  GstAnalyticsRelatableMtdData *rlt_data =
-      gst_analytics_relation_meta_get_mtd_data (instance->meta,
-      instance->id);
-  g_return_val_if_fail (rlt_data, NULL);
-
-  g_return_val_if_fail (rlt_data->analysis_type ==
-      gst_analytics_tracking_mtd_get_type_quark (), NULL);
-
-  return (GstAnalyticsTrackingMtdData *) rlt_data;
-}
+static const GstAnalyticsMtdImpl tracking_impl = {
+  "object-tracking",
+  NULL
+};
 
 /**
- * gst_analytics_tracking_mtd_get_type_quark:
- * Returns: Quark representing the type of GstAnalyticsRelatableMtd
+ * gst_analytics_tracking_mtd_get_mtd_type:
  *
- * Get the quark identifying the relatable type
+ * Returns: id representing the type of GstAnalyticsRelatableMtd
+ *
+ * Get the opaque id identifying the relatable type
  *
  * Since: 1.24
  */
 GstAnalyticsMtdType
-gst_analytics_tracking_mtd_get_type_quark (void)
+gst_analytics_tracking_mtd_get_mtd_type (void)
 {
-  return g_quark_from_static_string (type);
-}
-
-/**
- * gst_an_od_mtd_get_type_name:
- * Returns: #GstAnalyticsMtd type name.
- *
- * Get the name identifying relatable type name
- *
- * Since: 1.24
- */
-const gchar *
-gst_analytics_tracking_mtd_get_type_name (void)
-{
-  return GST_RELATABLE_MTD_TRACKING_TYPE_NAME;
+  return (GstAnalyticsMtdType) & tracking_impl;
 }
 
 /**
@@ -107,7 +95,8 @@ gst_analytics_tracking_mtd_update_last_seen (GstAnalyticsTrackingMtd * instance,
 {
   GstAnalyticsTrackingMtdData *trk_mtd_data;
   g_return_val_if_fail (instance, FALSE);
-  trk_mtd_data = gst_analytics_tracking_mtd_get_data (instance);
+  trk_mtd_data = gst_analytics_relation_meta_get_mtd_data (instance->meta,
+      instance->id);
   g_return_val_if_fail (trk_mtd_data != NULL, FALSE);
 
   trk_mtd_data->tracking_last_seen = last_seen;
@@ -128,7 +117,8 @@ gst_analytics_tracking_mtd_set_lost (GstAnalyticsTrackingMtd * instance)
 {
   GstAnalyticsTrackingMtdData *trk_mtd_data;
   g_return_val_if_fail (instance, FALSE);
-  trk_mtd_data = gst_analytics_tracking_mtd_get_data (instance);
+  trk_mtd_data = gst_analytics_relation_meta_get_mtd_data (instance->meta,
+      instance->id);
   g_return_val_if_fail (trk_mtd_data != NULL, FALSE);
   trk_mtd_data->tracking_lost = TRUE;
   return TRUE;
@@ -154,7 +144,8 @@ gst_analytics_tracking_mtd_get_info (GstAnalyticsTrackingMtd * instance,
 {
   GstAnalyticsTrackingMtdData *trk_mtd_data;
   g_return_val_if_fail (instance, FALSE);
-  trk_mtd_data = gst_analytics_tracking_mtd_get_data (instance);
+  trk_mtd_data = gst_analytics_relation_meta_get_mtd_data (instance->meta,
+      instance->id);
 
   g_return_val_if_fail (trk_mtd_data != NULL, FALSE);
 
@@ -189,11 +180,10 @@ gst_analytics_relation_meta_add_tracking_mtd (GstAnalyticsRelationMeta *
 {
   g_return_val_if_fail (instance, FALSE);
 
-  GstAnalyticsMtdType type = gst_analytics_tracking_mtd_get_type_quark ();
   gsize size = sizeof (GstAnalyticsTrackingMtdData);
   GstAnalyticsTrackingMtdData *trk_mtd_data = (GstAnalyticsTrackingMtdData *)
-      gst_analytics_relation_meta_add_mtd (instance,
-      type, size, trk_mtd);
+      gst_analytics_relation_meta_add_mtd (instance, &tracking_impl, size,
+      trk_mtd);
 
   if (trk_mtd_data) {
     trk_mtd_data->tracking_id = tracking_id;
@@ -216,13 +206,13 @@ gst_analytics_relation_meta_add_tracking_mtd (GstAnalyticsRelationMeta *
  *
  * Returns: TRUE if successful.
  *
- * Since 1.24
+ * Since: 1.24
  */
 gboolean
 gst_analytics_relation_meta_get_tracking_mtd (GstAnalyticsRelationMeta * meta,
     guint an_meta_id, GstAnalyticsTrackingMtd * rlt)
 {
   return gst_analytics_relation_meta_get_mtd (meta, an_meta_id,
-      gst_analytics_tracking_mtd_get_type_quark (),
+      gst_analytics_tracking_mtd_get_mtd_type (),
       (GstAnalyticsTrackingMtd *) rlt);
 }

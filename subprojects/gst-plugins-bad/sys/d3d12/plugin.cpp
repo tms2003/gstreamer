@@ -29,14 +29,20 @@
 
 #include <gst/gst.h>
 #include "gstd3d12.h"
+#include "gstd3d12-private.h"
 #include "gstd3d12convert.h"
 #include "gstd3d12download.h"
 #include "gstd3d12upload.h"
 #include "gstd3d12videosink.h"
 #include "gstd3d12testsrc.h"
 #include "gstd3d12compositor.h"
+#include "gstd3d12screencapturedevice.h"
+#include "gstd3d12screencapturesrc.h"
+#include "gstd3d12mpeg2dec.h"
 #include "gstd3d12h264dec.h"
+#include "gstd3d12h264enc.h"
 #include "gstd3d12h265dec.h"
+#include "gstd3d12vp8dec.h"
 #include "gstd3d12vp9dec.h"
 #include "gstd3d12av1dec.h"
 #include <windows.h>
@@ -54,6 +60,11 @@ GST_DEBUG_CATEGORY (gst_d3d12_format_debug);
 GST_DEBUG_CATEGORY (gst_d3d12_utils_debug);
 
 #define GST_CAT_DEFAULT gst_d3d12_debug
+
+static void
+plugin_deinit (gpointer data)
+{
+}
 
 static gboolean
 plugin_init (GstPlugin * plugin)
@@ -95,13 +106,20 @@ plugin_init (GstPlugin * plugin)
       continue;
     }
 
+    gst_d3d12_mpeg2_dec_register (plugin, device, video_device.Get (),
+        GST_RANK_NONE);
     gst_d3d12_h264_dec_register (plugin, device, video_device.Get (),
         GST_RANK_NONE);
     gst_d3d12_h265_dec_register (plugin, device, video_device.Get (),
         GST_RANK_NONE);
+    gst_d3d12_vp8_dec_register (plugin, device, video_device.Get (),
+        GST_RANK_NONE);
     gst_d3d12_vp9_dec_register (plugin, device, video_device.Get (),
         GST_RANK_NONE);
     gst_d3d12_av1_dec_register (plugin, device, video_device.Get (),
+        GST_RANK_NONE);
+
+    gst_d3d12_h264_enc_register (plugin, device, video_device.Get (),
         GST_RANK_NONE);
 
     gst_object_unref (device);
@@ -119,6 +137,15 @@ plugin_init (GstPlugin * plugin)
       "d3d12testsrc", GST_RANK_NONE, GST_TYPE_D3D12_TEST_SRC);
   gst_element_register (plugin,
       "d3d12compositor", GST_RANK_NONE, GST_TYPE_D3D12_COMPOSITOR);
+  gst_element_register (plugin, "d3d12screencapturesrc", GST_RANK_NONE,
+      GST_TYPE_D3D12_SCREEN_CAPTURE_SRC);
+  gst_device_provider_register (plugin,
+      "d3d12screencapturedeviceprovider", GST_RANK_PRIMARY,
+      GST_TYPE_D3D12_SCREEN_CAPTURE_DEVICE_PROVIDER);
+
+  g_object_set_data_full (G_OBJECT (plugin),
+      "plugin-d3d12-shutdown", (gpointer) "shutdown-data",
+      (GDestroyNotify) plugin_deinit);
 
   return TRUE;
 }

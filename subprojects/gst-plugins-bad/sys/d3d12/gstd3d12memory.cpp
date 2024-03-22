@@ -23,6 +23,7 @@
 
 #include "gstd3d12.h"
 #include "gstd3d12memory-private.h"
+#include "gstd3d12-private.h"
 #include <directx/d3dx12.h>
 #include <string.h>
 #include <wrl.h>
@@ -31,6 +32,8 @@
 #include <atomic>
 #include <queue>
 #include <vector>
+#include <map>
+#include <memory>
 
 /* *INDENT-OFF* */
 using namespace Microsoft::WRL;
@@ -97,6 +100,7 @@ gst_d3d12_allocation_params_new (GstD3D12Device * device,
   ret->d3d12_format = d3d12_format;
   ret->array_size = 1;
   ret->flags = flags;
+  ret->heap_flags = D3D12_HEAP_FLAG_NONE;
   ret->resource_flags = resource_flags;
 
   return ret;
@@ -173,6 +177,17 @@ gst_d3d12_allocation_params_unset_resource_flags (GstD3D12AllocationParams *
 }
 
 gboolean
+gst_d3d12_allocation_params_set_heap_flags (GstD3D12AllocationParams *
+    params, D3D12_HEAP_FLAGS heap_flags)
+{
+  g_return_val_if_fail (params, FALSE);
+
+  params->heap_flags |= heap_flags;
+
+  return TRUE;
+}
+
+gboolean
 gst_d3d12_allocation_params_set_array_size (GstD3D12AllocationParams * params,
     guint size)
 {
@@ -185,14 +200,35 @@ gst_d3d12_allocation_params_set_array_size (GstD3D12AllocationParams * params,
   return TRUE;
 }
 
-
 /* *INDENT-OFF* */
+struct GstD3D12MemoryTokenData
+{
+  GstD3D12MemoryTokenData (gpointer data, GDestroyNotify notify_func)
+    : user_data (data), notify (notify_func)
+  {
+  }
+
+  ~GstD3D12MemoryTokenData ()
+  {
+    if (notify)
+      notify (user_data);
+  }
+
+  gpointer user_data;
+  GDestroyNotify notify;
+};
+
 struct _GstD3D12MemoryPrivate
 {
   ~_GstD3D12MemoryPrivate ()
   {
     if (event_handle)
       CloseHandle (event_handle);
+
+    if (nt_handle)
+      CloseHandle (nt_handle);
+
+    token_map.clear ();
   }
 
   ComPtr<ID3D12Resource> resource;
@@ -206,15 +242,19 @@ struct _GstD3D12MemoryPrivate
   D3D12_RESOURCE_DESC desc;
 
   HANDLE event_handle = nullptr;
+  HANDLE nt_handle = nullptr;
+  std::map<gint64, std::unique_ptr<GstD3D12MemoryTokenData>> token_map;
 
   /* Queryied via ID3D12Device::GetCopyableFootprints */
   D3D12_PLACED_SUBRESOURCE_FOOTPRINT layout[GST_VIDEO_MAX_PLANES];
   guint64 size;
   guint num_subresources;
+  D3D12_RECT subresource_rect[GST_VIDEO_MAX_PLANES];
   guint subresource_index[GST_VIDEO_MAX_PLANES];
   DXGI_FORMAT resource_formats[GST_VIDEO_MAX_PLANES];
   guint srv_inc_size;
   guint rtv_inc_size;
+  guint64 cpu_map_count = 0;
 
   std::mutex lock;
 };
@@ -247,13 +287,6 @@ gst_d3d12_memory_ensure_staging_resource (GstD3D12Memory * dmem)
       &desc, D3D12_RESOURCE_STATE_COMMON, nullptr, IID_PPV_ARGS (&staging));
   if (!gst_d3d12_result (hr, dmem->device)) {
     GST_ERROR_OBJECT (dmem->device, "Couldn't create staging resource");
-    return FALSE;
-  }
-
-  /* And map persistently */
-  hr = staging->Map (0, nullptr, &priv->staging_ptr);
-  if (!gst_d3d12_result (hr, dmem->device)) {
-    GST_ERROR_OBJECT (dmem->device, "Couldn't map readback resource");
     return FALSE;
   }
 
@@ -375,19 +408,29 @@ gst_d3d12_memory_map_full (GstMemory * mem, GstMapInfo * info, gsize maxsize)
     return priv->resource.Get ();
   }
 
-  if (!gst_d3d12_memory_ensure_staging_resource (dmem)) {
-    GST_ERROR_OBJECT (mem->allocator,
-        "Couldn't create readback_staging resource");
-    return nullptr;
-  }
+  if (priv->cpu_map_count == 0) {
+    if (!gst_d3d12_memory_ensure_staging_resource (dmem)) {
+      GST_ERROR_OBJECT (mem->allocator,
+          "Couldn't create readback_staging resource");
+      return nullptr;
+    }
 
-  if (!gst_d3d12_memory_download (dmem)) {
-    GST_ERROR_OBJECT (mem->allocator, "Couldn't download resource");
-    return nullptr;
+    if (!gst_d3d12_memory_download (dmem)) {
+      GST_ERROR_OBJECT (mem->allocator, "Couldn't download resource");
+      return nullptr;
+    }
+
+    auto hr = priv->staging->Map (0, nullptr, &priv->staging_ptr);
+    if (!gst_d3d12_result (hr, dmem->device)) {
+      GST_ERROR_OBJECT (dmem->device, "Couldn't map readback resource");
+      return nullptr;
+    }
   }
 
   if ((flags & GST_MAP_WRITE) != 0)
     GST_MINI_OBJECT_FLAG_SET (mem, GST_D3D12_MEMORY_TRANSFER_NEED_UPLOAD);
+
+  priv->cpu_map_count++;
 
   return priv->staging_ptr;
 }
@@ -395,7 +438,18 @@ gst_d3d12_memory_map_full (GstMemory * mem, GstMapInfo * info, gsize maxsize)
 static void
 gst_d3d12_memory_unmap_full (GstMemory * mem, GstMapInfo * info)
 {
-  /* Nothing to do here */
+  auto dmem = GST_D3D12_MEMORY_CAST (mem);
+  auto priv = dmem->priv;
+  GstMapFlags flags = info->flags;
+
+  if ((flags & GST_MAP_D3D12) == 0) {
+    std::lock_guard < std::mutex > lk (priv->lock);
+
+    g_assert (priv->cpu_map_count != 0);
+    priv->cpu_map_count--;
+    if (priv->cpu_map_count == 0)
+      priv->staging->Unmap (0, nullptr);
+  }
 }
 
 static GstMemory *
@@ -471,6 +525,21 @@ gst_d3d12_memory_get_plane_count (GstD3D12Memory * mem)
   g_return_val_if_fail (gst_is_d3d12_memory (GST_MEMORY_CAST (mem)), 0);
 
   return mem->priv->num_subresources;
+}
+
+gboolean
+gst_d3d12_memory_get_plane_rectangle (GstD3D12Memory * mem, guint plane,
+    D3D12_RECT * rect)
+{
+  g_return_val_if_fail (gst_is_d3d12_memory (GST_MEMORY_CAST (mem)), FALSE);
+  g_return_val_if_fail (rect, FALSE);
+
+  if (plane >= mem->priv->num_subresources)
+    return FALSE;
+
+  *rect = mem->priv->subresource_rect[plane];
+
+  return TRUE;
 }
 
 gboolean
@@ -561,6 +630,8 @@ gst_d3d12_memory_get_render_target_view_heap (GstD3D12Memory * mem,
 
     D3D12_RENDER_TARGET_VIEW_DESC rtv_desc = { };
     rtv_desc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
+    if (priv->desc.SampleDesc.Count > 1)
+      rtv_desc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2DMS;
 
     auto cpu_handle =
         CD3DX12_CPU_DESCRIPTOR_HANDLE
@@ -568,7 +639,8 @@ gst_d3d12_memory_get_render_target_view_heap (GstD3D12Memory * mem,
 
     for (guint i = 0; i < priv->num_subresources; i++) {
       rtv_desc.Format = priv->resource_formats[i];
-      rtv_desc.Texture2D.PlaneSlice = i;
+      if (priv->desc.SampleDesc.Count == 1)
+        rtv_desc.Texture2D.PlaneSlice = i;
       device->CreateRenderTargetView (priv->resource.Get (), &rtv_desc,
           cpu_handle);
       cpu_handle.Offset (priv->rtv_inc_size);
@@ -579,6 +651,60 @@ gst_d3d12_memory_get_render_target_view_heap (GstD3D12Memory * mem,
   (*heap)->AddRef ();
 
   return TRUE;
+}
+
+gboolean
+gst_d3d12_memory_get_nt_handle (GstD3D12Memory * mem, HANDLE * handle)
+{
+  auto priv = mem->priv;
+
+  *handle = nullptr;
+
+  std::lock_guard < std::mutex > lk (priv->lock);
+  if (priv->nt_handle) {
+    *handle = priv->nt_handle;
+    return TRUE;
+  }
+
+  auto device = gst_d3d12_device_get_device_handle (mem->device);
+  auto hr = device->CreateSharedHandle (priv->resource.Get (), nullptr,
+      GENERIC_ALL, nullptr, &priv->nt_handle);
+  if (!gst_d3d12_result (hr, mem->device))
+    return FALSE;
+
+  *handle = priv->nt_handle;
+  return TRUE;
+}
+
+void
+gst_d3d12_memory_set_token_data (GstD3D12Memory * mem, gint64 token,
+    gpointer data, GDestroyNotify notify)
+{
+  auto priv = mem->priv;
+
+  std::lock_guard < std::mutex > lk (priv->lock);
+  auto old_token = priv->token_map.find (token);
+  if (old_token != priv->token_map.end ())
+    priv->token_map.erase (old_token);
+
+  if (data) {
+    priv->token_map[token] = std::unique_ptr < GstD3D12MemoryTokenData >
+        (new GstD3D12MemoryTokenData (data, notify));
+  }
+}
+
+gpointer
+gst_d3d12_memory_get_token_data (GstD3D12Memory * mem, gint64 token)
+{
+  auto priv = mem->priv;
+  gpointer ret = nullptr;
+
+  std::lock_guard < std::mutex > lk (priv->lock);
+  auto old_token = priv->token_map.find (token);
+  if (old_token != priv->token_map.end ())
+    ret = old_token->second->user_data;
+
+  return ret;
 }
 
 /* GstD3D12Allocator */
@@ -687,7 +813,7 @@ gst_d3d12_allocator_alloc_wrapped (GstD3D12Allocator * allocator,
   mem->device = (GstD3D12Device *) gst_object_ref (device);
 
   mem->priv->size = 0;
-  for (guint i = 0; i < mem->priv->num_subresources; i++) {
+  for (guint i = 0; i < num_subresources; i++) {
     UINT64 size;
 
     /* One notable difference between D3D12/D3D11 is that, D3D12 introduced
@@ -713,6 +839,30 @@ gst_d3d12_allocator_alloc_wrapped (GstD3D12Allocator * allocator,
     /* Update offset manually */
     priv->layout[i].Offset = priv->size;
     priv->size += size;
+  }
+
+  priv->subresource_rect[0].left = 0;
+  priv->subresource_rect[0].top = 0;
+  priv->subresource_rect[0].right = (LONG) desc.Width;
+  priv->subresource_rect[0].bottom = (LONG) desc.Height;
+
+  for (guint i = 1; i < num_subresources; i++) {
+    priv->subresource_rect[i].left = 0;
+    priv->subresource_rect[i].top = 0;
+    switch (desc.Format) {
+      case DXGI_FORMAT_NV12:
+      case DXGI_FORMAT_P010:
+      case DXGI_FORMAT_P016:
+        priv->subresource_rect[i].right = (LONG) desc.Width / 2;
+        priv->subresource_rect[i].bottom = (LONG) desc.Height / 2;
+        break;
+      default:
+        GST_WARNING_OBJECT (allocator, "Unexpected multi-plane format %d",
+            desc.Format);
+        priv->subresource_rect[i].right = (LONG) desc.Width / 2;
+        priv->subresource_rect[i].bottom = (LONG) desc.Height / 2;
+        break;
+    }
   }
 
   gst_memory_init (GST_MEMORY_CAST (mem),
@@ -744,7 +894,20 @@ gst_d3d12_allocator_alloc_internal (GstD3D12Allocator * self,
     return nullptr;
   }
 
-  return gst_d3d12_allocator_alloc_wrapped (self, device, resource.Get (), 0);
+  auto mem =
+      gst_d3d12_allocator_alloc_wrapped (self, device, resource.Get (), 0);
+  if (!mem)
+    return nullptr;
+
+  /* Initialize YUV texture with black color */
+  if (desc->Dimension == D3D12_RESOURCE_DIMENSION_TEXTURE2D &&
+      (desc->Flags & D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET) != 0 &&
+      (heap_flags & D3D12_HEAP_FLAG_CREATE_NOT_ZEROED) == 0 &&
+      desc->DepthOrArraySize == 1) {
+    gst_d3d12_device_clear_yuv_texture (device, mem);
+  }
+
+  return mem;
 }
 
 GstMemory *
@@ -1016,6 +1179,8 @@ gst_d3d12_pool_allocator_release_memory (GstD3D12PoolAllocator * self,
   /* keep it around in our queue */
   priv->queue.push (mem);
   priv->outstanding--;
+  if (priv->outstanding == 0 && priv->flushing)
+    gst_d3d12_pool_allocator_stop (self);
   priv->cond.notify_all ();
   priv->lock.unlock ();
 
@@ -1040,13 +1205,6 @@ gst_d3d12_memory_release (GstMiniObject * mini_object)
   priv = alloc->priv;
 
   priv->lock.lock ();
-  /* if flushing, free this memory */
-  if (alloc->priv->flushing) {
-    priv->lock.unlock ();
-    GST_LOG_OBJECT (alloc, "allocator is flushing, free %p", mem);
-    return TRUE;
-  }
-
   /* return the memory to the allocator */
   gst_memory_ref (mem);
   gst_d3d12_pool_allocator_release_memory (alloc, mem);
@@ -1182,27 +1340,4 @@ gst_d3d12_pool_allocator_acquire_memory (GstD3D12PoolAllocator * allocator,
   }
 
   return ret;
-}
-
-gboolean
-gst_d3d12_pool_allocator_get_pool_size (GstD3D12PoolAllocator * allocator,
-    guint * max_size, guint * outstanding_size)
-{
-  GstD3D12PoolAllocatorPrivate *priv;
-
-  g_return_val_if_fail (GST_IS_D3D12_POOL_ALLOCATOR (allocator), FALSE);
-
-  priv = allocator->priv;
-
-  if (max_size) {
-    if (priv->desc.DepthOrArraySize > 1)
-      *max_size = (guint) priv->desc.DepthOrArraySize;
-    else
-      *max_size = 0;
-  }
-
-  if (outstanding_size)
-    *outstanding_size = priv->outstanding;
-
-  return TRUE;
 }

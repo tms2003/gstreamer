@@ -256,9 +256,21 @@ gst_ffmpegaudenc_set_format (GstAudioEncoder * encoder, GstAudioInfo * info)
   if (!ffmpegaudenc->context->time_base.den) {
     ffmpegaudenc->context->time_base.den = GST_AUDIO_INFO_RATE (info);
     ffmpegaudenc->context->time_base.num = 1;
+#if LIBAVCODEC_VERSION_INT < AV_VERSION_INT(60, 31, 100)
     ffmpegaudenc->context->ticks_per_frame = 1;
+#endif
   }
-
+#if LIBAVUTIL_VERSION_INT >= AV_VERSION_INT(57, 28, 100)
+  if (ffmpegaudenc->context->ch_layout.order != AV_CHANNEL_ORDER_UNSPEC) {
+    gst_ffmpeg_channel_layout_to_gst (&ffmpegaudenc->context->ch_layout,
+        ffmpegaudenc->context->ch_layout.nb_channels,
+        ffmpegaudenc->ffmpeg_layout);
+    ffmpegaudenc->needs_reorder =
+        (memcmp (ffmpegaudenc->ffmpeg_layout, info->position,
+            sizeof (GstAudioChannelPosition) *
+            ffmpegaudenc->context->ch_layout.nb_channels) != 0);
+  }
+#else
   if (ffmpegaudenc->context->channel_layout) {
     gst_ffmpeg_channel_layout_to_gst (ffmpegaudenc->context->channel_layout,
         ffmpegaudenc->context->channels, ffmpegaudenc->ffmpeg_layout);
@@ -267,6 +279,7 @@ gst_ffmpegaudenc_set_format (GstAudioEncoder * encoder, GstAudioInfo * info)
             sizeof (GstAudioChannelPosition) *
             ffmpegaudenc->context->channels) != 0);
   }
+#endif
 
   /* some codecs support more than one format, first auto-choose one */
   GST_DEBUG_OBJECT (ffmpegaudenc, "picking an output format ...");
@@ -390,7 +403,7 @@ typedef struct
   GstBuffer *buffer;
   GstMapInfo map;
 
-  guint8 **ext_data_array, *ext_data;
+  guint8 *ext_data;
 } BufferInfo;
 
 static void
@@ -403,7 +416,6 @@ buffer_info_free (void *opaque, guint8 * data)
     gst_buffer_unref (info->buffer);
   } else {
     av_freep (&info->ext_data);
-    av_freep (&info->ext_data_array);
   }
   g_free (info);
 }
@@ -441,8 +453,13 @@ gst_ffmpegaudenc_send_frame (GstFFMpegAudEnc * ffmpegaudenc, GstBuffer * buffer)
     planar = av_sample_fmt_is_planar (ffmpegaudenc->context->sample_fmt);
     frame->format = ffmpegaudenc->context->sample_fmt;
     frame->sample_rate = ffmpegaudenc->context->sample_rate;
+#if LIBAVUTIL_VERSION_INT >= AV_VERSION_INT(57, 28, 100)
+    av_channel_layout_copy (&frame->ch_layout,
+        &ffmpegaudenc->context->ch_layout);
+#else
     frame->channels = ffmpegaudenc->context->channels;
     frame->channel_layout = ffmpegaudenc->context->channel_layout;
+#endif
 
     if (planar && info->channels > 1) {
       gint channels;
@@ -455,7 +472,7 @@ gst_ffmpegaudenc_send_frame (GstFFMpegAudEnc * ffmpegaudenc, GstBuffer * buffer)
           av_buffer_create (NULL, 0, buffer_info_free, buffer_info, 0);
 
       if (info->channels > AV_NUM_DATA_POINTERS) {
-        buffer_info->ext_data_array = frame->extended_data =
+        frame->extended_data =
             av_malloc_array (info->channels, sizeof (uint8_t *));
       } else {
         frame->extended_data = frame->data;

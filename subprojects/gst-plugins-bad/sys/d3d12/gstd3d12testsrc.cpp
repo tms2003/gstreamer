@@ -232,7 +232,8 @@ struct RenderContext
   {
     event_handle = CreateEventEx (nullptr, nullptr, 0, EVENT_ALL_ACCESS);
     device = (GstD3D12Device *) gst_object_ref (dev);
-    ca_pool = gst_d3d12_command_allocator_pool_new (device,
+    auto device_handle = gst_d3d12_device_get_device_handle (device);
+    ca_pool = gst_d3d12_command_allocator_pool_new (device_handle,
         D3D12_COMMAND_LIST_TYPE_DIRECT);
   }
 
@@ -560,7 +561,7 @@ setup_snow_render (GstD3D12TestSrc * self, RenderContext * ctx,
   ComPtr < ID3D12Resource > vertex_index_buf;
   hr = device->CreateCommittedResource (&heap_prop,
       D3D12_HEAP_FLAG_CREATE_NOT_ZEROED,
-      &buffer_desc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr,
+      &buffer_desc, D3D12_RESOURCE_STATE_COMMON, nullptr,
       IID_PPV_ARGS (&vertex_index_buf));
   if (!gst_d3d12_result (hr, self->device)) {
     GST_ERROR_OBJECT (self, "Couldn't create index buffer");
@@ -938,7 +939,7 @@ setup_smpte_render (GstD3D12TestSrc * self, RenderContext * ctx)
   ComPtr < ID3D12Resource > vertex_index_buf;
   hr = device->CreateCommittedResource (&heap_prop,
       D3D12_HEAP_FLAG_CREATE_NOT_ZEROED,
-      &buffer_desc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr,
+      &buffer_desc, D3D12_RESOURCE_STATE_COMMON, nullptr,
       IID_PPV_ARGS (&vertex_index_buf));
   if (!gst_d3d12_result (hr, self->device)) {
     GST_ERROR_OBJECT (self, "Couldn't create index buffer");
@@ -1104,7 +1105,7 @@ setup_checker_render (GstD3D12TestSrc * self, RenderContext * ctx,
   ComPtr < ID3D12Resource > vertex_index_buf;
   hr = device->CreateCommittedResource (&heap_prop,
       D3D12_HEAP_FLAG_CREATE_NOT_ZEROED,
-      &buffer_desc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr,
+      &buffer_desc, D3D12_RESOURCE_STATE_COMMON, nullptr,
       IID_PPV_ARGS (&vertex_index_buf));
   if (!gst_d3d12_result (hr, self->device)) {
     GST_ERROR_OBJECT (self, "Couldn't create index buffer");
@@ -2158,8 +2159,7 @@ gst_d3d12_test_src_create (GstBaseSrc * bsrc, guint64 offset,
   auto cl = priv->ctx->cl;
   GstD3D12FenceData *fence_data;
   gst_d3d12_fence_data_pool_acquire (priv->fence_data_pool, &fence_data);
-  gst_d3d12_fence_data_add_notify (fence_data, gst_ca,
-      (GDestroyNotify) gst_d3d12_command_allocator_unref);
+  gst_d3d12_fence_data_add_notify_mini_object (fence_data, gst_ca);
 
   pts = priv->accum_rtime + priv->running_time;
   gst_d3d12_test_src_draw_pattern (self, pts, cl.Get ());
@@ -2193,8 +2193,7 @@ gst_d3d12_test_src_create (GstBaseSrc * bsrc, guint64 offset,
   gst_d3d12_buffer_after_write (convert_buffer, priv->ctx->fence_val);
 
   gst_d3d12_device_set_fence_notify (self->device,
-      D3D12_COMMAND_LIST_TYPE_DIRECT, priv->ctx->fence_val, fence_data,
-      (GDestroyNotify) gst_d3d12_fence_data_unref);
+      D3D12_COMMAND_LIST_TYPE_DIRECT, priv->ctx->fence_val, fence_data);
 
   priv->ctx->scheduled.push (priv->ctx->fence_val);
 

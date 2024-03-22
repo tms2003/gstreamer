@@ -1499,7 +1499,7 @@ do_time_effect_change (GESClip * clip)
   children = ges_container_get_children (GES_CONTAINER (clip), FALSE);
 
   for (tmp = children; tmp; tmp = tmp-&gt;next)
-    ges_track_element_set_auto_clamp_control_source (tmp-&gt;data, FALSE);
+    ges_track_element_set_auto_clamp_control_sources (tmp-&gt;data, FALSE);
 
   // add time effect, or set their children properties, or move them around
   ...
@@ -1520,7 +1520,7 @@ do_time_effect_change (GESClip * clip)
     // handle error
 
   for (tmp = children; tmp; tmp = tmp-&gt;next)
-    ges_track_element_set_auto_clamp_control_source (tmp-&gt;data, TRUE);
+    ges_track_element_set_auto_clamp_control_sources (tmp-&gt;data, TRUE);
 
   g_list_free_full (children, gst_object_unref);
   gst_object_unref (source);
@@ -1664,7 +1664,8 @@ would not be able to adapt itself once the effect is added.</doc>
             <type name="BaseEffect" c:type="GESBaseEffect*"/>
           </parameter>
           <parameter name="index" transfer-ownership="none">
-            <doc xml:space="preserve" filename="../subprojects/gst-editing-services/ges/ges-clip.c">The index to add @effect at, or -1 to add at the highest</doc>
+            <doc xml:space="preserve" filename="../subprojects/gst-editing-services/ges/ges-clip.c">The index to add @effect at, or -1 to add at the highest,
+        see #ges_clip_get_top_effect_index for more information</doc>
             <type name="gint" c:type="gint"/>
           </parameter>
         </parameters>
@@ -3536,10 +3537,23 @@ and [clip management](http://pitivi.org/manual/usingclips.html).</doc>
       </function>
     </enumeration>
     <class name="Effect" c:symbol-prefix="effect" c:type="GESEffect" parent="BaseEffect" glib:type-name="GESEffect" glib:get-type="ges_effect_get_type" glib:type-struct="EffectClass">
-      <doc xml:space="preserve" filename="../subprojects/gst-editing-services/ges/ges-effect.c">Currently we only support effects with N sinkpads and one single srcpad.
-Apart from `gesaudiomixer` and `gescompositor` which can be used as effects
-and where sinkpads will be requested as needed based on the timeline topology
-GES will always request at most one sinkpad per effect (when required).
+      <doc xml:space="preserve" filename="../subprojects/gst-editing-services/ges/ges-effect.c">Any GStreamer filter can be used as effects in GES. The only restriction we
+have is that effects element should have a single [sinkpad](GST_PAD_SINK)
+(which will be requested if necessary) and a single [srcpad](GST_PAD_SRC).
+
+Note that `gesaudiomixer` and `gescompositor` can be used as effects even
+though they can have several sinkpads.
+
+## GES specific effects:
+
+* **`gesvideoscale`**: GES implements a specific scaling bin that allows
+  specifying where scaling will happen inside the chain of effects. By
+  default scaling can happen either in the source (if the source doesn't have
+  a specific size, like `videotestsrc` or [mixing](ges_track_set_mixing) has
+  been disabled) or in the mixing element otherwise, when adding that element
+  as an effect, GES guarantees that the scaling will happen in it. This can
+  be useful for example if you want to crop the video before scaling or apply
+  rounding corners to the video after scaling, etc...
 
 &gt; Note: GES always adds converters (`audioconvert ! audioresample !
 &gt; audioconvert` for audio effects and `videoconvert` for video effects) to
@@ -4473,19 +4487,21 @@ composition.</doc>
       </field>
       <field name="posx" writable="1">
         <doc xml:space="preserve" filename="../subprojects/gst-editing-services/ges/ges-frame-composition-meta.h">The desired x position.</doc>
-        <type name="gint" c:type="gint"/>
+        <type name="gdouble" c:type="gdouble"/>
       </field>
       <field name="posy" writable="1">
         <doc xml:space="preserve" filename="../subprojects/gst-editing-services/ges/ges-frame-composition-meta.h">The desired y position.</doc>
-        <type name="gint" c:type="gint"/>
+        <type name="gdouble" c:type="gdouble"/>
       </field>
       <field name="height" writable="1">
-        <doc xml:space="preserve" filename="../subprojects/gst-editing-services/ges/ges-frame-composition-meta.h">The desired height of the video.</doc>
-        <type name="gint" c:type="gint"/>
+        <doc xml:space="preserve" filename="../subprojects/gst-editing-services/ges/ges-frame-composition-meta.h">The desired height of the video. -1 means that no scaling should be
+applied.</doc>
+        <type name="gdouble" c:type="gdouble"/>
       </field>
       <field name="width" writable="1">
-        <doc xml:space="preserve" filename="../subprojects/gst-editing-services/ges/ges-frame-composition-meta.h">The desired width of the video.</doc>
-        <type name="gint" c:type="gint"/>
+        <doc xml:space="preserve" filename="../subprojects/gst-editing-services/ges/ges-frame-composition-meta.h">The desired width of the video. -1 means that no scaling should beapplied
+applied.</doc>
+        <type name="gdouble" c:type="gdouble"/>
       </field>
       <field name="zorder" writable="1">
         <doc xml:space="preserve" filename="../subprojects/gst-editing-services/ges/ges-frame-composition-meta.h">The desired z order.</doc>
@@ -15446,7 +15462,7 @@ contains one frame)</doc>
       <source-position filename="../subprojects/gst-editing-services/ges/ges-version.h"/>
       <type name="gint" c:type="gint"/>
     </constant>
-    <constant name="VERSION_MINOR" value="23" c:type="GES_VERSION_MINOR">
+    <constant name="VERSION_MINOR" value="25" c:type="GES_VERSION_MINOR">
       <source-position filename="../subprojects/gst-editing-services/ges/ges-version.h"/>
       <type name="gint" c:type="gint"/>
     </constant>

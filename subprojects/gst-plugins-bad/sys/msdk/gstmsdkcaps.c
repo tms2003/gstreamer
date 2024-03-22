@@ -876,6 +876,8 @@ _enc_get_supported_formats_and_profiles (mfxSession * session,
     g_strfreev (profs);
   }
 
+  g_value_unset (&fmts);
+
   if (gst_value_list_get_size (supported_fmts) == 0 ||
       gst_value_list_get_size (supported_profs) == 0)
     return FALSE;
@@ -887,25 +889,23 @@ static GstCaps *
 _enc_create_sink_caps (GstMsdkContext * context, guint codec_id,
     const ResolutionRange * res, GValue * supported_formats)
 {
-  GstCaps *caps, *dma_caps;
-
-  caps = gst_caps_from_string ("video/x-raw");
-  gst_caps_set_value (caps, "format", supported_formats);
+  GstCaps *caps, *dma_caps, *raw_caps;
 
 #ifndef _WIN32
+  caps = gst_caps_from_string
+      ("video/x-raw(memory:VAMemory), format=(string){ NV12 }");
   dma_caps = _create_dma_drm_caps (context, GST_MSDK_JOB_ENCODER,
       supported_formats);
   gst_caps_append (caps, dma_caps);
-
-  gst_caps_append (caps,
-      gst_caps_from_string
-      ("video/x-raw(memory:VAMemory), format=(string){ NV12 }"));
 #else
   VAR_UNUSED (dma_caps);
-  gst_caps_append (caps,
-      gst_caps_from_string
-      ("video/x-raw(memory:D3D11Memory), format=(string){ NV12 }"));
+  caps = gst_caps_from_string
+      ("video/x-raw(memory:D3D11Memory), format=(string){ NV12 }");
 #endif
+
+  raw_caps = gst_caps_from_string ("video/x-raw");
+  gst_caps_set_value (raw_caps, "format", supported_formats);
+  gst_caps_append (caps, raw_caps);
 
   gst_caps_set_simple (caps,
       "width", GST_TYPE_INT_RANGE, res->min_width, res->max_width,
@@ -1207,29 +1207,27 @@ _dec_create_src_caps (GstMsdkContext * context,
     mfxSession * session, guint codec_id,
     mfxDecoderDescription * dec_desc, GValue * supported_formats)
 {
-  GstCaps *caps, *dma_caps;
+  GstCaps *caps, *dma_caps, *raw_caps;
   ResolutionRange res = { 1, G_MAXUINT16, 1, G_MAXUINT16 };
 
   if (!_dec_get_resolution_range (session, dec_desc, codec_id, &res))
     return NULL;
 
-  caps = gst_caps_from_string ("video/x-raw");
-  gst_caps_set_value (caps, "format", supported_formats);
-
 #ifndef _WIN32
+  caps = gst_caps_from_string
+      ("video/x-raw(memory:VAMemory), format=(string){ NV12 }");
   dma_caps = _create_dma_drm_caps (context, GST_MSDK_JOB_DECODER,
       supported_formats);
   gst_caps_append (caps, dma_caps);
-
-  gst_caps_append (caps,
-      gst_caps_from_string
-      ("video/x-raw(memory:VAMemory), format=(string){ NV12 }"));
 #else
   VAR_UNUSED (dma_caps);
-  gst_caps_append (caps,
-      gst_caps_from_string
-      ("video/x-raw(memory:D3D11Memory), format=(string){ NV12 }"));
+  caps = gst_caps_from_string
+      ("video/x-raw(memory:D3D11Memory), format=(string){ NV12 }");
 #endif
+
+  raw_caps = gst_caps_from_string ("video/x-raw");
+  gst_caps_set_value (raw_caps, "format", supported_formats);
+  gst_caps_append (caps, raw_caps);
 
   gst_caps_set_simple (caps,
       "width", GST_TYPE_INT_RANGE, res.min_width, res.max_width,
@@ -1460,24 +1458,21 @@ static GstCaps *
 _vpp_create_caps (GstMsdkContext * context,
     GValue * supported_fmts, ResolutionRange * res)
 {
-  GstCaps *caps, *dma_caps;
-
-  caps = gst_caps_from_string ("video/x-raw");
-  gst_caps_set_value (caps, "format", supported_fmts);
+  GstCaps *caps, *dma_caps, *raw_caps;
 
 #ifndef _WIN32
+  caps = gst_caps_from_string ("video/x-raw(memory:VAMemory), "
+      "format=(string){ NV12, VUYA, P010_10LE }");
   dma_caps = _create_dma_drm_caps (context, GST_MSDK_JOB_VPP, supported_fmts);
   gst_caps_append (caps, dma_caps);
-
-  gst_caps_append (caps,
-      gst_caps_from_string ("video/x-raw(memory:VAMemory), "
-          "format=(string){ NV12, VUYA, P010_10LE }"));
 #else
   VAR_UNUSED (dma_caps);
-  gst_caps_append (caps,
-      gst_caps_from_string ("video/x-raw(memory:D3D11Memory), "
-          "format=(string){ NV12, VUYA, P010_10LE }"));
+  caps = gst_caps_from_string ("video/x-raw(memory:D3D11Memory), "
+      "format=(string){ NV12, VUYA, P010_10LE }");
 #endif
+  raw_caps = gst_caps_from_string ("video/x-raw");
+  gst_caps_set_value (raw_caps, "format", supported_fmts);
+  gst_caps_append (caps, raw_caps);
 
   gst_caps_set_simple (caps,
       "width", GST_TYPE_INT_RANGE, res->min_width, res->max_width,
@@ -2025,6 +2020,8 @@ gst_msdkcaps_set_strings (GstCaps * caps,
       }
     }
 
+    gst_caps_features_free (f);
+
     if (!s)
       return FALSE;
 
@@ -2045,26 +2042,6 @@ gst_msdkcaps_set_strings (GstCaps * caps,
 }
 
 gboolean
-gst_msdkcaps_remove_structure (GstCaps * caps, const gchar * features)
-{
-  guint size;
-  GstCapsFeatures *f;
-
-  g_return_val_if_fail (GST_IS_CAPS (caps), FALSE);
-  g_return_val_if_fail (features != NULL, FALSE);
-
-  size = gst_caps_get_size (caps);
-  f = gst_caps_features_from_string (features);
-
-  for (guint i = 0; i < size; i++) {
-    if (gst_caps_features_is_equal (f, gst_caps_get_features (caps, i)))
-      gst_caps_remove_structure (caps, i);
-  }
-
-  return TRUE;
-}
-
-gboolean
 gst_msdkcaps_video_info_from_caps (const GstCaps * caps,
     GstVideoInfo * info, guint64 * modifier)
 {
@@ -2077,15 +2054,13 @@ gst_msdkcaps_video_info_from_caps (const GstCaps * caps,
     if (!drm_info)
       goto failed;
 
-    *info = drm_info->vinfo;
+    if (!gst_video_info_dma_drm_to_video_info (drm_info, info)) {
+      gst_video_info_dma_drm_free (drm_info);
+      goto failed;
+    }
     if (modifier)
       *modifier = drm_info->drm_modifier;
 
-    /* We need to update the offset/stride in info */
-    GstVideoFormat drm_video_format =
-        gst_va_video_format_from_drm_fourcc (drm_info->drm_fourcc);
-    gst_video_info_set_format
-        (info, drm_video_format, drm_info->vinfo.width, drm_info->vinfo.height);
     gst_video_info_dma_drm_free (drm_info);
   } else
 #endif

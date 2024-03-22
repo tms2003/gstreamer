@@ -26,7 +26,7 @@ import os
 
 TEST_MANAGER = "check"
 
-KNOWN_NOT_LEAKY = r'^check.gst-devtools.*|^check.gstreamer.*|^check-gst-plugins-base|^check.gst-plugins-ugly|^check.gst-plugins-good'
+KNOWN_NOT_LEAKY = r'^gst-devtools.*|^gstreamer.*|^gst-plugins-base|^gst-plugins-ugly|^gst-plugins-good'
 
 # These tests take very long compared to what they add, so let's skip them.
 LONG_VALGRIND_TESTS = [
@@ -98,11 +98,13 @@ VALGRIND_BLACKLIST = [
     (r'check.gst-plugins-good.elements_rtpjitterbuffer.test_push_backward_seq', 'flaky in valgrind'),
     (r'check.gst-plugins-good.elements_rtpjitterbuffer.test_push_unordered', 'flaky in valgrind'),
     (r'check.gst-plugins-bad.elements_assrender', '?'),
+    (r'check.gst-plugins-bad.elements_autovideoconvert.test_autovideoconvert_videoconvert', 'Leak with GLX, https://gitlab.freedesktop.org/gstreamer/gstreamer/-/issues/3216'),
     (r'check.gst-plugins-bad.elements_camerabin', '?'),
     (r'check.gst-plugins-bad.elements_line21', '?'),
     (r'check.gst-plugins-bad.elements_mpeg2enc', '?'),
     (r'check.gst-plugins-bad.elements_mplex', '?'),
     (r'check.gst-plugins-bad.elements_mxfmux', '?'),
+    (r'check.gst-plugins-bad.elements_srt.test_src_listener_sink_caller', 'Need to investigate libsrt leaks (flaky)'),
     (r'check.gst-plugins-bad.elements_x265enc', '?'),
     (r'check.gst-plugins-bad.elements_zbar', '?'),
     (r'check.gst-plugins-bad.elements_webrtcbin.test_data_channel_remote_notify', 'Need to fix leaks'),
@@ -179,6 +181,23 @@ CI_BLACKLIST = [
 
 
 KNOWN_ISSUES = {
+    "https://gitlab.freedesktop.org/gstreamer/gstreamer/-/issues/2973": {
+        "tests": [
+            "check.gst-editing-services.complex_effect_bin_desc"
+        ],
+        "issues": [
+            {
+                'returncode': 238,
+                'sometimes': True,
+            },
+            {
+                "issue-id": "validateflow::mismatch",
+                "summary": "The recorded log does not match the expectation file.",
+                "level": "critical",
+                # "details": "Mismatch error in pad videosink:sink, line 4. Expected:\nbuffer: checksum=369888c2612267760fcfaa74e52fc53bd73e4d15, pts=0:00:00.000000000, dur=0:00:00.033333333, meta=GstVideoMeta\nActual:\nbuffer: checksum=b7764dce84f311119c4c36b511ba5adb66de76af, pts=0:00:00.000000000, dur=0:00:00.033333333, meta=GstVideoMeta\n",
+            },
+        ],
+    },
     "https://gitlab.freedesktop.org/gstreamer/gstreamer/-/issues/773": {
         "tests": [
             r"check.gst-plugins-bad.elements_webrtcbin.*",

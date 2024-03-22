@@ -26,6 +26,7 @@
 
 #include "fullscreen-shell-unstable-v1-client-protocol.h"
 #include "linux-dmabuf-unstable-v1-client-protocol.h"
+#include "single-pixel-buffer-v1-client-protocol.h"
 #include "viewporter-client-protocol.h"
 #include "xdg-shell-client-protocol.h"
 
@@ -48,6 +49,7 @@ typedef struct _GstWlDisplayPrivate
   struct wl_subcompositor *subcompositor;
   struct xdg_wm_base *xdg_wm_base;
   struct zwp_fullscreen_shell_v1 *fullscreen_shell;
+  struct wp_single_pixel_buffer_manager_v1 *single_pixel_buffer;
   struct wl_shm *shm;
   struct wp_viewporter *viewporter;
   struct zwp_linux_dmabuf_v1 *dmabuf;
@@ -59,6 +61,8 @@ typedef struct _GstWlDisplayPrivate
   gboolean own_display;
   GThread *thread;
   GstPoll *wl_fd_poll;
+
+  GRecMutex sync_mutex;
 
   GMutex buffers_mutex;
   GHashTable *buffers;
@@ -91,6 +95,7 @@ gst_wl_display_init (GstWlDisplay * self)
   priv->wl_fd_poll = gst_poll_new (TRUE);
   priv->buffers = g_hash_table_new (g_direct_hash, g_direct_equal);
   g_mutex_init (&priv->buffers_mutex);
+  g_rec_mutex_init (&priv->sync_mutex);
 
   gst_wl_linux_dmabuf_init_once ();
   gst_shm_allocator_init_once ();
@@ -130,6 +135,7 @@ gst_wl_display_finalize (GObject * gobject)
   gst_poll_free (priv->wl_fd_poll);
   g_hash_table_unref (priv->buffers);
   g_mutex_clear (&priv->buffers_mutex);
+  g_rec_mutex_clear (&priv->sync_mutex);
 
   if (priv->viewporter)
     wp_viewporter_destroy (priv->viewporter);
@@ -145,6 +151,9 @@ gst_wl_display_finalize (GObject * gobject)
 
   if (priv->fullscreen_shell)
     zwp_fullscreen_shell_v1_release (priv->fullscreen_shell);
+
+  if (priv->single_pixel_buffer)
+    wp_single_pixel_buffer_manager_v1_destroy (priv->single_pixel_buffer);
 
   if (priv->compositor)
     wl_compositor_destroy (priv->compositor);
@@ -323,6 +332,10 @@ registry_handle_global (void *data, struct wl_registry *registry,
     priv->dmabuf =
         wl_registry_bind (registry, id, &zwp_linux_dmabuf_v1_interface, 3);
     zwp_linux_dmabuf_v1_add_listener (priv->dmabuf, &dmabuf_listener, self);
+  } else if (g_strcmp0 (interface, "wp_single_pixel_buffer_manager_v1") == 0) {
+    priv->single_pixel_buffer =
+        wl_registry_bind (registry, id,
+        &wp_single_pixel_buffer_manager_v1_interface, 1);
   }
 }
 
@@ -351,8 +364,10 @@ gst_wl_display_thread_run (gpointer data)
 
   /* main loop */
   while (1) {
+    g_rec_mutex_lock (&priv->sync_mutex);
     while (wl_display_prepare_read_queue (priv->display, priv->queue) != 0)
       wl_display_dispatch_queue_pending (priv->display, priv->queue);
+    g_rec_mutex_unlock (&priv->sync_mutex);
     wl_display_flush (priv->display);
 
     if (gst_poll_wait (priv->wl_fd_poll, GST_CLOCK_TIME_NONE) < 0) {
@@ -365,7 +380,10 @@ gst_wl_display_thread_run (gpointer data)
     }
     if (wl_display_read_events (priv->display) == -1)
       goto error;
+
+    g_rec_mutex_lock (&priv->sync_mutex);
     wl_display_dispatch_queue_pending (priv->display, priv->queue);
+    g_rec_mutex_unlock (&priv->sync_mutex);
   }
 
   return NULL;
@@ -514,6 +532,51 @@ gst_wl_display_unregister_buffer (GstWlDisplay * self, gpointer gstmem)
   g_mutex_unlock (&priv->buffers_mutex);
 }
 
+/* gst_wl_display_sync
+ *
+ * A syncronized version of `wl_display_sink` that ensures that the
+ * callback will not be dispatched before the listener has been attached.
+ */
+struct wl_callback *
+gst_wl_display_sync (GstWlDisplay * self,
+    const struct wl_callback_listener *listener, gpointer data)
+{
+  GstWlDisplayPrivate *priv = gst_wl_display_get_instance_private (self);
+  struct wl_callback *callback;
+
+  g_rec_mutex_lock (&priv->sync_mutex);
+
+  callback = wl_display_sync (priv->display_wrapper);
+  if (callback && listener)
+    wl_callback_add_listener (callback, listener, data);
+
+  g_rec_mutex_unlock (&priv->sync_mutex);
+
+  return callback;
+}
+
+/* gst_wl_display_callback_destroy
+ *
+ * A syncronized version of `wl_callback_destroy` that ensures that the
+ * once this function returns, the callback will either have already completed,
+ * or will never be called.
+ */
+void
+gst_wl_display_callback_destroy (GstWlDisplay * self,
+    struct wl_callback **callback)
+{
+  GstWlDisplayPrivate *priv = gst_wl_display_get_instance_private (self);
+
+  g_rec_mutex_lock (&priv->sync_mutex);
+
+  if (*callback) {
+    wl_callback_destroy (*callback);
+    *callback = NULL;
+  }
+
+  g_rec_mutex_unlock (&priv->sync_mutex);
+}
+
 struct wl_display *
 gst_wl_display_get_display (GstWlDisplay * self)
 {
@@ -608,6 +671,14 @@ gst_wl_display_get_dmabuf_formats (GstWlDisplay * self)
   GstWlDisplayPrivate *priv = gst_wl_display_get_instance_private (self);
 
   return priv->dmabuf_formats;
+}
+
+struct wp_single_pixel_buffer_manager_v1 *
+gst_wl_display_get_single_pixel_buffer_manager_v1 (GstWlDisplay * self)
+{
+  GstWlDisplayPrivate *priv = gst_wl_display_get_instance_private (self);
+
+  return priv->single_pixel_buffer;
 }
 
 gboolean

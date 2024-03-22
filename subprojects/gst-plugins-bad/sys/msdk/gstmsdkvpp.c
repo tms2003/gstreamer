@@ -63,6 +63,7 @@
 #include <libdrm/drm_fourcc.h>
 #include "gstmsdkallocator_libva.h"
 #include <gst/va/gstvaallocator.h>
+#include <gst/va/gstvavideoformat.h>
 #else
 #include <gst/d3d11/gstd3d11.h>
 #endif
@@ -413,6 +414,9 @@ gst_msdk_create_va_pool (GstMsdkVPP * thiz, GstVideoInfo * info,
     }
     allocator = gst_va_allocator_new (display, formats);
   }
+
+  gst_object_unref (display);
+
   if (!allocator) {
     GST_ERROR ("Failed to create allocator");
     if (formats)
@@ -861,12 +865,13 @@ gst_msdkvpp_transform (GstBaseTransform * trans, GstBuffer * inbuf,
     in_surface->surface->Data.TimeStamp =
         gst_util_uint64_scale_round (inbuf->pts, 90000, GST_SECOND);
 
-  out_surface = gst_msdk_import_to_msdk_surface (outbuf, thiz->context,
-      &thiz->srcpad_info, GST_MAP_WRITE);
-
-  if (!thiz->use_video_memory)
+  if (thiz->use_video_memory) {
+    out_surface = gst_msdk_import_to_msdk_surface (outbuf, thiz->context,
+        &thiz->srcpad_info, GST_MAP_WRITE);
+  } else {
     out_surface =
         gst_msdk_import_sys_mem_to_msdk_surface (outbuf, &thiz->srcpad_info);
+  }
 
   if (out_surface) {
     out_surface->buf = gst_buffer_ref (outbuf);
@@ -947,14 +952,15 @@ gst_msdkvpp_transform (GstBaseTransform * trans, GstBuffer * inbuf,
       GST_BUFFER_DURATION (outbuf_new) = thiz->buffer_duration;
 
       release_out_surface (thiz, out_surface);
-      out_surface =
-          gst_msdk_import_to_msdk_surface (outbuf_new, thiz->context,
-          &thiz->srcpad_buffer_pool_info, GST_MAP_WRITE);
-
-      if (!thiz->use_video_memory)
+      if (thiz->use_video_memory) {
+        out_surface =
+            gst_msdk_import_to_msdk_surface (outbuf_new, thiz->context,
+            &thiz->srcpad_buffer_pool_info, GST_MAP_WRITE);
+      } else {
         out_surface =
             gst_msdk_import_sys_mem_to_msdk_surface (outbuf_new,
             &thiz->srcpad_buffer_pool_info);
+      }
 
       if (out_surface) {
         out_surface->buf = gst_buffer_ref (outbuf_new);
@@ -1480,40 +1486,6 @@ error_no_video_info:
   return FALSE;
 }
 
-static gboolean
-pad_accept_memory (GstMsdkVPP * thiz, const gchar * mem_type,
-    GstPadDirection direction, GstCaps * filter)
-{
-  gboolean ret = FALSE;
-  GstCaps *caps, *out_caps;
-  GstPad *pad;
-  GstBaseTransform *trans = GST_BASE_TRANSFORM (thiz);
-
-  if (direction == GST_PAD_SRC)
-    pad = GST_BASE_TRANSFORM_SRC_PAD (trans);
-  else
-    pad = GST_BASE_TRANSFORM_SINK_PAD (trans);
-
-  /* make a copy of filter caps since we need to alter the structure
-   * by adding dmabuf-capsfeatures */
-  caps = gst_caps_copy (filter);
-  gst_caps_set_features (caps, 0, gst_caps_features_from_string (mem_type));
-
-  out_caps = gst_pad_peer_query_caps (pad, caps);
-
-  if (!out_caps || gst_caps_is_empty (out_caps))
-    goto done;
-
-  if (gst_msdkcaps_has_feature (out_caps, mem_type))
-    ret = TRUE;
-done:
-  if (caps)
-    gst_caps_unref (caps);
-  if (out_caps)
-    gst_caps_unref (out_caps);
-  return ret;
-}
-
 static GstCaps *
 gst_msdkvpp_fixate_caps (GstBaseTransform * trans,
     GstPadDirection direction, GstCaps * caps, GstCaps * othercaps)
@@ -1537,27 +1509,6 @@ gst_msdkvpp_fixate_caps (GstBaseTransform * trans,
 
   GST_DEBUG_OBJECT (trans, "fixated to %" GST_PTR_FORMAT, result);
   gst_caps_unref (othercaps);
-
-  /* We let msdkvpp srcpad first query if downstream has va memory type caps,
-   * if not, will check the type of dma memory.
-   */
-#ifndef _WIN32
-  if (pad_accept_memory (thiz, GST_CAPS_FEATURE_MEMORY_VA,
-          direction == GST_PAD_SRC ? GST_PAD_SINK : GST_PAD_SRC, result)) {
-    gst_caps_set_features (result, 0,
-        gst_caps_features_new (GST_CAPS_FEATURE_MEMORY_VA, NULL));
-  } else if (pad_accept_memory (thiz, GST_CAPS_FEATURE_MEMORY_DMABUF,
-          direction == GST_PAD_SRC ? GST_PAD_SINK : GST_PAD_SRC, result)) {
-    gst_caps_set_features (result, 0,
-        gst_caps_features_new (GST_CAPS_FEATURE_MEMORY_DMABUF, NULL));
-  }
-#else
-  if (pad_accept_memory (thiz, GST_CAPS_FEATURE_MEMORY_D3D11_MEMORY,
-          direction == GST_PAD_SRC ? GST_PAD_SINK : GST_PAD_SRC, result)) {
-    gst_caps_set_features (result, 0,
-        gst_caps_features_new (GST_CAPS_FEATURE_MEMORY_D3D11_MEMORY, NULL));
-  }
-#endif
 
   return result;
 }
@@ -1830,17 +1781,15 @@ gst_msdkvpp_set_context (GstElement * element, GstContext * context)
     gst_object_unref (msdk_context);
   } else
 #ifndef _WIN32
-    if (gst_msdk_context_from_external_va_display (context,
-          thiz->hardware, 0 /* GST_MSDK_JOB_VPP will be set later */ ,
-          &msdk_context)) {
+  if (gst_msdk_context_from_external_va_display (context,
+          thiz->hardware, GST_MSDK_JOB_VPP, &msdk_context)) {
     gst_object_replace ((GstObject **) & thiz->context,
         (GstObject *) msdk_context);
     gst_object_unref (msdk_context);
   }
 #else
-    if (gst_msdk_context_from_external_d3d11_device (context,
-          thiz->hardware, 0 /* GST_MSDK_JOB_VPP will be set later */ ,
-          &msdk_context)) {
+  if (gst_msdk_context_from_external_d3d11_device (context,
+          thiz->hardware, GST_MSDK_JOB_VPP, &msdk_context)) {
     gst_object_replace ((GstObject **) & thiz->context,
         (GstObject *) msdk_context);
     gst_object_unref (msdk_context);

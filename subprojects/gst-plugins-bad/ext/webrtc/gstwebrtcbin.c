@@ -1110,10 +1110,9 @@ _gst_pc_thread (GstWebRTCBin * webrtc)
   g_main_context_invoke (webrtc->priv->main_context,
       (GSourceFunc) _unlock_pc_thread, PC_GET_LOCK (webrtc));
 
-  /* Having the thread be the thread default GMainContext will break the
-   * required queue-like ordering (from W3's peerconnection spec) of re-entrant
-   * tasks */
+  g_main_context_push_thread_default (webrtc->priv->main_context);
   g_main_loop_run (webrtc->priv->loop);
+  g_main_context_pop_thread_default (webrtc->priv->main_context);
 
   GST_OBJECT_LOCK (webrtc);
   g_main_context_unref (webrtc->priv->main_context);
@@ -4542,6 +4541,8 @@ _create_answer_task (GstWebRTCBin * webrtc, const GstStructure * options,
       gst_sdp_media_set_proto (media, "UDP/TLS/RTP/SAVPF");
       offer_caps = _rtp_caps_from_media (offer_media);
 
+      _remove_optional_offer_fields (offer_caps);
+
       if (last_answer && i < gst_sdp_message_medias_len (last_answer)
           && (rtp_trans = _find_transceiver_for_mid (webrtc, mid))) {
         const GstSDPMedia *last_media =
@@ -5121,6 +5122,8 @@ _set_internal_rtpbin_element_props_from_stream (GstWebRTCBin * webrtc,
 
     GST_LOG_OBJECT (stream, "setting rtx mapping: %s -> %u", apt, rtx_pt[i]);
     gst_structure_set (pt_map, apt, G_TYPE_UINT, rtx_pt[i], NULL);
+
+    gst_caps_unref (rtx_caps);
   }
 
   GST_DEBUG_OBJECT (stream, "setting payload map on %" GST_PTR_FORMAT " : %"
@@ -5619,6 +5622,9 @@ _update_transport_ptmap_from_media (GstWebRTCBin * webrtc,
   guint i, len;
   const gchar *proto;
   const GstSDPMedia *media = gst_sdp_message_get_media (sdp, media_idx);
+  const GstSDPMedia *remote_media =
+      gst_sdp_message_get_media (webrtc->current_remote_description->sdp,
+      media_idx);
 
   /* get proto */
   proto = gst_sdp_media_get_proto (media);
@@ -5670,6 +5676,11 @@ _update_transport_ptmap_from_media (GstWebRTCBin * webrtc,
             (GstStructureForeachFunc) _filter_sdp_fields, filtered);
         gst_caps_append_structure (item.caps, filtered);
       }
+
+      /* Get attributes from the remote media,
+       * such as ssrc-...-cname, ...
+       */
+      gst_sdp_media_attributes_to_caps (remote_media, item.caps);
 
       item.pt = pt;
       item.media_idx = media_idx;
@@ -7437,8 +7448,7 @@ on_rtpbin_request_pt_map (GstElement * rtpbin, guint session_id, guint pt,
   if (!stream)
     goto unknown_session;
 
-  if ((ret = transport_stream_get_caps_for_pt (stream, pt)))
-    gst_caps_ref (ret);
+  ret = transport_stream_get_caps_for_pt (stream, pt);
 
   GST_DEBUG_OBJECT (webrtc, "Found caps %" GST_PTR_FORMAT " for pt %d in "
       "session %d", ret, pt, session_id);
@@ -7865,6 +7875,7 @@ jitter_buffer_set_retransmission (SsrcMapItem * item,
 {
   GstWebRTCRTPTransceiver *trans;
   gboolean do_nack;
+  GObjectClass *jb_class;
 
   if (item->media_idx == -1)
     return TRUE;
@@ -7875,13 +7886,23 @@ jitter_buffer_set_retransmission (SsrcMapItem * item,
     return TRUE;
   }
 
+  jb_class = G_OBJECT_GET_CLASS (G_OBJECT (data->jitterbuffer));
   do_nack = WEBRTC_TRANSCEIVER (trans)->do_nack;
-  /* We don't set do-retransmission on rtpbin as we want per-session control */
-  GST_LOG_OBJECT (data->webrtc, "setting do-nack=%s for transceiver %"
-      GST_PTR_FORMAT " with transport %" GST_PTR_FORMAT
-      " rtp session %u ssrc %u", do_nack ? "true" : "false", trans,
-      data->stream, data->stream->session_id, data->ssrc);
-  g_object_set (data->jitterbuffer, "do-retransmission", do_nack, NULL);
+  if (g_object_class_find_property (jb_class, "do-retransmission")) {
+    /* We don't set do-retransmission on rtpbin as we want per-session control */
+    GST_LOG_OBJECT (data->webrtc, "setting do-nack=%s for transceiver %"
+        GST_PTR_FORMAT " with transport %" GST_PTR_FORMAT
+        " rtp session %u ssrc %u", do_nack ? "true" : "false", trans,
+        data->stream, data->stream->session_id, data->ssrc);
+    g_object_set (data->jitterbuffer, "do-retransmission", do_nack, NULL);
+  } else if (do_nack) {
+    GST_WARNING_OBJECT (data->webrtc, "Not setting do-nack for transceiver %"
+        GST_PTR_FORMAT " with transport %" GST_PTR_FORMAT
+        " rtp session %u ssrc %u"
+        " as its jitterbuffer does not have a do-retransmission property",
+        trans, data->stream, data->stream->session_id, data->ssrc);
+  }
+
 
   g_weak_ref_set (&item->rtpjitterbuffer, data->jitterbuffer);
 
