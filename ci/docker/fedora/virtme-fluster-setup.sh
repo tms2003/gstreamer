@@ -19,12 +19,28 @@ git checkout 303a6edfda1701c8bc351909fb1173a0958810c2
 popd
 popd
 
+export KERNEL_DISABLE="\
+USB \
+SOUND \
+SND \
+NETDEVICES \
+DRM \
+INPUT \
+I2C \
+HID \
+CRYPTO \
+IPV6 \
+"
+
+export KERNEL_ENABLE="\
+MEDIA_SUPPORT \
+MEDIA_TEST_SUPPORT \
+V4L_TEST_DRIVERS \
+VIDEO_VISL \
+"
+
 # Build a linux image for virtme fluster tests
 bash ./ci/scripts/build-linux.sh \
     "https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git" \
     "v6.5.8" \
-    /opt/linux/bzImage \
-    'MEDIA_SUPPORT' \
-    'MEDIA_TEST_SUPPORT' \
-    'V4L_TEST_DRIVERS' \
-    'CONFIG_VIDEO_VISL'
+    /opt/linux/bzImage

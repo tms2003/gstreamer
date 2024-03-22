@@ -7,13 +7,14 @@
 # that is suitable for running in a virtual machine and is aimed to used for
 # testing.
 #
-# Usage: build-linux.sh [REPO-URL] [BRANCH|TAG] [OUTPUT-FILE] [...CONFIGS]
+# Usage: build-linux.sh [REPO-URL] [BRANCH|TAG] [OUTPUT-IMAGE] [...CONFIGS]
 #
 # Where [..CONFIGS] can be any number of configuration options, e.g.
 # --enable CONFIG_DRM_VKMS
 #
 
 set -e
+set -x
 
 # From scripts/subarch.include in linux
 function get-subarch()
@@ -39,16 +40,18 @@ shift
 shift
 shift
 
-# ./scripts/config  --enable CONFIG_VIDEO_VISL
-CONFIGS=()
-while [[ "x$1" != "x" ]]; do
-  CONFIGS+=( "$1" )
-  shift
+# Setting requested configuration
+CONFIGS_ENABLE=()
+CONFIGS_DISABLE=()
+for config in ${KERNEL_ENABLE}; do
+  CONFIGS_ENABLE+=( "$config" )
+done
+
+for config in ${KERNEL_DISABLE}; do
+  CONFIGS_DISABLE+=( "$config" )
 done
 
 echo Building Linux for $ARCH \($SUBARCH\)...
-
-set -x
 
 if [ -d linux ]; then
   pushd linux
@@ -68,29 +71,30 @@ make defconfig
 sync
 make kvm_guest.config
 
-echo "Disabling unused features..."
-./scripts/config \
-  --disable USB \
-  --disable SOUND \
-  --disable SND \
-  --disable NETDEVICES \
-  --disable DRM \
-  --disable INPUT \
-  --disable I2C \
-  --disable HID \
-  --disable CRYPTO \
-  --disable IPV6
+if [ ! -z "${KERNEL_DISABLE}" ]; then
+  echo Disabling ${CONFIGS_DISABLE[@]}...
+  ./scripts/config ${CONFIGS_DISABLE[@]/#/--disable }
+fi
 
-echo Enabling ${CONFIGS[@]}...
-./scripts/config ${CONFIGS[@]/#/--enable }
+if [ ! -z "${KERNEL_ENABLE}" ]; then
+  echo Enabling ${CONFIGS_ENABLE[@]}...
+  ./scripts/config ${CONFIGS_ENABLE[@]/#/--enable }
+fi
 
 make olddefconfig
 make -j8 WERROR=0
+make INSTALL_MOD_PATH=$(pwd)/modules_install INSTALL_MOD_STRIP=1 modules_install
+make INSTALL_DTBS_PATH=$(pwd)/dtbs_install dtbs_install
 
 popd
 
 TARGET_DIR="$(dirname "$IMAGE")"
+TARGET_NAME="$(basename "$IMAGE")"
 mkdir -p "$TARGET_DIR"
-mv linux/arch/$SUBARCH/boot/bzImage "$IMAGE"
+mv linux/arch/$SUBARCH/boot/${TARGET_NAME} "$IMAGE"
 mv linux/.config $TARGET_DIR/.config
+
+tar --zstd -cf $TARGET_DIR/modules.tar.zstd -C linux/modules_install .
+tar --zstd -cf $TARGET_DIR/dtbs.tar.zstd -C linux/dtbs_install .
+
 rm -rf linux

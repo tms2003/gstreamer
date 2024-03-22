@@ -12,6 +12,8 @@ include:
   # the appropriate version string in this file which will cause a rebuild.
   ###
   - local: '.gitlab-image-tags.yml'
+  - local: 'ci/container/gitlab-ci.yml'
+  - local: 'ci/lava/lava-gitlab-ci.yml'
 
 stages:
   - 'preparation'
@@ -64,6 +66,35 @@ variables:
     ${DEFAULT_MESON_ARGS}
     -Dsharp=enabled
     -Ddoc=disabled
+
+  GSTREAMER_TEMPLATES_COMMIT: &ci-templates-commit d5aa3941aa03c2f716595116354fb81eb8012acb
+  _CI_PRE_CLONE_SCRIPT: |-
+          set -o xtrace
+          wget -q -O download-git-cache.sh ${CI_PROJECT_URL}/-/raw/${CI_COMMIT_SHA}/.gitlab-ci/download-git-cache.sh
+          bash download-git-cache.sh
+          rm download-git-cache.sh
+          set +o xtrace
+  CI_JOB_JWT_FILE: /minio_jwt
+  S3_HOST: s3.freedesktop.org
+  # per-pipeline artifact storage on MinIO
+  PIPELINE_ARTIFACTS_BASE: ${S3_HOST}/artifacts/${CI_PROJECT_PATH}/${CI_PIPELINE_ID}
+  # per-job artifact storage on MinIO
+  JOB_ARTIFACTS_BASE: ${PIPELINE_ARTIFACTS_BASE}/${CI_JOB_ID}
+  ARTIFACTS_BASE_URL: https://${CI_PROJECT_ROOT_NAMESPACE}.${CI_PAGES_DOMAIN}/-/${CI_PROJECT_NAME}/-/jobs/${CI_JOB_ID}/artifacts
+  # Python scripts for structured logger
+  PYTHONPATH: "$PYTHONPATH:$CI_PROJECT_DIR/install"
+  BASE_SYSTEM_HOST_PREFIX: "${S3_HOST}/gst-rootfs"
+  BASE_SYSTEM_MAINLINE_HOST_PATH: "${BASE_SYSTEM_HOST_PREFIX}/${FDO_UPSTREAM_REPO}/${DISTRIBUTION_TAG}/${DEBIAN_ARCH}"
+  BASE_SYSTEM_FORK_HOST_PATH: "${BASE_SYSTEM_HOST_PREFIX}/${CI_PROJECT_PATH}/${DISTRIBUTION_TAG}/${DEBIAN_ARCH}"
+  # per-job build artifacts
+  JOB_ROOTFS_OVERLAY_PATH: "${JOB_ARTIFACTS_BASE}/job-rootfs-overlay.tar.gz"
+  JOB_RESULTS_PATH: "${JOB_ARTIFACTS_BASE}/results.tar.zst"
+  S3_ARTIFACT_NAME: "gstreamer-${ARCH}-default-release"
+  S3_RESULTS_UPLOAD: "${JOB_ARTIFACTS_BASE}"
+  VISIBILITY_GROUP: "Collabora+fdo"
+  # Kernel builds
+  KERNEL_IMAGE_BASE_MAINLINE: "https://${BASE_SYSTEM_HOST_PREFIX}/${FDO_UPSTREAM_REPO}/kernel/${KERNEL_TAG}/${KERNEL_REV}"
+  KERNEL_IMAGE_BASE_FORK: "https://${BASE_SYSTEM_HOST_PREFIX}/${CI_PROJECT_PATH}/kernel/${KERNEL_TAG}/${KERNEL_REV}"
 
 workflow:
   # https://docs.gitlab.com/ee/ci/yaml/index.html#switch-between-branch-pipelines-and-merge-request-pipelines
@@ -778,6 +809,61 @@ fluster v4l2-stateless on visl:
       - tests/virtme/*
       - ci/scripts/build-linux.sh
       - ci/docker/fedora/*
+
+# LAVA tests
+build-for-lava:arm64:
+  stage: build
+  tags:
+    - aarch64
+  extends:
+    - 'gstreamer-full static build'
+    - .use-debian/arm64_build
+    - .setup-s3
+    - .ci-artifacts
+  variables:
+    S3_ARTIFACT_NAME: gstreamer-arm64-default-release
+    BUILD_GST_DEBUG: '-Dgstreamer:gst_debug=false'
+    GST_WERROR: "true"
+    BUILD_TYPE: "--default-library=static"
+    MESON_ARGS: >-
+      -Dauto_features=disabled
+      -Dgstreamer:check=enabled
+      -Ddoc=disabled
+      -Dtests=disabled
+      -Dglib:tests=false
+      -Dtools=enabled
+      -Dbase=enabled
+      -Dbad=enabled
+      -Dugly=disabled
+      -Dlibav=disabled
+      -Drtsp_server=disabled
+      -Dges=disabled
+      -Dgst-plugins-bad:debugutils=enabled
+      -Dgst-plugins-bad:ivfparse=enabled
+      -Dgst-plugins-bad:v4l2codecs=enabled
+      -Dgst-plugins-bad:videoparsers=enabled
+      -Dgst-plugins-base:app=enabled
+      -Dgst-plugins-base:videoconvertscale=enabled
+      -Dgst-plugins-base:typefind=enabled
+      -Dgst-plugins-base:playback=enabled
+      -Dgst-plugins-good:matroska=enabled
+      --prefix $CI_PROJECT_DIR/install
+    SUBPROJECTS_CACHE_DIR: "/subprojects"
+  script:
+    - $CI_PROJECT_DIR/ci/scripts/build.sh
+    - ci/prepare-artifacts.sh
+  rules:
+    - if: $CI_JOB_NAME == "build-for-lava:arm64"
+
+# Status: https://lava.collabora.dev/scheduler/device_type/mt8195-cherry-tomato-r2
+fluster-mt8195-cherry-tomato-r2:arm64:
+  variables:
+    DEVICE_TYPE: mt8195-cherry-tomato-r2
+    DTB: mt8195-cherry-tomato-r2
+    CPU_VERSION: mt8195
+    FLUSTER_CODECS: VP8
+  extends:
+    - .lava-fluster:arm64
 
 # Valgrind
 .valgrind fedora x86_64:
