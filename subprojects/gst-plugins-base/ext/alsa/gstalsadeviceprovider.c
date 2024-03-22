@@ -90,6 +90,8 @@ add_device (GstDeviceProvider * provider, snd_ctl_t * info,
   snd_card_get_longname (card, &longname);
   device = gst_alsa_device_new (longname, caps, device_name, stream, props);
 
+  free (longname);
+  g_free (device_name);
   snd_pcm_close (handle);
 
   return device;
