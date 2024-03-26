@@ -67,3 +67,8 @@ subprojects/*/
 
 # clangd integration
 .cache/*
+
+# Conventionally the logs directory we use for validate tests
+validate-logs/
+
+hotdoc-private-GStreamer/
