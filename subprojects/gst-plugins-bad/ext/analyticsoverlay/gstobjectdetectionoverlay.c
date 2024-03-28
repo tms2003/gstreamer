@@ -72,6 +72,7 @@ struct _GstObjectDetectionOverlay
   guint od_outline_color;
   guint od_outline_stroke_width;
   gboolean draw_labels;
+  gboolean draw;
   guint labels_color;
   gdouble labels_stroke_width;
   gdouble labels_outline_ofs;
@@ -100,6 +101,7 @@ enum
   PROP_OD_OUTLINE_COLOR = 1,
   PROP_DRAW_LABELS,
   PROP_LABELS_COLOR,
+  PROP_DRAW,
   _PROP_COUNT
 };
 
@@ -228,6 +230,21 @@ gst_object_detection_overlay_class_init (GstObjectDetectionOverlayClass * klass)
           "Color (ARGB) to use for object labels",
           0, G_MAXUINT, 0xFFFFFF, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
+   /**
+   * GstObjectDetectionOverlay:draw
+   *
+   * Control drawing objects
+   *
+   * Since: 1.26
+   */
+  g_object_class_install_property (gobject_class, PROP_DRAW,
+      g_param_spec_boolean ("draw",
+          "Draw",
+          "Draw objects",
+          TRUE,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
+          GST_PARAM_MUTABLE_PLAYING));
+
   element_class = (GstElementClass *) klass;
 
   gst_element_class_add_static_pad_template (element_class, &sink_template);
@@ -281,6 +298,7 @@ gst_object_detection_overlay_init (GstObjectDetectionOverlay * overlay)
   overlay->pango_layout = NULL;
   overlay->od_outline_color = 0xFFFFFFFF;
   overlay->draw_labels = TRUE;
+  overlay->draw = TRUE;
   overlay->labels_color = 0xFFFFFFFF;
   overlay->in_info = &GST_VIDEO_FILTER (overlay)->in_info;
   overlay->attach_compo_to_buffer = TRUE;
@@ -311,6 +329,9 @@ gst_object_detection_overlay_set_property (GObject * object, guint prop_id,
     case PROP_LABELS_COLOR:
       overlay->labels_color = g_value_get_uint (value);
       break;
+    case PROP_DRAW:
+      overlay->draw = g_value_get_boolean (value);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -332,6 +353,9 @@ gst_object_detection_overlay_get_property (GObject * object,
       break;
     case PROP_LABELS_COLOR:
       g_value_set_uint (value, od_overlay->labels_color);
+      break;
+    case PROP_DRAW:
+      g_value_set_boolean (value, od_overlay->draw);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -687,6 +711,9 @@ gst_object_detection_overlay_transform_frame_ip (GstVideoFilter * filter,
     return GST_FLOW_EOS;
   }
   g_mutex_unlock (&overlay->stream_event_mutex);
+
+  if (overlay->draw == FALSE)
+    return GST_FLOW_OK;
 
   composition_meta =
       gst_buffer_get_video_overlay_composition_meta (frame->buffer);
