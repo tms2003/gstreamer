@@ -67,6 +67,8 @@ struct _GstObjectDetectionOverlay
   GMutex stream_event_mutex;
   gboolean flushing;
   gboolean eos;
+  guint linger_count;
+  GstBuffer *lingered_buffer;
 
   /* properties */
   guint od_outline_color;
@@ -76,6 +78,7 @@ struct _GstObjectDetectionOverlay
   guint labels_color;
   gdouble labels_stroke_width;
   gdouble labels_outline_ofs;
+  guint linger;
 
   /* composition */
   gboolean attach_compo_to_buffer;
@@ -102,6 +105,7 @@ enum
   PROP_DRAW_LABELS,
   PROP_LABELS_COLOR,
   PROP_DRAW,
+  PROP_LINGER,
   _PROP_COUNT
 };
 
@@ -230,7 +234,7 @@ gst_object_detection_overlay_class_init (GstObjectDetectionOverlayClass * klass)
           "Color (ARGB) to use for object labels",
           0, G_MAXUINT, 0xFFFFFF, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
-   /**
+  /**
    * GstObjectDetectionOverlay:draw
    *
    * Control drawing objects
@@ -244,6 +248,19 @@ gst_object_detection_overlay_class_init (GstObjectDetectionOverlayClass * klass)
           TRUE,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
           GST_PARAM_MUTABLE_PLAYING));
+
+  /**
+   * GstObjectDetectionOverlay:linger
+   *
+   * Linger labels for n frames without updated metadata
+   *
+   * Since: 1.26
+   */
+  g_object_class_install_property (gobject_class, PROP_LINGER,
+      g_param_spec_uint ("linger",
+          "Linger",
+          "Linger labels for n frames without updated metadata",
+          0, G_MAXUINT, 0, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   element_class = (GstElementClass *) klass;
 
@@ -332,6 +349,9 @@ gst_object_detection_overlay_set_property (GObject * object, guint prop_id,
     case PROP_DRAW:
       overlay->draw = g_value_get_boolean (value);
       break;
+    case PROP_LINGER:
+      overlay->linger = g_value_get_uint (value);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -356,6 +376,9 @@ gst_object_detection_overlay_get_property (GObject * object,
       break;
     case PROP_DRAW:
       g_value_set_boolean (value, od_overlay->draw);
+      break;
+    case PROP_LINGER:
+      g_value_set_uint (value, od_overlay->linger);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -570,6 +593,8 @@ gst_object_detection_overlay_sink_event (GstBaseTransform * trans,
       GstCaps *caps;
       gst_event_parse_caps (event, &caps);
       ret = gst_object_detection_overlay_setcaps (overlay, caps);
+      gst_clear_buffer (&overlay->lingered_buffer);
+      overlay->linger_count = 0;
       gst_event_unref (event);
       break;
     }
@@ -577,6 +602,8 @@ gst_object_detection_overlay_sink_event (GstBaseTransform * trans,
       g_mutex_lock (&overlay->stream_event_mutex);
       GST_INFO_OBJECT (overlay, "EOS");
       overlay->eos = TRUE;
+      gst_clear_buffer (&overlay->lingered_buffer);
+      overlay->linger_count = 0;
       g_mutex_unlock (&overlay->stream_event_mutex);
       break;
     case GST_EVENT_FLUSH_START:
@@ -590,6 +617,8 @@ gst_object_detection_overlay_sink_event (GstBaseTransform * trans,
       GST_INFO_OBJECT (overlay, "Flush stop");
       overlay->eos = FALSE;
       overlay->flushing = FALSE;
+      gst_clear_buffer (&overlay->lingered_buffer);
+      overlay->linger_count = 0;
       g_mutex_unlock (&overlay->stream_event_mutex);
       break;
     default:
@@ -630,6 +659,8 @@ gst_object_detection_overlay_stop (GstBaseTransform * trans)
 {
   GstObjectDetectionOverlay *overlay = GST_OBJECT_DETECTION_OVERLAY (trans);
 
+  gst_clear_buffer (&overlay->lingered_buffer);
+  overlay->linger_count = 0;
   g_clear_object (&overlay->pango_layout);
   g_clear_object (&overlay->pango_context);
   gst_clear_buffer (&overlay->canvas);
@@ -729,6 +760,21 @@ gst_object_detection_overlay_transform_frame_ip (GstVideoFilter * filter,
   GstAnalyticsRelationMeta *rmeta = (GstAnalyticsRelationMeta *)
       gst_buffer_get_meta (GST_BUFFER (frame->buffer),
       GST_ANALYTICS_RELATION_META_API_TYPE);
+
+  if (rmeta) {
+    overlay->linger_count = 0;
+    if (overlay->linger)
+      gst_buffer_replace (&overlay->lingered_buffer, frame->buffer);
+  } else if (overlay->lingered_buffer) {
+    overlay->linger_count++;
+
+    if (overlay->linger_count > overlay->linger)
+      gst_clear_buffer (&overlay->lingered_buffer);
+    else
+      rmeta = (GstAnalyticsRelationMeta *)
+          gst_buffer_get_meta (overlay->lingered_buffer,
+          GST_ANALYTICS_RELATION_META_API_TYPE);
+  }
 
   if (rmeta) {
     GST_DEBUG_OBJECT (filter, "received buffer with analytics relation meta");
