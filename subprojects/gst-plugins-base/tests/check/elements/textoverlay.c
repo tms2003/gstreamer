@@ -441,9 +441,13 @@ GST_START_TEST (test_video_passthrough)
   /* pushing gives away one of the two references we have ... */
   fail_unless (gst_pad_push (myvideosrcpad, inbuffer) == GST_FLOW_OK);
 
-  /* should have been discarded as out-of-segment since it has no timestamp */
-  ASSERT_BUFFER_REFCOUNT (inbuffer, "inbuffer", 1);
-  fail_unless_equals_int (g_list_length (buffers), 0);
+  /* should have been accepted since it has no timestamp */
+  ASSERT_BUFFER_REFCOUNT (inbuffer, "inbuffer", 2);
+  fail_unless_equals_int (g_list_length (buffers), 1);
+  /* clean */
+  g_list_foreach (buffers, (GFunc) gst_mini_object_unref, NULL);
+  g_list_free (buffers);
+  buffers = NULL;
 
   /* ========== (2) buffer with 0 timestamp => simple passthrough ========== */
 
@@ -493,9 +497,15 @@ GST_START_TEST (test_video_passthrough)
   /* pushing gives away one of the two references we have ... */
   fail_unless (gst_pad_push (myvideosrcpad, inbuffer) == GST_FLOW_OK);
 
-  /* should have been discarded as out-of-segment */
-  fail_unless_equals_int (g_list_length (buffers), 0);
+  /* should have been passed along as it can be clipped to segment
+   * that is, it overlaps */
+  fail_unless_equals_int (g_list_length (buffers), 1);
+  /* should be a new buffer because of timestamp fix-up */
   ASSERT_BUFFER_REFCOUNT (inbuffer, "inbuffer", 1);
+  /* clean */
+  g_list_foreach (buffers, (GFunc) gst_mini_object_unref, NULL);
+  g_list_free (buffers);
+  buffers = NULL;
 
   /* ========== (4) buffer with 0 timestamp and small defined duration, with
    *                segment starting from 1sec => should be discarded */
@@ -511,7 +521,7 @@ GST_START_TEST (test_video_passthrough)
   /* pushing gives away one of the two references we have ... */
   fail_unless (gst_pad_push (myvideosrcpad, inbuffer) == GST_FLOW_OK);
 
-  /* should have been discarded as out-of-segment since it has no timestamp */
+  /* should have been discarded as out-of-segment */
   ASSERT_BUFFER_REFCOUNT (inbuffer, "inbuffer", 1);
   fail_unless_equals_int (g_list_length (buffers), 0);
 
