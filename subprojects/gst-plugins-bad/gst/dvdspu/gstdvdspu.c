@@ -36,7 +36,6 @@
 #include <gst/video/video.h>
 #include <gst/video/video-overlay-composition.h>
 #include <gst/video/gstvideometa.h>
-#include <gst/video/gstvideosink.h>
 
 #include <string.h>
 
@@ -56,27 +55,6 @@ enum
   LAST_SIGNAL
 };
 
-#define VIDEO_FORMATS GST_VIDEO_OVERLAY_COMPOSITION_BLEND_FORMATS
-
-#define DVDSPU_CAPS GST_VIDEO_CAPS_MAKE (VIDEO_FORMATS)
-#define DVDSPU_ALL_CAPS DVDSPU_CAPS ";" \
-    GST_VIDEO_CAPS_MAKE_WITH_FEATURES ("ANY", GST_VIDEO_FORMATS_ANY)
-
-static GstStaticCaps sw_template_caps = GST_STATIC_CAPS (DVDSPU_CAPS);
-
-static GstStaticPadTemplate video_sink_factory =
-GST_STATIC_PAD_TEMPLATE ("video",
-    GST_PAD_SINK,
-    GST_PAD_ALWAYS,
-    GST_STATIC_CAPS (DVDSPU_ALL_CAPS)
-    );
-
-static GstStaticPadTemplate src_factory = GST_STATIC_PAD_TEMPLATE ("src",
-    GST_PAD_SRC,
-    GST_PAD_ALWAYS,
-    GST_STATIC_CAPS (DVDSPU_ALL_CAPS)
-    );
-
 static GstStaticPadTemplate subpic_sink_factory =
     GST_STATIC_PAD_TEMPLATE ("subpicture",
     GST_PAD_SINK,
@@ -87,70 +65,64 @@ static GstStaticPadTemplate subpic_sink_factory =
 static gboolean dvd_spu_element_init (GstPlugin * plugin);
 
 #define gst_dvd_spu_parent_class parent_class
-G_DEFINE_TYPE (GstDVDSpu, gst_dvd_spu, GST_TYPE_ELEMENT);
+G_DEFINE_TYPE (GstDVDSpu, gst_dvd_spu, GST_TYPE_SUB_OVERLAY);
 GST_ELEMENT_REGISTER_DEFINE_CUSTOM (dvdspu, dvd_spu_element_init);
 
 static void gst_dvd_spu_dispose (GObject * object);
 static void gst_dvd_spu_finalize (GObject * object);
-static GstStateChangeReturn gst_dvd_spu_change_state (GstElement * element,
-    GstStateChange transition);
 
-static gboolean gst_dvd_spu_src_event (GstPad * pad, GstObject * parent,
-    GstEvent * event);
-static gboolean gst_dvd_spu_src_query (GstPad * pad, GstObject * parent,
-    GstQuery * query);
-static GstCaps *gst_dvd_spu_src_get_caps (GstDVDSpu * dvdspu, GstPad * pad,
-    GstCaps * filter);
-
-static GstCaps *gst_dvd_spu_video_get_caps (GstDVDSpu * dvdspu, GstPad * pad,
-    GstCaps * filter);
-static gboolean gst_dvd_spu_video_set_caps (GstDVDSpu * dvdspu, GstPad * pad,
+static gboolean gst_dvd_spu_set_format (GstSubOverlay * suboverlay,
     GstCaps * caps);
-static GstFlowReturn gst_dvd_spu_video_chain (GstPad * pad, GstObject * parent,
+static gboolean gst_dvd_spu_set_format_video (GstSubOverlay * suboverlay,
+    GstCaps * caps, GstVideoInfo * info, gint window_width, gint window_height);
+static GstFlowReturn gst_dvd_spu_handle_buffer (GstSubOverlay * sub_overlay,
     GstBuffer * buf);
-static gboolean gst_dvd_spu_video_event (GstPad * pad, GstObject * parent,
+static void gst_dvd_spu_advance (GstSubOverlay * sub_overlay,
+    GstBuffer * buffer, GstClockTime run_ts, GstClockTime run_ts_end);
+static void gst_dvd_spu_render (GstSubOverlay * sub_overlay, GstBuffer * buf);
+static gboolean gst_dvd_spu_start (GstSubOverlay * overlay);
+static gboolean gst_dvd_spu_stop (GstSubOverlay * overlay);
+static gboolean gst_dvd_spu_flush (GstSubOverlay * overlay);
+static gboolean gst_dvd_spu_video_sink_event (GstSubOverlay * overlay,
     GstEvent * event);
-static gboolean gst_dvd_spu_video_query (GstPad * pad, GstObject * parent,
-    GstQuery * query);
-static void gst_dvd_spu_redraw_still (GstDVDSpu * dvdspu, gboolean force);
+static gboolean gst_dvd_spu_sub_sink_event (GstSubOverlay * overlay,
+    GstEvent * event);
 
 static void gst_dvd_spu_check_still_updates (GstDVDSpu * dvdspu);
-static GstFlowReturn gst_dvd_spu_subpic_chain (GstPad * pad, GstObject * parent,
-    GstBuffer * buf);
-static gboolean gst_dvd_spu_subpic_event (GstPad * pad, GstObject * parent,
-    GstEvent * event);
-static gboolean gst_dvd_spu_subpic_set_caps (GstDVDSpu * dvdspu, GstPad * pad,
-    GstCaps * caps);
-static gboolean gst_dvd_spu_negotiate (GstDVDSpu * dvdspu, GstCaps * caps);
 
 static void gst_dvd_spu_clear (GstDVDSpu * dvdspu);
 static void gst_dvd_spu_flush_spu_info (GstDVDSpu * dvdspu,
     gboolean process_events);
-static void gst_dvd_spu_advance_spu (GstDVDSpu * dvdspu, GstClockTime new_ts);
-static void gstspu_render (GstDVDSpu * dvdspu, GstBuffer * buf);
-static GstFlowReturn
-dvdspu_handle_vid_buffer (GstDVDSpu * dvdspu, GstBuffer * buf);
-static void gst_dvd_spu_handle_dvd_event (GstDVDSpu * dvdspu, GstEvent * event);
 
 static void
 gst_dvd_spu_class_init (GstDVDSpuClass * klass)
 {
   GObjectClass *gobject_class;
   GstElementClass *gstelement_class;
+  GstSubOverlayClass *gstsuboverlay_class;
 
   gobject_class = (GObjectClass *) klass;
   gstelement_class = (GstElementClass *) klass;
+  gstsuboverlay_class = (GstSubOverlayClass *) klass;
 
   gobject_class->dispose = (GObjectFinalizeFunc) gst_dvd_spu_dispose;
   gobject_class->finalize = (GObjectFinalizeFunc) gst_dvd_spu_finalize;
 
-  gstelement_class->change_state = gst_dvd_spu_change_state;
-
-  gst_element_class_add_static_pad_template (gstelement_class, &src_factory);
-  gst_element_class_add_static_pad_template (gstelement_class,
-      &video_sink_factory);
+  gst_sub_overlay_class_add_pad_templates (gstsuboverlay_class, "video",
+      NULL, NULL, NULL);
   gst_element_class_add_static_pad_template (gstelement_class,
       &subpic_sink_factory);
+
+  gstsuboverlay_class->start = gst_dvd_spu_start;
+  gstsuboverlay_class->stop = gst_dvd_spu_stop;
+  gstsuboverlay_class->flush = gst_dvd_spu_flush;
+  gstsuboverlay_class->set_format = gst_dvd_spu_set_format;
+  gstsuboverlay_class->set_format_video = gst_dvd_spu_set_format_video;
+  gstsuboverlay_class->handle_buffer = gst_dvd_spu_handle_buffer;
+  gstsuboverlay_class->advance = gst_dvd_spu_advance;
+  gstsuboverlay_class->render = gst_dvd_spu_render;
+  gstsuboverlay_class->sub_sink_event = gst_dvd_spu_sub_sink_event;
+  gstsuboverlay_class->video_sink_event = gst_dvd_spu_video_sink_event;
 
   gst_element_class_set_static_metadata (gstelement_class,
       "Sub-picture Overlay", "Mixer/Video/Overlay/SubPicture/DVD/Bluray",
@@ -162,57 +134,29 @@ gst_dvd_spu_class_init (GstDVDSpuClass * klass)
 static void
 gst_dvd_spu_init (GstDVDSpu * dvdspu)
 {
-  dvdspu->videosinkpad =
-      gst_pad_new_from_static_template (&video_sink_factory, "video");
-  gst_pad_set_chain_function (dvdspu->videosinkpad, gst_dvd_spu_video_chain);
-  gst_pad_set_event_function (dvdspu->videosinkpad, gst_dvd_spu_video_event);
-  gst_pad_set_query_function (dvdspu->videosinkpad, gst_dvd_spu_video_query);
-
-  dvdspu->srcpad = gst_pad_new_from_static_template (&src_factory, "src");
-  gst_pad_set_event_function (dvdspu->srcpad, gst_dvd_spu_src_event);
-  gst_pad_set_query_function (dvdspu->srcpad, gst_dvd_spu_src_query);
-
-  dvdspu->subpic_sinkpad =
-      gst_pad_new_from_static_template (&subpic_sink_factory, "subpicture");
-  gst_pad_set_chain_function (dvdspu->subpic_sinkpad, gst_dvd_spu_subpic_chain);
-  gst_pad_set_event_function (dvdspu->subpic_sinkpad, gst_dvd_spu_subpic_event);
-
-  GST_PAD_SET_PROXY_ALLOCATION (dvdspu->videosinkpad);
-
-  gst_element_add_pad (GST_ELEMENT (dvdspu), dvdspu->videosinkpad);
-  gst_element_add_pad (GST_ELEMENT (dvdspu), dvdspu->subpic_sinkpad);
-  gst_element_add_pad (GST_ELEMENT (dvdspu), dvdspu->srcpad);
-
-  g_mutex_init (&dvdspu->spu_lock);
   dvdspu->pending_spus = g_queue_new ();
 
   gst_dvd_spu_clear (dvdspu);
+
+  /* no buffers are ever provided to baseclass, so request render always */
+  gst_sub_overlay_set_render_no_buffer (GST_SUB_OVERLAY (dvdspu), TRUE);
 }
 
 static void
 gst_dvd_spu_reset_composition (GstDVDSpu * dvdspu)
 {
-  if (dvdspu->composition) {
-    gst_video_overlay_composition_unref (dvdspu->composition);
-    dvdspu->composition = NULL;
-  }
+  gst_sub_overlay_set_composition (GST_SUB_OVERLAY (dvdspu), NULL);
 }
 
 static void
 gst_dvd_spu_clear (GstDVDSpu * dvdspu)
 {
   gst_dvd_spu_flush_spu_info (dvdspu, FALSE);
-  gst_segment_init (&dvdspu->subp_seg, GST_FORMAT_UNDEFINED);
 
   dvdspu->spu_input_type = SPU_INPUT_TYPE_NONE;
 
-  gst_buffer_replace (&dvdspu->ref_frame, NULL);
-  gst_buffer_replace (&dvdspu->pending_frame, NULL);
-
   dvdspu->spu_state.info.fps_n = 25;
   dvdspu->spu_state.info.fps_d = 1;
-
-  gst_segment_init (&dvdspu->video_seg, GST_FORMAT_UNDEFINED);
 }
 
 static void
@@ -234,9 +178,33 @@ gst_dvd_spu_finalize (GObject * object)
   GstDVDSpu *dvdspu = GST_DVD_SPU (object);
 
   g_queue_free (dvdspu->pending_spus);
-  g_mutex_clear (&dvdspu->spu_lock);
 
   G_OBJECT_CLASS (parent_class)->finalize (object);
+}
+
+static gboolean
+gst_dvd_spu_start (GstSubOverlay * overlay)
+{
+  GstDVDSpu *dvdspu = GST_DVD_SPU (overlay);
+
+  /* arrange to keep last video around for still/gap hanlding */
+  gst_sub_overlay_set_keep_video (GST_SUB_OVERLAY (dvdspu), TRUE);
+  /* enable gap handling (by default when not in still) */
+  gst_sub_overlay_set_sparse_video (GST_SUB_OVERLAY (dvdspu), TRUE);
+  /* pass buffers without segment dropping or clipping */
+  gst_sub_overlay_set_preserve_ts (GST_SUB_OVERLAY (dvdspu), TRUE);
+
+  return TRUE;
+}
+
+static gboolean
+gst_dvd_spu_stop (GstSubOverlay * overlay)
+{
+  GstDVDSpu *dvdspu = GST_DVD_SPU (overlay);
+
+  gst_dvd_spu_clear (dvdspu);
+
+  return TRUE;
 }
 
 /* With SPU lock held, clear the queue of SPU packets */
@@ -293,580 +261,97 @@ gst_dvd_spu_flush_spu_info (GstDVDSpu * dvdspu, gboolean keep_events)
 }
 
 static gboolean
-gst_dvd_spu_src_event (GstPad * pad, GstObject * parent, GstEvent * event)
+gst_dvd_spu_set_format_video (GstSubOverlay * overlay, GstCaps * caps,
+    GstVideoInfo * info, gint window_width, gint window_height)
 {
-  GstDVDSpu *dvdspu = GST_DVD_SPU (parent);
-  GstPad *peer;
-  gboolean res = TRUE;
+  GstDVDSpu *dvdspu = GST_DVD_SPU (overlay);
 
-  peer = gst_pad_get_peer (dvdspu->videosinkpad);
-  if (peer) {
-    res = gst_pad_send_event (peer, event);
-    gst_object_unref (peer);
-  } else
-    gst_event_unref (event);
+  dvdspu->spu_state.info = *info;
 
-  return res;
+  return TRUE;
 }
 
-static gboolean
-gst_dvd_spu_src_query (GstPad * pad, GstObject * parent, GstQuery * query)
+/* called *without* (STREAM_)LOCK */
+static GstBuffer *
+gst_dvd_spu_push_still (GstDVDSpu * dvdspu)
 {
-  GstDVDSpu *dvdspu = GST_DVD_SPU (parent);
-  gboolean res = FALSE;
-
-  switch (GST_QUERY_TYPE (query)) {
-    case GST_QUERY_CAPS:
-    {
-      GstCaps *filter, *caps;
-
-      gst_query_parse_caps (query, &filter);
-      caps = gst_dvd_spu_src_get_caps (dvdspu, pad, filter);
-      gst_query_set_caps_result (query, caps);
-      gst_caps_unref (caps);
-      res = TRUE;
-      break;
-    }
-    default:
-      res = gst_pad_query_default (pad, parent, query);
-      break;
-  }
-
-  return res;
-}
-
-static gboolean
-gst_dvd_spu_can_handle_caps (GstCaps * caps)
-{
-  GstCaps *sw_caps;
-  gboolean ret;
-
-  sw_caps = gst_static_caps_get (&sw_template_caps);
-  ret = gst_caps_is_subset (caps, sw_caps);
-  gst_caps_unref (sw_caps);
-
-  return ret;
-}
-
-static gboolean
-gst_dvd_spu_video_set_caps (GstDVDSpu * dvdspu, GstPad * pad, GstCaps * caps)
-{
-  GstVideoInfo info;
-  gboolean ret = FALSE;
-
-  if (!gst_video_info_from_caps (&info, caps))
-    goto invalid_caps;
-
-  dvdspu->spu_state.info = info;
-
-  ret = gst_dvd_spu_negotiate (dvdspu, caps);
+  GstBuffer *buf;
 
   DVD_SPU_LOCK (dvdspu);
-  if (!dvdspu->attach_compo_to_buffer && !gst_dvd_spu_can_handle_caps (caps)) {
-    GST_DEBUG_OBJECT (dvdspu, "unsupported caps %" GST_PTR_FORMAT, caps);
-    ret = FALSE;
-  }
-
+  gst_sub_overlay_get_buffers (GST_SUB_OVERLAY (dvdspu), &buf, NULL);
   DVD_SPU_UNLOCK (dvdspu);
+  if (buf) {
+    buf = gst_buffer_ref (buf);
+    buf = gst_buffer_make_writable (buf);
+    GST_BUFFER_FLAG_SET (buf, GST_BUFFER_FLAG_DISCONT);
+    GST_BUFFER_TIMESTAMP (buf) = GST_CLOCK_TIME_NONE;
+    GST_BUFFER_DURATION (buf) = GST_CLOCK_TIME_NONE;
 
-  return ret;
-
-  /* ERRORS */
-invalid_caps:
-  {
-    GST_DEBUG_OBJECT (dvdspu, "could not parse caps");
-    return FALSE;
-  }
-}
-
-
-/**
- * gst_dvd_spu_add_feature_and_intersect:
- *
- * Creates a new #GstCaps containing the (given caps +
- * given caps feature) + (given caps intersected by the
- * given filter).
- *
- * Returns: the new #GstCaps
- */
-static GstCaps *
-gst_dvd_spu_add_feature_and_intersect (GstCaps * caps,
-    const gchar * feature, GstCaps * filter)
-{
-  int i, caps_size;
-  GstCaps *new_caps;
-
-  new_caps = gst_caps_copy (caps);
-
-  caps_size = gst_caps_get_size (new_caps);
-  for (i = 0; i < caps_size; i++) {
-    GstCapsFeatures *features = gst_caps_get_features (new_caps, i);
-    if (!gst_caps_features_is_any (features)) {
-      gst_caps_features_add (features, feature);
-    }
+    GST_DEBUG_OBJECT (dvdspu, "push still frame");
+    /* submit this video buffer to usual processing
+     * re-use chain processing to that end;
+     * it will go for the STREAM_LOCK, check flushing, etc
+     * and then into baseclass usual flow, a.o. render/attach, etc */
+    gst_pad_chain (GST_SUB_OVERLAY_VIDEO_SINK_PAD (dvdspu), buf);
   }
 
-  gst_caps_append (new_caps, gst_caps_intersect_full (caps,
-          filter, GST_CAPS_INTERSECT_FIRST));
-
-  return new_caps;
-}
-
-/**
- * gst_dvd_spu_intersect_by_feature:
- *
- * Creates a new #GstCaps based on the following filtering rule.
- *
- * For each individual caps contained in given caps, if the
- * caps uses the given caps feature, keep a version of the caps
- * with the feature and an another one without. Otherwise, intersect
- * the caps with the given filter.
- *
- * Returns: the new #GstCaps
- */
-static GstCaps *
-gst_dvd_spu_intersect_by_feature (GstCaps * caps,
-    const gchar * feature, GstCaps * filter)
-{
-  int i, caps_size;
-  GstCaps *new_caps;
-
-  new_caps = gst_caps_new_empty ();
-
-  caps_size = gst_caps_get_size (caps);
-  for (i = 0; i < caps_size; i++) {
-    GstStructure *caps_structure = gst_caps_get_structure (caps, i);
-    GstCapsFeatures *caps_features =
-        gst_caps_features_copy (gst_caps_get_features (caps, i));
-    GstCaps *filtered_caps;
-    GstCaps *simple_caps =
-        gst_caps_new_full (gst_structure_copy (caps_structure), NULL);
-    gst_caps_set_features (simple_caps, 0, caps_features);
-
-    if (gst_caps_features_contains (caps_features, feature)) {
-      gst_caps_append (new_caps, gst_caps_copy (simple_caps));
-
-      gst_caps_features_remove (caps_features, feature);
-      filtered_caps = gst_caps_ref (simple_caps);
-    } else {
-      filtered_caps = gst_caps_intersect_full (simple_caps, filter,
-          GST_CAPS_INTERSECT_FIRST);
-    }
-
-    gst_caps_unref (simple_caps);
-    gst_caps_append (new_caps, filtered_caps);
-  }
-
-  return new_caps;
-}
-
-static GstCaps *
-gst_dvd_spu_video_get_caps (GstDVDSpu * dvdspu, GstPad * pad, GstCaps * filter)
-{
-  GstPad *srcpad = dvdspu->srcpad;
-  GstCaps *peer_caps = NULL, *caps = NULL, *dvdspu_filter = NULL;
-
-  if (filter) {
-    /* filter caps + composition feature + filter caps
-     * filtered by the software caps. */
-    GstCaps *sw_caps = gst_static_caps_get (&sw_template_caps);
-    dvdspu_filter = gst_dvd_spu_add_feature_and_intersect (filter,
-        GST_CAPS_FEATURE_META_GST_VIDEO_OVERLAY_COMPOSITION, sw_caps);
-    gst_caps_unref (sw_caps);
-
-    GST_DEBUG_OBJECT (dvdspu, "dvdspu filter %" GST_PTR_FORMAT, dvdspu_filter);
-  }
-
-  peer_caps = gst_pad_peer_query_caps (srcpad, dvdspu_filter);
-
-  if (dvdspu_filter)
-    gst_caps_unref (dvdspu_filter);
-
-  if (peer_caps) {
-    GST_DEBUG_OBJECT (pad, "peer caps %" GST_PTR_FORMAT, peer_caps);
-
-    if (gst_caps_is_any (peer_caps)) {
-      /* if peer returns ANY caps, return filtered src pad template caps */
-      caps = gst_caps_copy (gst_pad_get_pad_template_caps (srcpad));
-    } else {
-      /* duplicate caps which contains the composition into one version with
-       * the meta and one without. Filter the other caps by the software caps */
-      GstCaps *sw_caps = gst_static_caps_get (&sw_template_caps);
-      caps = gst_dvd_spu_intersect_by_feature (peer_caps,
-          GST_CAPS_FEATURE_META_GST_VIDEO_OVERLAY_COMPOSITION, sw_caps);
-      gst_caps_unref (sw_caps);
-    }
-
-    gst_caps_unref (peer_caps);
-
-  } else {
-    /* no peer, our padtemplate is enough then */
-    caps = gst_pad_get_pad_template_caps (pad);
-  }
-
-  if (filter) {
-    GstCaps *intersection = gst_caps_intersect_full (filter, caps,
-        GST_CAPS_INTERSECT_FIRST);
-    gst_caps_unref (caps);
-    caps = intersection;
-  }
-
-  GST_DEBUG_OBJECT (dvdspu, "returning %" GST_PTR_FORMAT, caps);
-
-  return caps;
-}
-
-static GstCaps *
-gst_dvd_spu_src_get_caps (GstDVDSpu * dvdspu, GstPad * pad, GstCaps * filter)
-{
-  GstPad *sinkpad = dvdspu->videosinkpad;
-  GstCaps *peer_caps = NULL, *caps = NULL, *dvdspu_filter = NULL;
-
-  if (filter) {
-    /* duplicate filter caps which contains the composition into one version
-     * with the meta and one without. Filter the other caps by the software
-     * caps */
-    GstCaps *sw_caps = gst_static_caps_get (&sw_template_caps);
-    dvdspu_filter = gst_dvd_spu_intersect_by_feature (filter,
-        GST_CAPS_FEATURE_META_GST_VIDEO_OVERLAY_COMPOSITION, sw_caps);
-    gst_caps_unref (sw_caps);
-  }
-
-  peer_caps = gst_pad_peer_query_caps (sinkpad, dvdspu_filter);
-
-  if (dvdspu_filter)
-    gst_caps_unref (dvdspu_filter);
-
-  if (peer_caps) {
-    GST_DEBUG_OBJECT (pad, "peer caps %" GST_PTR_FORMAT, peer_caps);
-
-    if (gst_caps_is_any (peer_caps)) {
-      /* if peer returns ANY caps, return filtered sink pad template caps */
-      caps = gst_caps_copy (gst_pad_get_pad_template_caps (sinkpad));
-    } else {
-      /* return upstream caps + composition feature + upstream caps
-       * filtered by the software caps. */
-      GstCaps *sw_caps = gst_static_caps_get (&sw_template_caps);
-      caps = gst_dvd_spu_add_feature_and_intersect (peer_caps,
-          GST_CAPS_FEATURE_META_GST_VIDEO_OVERLAY_COMPOSITION, sw_caps);
-      gst_caps_unref (sw_caps);
-    }
-
-    gst_caps_unref (peer_caps);
-
-  } else {
-    /* no peer, our padtemplate is enough then */
-    caps = gst_pad_get_pad_template_caps (pad);
-  }
-
-  if (filter) {
-    GstCaps *intersection = gst_caps_intersect_full (filter, caps,
-        GST_CAPS_INTERSECT_FIRST);
-    gst_caps_unref (caps);
-    caps = intersection;
-  }
-
-  GST_DEBUG_OBJECT (dvdspu, "returning %" GST_PTR_FORMAT, caps);
-
-  return caps;
-}
-
-/* With SPU lock held */
-static void
-update_video_to_position (GstDVDSpu * dvdspu, GstClockTime new_pos)
-{
-  SpuState *state = &dvdspu->spu_state;
-#if 0
-  g_print ("Segment update for video. Advancing from %" GST_TIME_FORMAT
-      " to %" GST_TIME_FORMAT "\n",
-      GST_TIME_ARGS (dvdspu->video_seg.position), GST_TIME_ARGS (start));
-#endif
-  while (dvdspu->video_seg.position < new_pos &&
-      !(state->flags & SPU_STATE_STILL_FRAME)) {
-    DVD_SPU_UNLOCK (dvdspu);
-    if (dvdspu_handle_vid_buffer (dvdspu, NULL) != GST_FLOW_OK) {
-      DVD_SPU_LOCK (dvdspu);
-      break;
-    }
-    DVD_SPU_LOCK (dvdspu);
-  }
+  return buf;
 }
 
 static gboolean
-gst_dvd_spu_video_event (GstPad * pad, GstObject * parent, GstEvent * event)
+gst_dvd_spu_video_sink_event (GstSubOverlay * overlay, GstEvent * event)
 {
-  GstDVDSpu *dvdspu = (GstDVDSpu *) parent;
+  GstDVDSpu *dvdspu = (GstDVDSpu *) overlay;
   SpuState *state = &dvdspu->spu_state;
   gboolean res = TRUE;
 
   switch (GST_EVENT_TYPE (event)) {
-    case GST_EVENT_CAPS:
-    {
-      GstCaps *caps;
-
-      gst_event_parse_caps (event, &caps);
-      res = gst_dvd_spu_video_set_caps (dvdspu, pad, caps);
-      if (res)
-        res = gst_pad_push_event (dvdspu->srcpad, event);
-      else
-        gst_event_unref (event);
-      break;
-    }
     case GST_EVENT_CUSTOM_DOWNSTREAM:
     case GST_EVENT_CUSTOM_DOWNSTREAM_OOB:
     {
       gboolean in_still;
 
+      /* in any case, forward (first) */
+      GST_DEBUG_OBJECT (dvdspu,
+          "Custom event %" GST_PTR_FORMAT " on video pad", event);
+      res =
+          GST_SUB_OVERLAY_CLASS (parent_class)->video_sink_event (overlay,
+          event);
+
       if (gst_video_event_parse_still_frame (event, &in_still)) {
-        GstBuffer *to_push = NULL;
-
-        /* Forward the event before handling */
-        res = gst_pad_event_default (pad, parent, event);
-
         GST_DEBUG_OBJECT (dvdspu,
             "Still frame event on video pad: in-still = %d", in_still);
 
         DVD_SPU_LOCK (dvdspu);
+        /* only enable sparse handling when not in still */
+        gst_sub_overlay_set_sparse_video (overlay, !in_still);
         if (in_still) {
           state->flags |= SPU_STATE_STILL_FRAME;
           /* Entering still. Advance the SPU to make sure the state is 
            * up to date */
           gst_dvd_spu_check_still_updates (dvdspu);
-          /* And re-draw the still frame to make sure it appears on
-           * screen, otherwise the last frame  might have been discarded 
-           * by QoS */
-          gst_dvd_spu_redraw_still (dvdspu, TRUE);
-          to_push = dvdspu->pending_frame;
-          dvdspu->pending_frame = NULL;
         } else {
           state->flags &= ~(SPU_STATE_STILL_FRAME);
         }
         DVD_SPU_UNLOCK (dvdspu);
-        if (to_push)
-          gst_pad_push (dvdspu->srcpad, to_push);
-      } else {
-        GST_DEBUG_OBJECT (dvdspu,
-            "Custom event %" GST_PTR_FORMAT " on video pad", event);
-        res = gst_pad_event_default (pad, parent, event);
+
+        /* And re-draw the still frame to make sure it appears on
+         * screen, otherwise the last frame  might have been discarded
+         * by QoS */
+        if (in_still)
+          gst_dvd_spu_push_still (dvdspu);
       }
-      break;
-    }
-    case GST_EVENT_SEGMENT:
-    {
-      GstSegment seg;
-
-      gst_event_copy_segment (event, &seg);
-
-      if (seg.format != GST_FORMAT_TIME) {
-        gst_event_unref (event);
-        return FALSE;
-      }
-
-      /* Only print updates if they have an end time (don't print start_time
-       * updates */
-      GST_DEBUG_OBJECT (dvdspu, "video pad Segment: %" GST_SEGMENT_FORMAT,
-          &seg);
-
-      DVD_SPU_LOCK (dvdspu);
-
-      if (seg.start > dvdspu->video_seg.position) {
-        update_video_to_position (dvdspu, seg.start);
-      }
-
-      dvdspu->video_seg = seg;
-      DVD_SPU_UNLOCK (dvdspu);
-
-      res = gst_pad_event_default (pad, parent, event);
-      break;
-    }
-    case GST_EVENT_GAP:
-    {
-      GstClockTime timestamp, duration;
-      gst_event_parse_gap (event, &timestamp, &duration);
-      if (GST_CLOCK_TIME_IS_VALID (duration))
-        timestamp += duration;
-
-      DVD_SPU_LOCK (dvdspu);
-      GST_LOG_OBJECT (dvdspu, "Received GAP. Advancing to %" GST_TIME_FORMAT,
-          GST_TIME_ARGS (timestamp));
-      update_video_to_position (dvdspu, timestamp);
-      DVD_SPU_UNLOCK (dvdspu);
-
-      gst_event_unref (event);
-      break;
-    }
-    case GST_EVENT_FLUSH_START:
-      DVD_SPU_LOCK (dvdspu);
-      dvdspu->video_flushing = TRUE;
-      DVD_SPU_UNLOCK (dvdspu);
-      res = gst_pad_event_default (pad, parent, event);
-      goto done;
-    case GST_EVENT_FLUSH_STOP:
-      res = gst_pad_event_default (pad, parent, event);
-
-      DVD_SPU_LOCK (dvdspu);
-      dvdspu->video_flushing = FALSE;
-      gst_segment_init (&dvdspu->video_seg, GST_FORMAT_UNDEFINED);
-      gst_buffer_replace (&dvdspu->ref_frame, NULL);
-      gst_buffer_replace (&dvdspu->pending_frame, NULL);
-
-      DVD_SPU_UNLOCK (dvdspu);
-      goto done;
-    default:
-      res = gst_pad_event_default (pad, parent, event);
-      break;
-  }
-
-done:
-  return res;
-#if 0
-error:
-  gst_event_unref (event);
-  return FALSE;
-#endif
-}
-
-static gboolean
-gst_dvd_spu_video_query (GstPad * pad, GstObject * parent, GstQuery * query)
-{
-  GstDVDSpu *dvdspu = GST_DVD_SPU (parent);
-  gboolean res = FALSE;
-
-  switch (GST_QUERY_TYPE (query)) {
-    case GST_QUERY_CAPS:
-    {
-      GstCaps *filter, *caps;
-
-      gst_query_parse_caps (query, &filter);
-      caps = gst_dvd_spu_video_get_caps (dvdspu, pad, filter);
-      gst_query_set_caps_result (query, caps);
-      gst_caps_unref (caps);
-      res = TRUE;
       break;
     }
     default:
-      res = gst_pad_query_default (pad, parent, query);
+      res =
+          GST_SUB_OVERLAY_CLASS (parent_class)->video_sink_event (overlay,
+          event);
       break;
   }
 
   return res;
 }
-
-static GstFlowReturn
-gst_dvd_spu_video_chain (GstPad * pad, GstObject * parent, GstBuffer * buf)
-{
-  GstDVDSpu *dvdspu = (GstDVDSpu *) parent;
-  GstFlowReturn ret;
-
-  g_return_val_if_fail (dvdspu != NULL, GST_FLOW_ERROR);
-
-  if (gst_pad_check_reconfigure (dvdspu->srcpad))
-    gst_dvd_spu_negotiate (dvdspu, NULL);
-
-  GST_LOG_OBJECT (dvdspu, "video buffer %p with TS %" GST_TIME_FORMAT,
-      buf, GST_TIME_ARGS (GST_BUFFER_TIMESTAMP (buf)));
-
-  ret = dvdspu_handle_vid_buffer (dvdspu, buf);
-
-  return ret;
-}
-
-static GstFlowReturn
-dvdspu_handle_vid_buffer (GstDVDSpu * dvdspu, GstBuffer * buf)
-{
-  GstClockTime new_ts;
-  GstFlowReturn ret;
-  gboolean using_ref = FALSE;
-
-  DVD_SPU_LOCK (dvdspu);
-
-  if (buf == NULL) {
-    GstClockTime next_ts = dvdspu->video_seg.position;
-
-    next_ts += gst_util_uint64_scale_int (GST_SECOND,
-        dvdspu->spu_state.info.fps_d, dvdspu->spu_state.info.fps_n);
-
-    /* NULL buffer was passed - use the reference frame and update the timestamp,
-     * or else there's nothing to draw, and just return GST_FLOW_OK */
-    if (dvdspu->ref_frame == NULL) {
-      dvdspu->video_seg.position = next_ts;
-      goto no_ref_frame;
-    }
-
-    buf = gst_buffer_copy (dvdspu->ref_frame);
-
-#if 0
-    g_print ("Duping frame %" GST_TIME_FORMAT " with new TS %" GST_TIME_FORMAT
-        "\n", GST_TIME_ARGS (GST_BUFFER_TIMESTAMP (buf)),
-        GST_TIME_ARGS (next_ts));
-#endif
-
-    GST_BUFFER_TIMESTAMP (buf) = next_ts;
-    using_ref = TRUE;
-  }
-
-  if (GST_BUFFER_TIMESTAMP_IS_VALID (buf)) {
-    dvdspu->video_seg.position = GST_BUFFER_TIMESTAMP (buf);
-  }
-
-  new_ts = gst_segment_to_running_time (&dvdspu->video_seg, GST_FORMAT_TIME,
-      dvdspu->video_seg.position);
-
-#if 0
-  g_print ("TS %" GST_TIME_FORMAT " running: %" GST_TIME_FORMAT "\n",
-      GST_TIME_ARGS (dvdspu->video_seg.position), GST_TIME_ARGS (new_ts));
-#endif
-
-  gst_dvd_spu_advance_spu (dvdspu, new_ts);
-
-  /* If we have an active SPU command set, we store a copy of the frame in case
-   * we hit a still and need to draw on it. Otherwise, a reference is
-   * sufficient in case we later encounter a still */
-  if ((dvdspu->spu_state.flags & SPU_STATE_FORCED_DSP) ||
-      ((dvdspu->spu_state.flags & SPU_STATE_FORCED_ONLY) == 0 &&
-          (dvdspu->spu_state.flags & SPU_STATE_DISPLAY))) {
-    if (using_ref == FALSE) {
-      GstBuffer *copy;
-
-      /* Take a copy in case we hit a still frame and need the pristine 
-       * frame around */
-      copy = gst_buffer_copy (buf);
-      gst_buffer_replace (&dvdspu->ref_frame, copy);
-      gst_buffer_unref (copy);
-    }
-
-    /* Render the SPU overlay onto the buffer */
-    buf = gst_buffer_make_writable (buf);
-
-    gstspu_render (dvdspu, buf);
-  } else {
-    if (using_ref == FALSE) {
-      /* Not going to draw anything on this frame, just store a reference
-       * in case we hit a still frame and need it */
-      gst_buffer_replace (&dvdspu->ref_frame, buf);
-    }
-  }
-
-  if (dvdspu->spu_state.flags & SPU_STATE_STILL_FRAME) {
-    GST_DEBUG_OBJECT (dvdspu, "Outputting buffer with TS %" GST_TIME_FORMAT
-        "from chain while in still",
-        GST_TIME_ARGS (GST_BUFFER_TIMESTAMP (buf)));
-  }
-
-  DVD_SPU_UNLOCK (dvdspu);
-
-  /* just push out the incoming buffer without touching it */
-  ret = gst_pad_push (dvdspu->srcpad, buf);
-
-  return ret;
-
-no_ref_frame:
-
-  DVD_SPU_UNLOCK (dvdspu);
-
-  return GST_FLOW_OK;
-}
-
 
 /*
  * Transform the overlay composition rectangle to fit completely in the video.
@@ -1035,81 +520,20 @@ map_failed:
 }
 
 static void
-gstspu_render (GstDVDSpu * dvdspu, GstBuffer * buf)
+gst_dvd_spu_render (GstSubOverlay * overlay, GstBuffer * buf)
 {
-  GstVideoOverlayComposition *composition;
-  GstVideoFrame frame;
+  GstDVDSpu *dvdspu = GST_DVD_SPU (overlay);
 
-  if (!dvdspu->composition) {
-    dvdspu->composition = gstspu_render_composition (dvdspu);
-    if (!dvdspu->composition)
-      return;
-  }
-
-  composition = dvdspu->composition;
-
-  if (dvdspu->attach_compo_to_buffer) {
-    gst_buffer_add_video_overlay_composition_meta (buf, composition);
-    return;
-  }
-
-  if (!gst_video_frame_map (&frame, &dvdspu->spu_state.info, buf,
-          GST_MAP_READWRITE)) {
-    GST_WARNING_OBJECT (dvdspu, "failed to map video frame for blending");
-    return;
-  }
-
-  gst_video_overlay_composition_blend (composition, &frame);
-  gst_video_frame_unmap (&frame);
-}
-
-/* With SPU LOCK */
-static void
-gst_dvd_spu_redraw_still (GstDVDSpu * dvdspu, gboolean force)
-{
-  /* If we have an active SPU command set and a reference frame, copy the
-   * frame, redraw the SPU and store it as the pending frame for output */
-  if (dvdspu->ref_frame) {
-    gboolean redraw = (dvdspu->spu_state.flags & SPU_STATE_FORCED_DSP);
-    redraw |= (dvdspu->spu_state.flags & SPU_STATE_FORCED_ONLY) == 0 &&
-        (dvdspu->spu_state.flags & SPU_STATE_DISPLAY);
-
-    if (redraw) {
-      GstBuffer *buf = gst_buffer_ref (dvdspu->ref_frame);
-
-      buf = gst_buffer_make_writable (buf);
-
-      GST_LOG_OBJECT (dvdspu, "Redraw due to Still Frame with ref %p",
-          dvdspu->ref_frame);
-      GST_BUFFER_FLAG_SET (buf, GST_BUFFER_FLAG_DISCONT);
-      GST_BUFFER_TIMESTAMP (buf) = GST_CLOCK_TIME_NONE;
-      GST_BUFFER_DURATION (buf) = GST_CLOCK_TIME_NONE;
-
-      /* Render the SPU overlay onto the buffer */
-      gstspu_render (dvdspu, buf);
-      gst_buffer_replace (&dvdspu->pending_frame, buf);
-      gst_buffer_unref (buf);
-    } else if (force) {
-      /* Simply output the reference frame */
-      GstBuffer *buf = gst_buffer_ref (dvdspu->ref_frame);
-      buf = gst_buffer_make_writable (buf);
-      GST_BUFFER_FLAG_SET (buf, GST_BUFFER_FLAG_DISCONT);
-      GST_BUFFER_TIMESTAMP (buf) = GST_CLOCK_TIME_NONE;
-      GST_BUFFER_DURATION (buf) = GST_CLOCK_TIME_NONE;
-
-      GST_DEBUG_OBJECT (dvdspu, "Pushing reference frame at start of still");
-
-      gst_buffer_replace (&dvdspu->pending_frame, buf);
-      gst_buffer_unref (buf);
-    } else {
-      GST_LOG_OBJECT (dvdspu, "Redraw due to Still Frame skipped");
-    }
-  } else {
-    GST_LOG_OBJECT (dvdspu, "Not redrawing still frame - no ref frame");
+  if ((dvdspu->spu_state.flags & SPU_STATE_FORCED_DSP) ||
+      ((dvdspu->spu_state.flags & SPU_STATE_FORCED_ONLY) == 0 &&
+          (dvdspu->spu_state.flags & SPU_STATE_DISPLAY))) {
+    gst_sub_overlay_set_composition (overlay,
+        gstspu_render_composition (GST_DVD_SPU (overlay)));
   }
 }
 
-static void
+/* event (transfer full) */
+static gboolean
 gst_dvd_spu_handle_dvd_event (GstDVDSpu * dvdspu, GstEvent * event)
 {
   gboolean hl_change = FALSE;
@@ -1132,9 +556,7 @@ gst_dvd_spu_handle_dvd_event (GstDVDSpu * dvdspu, GstEvent * event)
   if (hl_change)
     gst_dvd_spu_reset_composition (dvdspu);
 
-  if (hl_change && (dvdspu->spu_state.flags & SPU_STATE_STILL_FRAME)) {
-    gst_dvd_spu_redraw_still (dvdspu, FALSE);
-  }
+  return hl_change;
 }
 
 static gboolean
@@ -1169,6 +591,7 @@ gst_dvd_spu_advance_spu (GstDVDSpu * dvdspu, GstClockTime new_ts)
         GST_TIME_ARGS (state->next_ts), GST_TIME_ARGS (new_ts));
 
     if (!gstspu_execute_event (dvdspu)) {
+      GstSegment *video_seg = &GST_SUB_OVERLAY_VIDEO_SEGMENT (dvdspu);
       /* No current command buffer, try and get one */
       SpuPacket *packet = (SpuPacket *) g_queue_pop_head (dvdspu->pending_spus);
 
@@ -1180,9 +603,9 @@ gst_dvd_spu_advance_spu (GstDVDSpu * dvdspu, GstClockTime new_ts)
           ". Video position=%" GST_TIME_FORMAT " (%" GST_TIME_FORMAT
           ") type %s",
           GST_TIME_ARGS (packet->event_ts),
-          GST_TIME_ARGS (gst_segment_to_running_time (&dvdspu->video_seg,
-                  GST_FORMAT_TIME, dvdspu->video_seg.position)),
-          GST_TIME_ARGS (dvdspu->video_seg.position),
+          GST_TIME_ARGS (gst_segment_to_running_time (video_seg,
+                  GST_FORMAT_TIME, video_seg->position)),
+          GST_TIME_ARGS (video_seg->position),
           packet->buf ? "buffer" : "event");
 
       gst_dvd_spu_reset_composition (dvdspu);
@@ -1211,22 +634,32 @@ gst_dvd_spu_advance_spu (GstDVDSpu * dvdspu, GstClockTime new_ts)
 }
 
 static void
+gst_dvd_spu_advance (GstSubOverlay * overlay, GstBuffer * buffer,
+    GstClockTime new_ts, GstClockTime new_ts_end)
+{
+  gst_dvd_spu_advance_spu (GST_DVD_SPU (overlay), new_ts);
+}
+
+static void
 gst_dvd_spu_check_still_updates (GstDVDSpu * dvdspu)
 {
   GstClockTime sub_ts;
   GstClockTime vid_ts;
 
   if (dvdspu->spu_state.flags & SPU_STATE_STILL_FRAME) {
+    GstSegment *video_seg = &GST_SUB_OVERLAY_VIDEO_SEGMENT (dvdspu);
+    GstSegment *subp_seg = &GST_SUB_OVERLAY_SUB_SEGMENT (dvdspu);
 
-    if (dvdspu->video_seg.format != GST_FORMAT_TIME)
+    if (video_seg->format != GST_FORMAT_TIME)
       return;                   /* No video segment or frames yet */
 
-    vid_ts = gst_segment_to_running_time (&dvdspu->video_seg,
-        GST_FORMAT_TIME, dvdspu->video_seg.position);
-    sub_ts = gst_segment_to_running_time (&dvdspu->subp_seg,
-        GST_FORMAT_TIME, dvdspu->subp_seg.position);
+    vid_ts = gst_segment_to_running_time (video_seg,
+        GST_FORMAT_TIME, video_seg->position);
+    sub_ts = gst_segment_to_running_time (subp_seg,
+        GST_FORMAT_TIME, subp_seg->position);
 
-    vid_ts = MAX (vid_ts, sub_ts);
+    if (GST_CLOCK_TIME_IS_VALID (vid_ts) && GST_CLOCK_TIME_IS_VALID (sub_ts))
+      vid_ts = MAX (vid_ts, sub_ts);
 
     GST_DEBUG_OBJECT (dvdspu,
         "In still frame - advancing TS to %" GST_TIME_FORMAT
@@ -1250,21 +683,22 @@ submit_new_spu_packet (GstDVDSpu * dvdspu, GstBuffer * buf)
   /* Decide whether to pass this buffer through to the rendering code */
   ts = GST_BUFFER_TIMESTAMP (buf);
   if (GST_CLOCK_TIME_IS_VALID (ts)) {
-    if (ts < (GstClockTime) dvdspu->subp_seg.start) {
-      GstClockTimeDiff diff = dvdspu->subp_seg.start - ts;
+    GstSegment *subp_seg = &GST_SUB_OVERLAY_SUB_SEGMENT (dvdspu);
+
+    if (ts < (GstClockTime) subp_seg->start) {
+      GstClockTimeDiff diff = subp_seg->start - ts;
 
       /* Buffer starts before segment, see if we can calculate a running time */
       run_ts =
-          gst_segment_to_running_time (&dvdspu->subp_seg, GST_FORMAT_TIME,
-          dvdspu->subp_seg.start);
+          gst_segment_to_running_time (subp_seg, GST_FORMAT_TIME,
+          subp_seg->start);
       if (run_ts >= (GstClockTime) diff)
         run_ts -= diff;
       else
         run_ts = GST_CLOCK_TIME_NONE;   /* No running time possible for this subpic */
     } else {
       /* TS within segment, convert to running time */
-      run_ts =
-          gst_segment_to_running_time (&dvdspu->subp_seg, GST_FORMAT_TIME, ts);
+      run_ts = gst_segment_to_running_time (subp_seg, GST_FORMAT_TIME, ts);
     }
   }
 
@@ -1291,155 +725,22 @@ submit_new_spu_packet (GstDVDSpu * dvdspu, GstBuffer * buf)
   }
 }
 
-static gboolean
-gst_dvd_spu_negotiate (GstDVDSpu * dvdspu, GstCaps * caps)
-{
-  gboolean upstream_has_meta = FALSE;
-  gboolean caps_has_meta = FALSE;
-  gboolean alloc_has_meta = FALSE;
-  gboolean attach = FALSE;
-  gboolean ret = TRUE;
-  GstCapsFeatures *f;
-  GstCaps *overlay_caps;
-  GstQuery *query;
-
-  GST_DEBUG_OBJECT (dvdspu, "performing negotiation");
-
-  /* Clear the cached composition */
-  gst_dvd_spu_reset_composition (dvdspu);
-
-  /* Clear any pending reconfigure to avoid negotiating twice */
-  gst_pad_check_reconfigure (dvdspu->srcpad);
-
-  if (!caps)
-    caps = gst_pad_get_current_caps (dvdspu->videosinkpad);
-  else
-    gst_caps_ref (caps);
-
-  if (!caps || gst_caps_is_empty (caps))
-    goto no_format;
-
-  /* Check if upstream caps have meta */
-  if ((f = gst_caps_get_features (caps, 0))) {
-    upstream_has_meta = gst_caps_features_contains (f,
-        GST_CAPS_FEATURE_META_GST_VIDEO_OVERLAY_COMPOSITION);
-  }
-
-  if (upstream_has_meta) {
-    overlay_caps = gst_caps_ref (caps);
-  } else {
-    GstCaps *peercaps;
-
-    /* BaseTransform requires caps for the allocation query to work */
-    overlay_caps = gst_caps_copy (caps);
-    f = gst_caps_get_features (overlay_caps, 0);
-    gst_caps_features_add (f,
-        GST_CAPS_FEATURE_META_GST_VIDEO_OVERLAY_COMPOSITION);
-
-    /* Then check if downstream accept dvdspu composition in caps */
-    /* FIXME: We should probably check if downstream *prefers* the
-     * dvdspu meta, and only enforce usage of it if we can't handle
-     * the format ourselves and thus would have to drop the overlays.
-     * Otherwise we should prefer what downstream wants here.
-     */
-    peercaps = gst_pad_peer_query_caps (dvdspu->srcpad, NULL);
-    caps_has_meta = gst_caps_can_intersect (peercaps, overlay_caps);
-    gst_caps_unref (peercaps);
-
-    GST_DEBUG ("caps have dvdspu meta %d", caps_has_meta);
-  }
-
-  if (upstream_has_meta || caps_has_meta) {
-    /* Send caps immediatly, it's needed by GstBaseTransform to get a reply
-     * from allocation query */
-    ret = gst_pad_set_caps (dvdspu->srcpad, overlay_caps);
-
-    /* First check if the allocation meta has compositon */
-    query = gst_query_new_allocation (overlay_caps, FALSE);
-
-    if (!gst_pad_peer_query (dvdspu->srcpad, query)) {
-      /* no problem, we use the query defaults */
-      GST_DEBUG_OBJECT (dvdspu, "ALLOCATION query failed");
-
-      /* In case we were flushing, mark reconfigure and fail this method,
-       * will make it retry */
-      if (dvdspu->video_flushing)
-        ret = FALSE;
-    }
-
-    alloc_has_meta = gst_query_find_allocation_meta (query,
-        GST_VIDEO_OVERLAY_COMPOSITION_META_API_TYPE, NULL);
-
-    GST_DEBUG ("sink alloc has dvdspu meta %d", alloc_has_meta);
-
-    gst_query_unref (query);
-  }
-
-  /* For backward compatbility, we will prefer bliting if downstream
-   * allocation does not support the meta. In other case we will prefer
-   * attaching, and will fail the negotiation in the unlikely case we are
-   * force to blit, but format isn't supported. */
-
-  if (upstream_has_meta) {
-    attach = TRUE;
-  } else if (caps_has_meta) {
-    if (alloc_has_meta) {
-      attach = TRUE;
-    } else {
-      /* Don't attach unless we cannot handle the format */
-      attach = !gst_dvd_spu_can_handle_caps (caps);
-    }
-  } else {
-    ret = gst_dvd_spu_can_handle_caps (caps);
-  }
-
-  /* If we attach, then pick the dvdspu caps */
-  if (attach) {
-    GST_DEBUG_OBJECT (dvdspu, "Using caps %" GST_PTR_FORMAT, overlay_caps);
-    /* Caps where already sent */
-  } else if (ret) {
-    GST_DEBUG_OBJECT (dvdspu, "Using caps %" GST_PTR_FORMAT, caps);
-    ret = gst_pad_set_caps (dvdspu->srcpad, caps);
-  }
-
-  dvdspu->attach_compo_to_buffer = attach;
-
-  if (!ret) {
-    GST_DEBUG_OBJECT (dvdspu, "negotiation failed, schedule reconfigure");
-    gst_pad_mark_reconfigure (dvdspu->srcpad);
-  }
-
-  gst_caps_unref (overlay_caps);
-  gst_caps_unref (caps);
-
-  return ret;
-
-no_format:
-  {
-    if (caps)
-      gst_caps_unref (caps);
-    return FALSE;
-  }
-}
-
 static GstFlowReturn
-gst_dvd_spu_subpic_chain (GstPad * pad, GstObject * parent, GstBuffer * buf)
+gst_dvd_spu_handle_buffer (GstSubOverlay * overlay, GstBuffer * buf)
 {
-  GstDVDSpu *dvdspu = (GstDVDSpu *) parent;
+  GstDVDSpu *dvdspu = (GstDVDSpu *) overlay;
   GstFlowReturn ret = GST_FLOW_OK;
   gsize size;
 
   g_return_val_if_fail (dvdspu != NULL, GST_FLOW_ERROR);
 
+  GST_SUB_OVERLAY_STREAM_LOCK (overlay);
+
   GST_INFO_OBJECT (dvdspu, "Have subpicture buffer with timestamp %"
       GST_TIME_FORMAT " and size %" G_GSIZE_FORMAT,
       GST_TIME_ARGS (GST_BUFFER_TIMESTAMP (buf)), gst_buffer_get_size (buf));
 
-  DVD_SPU_LOCK (dvdspu);
-
-  if (GST_BUFFER_TIMESTAMP_IS_VALID (buf)) {
-    dvdspu->subp_seg.position = GST_BUFFER_TIMESTAMP (buf);
-  }
+  gst_sub_overlay_update_sub_position (overlay, GST_BUFFER_TIMESTAMP (buf));
 
   if (GST_BUFFER_IS_DISCONT (buf) && dvdspu->partial_spu) {
     gst_buffer_unref (dvdspu->partial_spu);
@@ -1548,7 +849,7 @@ gst_dvd_spu_subpic_chain (GstPad * pad, GstObject * parent, GstBuffer * buf)
   }
 
 done:
-  DVD_SPU_UNLOCK (dvdspu);
+  GST_SUB_OVERLAY_STREAM_UNLOCK (overlay);
 
   return ret;
 
@@ -1563,35 +864,34 @@ caps_not_set:
 }
 
 static gboolean
-gst_dvd_spu_subpic_event (GstPad * pad, GstObject * parent, GstEvent * event)
+gst_dvd_spu_flush (GstSubOverlay * overlay)
 {
-  GstDVDSpu *dvdspu = (GstDVDSpu *) parent;
+  GstDVDSpu *dvdspu = GST_DVD_SPU (overlay);
+
+  gst_dvd_spu_flush_spu_info (dvdspu, TRUE);
+
+  return TRUE;
+}
+
+static gboolean
+gst_dvd_spu_sub_sink_event (GstSubOverlay * overlay, GstEvent * event)
+{
+  GstDVDSpu *dvdspu = (GstDVDSpu *) overlay;
   gboolean res = TRUE;
 
   /* Some events on the subpicture sink pad just get ignored, like 
    * FLUSH_START */
   switch (GST_EVENT_TYPE (event)) {
-    case GST_EVENT_CAPS:
-    {
-      GstCaps *caps;
-
-      gst_event_parse_caps (event, &caps);
-      res = gst_dvd_spu_subpic_set_caps (dvdspu, pad, caps);
-      gst_event_unref (event);
-      break;
-    }
     case GST_EVENT_CUSTOM_DOWNSTREAM:
     case GST_EVENT_CUSTOM_DOWNSTREAM_STICKY:
     case GST_EVENT_CUSTOM_DOWNSTREAM_OOB:
     {
       const GstStructure *structure = gst_event_get_structure (event);
       const gchar *name = gst_structure_get_name (structure);
-      gboolean need_push;
+      gboolean hl_change = FALSE;
 
-      if (!g_str_has_prefix (name, "application/x-gst-dvd")) {
-        res = gst_pad_event_default (pad, parent, event);
+      if (!g_str_has_prefix (name, "application/x-gst-dvd"))
         break;
-      }
 
       DVD_SPU_LOCK (dvdspu);
       if (GST_EVENT_IS_SERIALIZED (event)) {
@@ -1601,111 +901,32 @@ gst_dvd_spu_subpic_event (GstPad * pad, GstObject * parent, GstEvent * event)
         spu_packet->event = event;
         g_queue_push_tail (dvdspu->pending_spus, spu_packet);
       } else {
-        gst_dvd_spu_handle_dvd_event (dvdspu, event);
+
+        hl_change = gst_dvd_spu_handle_dvd_event (dvdspu, event);
+        event = NULL;
+        /* event should generate a frame, make one based on last video */
+        hl_change = hl_change &&
+            (dvdspu->spu_state.flags & SPU_STATE_STILL_FRAME);
       }
-
-      /* If the handle_dvd_event generated a pending frame, we
-       * need to synchronise with the video pad's stream lock and push it.
-       * This requires some dancing to preserve locking order and handle
-       * flushes correctly */
-      need_push = (dvdspu->pending_frame != NULL);
       DVD_SPU_UNLOCK (dvdspu);
-      if (need_push) {
-        GstBuffer *to_push = NULL;
-        gboolean flushing;
-
-        GST_LOG_OBJECT (dvdspu, "Going for stream lock");
-        GST_PAD_STREAM_LOCK (dvdspu->videosinkpad);
-        GST_LOG_OBJECT (dvdspu, "Got stream lock");
-        GST_OBJECT_LOCK (dvdspu->videosinkpad);
-        flushing = GST_PAD_IS_FLUSHING (dvdspu->videosinkpad);
-        GST_OBJECT_UNLOCK (dvdspu->videosinkpad);
-
-        DVD_SPU_LOCK (dvdspu);
-        if (dvdspu->pending_frame == NULL || flushing) {
-          /* Got flushed while waiting for the stream lock */
-          DVD_SPU_UNLOCK (dvdspu);
-        } else {
-          to_push = dvdspu->pending_frame;
-          dvdspu->pending_frame = NULL;
-
-          DVD_SPU_UNLOCK (dvdspu);
-          gst_pad_push (dvdspu->srcpad, to_push);
-        }
-        GST_LOG_OBJECT (dvdspu, "Dropping stream lock");
-        GST_PAD_STREAM_UNLOCK (dvdspu->videosinkpad);
-      }
-
+      if (hl_change)
+        gst_dvd_spu_push_still (dvdspu);
       break;
     }
-    case GST_EVENT_SEGMENT:
-    {
-      GstSegment seg;
-
-      gst_event_copy_segment (event, &seg);
-
-      /* Only print updates if they have an end time (don't print start_time
-       * updates */
-      GST_DEBUG_OBJECT (dvdspu, "subpic pad Segment: %" GST_SEGMENT_FORMAT,
-          &seg);
-
-      DVD_SPU_LOCK (dvdspu);
-
-      dvdspu->subp_seg = seg;
-      GST_LOG_OBJECT (dvdspu, "Subpicture segment now: %" GST_SEGMENT_FORMAT,
-          &dvdspu->subp_seg);
-      DVD_SPU_UNLOCK (dvdspu);
-
-      gst_event_unref (event);
-      break;
-    }
-    case GST_EVENT_GAP:
-    {
-      GstClockTime timestamp, duration;
-      gst_event_parse_gap (event, &timestamp, &duration);
-      if (GST_CLOCK_TIME_IS_VALID (duration))
-        timestamp += duration;
-
-      DVD_SPU_LOCK (dvdspu);
-      dvdspu->subp_seg.position = timestamp;
-      GST_LOG_OBJECT (dvdspu, "Received GAP. Segment now: %" GST_SEGMENT_FORMAT,
-          &dvdspu->subp_seg);
-      DVD_SPU_UNLOCK (dvdspu);
-
-      gst_event_unref (event);
-      break;
-    }
-    case GST_EVENT_FLUSH_START:
-      gst_event_unref (event);
-      goto done;
-    case GST_EVENT_FLUSH_STOP:
-      GST_DEBUG_OBJECT (dvdspu, "Have flush-stop event on SPU pad");
-      DVD_SPU_LOCK (dvdspu);
-      gst_segment_init (&dvdspu->subp_seg, GST_FORMAT_UNDEFINED);
-      gst_dvd_spu_flush_spu_info (dvdspu, TRUE);
-      DVD_SPU_UNLOCK (dvdspu);
-
-      /* We don't forward flushes on the spu pad */
-      gst_event_unref (event);
-      goto done;
-    case GST_EVENT_EOS:
-      /* drop EOS on the subtitle pad, it means there are no more subtitles,
-       * video might still continue, though */
-      gst_event_unref (event);
-      goto done;
     default:
-      res = gst_pad_event_default (pad, parent, event);
       break;
   }
 
-done:
+  if (event)
+    res = GST_SUB_OVERLAY_CLASS (parent_class)->sub_sink_event (overlay, event);
 
   return res;
 }
 
 static gboolean
-gst_dvd_spu_subpic_set_caps (GstDVDSpu * dvdspu, GstPad * pad, GstCaps * caps)
+gst_dvd_spu_set_format (GstSubOverlay * overlay, GstCaps * caps)
 {
+  GstDVDSpu *dvdspu = GST_DVD_SPU (overlay);
   gboolean res = FALSE;
   GstStructure *s;
   SpuInputType input_type;
@@ -1720,7 +941,6 @@ gst_dvd_spu_subpic_set_caps (GstDVDSpu * dvdspu, GstPad * pad, GstCaps * caps)
     goto done;
   }
 
-  DVD_SPU_LOCK (dvdspu);
   if (dvdspu->spu_input_type != input_type) {
     GST_INFO_OBJECT (dvdspu, "Incoming SPU packet type changed to %u",
         input_type);
@@ -1728,31 +948,9 @@ gst_dvd_spu_subpic_set_caps (GstDVDSpu * dvdspu, GstPad * pad, GstCaps * caps)
     gst_dvd_spu_flush_spu_info (dvdspu, TRUE);
   }
 
-  DVD_SPU_UNLOCK (dvdspu);
   res = TRUE;
 done:
   return res;
-}
-
-static GstStateChangeReturn
-gst_dvd_spu_change_state (GstElement * element, GstStateChange transition)
-{
-  GstDVDSpu *dvdspu = (GstDVDSpu *) element;
-  GstStateChangeReturn ret;
-
-  ret = GST_ELEMENT_CLASS (parent_class)->change_state (element, transition);
-
-  switch (transition) {
-    case GST_STATE_CHANGE_PAUSED_TO_READY:
-      DVD_SPU_LOCK (dvdspu);
-      gst_dvd_spu_clear (dvdspu);
-      DVD_SPU_UNLOCK (dvdspu);
-      break;
-    default:
-      break;
-  }
-
-  return ret;
 }
 
 static gboolean
