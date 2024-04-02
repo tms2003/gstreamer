@@ -4,6 +4,9 @@ authors:
   - name: Edward Hervey
     email: edward@centricular.com
     years: [2020]
+  - name: Nirbheek Chauhan
+    email: nirbheek@centricular.com
+    years: [2024]
 ...
 
 
@@ -226,6 +229,47 @@ tool you just built directly (like `gst-inspect-1.0`, `gst-launch-1.0`, ...).
 + **only-environment**
   - Instead of opening a new shell environment, print the environment variables
     that would be used.
+
+### Windows Settings
+
+On Windows, the `gst-env.py` script requires at least Windows 10 (build 1607,
+released in 2016), since that is the oldest version of Windows that supports
+[long paths](https://learn.microsoft.com/en-us/windows/win32/fileio/maximum-file-path-limitation).
+
+It is also highly recommended that you enable Developer Mode in Settings:
+
+#### Windows 11 Developer Mode
+
+![Enable Developer Mode in Windows 11 Settings](images/windows-11-developer-mode-settings.png)
+
+#### Windows 10 Developer Mode
+
+![Enable Developer Mode in Windows 10 Settings](images/cerbero/windows-settings-developer-mode.png)
+
+#### Older Windows Versions
+
+If your Windows version is too old, then you cannot use `gst-env.py`. Your
+other option is to install meson to a prefix (say `C:\gstreamer\install`)and
+use it in an "installed" form as follows:
+
+```
+> meson setup --prefix=C:\gstreamer\install
+> meson compile -C build
+> meson install -C build
+> set PATH=C:\gstreamer\install;%PATH%
+> gst-inspect-1.0
+```
+
+After making changes, instead of calling `meson compile` you can call `meson
+install` and it will recompile as-needed and reinstall. By default, it will
+reinstall everything which can be slow, so you can use:
+
+```
+> meson install -C build --only-changed
+```
+
+This option is also useful in other cases, such as when doing instrumentation
+or debugging.
 
 ### Use cases
 
