@@ -24,6 +24,8 @@ from scripts.common import win32_get_short_path_name
 from scripts.common import get_wine_shortpath
 from scripts.common import win32_supports_symlinks
 from scripts.common import developer_mode_enabled
+from scripts.common import win32_supports_long_paths
+from scripts.common import long_paths_enabled
 from scripts.common import OrderedSet
 
 SCRIPTDIR = os.path.dirname(os.path.realpath(__file__))
@@ -429,6 +431,15 @@ def get_subprocess_env(options, gst_version):
             os.symlink(src, dst)
         prepend_env_var(env, 'PATH', str(uninstalled_bindir), options.sysroot)
     else:
+        if os.name == 'nt':
+            if not win32_supports_long_paths():
+                print('gst-env.py needs at least Windows 10.0.14393, please upgrade or follow these instructions:')
+                print('https://gstreamer.freedesktop.org/documentation/installing/building-from-source-using-meson.html#older-windows-versions')
+                exit(1)
+            if not long_paths_enabled():
+                print('gst-env.py needs the long paths option enabled:')
+                print('https://learn.microsoft.com/en-us/windows/win32/fileio/maximum-file-path-limitation')
+                exit(1)
         for p in paths:
             prepend_env_var(env, 'PATH', p, options.sysroot)
 

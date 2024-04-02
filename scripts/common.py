@@ -216,6 +216,30 @@ def get_meson():
     raise RuntimeError('Could not find Meson')
 
 
+def long_paths_enabled():
+    import winreg
+    try:
+        # Open the registry key
+        key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r'SYSTEM\CurrentControlSet\Control\FileSystem',
+                             0, winreg.KEY_READ | winreg.KEY_WRITE)
+        # Query the value
+        value, _ = winreg.QueryValueEx(key, 'LongPathsEnabled')
+        # Check if Developer Mode is enabled
+        if value == 1:
+            return True
+        winreg.SetValueEx(key, 'LongPathsEnabled', 0, winreg.REG_DWORD, 1)
+        print('Enabled long paths')
+        return True
+    except FileNotFoundError:
+        print('Your version of Windows doesn\'t have the long paths option, assuming it is enabled')
+        return True
+    except PermissionError:
+        print('Could not enable long paths, please run gst-env.py from an administrator console one time')
+    except Exception as e:
+        print(f'Error checking Developer Mode status: {e}')
+    return False
+
+
 def developer_mode_enabled():
     import winreg
     try:
@@ -239,3 +263,7 @@ def win10_newer_than(ver):
 
 def win32_supports_symlinks():
     return win10_newer_than(15063)
+
+
+def win32_supports_long_paths():
+    return win10_newer_than(14393)
