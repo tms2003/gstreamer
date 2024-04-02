@@ -326,16 +326,9 @@ def get_subprocess_env(options, gst_version):
     prepend_env_var(env, "PATH", os.path.join(SCRIPTDIR, 'scripts'),
                     options.sysroot)
 
-    # tools: gst-launch-1.0, gst-inspect-1.0
-    prepend_env_var(env, "PATH", os.path.join(options.builddir, 'subprojects',
-                                              'gstreamer', 'tools'),
-                    options.sysroot)
     # plugin scanner and generator
     prepend_env_var(env, "PATH", os.path.join(options.builddir, 'subprojects',
                                               'gstreamer', 'docs'),
-                    options.sysroot)
-    prepend_env_var(env, "PATH", os.path.join(options.builddir, 'subprojects',
-                                              'gst-plugins-base', 'tools'),
                     options.sysroot)
 
     # Library and binary search paths
