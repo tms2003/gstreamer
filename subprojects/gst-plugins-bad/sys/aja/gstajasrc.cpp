@@ -1788,7 +1788,10 @@ next_item:
     case QUEUE_ITEM_TYPE_DUMMY:
       queue_item_clear(&item);
       goto next_item;
-    case QUEUE_ITEM_TYPE_SIGNAL_CHANGE:
+    case QUEUE_ITEM_TYPE_SIGNAL_CHANGE: {
+      GstStructure *event_structure =
+          gst_structure_new("GstAjaSignalChange", "have-signal", G_TYPE_BOOLEAN,
+                            item.signal_change.have_signal, NULL);
       // These are already only produced when signal status is changing
       if (item.signal_change.have_signal) {
         GST_ELEMENT_INFO(GST_ELEMENT(self), RESOURCE, READ,
@@ -1806,6 +1809,9 @@ next_item:
                format_string.c_str()),
               ("detected-format", G_TYPE_STRING, format_string.c_str(), "vpid",
                G_TYPE_UINT, item.signal_change.vpid, NULL));
+
+          gst_structure_set(event_structure, "format", G_TYPE_STRING,
+                            format_string.c_str(), NULL);
         } else {
           GST_ELEMENT_WARNING(GST_ELEMENT(self), RESOURCE, READ,
                               ("Signal lost"),
@@ -1814,8 +1820,12 @@ next_item:
         self->signal = FALSE;
         g_object_notify(G_OBJECT(self), "signal");
       }
+      gst_pad_push_event(
+          GST_BASE_SRC_PAD(self),
+          gst_event_new_custom(GST_EVENT_CUSTOM_DOWNSTREAM, event_structure));
       queue_item_clear(&item);
       goto next_item;
+    }
     case QUEUE_ITEM_TYPE_ERROR:
       GST_ERROR_OBJECT(self, "Stopping because of error on capture thread");
       gst_element_post_message(GST_ELEMENT(self),
