@@ -23,6 +23,7 @@ use gst_rtp::prelude::*;
 use serde_derive::{Deserialize, Serialize};
 
 use anyhow::{anyhow, bail, Context};
+use async_native_tls;
 
 const STUN_SERVER: &str = "stun://stun.l.google.com:19302";
 const TURN_SERVER: &str = "turn://foo:bar@webrtc.gstreamer.net:3478";
@@ -56,6 +57,9 @@ struct Args {
     /// Request that the peer creates an offer.
     #[clap(short, long, default_value = "false")]
     remote_offerer: bool,
+    /// Ignore certificate verification for websocket server
+    #[clap(short, long, default_value = "false")]
+    allow_untrusted_server_cert: bool,
 }
 
 // JSON messages we communicate with
@@ -754,9 +758,16 @@ async fn async_main() -> Result<(), anyhow::Error> {
     check_plugins()?;
 
     let args = Args::parse();
-
     // Connect to the given server
-    let (mut ws, _) = async_tungstenite::async_std::connect_async(&args.server).await?;
+    let mut connector = async_native_tls::TlsConnector::new();
+    if args.allow_untrusted_server_cert {
+        connector = connector.danger_accept_invalid_certs(true);
+    }
+    let (mut ws, _) = async_tungstenite::async_std::connect_async_with_tls_connector(
+        &args.server,
+        Some(connector),
+    )
+    .await?;
 
     println!("connected");
 
