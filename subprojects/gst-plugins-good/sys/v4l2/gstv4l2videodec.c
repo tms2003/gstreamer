@@ -712,6 +712,50 @@ gst_v4l2_video_dec_wait_for_src_ch (GstV4l2VideoDec * self)
 }
 
 static void
+gst_v4l2_video_dec_src_ch_handle (GstV4l2VideoDec * self)
+{
+  GstVideoInfo info;
+  GstVideoCodecState *output_state;
+
+  if (!gst_v4l2_object_acquire_format (self->v4l2capture, &info)) {
+    gst_v4l2_object_stop (self->v4l2capture);
+    return;
+  }
+
+  output_state = gst_video_decoder_get_output_state (GST_VIDEO_DECODER(self));
+  if (!output_state) {
+    gst_v4l2_object_stop (self->v4l2capture);
+    return;
+  }
+
+  if (GST_VIDEO_INFO_FORMAT(&output_state->info) ==
+      GST_VIDEO_INFO_FORMAT(&info) &&
+      output_state->info.width == info.width &&
+      output_state->info.height == info.height)
+  {
+    GstV4l2BufferPool *pool;
+
+    gst_video_codec_state_unref (output_state);
+    GST_INFO_OBJECT (self, "same resolution, will restart the decoder");
+
+    pool = GST_V4L2_BUFFER_POOL (gst_v4l2_object_get_buffer_pool
+        (self->v4l2capture));
+    if (pool) {
+      gst_v4l2_buffer_pool_resume(pool);
+      gst_object_unref (pool);
+    } else {
+      return;
+    }
+
+    if (gst_v4l2_decoder_cmd (self->v4l2output, V4L2_DEC_CMD_START, 0))
+      return;
+  }
+  /* TODO: we didn't handle less buffer or memory requirement case */
+  gst_video_codec_state_unref (output_state);
+  gst_v4l2_object_stop (self->v4l2capture);
+}
+
+static void
 gst_v4l2_video_dec_loop (GstVideoDecoder * decoder)
 {
   GstV4l2VideoDec *self = GST_V4L2_VIDEO_DEC (decoder);
@@ -870,7 +914,7 @@ beach:
     GST_VIDEO_DECODER_STREAM_LOCK (decoder);
     if (self->draining) {
       self->draining = FALSE;
-      gst_v4l2_object_stop (self->v4l2capture);
+      gst_v4l2_video_dec_src_ch_handle(self);
       GST_VIDEO_DECODER_STREAM_UNLOCK (decoder);
       return;
     }
