@@ -37,6 +37,9 @@
 #include <gst/base/base.h>
 
 static GstElementFactory *compositor_factory = NULL;
+static GstElementFactory *videoconvert_factory = NULL;
+static GstElementFactory *deinterlace_factory = NULL;
+static GstElementFactory *videoflip_factory = NULL;
 
 /**
  * ges_timeline_new_audio_video:
@@ -299,7 +302,6 @@ ges_util_structure_get_clocktime (GstStructure * structure, const gchar * name,
   return found;
 }
 
-
 GstElementFactory *
 ges_get_compositor_factory (void)
 {
@@ -368,4 +370,64 @@ ges_nle_object_commit (GstElement * nlesource, gboolean recurse)
   g_signal_emit_by_name (nlesource, "commit", recurse, &ret);
 
   return ret;
+}
+
+GstElementFactory *
+ges_get_videoconvert_factory (void)
+{
+  if (videoconvert_factory)
+    return videoconvert_factory;
+
+  if (g_getenv ("GST_USE_AUTOCONVERT")) {
+    videoconvert_factory = gst_element_factory_find ("autovideoconvert");
+  } else {
+    videoconvert_factory = gst_element_factory_find ("videoconvert");
+  }
+
+  return videoconvert_factory;
+}
+
+GstElementFactory *
+ges_get_videoconvert_scale_factory (void)
+{
+  if (videoconvert_factory)
+    return videoconvert_factory;
+
+  if (g_getenv ("GST_USE_AUTOCONVERT")) {
+    videoconvert_factory = gst_element_factory_find ("autovideoconvertscale");
+  } else {
+    videoconvert_factory = gst_element_factory_find ("videoconvertscale");
+  }
+
+  return videoconvert_factory;
+}
+
+GstElementFactory *
+ges_get_deinterlace_factory (void)
+{
+  if (deinterlace_factory)
+    return deinterlace_factory;
+
+  if (g_getenv ("GST_USE_AUTOCONVERT")) {
+    deinterlace_factory = gst_element_factory_find ("autodeinterlace");
+  } else {
+    deinterlace_factory = gst_element_factory_find ("deinterlace");
+  }
+
+  return deinterlace_factory;
+}
+
+GstElementFactory *
+ges_get_video_flip_factory (void)
+{
+  if (videoflip_factory)
+    return videoflip_factory;
+
+  if (g_getenv ("GST_USE_AUTOCONVERT")) {
+    videoflip_factory = gst_element_factory_find ("autovideoflip");
+  } else {
+    videoflip_factory = gst_element_factory_find ("videoflip");
+  }
+
+  return videoflip_factory;
 }
