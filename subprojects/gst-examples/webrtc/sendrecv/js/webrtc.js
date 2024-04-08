@@ -28,13 +28,14 @@ var local_stream = null;
 var callCreateTriggered = false;
 var makingOffer = false;
 var isSettingRemoteAnswerPending = false;
+var remoteOfferer = false;
 
 function setConnectButtonState(value) {
     document.getElementById("peer-connect-button").value = value;
 }
 
 function wantRemoteOfferer() {
-   return document.getElementById("remote-offerer").checked;
+   return document.getElementById("remote-offerer").checked || remoteOfferer;
 }
 
 function onConnectClicked() {
@@ -134,6 +135,7 @@ function onIncomingSDP(sdp) {
             setStatus("Remote SDP set");
             isSettingRemoteAnswerPending = false;
             if (sdp.type == "offer") {
+                remoteOfferer = true;
                 setStatus("Got SDP offer, waiting for getUserMedia to complete");
                 local_stream.then((stream) => {
                     setStatus("getUserMedia to completed, setting local description");
