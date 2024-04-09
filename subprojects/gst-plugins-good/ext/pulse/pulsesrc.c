@@ -281,6 +281,8 @@ gst_pulsesrc_init (GstPulseSrc * pulsesrc)
   pulsesrc->properties = NULL;
   pulsesrc->proplist = NULL;
 
+  g_mutex_init (&pulsesrc->prop_lock);
+
   /* this should be the default but it isn't yet */
   gst_audio_base_src_set_slave_method (GST_AUDIO_BASE_SRC (pulsesrc),
       GST_AUDIO_BASE_SRC_SLAVE_SKEW);
@@ -306,8 +308,10 @@ gst_pulsesrc_destroy_stream (GstPulseSrc * pulsesrc)
     g_object_notify (G_OBJECT (pulsesrc), "source-output-index");
   }
 
+  g_mutex_lock (&pulsesrc->prop_lock);
   g_free (pulsesrc->device_description);
   pulsesrc->device_description = NULL;
+  g_mutex_unlock (&pulsesrc->prop_lock);
 }
 
 static void
@@ -338,6 +342,7 @@ gst_pulsesrc_finalize (GObject * object)
   g_free (pulsesrc->device);
   g_free (pulsesrc->client_name);
   g_free (pulsesrc->current_source_name);
+  g_mutex_clear (&pulsesrc->prop_lock);
 
   if (pulsesrc->properties)
     gst_structure_free (pulsesrc->properties);
@@ -383,8 +388,10 @@ gst_pulsesrc_source_info_cb (pa_context * c, const pa_source_info * i, int eol,
   if (!i)
     goto done;
 
+  g_mutex_lock (&pulsesrc->prop_lock);
   g_free (pulsesrc->device_description);
   pulsesrc->device_description = g_strdup (i->description);
+  g_mutex_unlock (&pulsesrc->prop_lock);
 
 done:
   pa_threaded_mainloop_signal (pulsesrc->mainloop, 0);
@@ -423,7 +430,9 @@ unlock:
   if (o)
     pa_operation_unref (o);
 
+  g_mutex_lock (&pulsesrc->prop_lock);
   t = g_strdup (pulsesrc->device_description);
+  g_mutex_unlock (&pulsesrc->prop_lock);
 
   pa_threaded_mainloop_unlock (pulsesrc->mainloop);
 
@@ -451,6 +460,7 @@ gst_pulsesrc_source_output_info_cb (pa_context * c,
    * it implies we just recreated the stream (caps change)
    */
   if (i->index == psrc->source_output_idx) {
+    g_mutex_lock (&psrc->prop_lock);
     psrc->volume = pa_sw_volume_to_linear (pa_cvolume_max (&i->volume));
     psrc->mute = i->mute;
     psrc->current_source_idx = i->source;
@@ -460,6 +470,7 @@ gst_pulsesrc_source_output_info_cb (pa_context * c,
           psrc->volume, MAX_VOLUME);
       psrc->volume = MAX_VOLUME;
     }
+    g_mutex_unlock (&psrc->prop_lock);
   }
 
 done:
@@ -493,10 +504,16 @@ gst_pulsesrc_get_source_output_info (GstPulseSrc * pulsesrc, gdouble * volume,
 
 unlock:
 
-  if (volume)
+  if (volume) {
+    g_mutex_lock (&pulsesrc->prop_lock);
     *volume = pulsesrc->volume;
-  if (mute)
+    g_mutex_unlock (&pulsesrc->prop_lock);
+  }
+  if (mute) {
+    g_mutex_lock (&pulsesrc->prop_lock);
     *mute = pulsesrc->mute;
+    g_mutex_unlock (&pulsesrc->prop_lock);
+  }
 
   if (o)
     pa_operation_unref (o);
@@ -509,19 +526,31 @@ unlock:
 no_mainloop:
   {
     GST_DEBUG_OBJECT (pulsesrc, "we have no mainloop");
-    if (volume)
+    if (volume) {
+      g_mutex_lock (&pulsesrc->prop_lock);
       *volume = pulsesrc->volume;
-    if (mute)
+      g_mutex_unlock (&pulsesrc->prop_lock);
+    }
+    if (mute) {
+      g_mutex_lock (&pulsesrc->prop_lock);
       *mute = pulsesrc->mute;
+      g_mutex_unlock (&pulsesrc->prop_lock);
+    }
     return;
   }
 no_index:
   {
     GST_DEBUG_OBJECT (pulsesrc, "we don't have a stream index");
-    if (volume)
+    if (volume) {
+      g_mutex_lock (&pulsesrc->prop_lock);
       *volume = pulsesrc->volume;
-    if (mute)
+      g_mutex_unlock (&pulsesrc->prop_lock);
+    }
+    if (mute) {
+      g_mutex_lock (&pulsesrc->prop_lock);
       *mute = pulsesrc->mute;
+      g_mutex_unlock (&pulsesrc->prop_lock);
+    }
     return;
   }
 info_failed:
@@ -548,8 +577,10 @@ gst_pulsesrc_current_source_info_cb (pa_context * c, const pa_source_info * i,
    * it implies we just recreated the stream (caps change)
    */
   if (i->index == psrc->current_source_idx) {
+    g_mutex_lock (&psrc->prop_lock);
     g_free (psrc->current_source_name);
     psrc->current_source_name = g_strdup (i->name);
+    g_mutex_unlock (&psrc->prop_lock);
   }
 
 done:
@@ -586,7 +617,9 @@ gst_pulsesrc_get_current_device (GstPulseSrc * pulsesrc)
 
 unlock:
 
+  g_mutex_lock (&pulsesrc->prop_lock);
   current_src = g_strdup (pulsesrc->current_source_name);
+  g_mutex_unlock (&pulsesrc->prop_lock);
 
   if (o)
     pa_operation_unref (o);
@@ -780,6 +813,7 @@ gst_pulsesrc_set_property (GObject * object,
 
   GstPulseSrc *pulsesrc = GST_PULSESRC_CAST (object);
 
+  g_mutex_lock (&pulsesrc->prop_lock);
   switch (prop_id) {
     case PROP_SERVER:
       g_free (pulsesrc->server);
@@ -818,6 +852,7 @@ gst_pulsesrc_set_property (GObject * object,
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
   }
+  g_mutex_unlock (&pulsesrc->prop_lock);
 }
 
 static void
@@ -829,10 +864,14 @@ gst_pulsesrc_get_property (GObject * object,
 
   switch (prop_id) {
     case PROP_SERVER:
+      g_mutex_lock (&pulsesrc->prop_lock);
       g_value_set_string (value, pulsesrc->server);
+      g_mutex_unlock (&pulsesrc->prop_lock);
       break;
     case PROP_DEVICE:
+      g_mutex_lock (&pulsesrc->prop_lock);
       g_value_set_string (value, pulsesrc->device);
+      g_mutex_unlock (&pulsesrc->prop_lock);
       break;
     case PROP_CURRENT_DEVICE:
     {
@@ -847,13 +886,19 @@ gst_pulsesrc_get_property (GObject * object,
       g_value_take_string (value, gst_pulsesrc_device_description (pulsesrc));
       break;
     case PROP_CLIENT_NAME:
+      g_mutex_lock (&pulsesrc->prop_lock);
       g_value_set_string (value, pulsesrc->client_name);
+      g_mutex_unlock (&pulsesrc->prop_lock);
       break;
     case PROP_STREAM_PROPERTIES:
+      g_mutex_lock (&pulsesrc->prop_lock);
       gst_value_set_structure (value, pulsesrc->properties);
+      g_mutex_unlock (&pulsesrc->prop_lock);
       break;
     case PROP_SOURCE_OUTPUT_INDEX:
+      g_mutex_lock (&pulsesrc->prop_lock);
       g_value_set_uint (value, pulsesrc->source_output_idx);
+      g_mutex_unlock (&pulsesrc->prop_lock);
       break;
     case PROP_VOLUME:
     {
@@ -996,9 +1041,13 @@ gst_pulsesrc_open (GstAudioSrc * asrc)
 
   GST_DEBUG_OBJECT (pulsesrc, "opening device");
 
-  if (!(pulsesrc->context =
-          pa_context_new (pa_threaded_mainloop_get_api (pulsesrc->mainloop),
-              pulsesrc->client_name))) {
+  g_mutex_lock (&pulsesrc->prop_lock);
+  pulsesrc->context =
+      pa_context_new (pa_threaded_mainloop_get_api (pulsesrc->mainloop),
+      pulsesrc->client_name);
+  g_mutex_unlock (&pulsesrc->prop_lock);
+
+  if (!pulsesrc->context) {
     GST_ELEMENT_ERROR (pulsesrc, RESOURCE, FAILED, ("Failed to create context"),
         (NULL));
     goto unlock_and_fail;
@@ -1310,17 +1359,22 @@ gst_pulsesrc_create_stream (GstPulseSrc * pulsesrc, GstCaps ** caps,
     goto bad_context;
 
   name = "Record Stream";
+  g_mutex_lock (&pulsesrc->prop_lock);
   if (pulsesrc->proplist) {
     if (!(pulsesrc->stream = pa_stream_new_with_proplist (pulsesrc->context,
                 name, &pulsesrc->sample_spec,
                 (need_channel_layout) ? NULL : &channel_map,
-                pulsesrc->proplist)))
+                pulsesrc->proplist))) {
+      g_mutex_unlock (&pulsesrc->prop_lock);
       goto create_failed;
-
+    }
   } else if (!(pulsesrc->stream = pa_stream_new (pulsesrc->context,
               name, &pulsesrc->sample_spec,
-              (need_channel_layout) ? NULL : &channel_map)))
+              (need_channel_layout) ? NULL : &channel_map))) {
+    g_mutex_unlock (&pulsesrc->prop_lock);
     goto create_failed;
+  }
+  g_mutex_unlock (&pulsesrc->prop_lock);
 
   if (caps) {
     m = pa_stream_get_channel_map (pulsesrc->stream);
