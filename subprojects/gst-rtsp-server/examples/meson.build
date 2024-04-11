@@ -22,6 +22,7 @@ examples = [
   'test-record',
   'test-replay-server',
   'test-sdp',
+  'test-source-specific-multicast',
   'test-uri',
   'test-video',
   'test-video-rtx',
