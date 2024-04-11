@@ -10710,6 +10710,102 @@ This macro expands to nothing if debugging is disabled.</doc>
         </parameter>
       </parameters>
     </function-macro>
+    <function-macro name="DEBUG_CATEGORY_DEFINE" c:identifier="GST_DEBUG_CATEGORY_DEFINE" version="1.26" introspectable="0">
+      <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstinfo.h">Defines a new #GstDebugCategory, that will be initialized with the
+given properties on the first logging.
+It should be used together with the GST_DEBUG_CATEGORY_LAZY_INIT() macro.
+Example:
+|[&lt;!-- language="C" --&gt;
+GST_DEBUG_CATEGORY_DEFINE (myplugin_dbg, "myplugin",
+    0, "nice element");
+#define GST_CAT_DEFAULT GST_DEBUG_CATEGORY_LAZY_INIT (myplugin_dbg)
+]|
+
+NOTE: this macro defines the category as an export symbol that will be
+accessible from the other object files. If the category is not used
+in another object files use GST_DEBUG_CATEGORY_DEFINE_STATIC().
+
+&gt; This macro expands to nothing if debugging is disabled.
+&gt;
+&gt; When naming your category, please follow the following conventions to ensure
+&gt; that the pattern matching for categories works as expected. It is not
+&gt; earth-shattering if you don't follow these conventions, but it would be nice
+&gt; for everyone.
+&gt;
+&gt; If you define a category for a plugin or a feature of it, name the category
+&gt; like the feature. So if you wanted to write a "filesrc" element, you would
+&gt; name the category "filesrc". Use lowercase letters only.
+&gt; If you define more than one category for the same element, append an
+&gt; underscore and an identifier to your categories, like this: "filesrc_cache"
+&gt;
+&gt; If you create a library or an application using debugging categories, use a
+&gt; common prefix followed by an underscore for all your categories. GStreamer
+&gt; uses the GST prefix so GStreamer categories look like "GST_STATES". Be sure
+&gt; to include uppercase letters.</doc>
+      <source-position filename="../subprojects/gstreamer/gst/gstinfo.h"/>
+      <parameters>
+        <parameter name="cat">
+          <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstinfo.h">the category variable name.</doc>
+        </parameter>
+        <parameter name="name">
+          <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstinfo.h">the name of the category.</doc>
+        </parameter>
+        <parameter name="color">
+          <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstinfo.h">the colors to use for a color representation or 0 for no color.</doc>
+        </parameter>
+        <parameter name="description">
+          <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstinfo.h">optional description of the category.</doc>
+        </parameter>
+      </parameters>
+    </function-macro>
+    <function-macro name="DEBUG_CATEGORY_DEFINE_STATIC" c:identifier="GST_DEBUG_CATEGORY_DEFINE_STATIC" version="1.26" introspectable="0">
+      <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstinfo.h">Defines a new #GstDebugCategory, that will be initialized with the
+given properties on the first logging.
+It should be used together with the GST_DEBUG_CATEGORY_LAZY_INIT() macro.
+Example:
+|[&lt;!-- language="C" --&gt;
+GST_DEBUG_CATEGORY_DEFINE_STATIC (myplugin_dbg, "myplugin",
+    0, "nice element");
+#define GST_CAT_DEFAULT GST_DEBUG_CATEGORY_LAZY_INIT (myplugin_dbg)
+]|
+
+NOTE: this macro defines the category as a local static variable that won't be
+accessible from the other object files. If the category is going to be used
+in another code files use GST_DEBUG_CATEGORY_DEFINE().
+
+&gt; This macro expands to nothing if debugging is disabled.
+&gt;
+&gt; When naming your category, please follow the following conventions to ensure
+&gt; that the pattern matching for categories works as expected. It is not
+&gt; earth-shattering if you don't follow these conventions, but it would be nice
+&gt; for everyone.
+&gt;
+&gt; If you define a category for a plugin or a feature of it, name the category
+&gt; like the feature. So if you wanted to write a "filesrc" element, you would
+&gt; name the category "filesrc". Use lowercase letters only.
+&gt; If you define more than one category for the same element, append an
+&gt; underscore and an identifier to your categories, like this: "filesrc_cache"
+&gt;
+&gt; If you create a library or an application using debugging categories, use a
+&gt; common prefix followed by an underscore for all your categories. GStreamer
+&gt; uses the GST prefix so GStreamer categories look like "GST_STATES". Be sure
+&gt; to include uppercase letters.</doc>
+      <source-position filename="../subprojects/gstreamer/gst/gstinfo.h"/>
+      <parameters>
+        <parameter name="cat">
+          <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstinfo.h">the category variable name.</doc>
+        </parameter>
+        <parameter name="name">
+          <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstinfo.h">the name of the category.</doc>
+        </parameter>
+        <parameter name="color">
+          <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstinfo.h">the colors to use for a color representation or 0 for no color.</doc>
+        </parameter>
+        <parameter name="description">
+          <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstinfo.h">optional description of the category.</doc>
+        </parameter>
+      </parameters>
+    </function-macro>
     <function-macro name="DEBUG_CATEGORY_EXTERN" c:identifier="GST_DEBUG_CATEGORY_EXTERN" introspectable="0">
       <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstinfo.h">Declares a GstDebugCategory variable as extern. Use in header files.
 This macro expands to nothing if debugging is disabled.</doc>
@@ -10777,6 +10873,31 @@ the default threshold.
         </parameter>
         <parameter name="description">
           <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstinfo.h">optional description of the category.</doc>
+        </parameter>
+      </parameters>
+    </function-macro>
+    <function-macro name="DEBUG_CATEGORY_LAZY_INIT" c:identifier="GST_DEBUG_CATEGORY_LAZY_INIT" version="1.26" introspectable="0">
+      <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstinfo.h">This macro will return debug category @cat defined with GST_DEBUG_CATEGORY_DEFINE()
+or GST_DEBUG_CATEGORY_DEFINE_STATIC().
+If the category @cat haven't been initialized, it will perform the initialization
+first.
+It is typically used this way:
+|[&lt;!-- language="C" --&gt;
+GST_DEBUG_CATEGORY_DEFINE_STATIC (myplugin_dbg, "myplugin",
+    0, "nice element");
+#define GST_CAT_DEFAULT GST_DEBUG_CATEGORY_LAZY_INIT (myplugin_dbg)
+]|
+or if the category is defined in another object file:
+|[&lt;!-- language="C" --&gt;
+GST_DEBUG_CATEGORY_EXTERN (myplugin_dbg);
+#define GST_CAT_DEFAULT GST_DEBUG_CATEGORY_LAZY_INIT (myplugin_dbg)
+]|
+So there's no need to call GST_DEBUG_CATEGORY_INIT() for the selected
+category at all: it will be initialized on the first logging.</doc>
+      <source-position filename="../subprojects/gstreamer/gst/gstinfo.h"/>
+      <parameters>
+        <parameter name="cat">
+          <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstinfo.h">the category to use.</doc>
         </parameter>
       </parameters>
     </function-macro>
