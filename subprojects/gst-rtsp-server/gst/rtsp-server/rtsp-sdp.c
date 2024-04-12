@@ -273,7 +273,7 @@ gst_rtsp_sdp_make_media (GstSDPMessage * sdp, GstSDPInfo * info,
       // g_strfreev(ip6_addr);
       is_ssm = FALSE;
     } else {
-      is_ssm = g_strcmp0 (g_utf8_substring (address, 0, 4), "232.") == 0;
+      is_ssm = strncmp (address, "232.", 4) == 0;
     }
     gchar *filter;
     if (is_ssm) {
