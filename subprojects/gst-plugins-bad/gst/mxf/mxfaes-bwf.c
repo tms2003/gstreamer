@@ -1084,14 +1084,22 @@ mxf_is_aes_bwf_essence_track (const MXFMetadataFileDescriptor * d)
   const MXFUL *key = &d->essence_container;
 
   /* SMPTE 382M 9 */
-  return (mxf_is_generic_container_essence_container_label (key) &&
+  if (mxf_is_generic_container_essence_container_label (key) &&
       key->u[12] == 0x02 &&
       key->u[13] == 0x06 &&
       (key->u[14] == 0x01 ||
           key->u[14] == 0x02 ||
           key->u[14] == 0x03 ||
           key->u[14] == 0x04 || key->u[14] == 0x08 || key->u[14] == 0x09 ||
-          key->u[14] == 0x0a || key->u[14] == 0x0b));
+          key->u[14] == 0x0a || key->u[14] == 0x0b))
+    return TRUE;
+
+  if (mxf_is_avid_essence_container_label (key)) {
+    if (MXF_IS_METADATA_WAVE_AUDIO_ESSENCE_DESCRIPTOR (d))
+      return TRUE;
+  }
+
+  return FALSE;
 }
 
 static MXFEssenceWrapping
@@ -1404,10 +1412,12 @@ mxf_aes_bwf_create_caps (MXFMetadataTimelineTrack * track, GstTagList ** tags,
 
     if (MXF_IS_METADATA_GENERIC_SOUND_ESSENCE_DESCRIPTOR (track->parent.
             descriptor[i])
-        && (track->parent.descriptor[i]->essence_container.u[14] == 0x01
-            || track->parent.descriptor[i]->essence_container.u[14] == 0x02
-            || track->parent.descriptor[i]->essence_container.u[14] == 0x08
-            || track->parent.descriptor[i]->essence_container.u[14] == 0x0a)) {
+        && ((track->parent.descriptor[i]->essence_container.u[14] == 0x01
+                || track->parent.descriptor[i]->essence_container.u[14] == 0x02
+                || track->parent.descriptor[i]->essence_container.u[14] == 0x08
+                || track->parent.descriptor[i]->essence_container.u[14] == 0x0a)
+            || mxf_is_avid_essence_container_label (&track->
+                parent.descriptor[i]->essence_container))) {
       s = (MXFMetadataGenericSoundEssenceDescriptor *) track->parent.
           descriptor[i];
       bwf = TRUE;
