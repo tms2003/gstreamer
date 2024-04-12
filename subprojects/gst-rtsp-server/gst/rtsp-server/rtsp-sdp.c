@@ -268,8 +268,8 @@ gst_rtsp_sdp_make_media (GstSDPMessage * sdp, GstSDPInfo * info,
        */
       // gchar **ip6_addr;
       // ip6_addr = g_strsplit (address, ":", 0);
-      // is_ssm = g_strcmp0 (g_utf8_substring (ip6_addr[0], 0,  3), "ff3") == 0 &&
-      //   ( g_strcmp0 (ip6_addr[1], "0000") == 0 || g_strcmp0 (ip6_addr[1], "") == 0 );
+      // is_ssm = strncmp ((ip6_addr[0], "ff3", 3) == 0 &&
+      //   ( strcmp (ip6_addr[1], "0000") == 0 || strcmp (ip6_addr[1], "") == 0 );
       // g_strfreev(ip6_addr);
       is_ssm = FALSE;
     } else {
