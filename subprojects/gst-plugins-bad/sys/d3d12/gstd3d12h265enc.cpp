@@ -21,13 +21,13 @@
 #include "config.h"
 #endif
 
-#include "gstd3d12h264enc.h"
+#include "gstd3d12h265enc.h"
 #include "gstd3d12encoder.h"
 #include "gstd3d12dpbstorage.h"
 #include "gstd3d12pluginutils.h"
 #include <gst/base/gstqueuearray.h>
-#include <gst/codecparsers/gsth264parser.h>
-#include <gst/codecparsers/gsth264bitwriter.h>
+#include <gst/codecparsers/gsth265parser.h>
+#include <gst/codecparsers/gsth265bitwriter.h>
 #include <directx/d3dx12.h>
 #include <wrl.h>
 #include <string.h>
@@ -39,14 +39,14 @@
 #include <condition_variable>
 #include <unordered_map>
 #include <memory>
-#include <algorithm>
+#include <set>
 
 /* *INDENT-OFF* */
 using namespace Microsoft::WRL;
 /* *INDENT-ON* */
 
-GST_DEBUG_CATEGORY_STATIC (gst_d3d12_h264_enc_debug);
-#define GST_CAT_DEFAULT gst_d3d12_h264_enc_debug
+GST_DEBUG_CATEGORY_STATIC (gst_d3d12_h265_enc_debug);
+#define GST_CAT_DEFAULT gst_d3d12_h265_enc_debug
 
 enum
 {
@@ -86,7 +86,7 @@ enum
 #define DEFAULT_SLICE_PARTITION 0
 #define DEFAULT_CC_INSERT GST_D3D12_ENCODER_SEI_INSERT
 
-struct GstD3D12H264EncClassData
+struct GstD3D12H265EncClassData
 {
   gint64 luid;
   guint device_id;
@@ -96,16 +96,15 @@ struct GstD3D12H264EncClassData
   GstCaps *src_caps;
   guint rc_support;
   guint slice_mode_support;
+  D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_SUPPORT_HEVC config_support[2];
 };
 
 /* *INDENT-OFF* */
-class GstD3D12H264EncGop
+class GstD3D12H265EncGop
 {
 public:
   void Init (guint gop_length)
   {
-    /* TODO: pic_order_cnt_type == 0 for b-frame  */
-    gop_struct_.pic_order_cnt_type = 2;
     if (gop_length == 1)
       gop_struct_.PPicturePeriod = 0;
     else
@@ -114,7 +113,7 @@ public:
     /* 0 means infinite */
     if (gop_length == 0) {
       gop_struct_.GOPLength = 0;
-      gop_struct_.log2_max_frame_num_minus4 = 12;
+      gop_struct_.log2_max_pic_order_cnt_lsb_minus4 = 12;
     } else {
       /* count bits */
       guint val = gop_length;
@@ -125,65 +124,46 @@ public:
       }
 
       if (num_bits < 4)
-        gop_struct_.log2_max_frame_num_minus4 = 0;
+        gop_struct_.log2_max_pic_order_cnt_lsb_minus4 = 0;
       else if (num_bits > 16)
-        gop_struct_.log2_max_frame_num_minus4 = 12;
+        gop_struct_.log2_max_pic_order_cnt_lsb_minus4 = 12;
       else
-        gop_struct_.log2_max_frame_num_minus4 = num_bits - 4;
+        gop_struct_.log2_max_pic_order_cnt_lsb_minus4 = num_bits - 4;
 
       gop_struct_.GOPLength = gop_length;
     }
 
-    MaxFrameNum_ = 1 << (gop_struct_.log2_max_frame_num_minus4 + 4);
-
-    if (gop_struct_.pic_order_cnt_type == 2) {
-      /* unused */
-      gop_struct_.log2_max_pic_order_cnt_lsb_minus4 = 0;
-      MaxPicOrderCnt_ = MaxFrameNum_ * 2;
-    } else {
-      guint log2_max_pic_order_cnt = gop_struct_.log2_max_frame_num_minus4 + 5;
-      log2_max_pic_order_cnt = MIN (16, log2_max_pic_order_cnt);
-      gop_struct_.log2_max_pic_order_cnt_lsb_minus4 = log2_max_pic_order_cnt - 4;
-
-      MaxPicOrderCnt_ = 1 << log2_max_pic_order_cnt;
-    }
-
+    MaxPicOrderCnt_ = 1 << (gop_struct_.log2_max_pic_order_cnt_lsb_minus4 + 4);
     gop_start_ = true;
-    frame_num_ = 0;
+    pic_order_cnt_ = 0;
     encode_order_ = 0;
   }
 
-  D3D12_VIDEO_ENCODER_SEQUENCE_GOP_STRUCTURE_H264
+  D3D12_VIDEO_ENCODER_SEQUENCE_GOP_STRUCTURE_HEVC
   GetGopStruct ()
   {
     return gop_struct_;
   }
 
   void
-  FillPicCtrl (D3D12_VIDEO_ENCODER_PICTURE_CONTROL_CODEC_DATA_H264 & pic_ctrl)
+  FillPicCtrl (D3D12_VIDEO_ENCODER_PICTURE_CONTROL_CODEC_DATA_HEVC & pic_ctrl)
   {
     if (gop_start_) {
-      pic_ctrl.FrameType = D3D12_VIDEO_ENCODER_FRAME_TYPE_H264_IDR_FRAME;
-      pic_ctrl.idr_pic_id = idr_pic_id_;
-      pic_ctrl.FrameDecodingOrderNumber = 0;
+      pic_ctrl.FrameType = D3D12_VIDEO_ENCODER_FRAME_TYPE_HEVC_IDR_FRAME;
       pic_ctrl.PictureOrderCountNumber = 0;
       pic_ctrl.TemporalLayerIndex = 0;
-      idr_pic_id_++;
       gop_start_ = false;
     } else {
-      pic_ctrl.FrameType = D3D12_VIDEO_ENCODER_FRAME_TYPE_H264_P_FRAME;
-      pic_ctrl.idr_pic_id = idr_pic_id_;
-      pic_ctrl.FrameDecodingOrderNumber = frame_num_;
-      pic_ctrl.PictureOrderCountNumber = ((guint) frame_num_) * 2;
+      pic_ctrl.FrameType = D3D12_VIDEO_ENCODER_FRAME_TYPE_HEVC_P_FRAME;
+      pic_ctrl.PictureOrderCountNumber = pic_order_cnt_;
       pic_ctrl.TemporalLayerIndex = 0;
     }
 
     /* And increase frame num */
-    /* FIXME: frame_num = (frame_num_of_pref_ref_pic + 1) % ...  */
-    frame_num_ = (frame_num_ + 1) % MaxFrameNum_;
+    pic_order_cnt_ = (pic_order_cnt_ + 1) % MaxPicOrderCnt_;
     encode_order_++;
     if (gop_struct_.GOPLength != 0 && encode_order_ >= gop_struct_.GOPLength) {
-      frame_num_ = 0;
+      pic_order_cnt_ = 0;
       encode_order_ = 0;
       gop_start_ = true;
     }
@@ -191,37 +171,35 @@ public:
 
   void ForceKeyUnit ()
   {
-    frame_num_ = 0;
+    pic_order_cnt_ = 0;
     encode_order_ = 0;
     gop_start_ = true;
   }
 
 private:
-  D3D12_VIDEO_ENCODER_SEQUENCE_GOP_STRUCTURE_H264 gop_struct_ = { };
-  guint16 frame_num_ = 0;
-  guint16 idr_pic_id_ = 0;
-  guint32 MaxFrameNum_ = 16;
-  guint32 MaxPicOrderCnt_ = 16;
+  D3D12_VIDEO_ENCODER_SEQUENCE_GOP_STRUCTURE_HEVC gop_struct_ = { };
+  guint pic_order_cnt_ = 0;
+  guint MaxPicOrderCnt_ = 16;
   guint64 encode_order_ = 0;
   bool gop_start_ = false;
 };
 
-class GstD3D12H264EncDpb
+class GstD3D12H265EncDpb
 {
 public:
-  GstD3D12H264EncDpb (GstD3D12Device * device, UINT width, UINT height,
-       UINT max_dpb_size, bool array_of_textures)
+  GstD3D12H265EncDpb (GstD3D12Device * device, DXGI_FORMAT format,
+      UINT width, UINT height, UINT max_dpb_size, bool array_of_textures)
   {
     max_dpb_size_ = max_dpb_size;
     if (max_dpb_size_ > 0) {
       storage_ = gst_d3d12_dpb_storage_new (device, max_dpb_size + 1,
-          array_of_textures, DXGI_FORMAT_NV12, width, height,
+          array_of_textures, format, width, height,
           D3D12_RESOURCE_FLAG_VIDEO_ENCODE_REFERENCE_ONLY |
           D3D12_RESOURCE_FLAG_DENY_SHADER_RESOURCE);
     }
   }
 
-  ~GstD3D12H264EncDpb ()
+  ~GstD3D12H265EncDpb ()
   {
     gst_clear_object (&storage_);
   }
@@ -235,7 +213,7 @@ public:
   }
 
   bool StartFrame (bool is_reference,
-      D3D12_VIDEO_ENCODER_PICTURE_CONTROL_CODEC_DATA_H264 * ctrl_data,
+      D3D12_VIDEO_ENCODER_PICTURE_CONTROL_CODEC_DATA_HEVC * ctrl_data,
       D3D12_VIDEO_ENCODER_RECONSTRUCTED_PICTURE * recon_pic,
       D3D12_VIDEO_ENCODE_REFERENCE_FRAMES * ref_frames,
       UINT64 display_order)
@@ -248,7 +226,7 @@ public:
     recon_pic_.ReconstructedPictureSubresource = 0;
 
     if (max_dpb_size_ > 0 &&
-      ctrl_data_.FrameType == D3D12_VIDEO_ENCODER_FRAME_TYPE_H264_IDR_FRAME) {
+      ctrl_data_.FrameType == D3D12_VIDEO_ENCODER_FRAME_TYPE_HEVC_IDR_FRAME) {
       ref_pic_desc_.clear();
       ref_pic_display_order_.clear ();
       gst_d3d12_dpb_storage_clear_dpb (storage_);
@@ -263,8 +241,8 @@ public:
     *recon_pic = recon_pic_;
 
     switch (ctrl_data_.FrameType) {
-      case D3D12_VIDEO_ENCODER_FRAME_TYPE_H264_P_FRAME:
-      case D3D12_VIDEO_ENCODER_FRAME_TYPE_H264_B_FRAME:
+      case D3D12_VIDEO_ENCODER_FRAME_TYPE_HEVC_P_FRAME:
+      case D3D12_VIDEO_ENCODER_FRAME_TYPE_HEVC_B_FRAME:
         g_assert (max_dpb_size_ > 0);
         gst_d3d12_dpb_storage_get_reference_frames (storage_,
             ref_frames);
@@ -280,11 +258,11 @@ public:
     list1_.clear ();
 
     bool build_l0 = (ctrl_data_.FrameType ==
-      D3D12_VIDEO_ENCODER_FRAME_TYPE_H264_P_FRAME) ||
+      D3D12_VIDEO_ENCODER_FRAME_TYPE_HEVC_P_FRAME) ||
       (ctrl_data_.FrameType ==
-      D3D12_VIDEO_ENCODER_FRAME_TYPE_H264_B_FRAME);
+      D3D12_VIDEO_ENCODER_FRAME_TYPE_HEVC_B_FRAME);
     bool build_l1 = ctrl_data_.FrameType ==
-        D3D12_VIDEO_ENCODER_FRAME_TYPE_H264_B_FRAME;
+        D3D12_VIDEO_ENCODER_FRAME_TYPE_HEVC_B_FRAME;
 
     if (build_l0) {
       for (UINT i = 0; i < (UINT) ref_pic_display_order_.size (); i++) {
@@ -329,11 +307,11 @@ public:
 
     gst_d3d12_dpb_storage_add_frame (storage_, &recon_pic_);
 
-    D3D12_VIDEO_ENCODER_REFERENCE_PICTURE_DESCRIPTOR_H264 desc = { };
+    D3D12_VIDEO_ENCODER_REFERENCE_PICTURE_DESCRIPTOR_HEVC desc = { };
     desc.ReconstructedPictureResourceIndex = 0;
+    desc.IsRefUsedByCurrentPic = TRUE;
     desc.IsLongTermReference = FALSE;
     desc.PictureOrderCountNumber = ctrl_data_.PictureOrderCountNumber;
-    desc.FrameDecodingOrderNumber = ctrl_data_.FrameDecodingOrderNumber;
     desc.TemporalLayerIndex = 0;
 
     ref_pic_display_order_.insert (ref_pic_display_order_.begin (),
@@ -344,10 +322,10 @@ public:
   }
 
 private:
-  std::vector<D3D12_VIDEO_ENCODER_REFERENCE_PICTURE_DESCRIPTOR_H264> ref_pic_desc_;
+  std::vector<D3D12_VIDEO_ENCODER_REFERENCE_PICTURE_DESCRIPTOR_HEVC> ref_pic_desc_;
   std::vector<UINT64> ref_pic_display_order_;
   D3D12_VIDEO_ENCODER_RECONSTRUCTED_PICTURE recon_pic_ = { };
-  D3D12_VIDEO_ENCODER_PICTURE_CONTROL_CODEC_DATA_H264 ctrl_data_ = { };
+  D3D12_VIDEO_ENCODER_PICTURE_CONTROL_CODEC_DATA_HEVC ctrl_data_ = { };
   std::vector<UINT> list0_;
   std::vector<UINT> list1_;
   UINT max_dpb_size_ = 0;
@@ -356,49 +334,62 @@ private:
   GstD3D12DpbStorage *storage_ = nullptr;
 };
 
-struct GstD3D12H264SPS
+struct GstD3D12H265VPS
 {
   void Clear ()
   {
-    memset (&sps, 0, sizeof (GstH264SPS));
+    memset (&vps, 0, sizeof (GstH265VPS));
     bytes.clear ();
   }
 
-  GstH264SPS sps;
+  GstH265VPS vps;
   std::vector<guint8> bytes;
 };
 
-struct GstD3D12H264PPS
+struct GstD3D12H265SPS
 {
   void Clear ()
   {
-    memset (&pps, 0, sizeof (GstH264PPS));
+    memset (&sps, 0, sizeof (GstH265SPS));
     bytes.clear ();
   }
 
-  GstH264PPS pps;
+  GstH265SPS sps;
   std::vector<guint8> bytes;
 };
 
-struct GstD3D12H264EncPrivate
+struct GstD3D12H265PPS
 {
-  GstD3D12H264EncPrivate ()
+  void Clear ()
   {
-    cc_sei = g_array_new (FALSE, FALSE, sizeof (GstH264SEIMessage));
-    g_array_set_clear_func (cc_sei, (GDestroyNotify) gst_h264_sei_clear);
+    memset (&pps, 0, sizeof (GstH265PPS));
+    bytes.clear ();
   }
 
-  ~GstD3D12H264EncPrivate ()
+  GstH265PPS pps;
+  std::vector<guint8> bytes;
+};
+
+struct GstD3D12H265EncPrivate
+{
+  GstD3D12H265EncPrivate ()
+  {
+    cc_sei = g_array_new (FALSE, FALSE, sizeof (GstH265SEIMessage));
+    g_array_set_clear_func (cc_sei, (GDestroyNotify) gst_h265_sei_free);
+  }
+
+  ~GstD3D12H265EncPrivate ()
   {
     g_array_unref (cc_sei);
   }
 
   GstVideoInfo info;
-  GstD3D12H264SPS sps;
-  std::vector<GstD3D12H264PPS> pps;
-  GstH264Profile selected_profile;
-  GstD3D12H264EncGop gop;
-  std::unique_ptr<GstD3D12H264EncDpb> dpb;
+  GstH265ProfileTierLevel ptl = { };
+  GstD3D12H265VPS vps;
+  GstD3D12H265SPS sps;
+  std::vector<GstD3D12H265PPS> pps;
+  GstD3D12H265EncGop gop;
+  std::unique_ptr<GstD3D12H265EncDpb> dpb;
   guint last_pps_id = 0;
   guint64 display_order = 0;
   GArray *cc_sei;
@@ -407,21 +398,22 @@ struct GstD3D12H264EncPrivate
 
   GstD3D12EncoderConfig encoder_config = { };
 
-  D3D12_VIDEO_ENCODER_PROFILE_H264 profile_h264 =
-      D3D12_VIDEO_ENCODER_PROFILE_H264_MAIN;
-  D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_H264 config_h264 = { };
-  D3D12_VIDEO_ENCODER_LEVELS_H264 level_h264;
+  D3D12_VIDEO_ENCODER_PROFILE_HEVC profile_hevc =
+      D3D12_VIDEO_ENCODER_PROFILE_HEVC_MAIN;
+  D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_HEVC config_hevc = { };
+  D3D12_VIDEO_ENCODER_LEVEL_TIER_CONSTRAINTS_HEVC level_tier = { };
   D3D12_VIDEO_ENCODER_PICTURE_CONTROL_SUBREGIONS_LAYOUT_DATA_SLICES
       layout_slices = { };
-  D3D12_VIDEO_ENCODER_SEQUENCE_GOP_STRUCTURE_H264 gop_struct_h264 = { };
-  D3D12_VIDEO_ENCODER_PICTURE_CONTROL_CODEC_DATA_H264 pic_control_h264 = { };
+  D3D12_VIDEO_ENCODER_SEQUENCE_GOP_STRUCTURE_HEVC gop_struct_hevc = { };
+  D3D12_VIDEO_ENCODER_PICTURE_CONTROL_CODEC_DATA_HEVC pic_control_hevc = { };
 
   D3D12_VIDEO_ENCODER_RATE_CONTROL_MODE selected_rc_mode =
       D3D12_VIDEO_ENCODER_RATE_CONTROL_MODE_ABSOLUTE_QP_MAP;
   D3D12_VIDEO_ENCODER_FRAME_SUBREGION_LAYOUT_MODE selected_slice_mode =
       DEFAULT_SLICE_MODE;
   guint selected_ref_frames = 0;
-  D3D12_VIDEO_ENCODER_CODEC_PICTURE_CONTROL_SUPPORT_H264 pic_ctrl_support = { };
+  D3D12_VIDEO_ENCODER_CODEC_PICTURE_CONTROL_SUPPORT_HEVC pic_ctrl_support = { };
+  D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_SUPPORT_HEVC config_support;
 
   /* properties */
   gboolean aud = DEFAULT_AUD;
@@ -456,64 +448,66 @@ struct GstD3D12H264EncPrivate
 };
 /* *INDENT-ON* */
 
-struct GstD3D12H264Enc
+struct GstD3D12H265Enc
 {
   GstD3D12Encoder parent;
 
-  GstD3D12H264EncPrivate *priv;
+  GstD3D12H265EncPrivate *priv;
 };
 
-struct GstD3D12H264EncClass
+struct GstD3D12H265EncClass
 {
   GstD3D12EncoderClass parent_class;
 
-  GstD3D12H264EncClassData *cdata;
+  GstD3D12H265EncClassData *cdata;
 };
 
-static inline GstD3D12H264Enc *
-GST_D3D12_H264_ENC (gpointer ptr)
+static inline GstD3D12H265Enc *
+GST_D3D12_H265_ENC (gpointer ptr)
 {
-  return (GstD3D12H264Enc *) ptr;
+  return (GstD3D12H265Enc *) ptr;
 }
 
-static inline GstD3D12H264EncClass *
-GST_D3D12_H264_ENC_GET_CLASS (gpointer ptr)
+static inline GstD3D12H265EncClass *
+GST_D3D12_H265_ENC_GET_CLASS (gpointer ptr)
 {
   return G_TYPE_INSTANCE_GET_CLASS (ptr, G_TYPE_FROM_INSTANCE (ptr),
-      GstD3D12H264EncClass);
+      GstD3D12H265EncClass);
 }
 
-static void gst_d3d12_h264_enc_finalize (GObject * object);
-static void gst_d3d12_h264_enc_set_property (GObject * object, guint prop_id,
+static void gst_d3d12_h265_enc_finalize (GObject * object);
+static void gst_d3d12_h265_enc_set_property (GObject * object, guint prop_id,
     const GValue * value, GParamSpec * pspec);
-static void gst_d3d12_h264_enc_get_property (GObject * object, guint prop_id,
+static void gst_d3d12_h265_enc_get_property (GObject * object, guint prop_id,
     GValue * value, GParamSpec * pspec);
 
-static gboolean gst_d3d12_h264_enc_start (GstVideoEncoder * encoder);
-static gboolean gst_d3d12_h264_enc_stop (GstVideoEncoder * encoder);
-static gboolean gst_d3d12_h264_enc_transform_meta (GstVideoEncoder * encoder,
+static gboolean gst_d3d12_h265_enc_start (GstVideoEncoder * encoder);
+static gboolean gst_d3d12_h265_enc_stop (GstVideoEncoder * encoder);
+static gboolean gst_d3d12_h265_enc_transform_meta (GstVideoEncoder * encoder,
     GstVideoCodecFrame * frame, GstMeta * meta);
-static gboolean gst_d3d12_h264_enc_new_sequence (GstD3D12Encoder * encoder,
+static GstCaps *gst_d3d12_h264_enc_getcaps (GstVideoEncoder * encoder,
+    GstCaps * filter);
+static gboolean gst_d3d12_h265_enc_new_sequence (GstD3D12Encoder * encoder,
     ID3D12VideoDevice * video_device, GstVideoCodecState * state,
     GstD3D12EncoderConfig * config);
-static gboolean gst_d3d12_h264_enc_start_frame (GstD3D12Encoder * encoder,
+static gboolean gst_d3d12_h265_enc_start_frame (GstD3D12Encoder * encoder,
     ID3D12VideoDevice * video_device, GstVideoCodecFrame * frame,
     D3D12_VIDEO_ENCODER_SEQUENCE_CONTROL_DESC * seq_ctrl,
     D3D12_VIDEO_ENCODER_PICTURE_CONTROL_DESC * picture_ctrl,
     D3D12_VIDEO_ENCODER_RECONSTRUCTED_PICTURE * recon_pic,
     GstD3D12EncoderConfig * config, gboolean * need_new_session);
-static gboolean gst_d3d12_h264_enc_end_frame (GstD3D12Encoder * encoder);
+static gboolean gst_d3d12_h265_enc_end_frame (GstD3D12Encoder * encoder);
 
 static GstElementClass *parent_class = nullptr;
 
 static void
-gst_d3d12_h264_enc_class_init (GstD3D12H264EncClass * klass, gpointer data)
+gst_d3d12_h265_enc_class_init (GstD3D12H265EncClass * klass, gpointer data)
 {
   auto object_class = G_OBJECT_CLASS (klass);
   auto element_class = GST_ELEMENT_CLASS (klass);
   auto encoder_class = GST_VIDEO_ENCODER_CLASS (klass);
   auto d3d12enc_class = GST_D3D12_ENCODER_CLASS (klass);
-  auto cdata = (GstD3D12H264EncClassData *) data;
+  auto cdata = (GstD3D12H265EncClassData *) data;
   GstPadTemplate *pad_templ;
   auto read_only_params = (GParamFlags) (GST_PARAM_DOC_SHOW_DEFAULT |
       G_PARAM_READABLE | G_PARAM_STATIC_STRINGS);
@@ -522,9 +516,9 @@ gst_d3d12_h264_enc_class_init (GstD3D12H264EncClass * klass, gpointer data)
   parent_class = (GstElementClass *) g_type_class_peek_parent (klass);
   klass->cdata = cdata;
 
-  object_class->finalize = gst_d3d12_h264_enc_finalize;
-  object_class->set_property = gst_d3d12_h264_enc_set_property;
-  object_class->get_property = gst_d3d12_h264_enc_get_property;
+  object_class->finalize = gst_d3d12_h265_enc_finalize;
+  object_class->set_property = gst_d3d12_h265_enc_set_property;
+  object_class->get_property = gst_d3d12_h265_enc_get_property;
 
   g_object_class_install_property (object_class, PROP_RATE_CONTROL_SUPPORT,
       g_param_spec_flags ("rate-control-support", "Rate Control Support",
@@ -628,10 +622,10 @@ gst_d3d12_h264_enc_class_init (GstD3D12H264EncClass * klass, gpointer data)
           "Closed Caption insert mode", GST_TYPE_D3D12_ENCODER_SEI_INSERT_MODE,
           DEFAULT_CC_INSERT, rw_params));
 
-  std::string long_name = "Direct3D12 H.264 " + std::string (cdata->description)
+  std::string long_name = "Direct3D12 H.265 " + std::string (cdata->description)
       + " Encoder";
   gst_element_class_set_metadata (element_class, long_name.c_str (),
-      "Codec/Encoder/Video/Hardware", "Direct3D12 H.264 Video Encoder",
+      "Codec/Encoder/Video/Hardware", "Direct3D12 H.265 Video Encoder",
       "Seungha Yang <seungha@centricular.com>");
 
   pad_templ = gst_pad_template_new ("sink",
@@ -642,32 +636,33 @@ gst_d3d12_h264_enc_class_init (GstD3D12H264EncClass * klass, gpointer data)
       GST_PAD_SRC, GST_PAD_ALWAYS, cdata->src_caps);
   gst_element_class_add_pad_template (element_class, pad_templ);
 
-  encoder_class->start = GST_DEBUG_FUNCPTR (gst_d3d12_h264_enc_start);
-  encoder_class->stop = GST_DEBUG_FUNCPTR (gst_d3d12_h264_enc_stop);
+  encoder_class->start = GST_DEBUG_FUNCPTR (gst_d3d12_h265_enc_start);
+  encoder_class->stop = GST_DEBUG_FUNCPTR (gst_d3d12_h265_enc_stop);
   encoder_class->transform_meta =
-      GST_DEBUG_FUNCPTR (gst_d3d12_h264_enc_transform_meta);
+      GST_DEBUG_FUNCPTR (gst_d3d12_h265_enc_transform_meta);
+  encoder_class->getcaps = GST_DEBUG_FUNCPTR (gst_d3d12_h264_enc_getcaps);
 
-  d3d12enc_class->codec = D3D12_VIDEO_ENCODER_CODEC_H264;
+  d3d12enc_class->codec = D3D12_VIDEO_ENCODER_CODEC_HEVC;
   d3d12enc_class->adapter_luid = cdata->luid;
   d3d12enc_class->device_id = cdata->device_id;
   d3d12enc_class->vendor_id = cdata->vendor_id;
   d3d12enc_class->new_sequence =
-      GST_DEBUG_FUNCPTR (gst_d3d12_h264_enc_new_sequence);
+      GST_DEBUG_FUNCPTR (gst_d3d12_h265_enc_new_sequence);
   d3d12enc_class->start_frame =
-      GST_DEBUG_FUNCPTR (gst_d3d12_h264_enc_start_frame);
-  d3d12enc_class->end_frame = GST_DEBUG_FUNCPTR (gst_d3d12_h264_enc_end_frame);
+      GST_DEBUG_FUNCPTR (gst_d3d12_h265_enc_start_frame);
+  d3d12enc_class->end_frame = GST_DEBUG_FUNCPTR (gst_d3d12_h265_enc_end_frame);
 }
 
 static void
-gst_d3d12_h264_enc_init (GstD3D12H264Enc * self)
+gst_d3d12_h265_enc_init (GstD3D12H265Enc * self)
 {
-  self->priv = new GstD3D12H264EncPrivate ();
+  self->priv = new GstD3D12H265EncPrivate ();
 }
 
 static void
-gst_d3d12_h264_enc_finalize (GObject * object)
+gst_d3d12_h265_enc_finalize (GObject * object)
 {
-  auto self = GST_D3D12_H264_ENC (object);
+  auto self = GST_D3D12_H265_ENC (object);
 
   delete self->priv;
 
@@ -675,10 +670,10 @@ gst_d3d12_h264_enc_finalize (GObject * object)
 }
 
 static void
-gst_d3d12_h264_enc_set_property (GObject * object, guint prop_id,
+gst_d3d12_h265_enc_set_property (GObject * object, guint prop_id,
     const GValue * value, GParamSpec * pspec)
 {
-  auto self = GST_D3D12_H264_ENC (object);
+  auto self = GST_D3D12_H265_ENC (object);
   auto priv = self->priv;
 
   std::lock_guard < std::mutex > lk (priv->prop_lock);
@@ -881,12 +876,12 @@ gst_d3d12_h264_enc_set_property (GObject * object, guint prop_id,
 }
 
 static void
-gst_d3d12_h264_enc_get_property (GObject * object, guint prop_id,
+gst_d3d12_h265_enc_get_property (GObject * object, guint prop_id,
     GValue * value, GParamSpec * pspec)
 {
-  auto self = GST_D3D12_H264_ENC (object);
+  auto self = GST_D3D12_H265_ENC (object);
   auto priv = self->priv;
-  auto klass = GST_D3D12_H264_ENC_GET_CLASS (self);
+  auto klass = GST_D3D12_H265_ENC_GET_CLASS (self);
   const auto cdata = klass->cdata;
 
   std::lock_guard < std::mutex > lk (priv->prop_lock);
@@ -955,9 +950,9 @@ gst_d3d12_h264_enc_get_property (GObject * object, guint prop_id,
 }
 
 static gboolean
-gst_d3d12_h264_enc_start (GstVideoEncoder * encoder)
+gst_d3d12_h265_enc_start (GstVideoEncoder * encoder)
 {
-  auto self = GST_D3D12_H264_ENC (encoder);
+  auto self = GST_D3D12_H265_ENC (encoder);
   auto priv = self->priv;
 
   GST_DEBUG_OBJECT (self, "Start");
@@ -968,9 +963,9 @@ gst_d3d12_h264_enc_start (GstVideoEncoder * encoder)
 }
 
 static gboolean
-gst_d3d12_h264_enc_stop (GstVideoEncoder * encoder)
+gst_d3d12_h265_enc_stop (GstVideoEncoder * encoder)
 {
-  auto self = GST_D3D12_H264_ENC (encoder);
+  auto self = GST_D3D12_H265_ENC (encoder);
   auto priv = self->priv;
 
   GST_DEBUG_OBJECT (self, "Stop");
@@ -981,10 +976,10 @@ gst_d3d12_h264_enc_stop (GstVideoEncoder * encoder)
 }
 
 static gboolean
-gst_d3d12_h264_enc_transform_meta (GstVideoEncoder * encoder,
+gst_d3d12_h265_enc_transform_meta (GstVideoEncoder * encoder,
     GstVideoCodecFrame * frame, GstMeta * meta)
 {
-  auto self = GST_D3D12_H264_ENC (encoder);
+  auto self = GST_D3D12_H265_ENC (encoder);
   auto priv = self->priv;
 
   if (meta->info->api == GST_VIDEO_CAPTION_META_API_TYPE) {
@@ -1000,37 +995,220 @@ gst_d3d12_h264_enc_transform_meta (GstVideoEncoder * encoder,
       frame, meta);
 }
 
+static GstCaps *
+gst_d3d12_h264_enc_getcaps (GstVideoEncoder * encoder, GstCaps * filter)
+{
+  auto self = GST_D3D12_H265_ENC (encoder);
+
+  auto allowed_caps = gst_pad_get_allowed_caps (encoder->srcpad);
+  if (!allowed_caps || gst_caps_is_empty (allowed_caps) ||
+      gst_caps_is_any (allowed_caps)) {
+    gst_clear_caps (&allowed_caps);
+
+    return gst_video_encoder_proxy_getcaps (encoder, nullptr, filter);
+  }
+
+  GST_DEBUG_OBJECT (self, "Allowed caps %" GST_PTR_FORMAT, allowed_caps);
+
+  std::set < std::string > downstream_profiles;
+  /* Check if downstream specified profile explicitly, then filter out
+   * incompatible raw video format */
+  for (guint i = 0; i < gst_caps_get_size (allowed_caps); i++) {
+    auto s = gst_caps_get_structure (allowed_caps, i);
+    auto profile_value = gst_structure_get_value (s, "profile");
+    if (!profile_value)
+      continue;
+
+    if (GST_VALUE_HOLDS_LIST (profile_value)) {
+      for (guint j = 0; j < gst_value_list_get_size (profile_value); j++) {
+        const GValue *p = gst_value_list_get_value (profile_value, j);
+
+        if (!G_VALUE_HOLDS_STRING (p))
+          continue;
+
+        auto profile = g_value_get_string (p);
+        if (g_strcmp0 (profile, "main") == 0 ||
+           g_strcmp0 (profile, "main-10") == 0) {
+          downstream_profiles.insert (profile);
+        }
+      }
+    } else if (G_VALUE_HOLDS_STRING (profile_value)) {
+      auto profile = g_value_get_string (profile_value);
+      if (g_strcmp0 (profile, "main") == 0 ||
+          g_strcmp0 (profile, "main-10") == 0) {
+        downstream_profiles.insert (profile);
+      }
+    }
+  }
+
+  GST_DEBUG_OBJECT (self, "Downstream specified %" G_GSIZE_FORMAT " profiles",
+      downstream_profiles.size ());
+
+  /* Caps returned by gst_pad_get_allowed_caps() should hold profile field
+   * already */
+  if (downstream_profiles.size () == 0) {
+    GST_WARNING_OBJECT (self,
+        "Allowed caps holds no profile field %" GST_PTR_FORMAT, allowed_caps);
+
+    gst_clear_caps (&allowed_caps);
+
+    return gst_video_encoder_proxy_getcaps (encoder, nullptr, filter);
+  }
+
+  gst_clear_caps (&allowed_caps);
+
+  auto template_caps = gst_pad_get_pad_template_caps (encoder->sinkpad);
+  template_caps = gst_caps_make_writable (template_caps);
+
+  if (downstream_profiles.size () == 1) {
+    std::string format;
+    const auto & profile = *downstream_profiles.begin ();
+
+    if (profile == "main") {
+      format = "NV12";
+    } else if (profile == "main-10") {
+      format = "P010_10LE";
+    } else {
+      gst_clear_caps (&template_caps);
+      g_assert_not_reached ();
+      return nullptr;
+    }
+
+    gst_caps_set_simple (template_caps, "format", G_TYPE_STRING,
+        format.c_str (), nullptr);
+  } else {
+    GValue formats = G_VALUE_INIT;
+
+    g_value_init (&formats, GST_TYPE_LIST);
+
+    auto iter = downstream_profiles.begin ();
+    for (; iter != downstream_profiles.end (); iter++) {
+      GValue val = G_VALUE_INIT;
+      g_value_init (&val, G_TYPE_STRING);
+      if (*iter == "main") {
+        g_value_set_static_string (&val, "NV12");
+      } else if (*iter == "main-10") {
+        g_value_set_static_string (&val, "P010_10LE");
+      } else {
+        g_value_unset (&val);
+        gst_clear_caps (&template_caps);
+        g_assert_not_reached ();
+        return nullptr;
+      }
+
+      gst_value_list_append_and_take_value (&formats, &val);
+    }
+
+    gst_caps_set_value (template_caps, "format", &formats);
+    g_value_unset (&formats);
+  }
+
+  auto supported_caps = gst_video_encoder_proxy_getcaps (encoder,
+      template_caps, filter);
+  gst_caps_unref (template_caps);
+
+  GST_DEBUG_OBJECT (self, "Returning %" GST_PTR_FORMAT, supported_caps);
+
+  return supported_caps;
+}
+
+static void
+gst_d3d12_h265_enc_build_profile_tier_level (GstD3D12H265Enc * self)
+{
+  auto priv = self->priv;
+  auto &ptl = priv->ptl;
+  /* *INDENT-OFF* */
+  static const std::unordered_map<D3D12_VIDEO_ENCODER_LEVELS_HEVC, guint8>
+      level_map = {
+    {D3D12_VIDEO_ENCODER_LEVELS_HEVC_1, GST_H265_LEVEL_L1},
+    {D3D12_VIDEO_ENCODER_LEVELS_HEVC_2, GST_H265_LEVEL_L2},
+    {D3D12_VIDEO_ENCODER_LEVELS_HEVC_21, GST_H265_LEVEL_L2_1},
+    {D3D12_VIDEO_ENCODER_LEVELS_HEVC_3, GST_H265_LEVEL_L3},
+    {D3D12_VIDEO_ENCODER_LEVELS_HEVC_31, GST_H265_LEVEL_L3_1},
+    {D3D12_VIDEO_ENCODER_LEVELS_HEVC_4, GST_H265_LEVEL_L4},
+    {D3D12_VIDEO_ENCODER_LEVELS_HEVC_41, GST_H265_LEVEL_L4_1},
+    {D3D12_VIDEO_ENCODER_LEVELS_HEVC_5, GST_H265_LEVEL_L5},
+    {D3D12_VIDEO_ENCODER_LEVELS_HEVC_51, GST_H265_LEVEL_L5_1},
+    {D3D12_VIDEO_ENCODER_LEVELS_HEVC_52, GST_H265_LEVEL_L5_2},
+    {D3D12_VIDEO_ENCODER_LEVELS_HEVC_6, GST_H265_LEVEL_L6},
+    {D3D12_VIDEO_ENCODER_LEVELS_HEVC_61, GST_H265_LEVEL_L6_1},
+    {D3D12_VIDEO_ENCODER_LEVELS_HEVC_62, GST_H265_LEVEL_L6_2},
+  };
+  /* *INDENT-ON* */
+
+  ptl = { };
+  ptl.profile_space = 0;
+  ptl.tier_flag = priv->level_tier.Tier;
+  ptl.profile_idc = 1;
+  if (priv->profile_hevc == D3D12_VIDEO_ENCODER_PROFILE_HEVC_MAIN10)
+    ptl.profile_idc = 2;
+
+  ptl.profile_compatibility_flag[1] = 1;
+  ptl.profile_compatibility_flag[2] = 1;
+  ptl.progressive_source_flag = 1;
+  ptl.interlaced_source_flag = 0;
+  ptl.non_packed_constraint_flag = 0;
+  ptl.frame_only_constraint_flag = 1;
+  ptl.level_idc = level_map.at (priv->level_tier.Level);
+}
+
 static gboolean
-gst_d3d12_h264_enc_build_sps (GstD3D12H264Enc * self, const GstVideoInfo * info,
+gst_d3d12_h265_enc_build_vps (GstD3D12H265Enc * self)
+{
+  auto priv = self->priv;
+  guint8 vps_buf[1024] = { 0, };
+
+  priv->vps.Clear ();
+  auto & vps = priv->vps.vps;
+
+  vps.id = 0;
+  vps.base_layer_internal_flag = 1;
+  vps.base_layer_available_flag = 1;
+  vps.max_layers_minus1 = 0;
+  vps.max_sub_layers_minus1 = 0;
+  vps.temporal_id_nesting_flag = 1;
+  vps.profile_tier_level = priv->ptl;
+  vps.sub_layer_ordering_info_present_flag = 0;
+  vps.max_dec_pic_buffering_minus1[0] = priv->selected_ref_frames;
+  /* TODO: increase if B frame is enabled */
+  vps.max_num_reorder_pics[0] = 0;
+  vps.max_latency_increase_plus1[0] = 0;
+  vps.max_layer_id = 0;
+  vps.num_layer_sets_minus1 = 0;
+  /* We use VUI in SPS */
+  vps.timing_info_present_flag = 0;
+  vps.vps_extension = 0;
+
+  guint nal_size = G_N_ELEMENTS (vps_buf);
+  GstH265BitWriterResult write_ret =
+      gst_h265_bit_writer_vps (&vps, TRUE, vps_buf, &nal_size);
+  if (write_ret != GST_H265_BIT_WRITER_OK) {
+    GST_ERROR_OBJECT (self, "Couldn't build SPS");
+    return FALSE;
+  }
+
+  priv->vps.bytes.resize (G_N_ELEMENTS (vps_buf));
+  guint written_size = priv->vps.bytes.size ();
+  write_ret = gst_h265_bit_writer_convert_to_nal (4, FALSE, TRUE, FALSE,
+      vps_buf, nal_size * 8, priv->vps.bytes.data (), &written_size);
+  if (write_ret != GST_H265_BIT_WRITER_OK) {
+    GST_ERROR_OBJECT (self, "Couldn't build SPS bytes");
+    return FALSE;
+  }
+  priv->vps.bytes.resize (written_size);
+
+  return TRUE;
+}
+
+static gboolean
+gst_d3d12_h265_enc_build_sps (GstD3D12H265Enc * self, const GstVideoInfo * info,
     const D3D12_VIDEO_ENCODER_PICTURE_RESOLUTION_DESC * resolution,
     guint num_ref)
 {
   auto priv = self->priv;
+  const auto & config_hevc = priv->config_hevc;
   guint8 sps_buf[4096] = { 0, };
   /* *INDENT-OFF* */
-  static const std::unordered_map<D3D12_VIDEO_ENCODER_LEVELS_H264, guint8>
-      level_map = {
-    {D3D12_VIDEO_ENCODER_LEVELS_H264_1, GST_H264_LEVEL_L1},
-    {D3D12_VIDEO_ENCODER_LEVELS_H264_1b, GST_H264_LEVEL_L1B},
-    {D3D12_VIDEO_ENCODER_LEVELS_H264_11, GST_H264_LEVEL_L1_1},
-    {D3D12_VIDEO_ENCODER_LEVELS_H264_12, GST_H264_LEVEL_L1_2},
-    {D3D12_VIDEO_ENCODER_LEVELS_H264_13, GST_H264_LEVEL_L1_3},
-    {D3D12_VIDEO_ENCODER_LEVELS_H264_2, GST_H264_LEVEL_L2},
-    {D3D12_VIDEO_ENCODER_LEVELS_H264_21, GST_H264_LEVEL_L2_1},
-    {D3D12_VIDEO_ENCODER_LEVELS_H264_22, GST_H264_LEVEL_L2_2},
-    {D3D12_VIDEO_ENCODER_LEVELS_H264_3, GST_H264_LEVEL_L3},
-    {D3D12_VIDEO_ENCODER_LEVELS_H264_31, GST_H264_LEVEL_L3_1},
-    {D3D12_VIDEO_ENCODER_LEVELS_H264_32, GST_H264_LEVEL_L3_2},
-    {D3D12_VIDEO_ENCODER_LEVELS_H264_4, GST_H264_LEVEL_L4},
-    {D3D12_VIDEO_ENCODER_LEVELS_H264_41, GST_H264_LEVEL_L4_1},
-    {D3D12_VIDEO_ENCODER_LEVELS_H264_42, GST_H264_LEVEL_L4_2},
-    {D3D12_VIDEO_ENCODER_LEVELS_H264_5, GST_H264_LEVEL_L5},
-    {D3D12_VIDEO_ENCODER_LEVELS_H264_51, GST_H264_LEVEL_L5_1},
-    {D3D12_VIDEO_ENCODER_LEVELS_H264_52, GST_H264_LEVEL_L5_2},
-    {D3D12_VIDEO_ENCODER_LEVELS_H264_6, GST_H264_LEVEL_L6},
-    {D3D12_VIDEO_ENCODER_LEVELS_H264_61, GST_H264_LEVEL_L6_1},
-    {D3D12_VIDEO_ENCODER_LEVELS_H264_62, GST_H264_LEVEL_L6_2},
-  };
   static const std::array<std::pair<gint, gint>, 17> par_map {{
     {0, 0},
     {1, 1},
@@ -1054,57 +1232,74 @@ gst_d3d12_h264_enc_build_sps (GstD3D12H264Enc * self, const GstVideoInfo * info,
 
   priv->sps.Clear ();
   auto & sps = priv->sps.sps;
+  auto vps = &priv->vps.vps;
   sps.id = 0;
-  sps.profile_idc = priv->selected_profile;
-  switch (sps.profile_idc) {
-    case GST_H264_PROFILE_BASELINE:
-      sps.constraint_set0_flag = 1;
-      sps.constraint_set1_flag = 1;
-      break;
-    case GST_H264_PROFILE_MAIN:
-      sps.constraint_set1_flag = 1;
-      break;
-    default:
-      break;
-  }
-
-  if (priv->level_h264 == D3D12_VIDEO_ENCODER_LEVELS_H264_1b)
-    sps.constraint_set3_flag = 1;
-
-  sps.level_idc = level_map.at (priv->level_h264);
-  /* d3d12 supports only 4:2:0 encoding */
+  sps.vps_id = 0;
+  sps.vps = vps;
+  sps.max_sub_layers_minus1 = 0;
+  sps.temporal_id_nesting_flag = 1;
+  sps.profile_tier_level = vps->profile_tier_level;
   sps.chroma_format_idc = 1;
   sps.separate_colour_plane_flag = 0;
-  /* add high-10 profile support */
-  sps.bit_depth_luma_minus8 = 0;
-  sps.bit_depth_chroma_minus8 = 0;
-  sps.qpprime_y_zero_transform_bypass_flag = 0;
-  sps.scaling_matrix_present_flag = 0;
-  sps.log2_max_frame_num_minus4 =
-      priv->gop_struct_h264.log2_max_frame_num_minus4;
-  sps.pic_order_cnt_type = priv->gop_struct_h264.pic_order_cnt_type;
-  sps.log2_max_pic_order_cnt_lsb_minus4 =
-      priv->gop_struct_h264.log2_max_pic_order_cnt_lsb_minus4;
-  sps.num_ref_frames = num_ref;
-  sps.gaps_in_frame_num_value_allowed_flag = 0;
-  sps.pic_width_in_mbs_minus1 = (resolution->Width / 16) - 1;
-  sps.pic_height_in_map_units_minus1 = (resolution->Height / 16) - 1;
-  sps.frame_mbs_only_flag = 1;
-
-  if (sps.profile_idc != GST_H264_PROFILE_BASELINE)
-    sps.direct_8x8_inference_flag = 1;
-
+  sps.pic_width_in_luma_samples = resolution->Width;
+  sps.pic_height_in_luma_samples = resolution->Height;
+  sps.conformance_window_flag = 0;
   if (resolution->Width != (UINT) info->width ||
       resolution->Height != (UINT) info->height) {
-    sps.frame_cropping_flag = 1;
-    sps.frame_crop_left_offset = 0;
-    sps.frame_crop_right_offset = (resolution->Width - info->width) / 2;
-    sps.frame_crop_top_offset = 0;
-    sps.frame_crop_bottom_offset = (resolution->Height - info->height) / 2;
+    sps.conformance_window_flag = 1;
+    sps.conf_win_left_offset = 0;
+    sps.conf_win_right_offset = (resolution->Width - info->width) / 2;
+    sps.conf_win_top_offset = 0;
+    sps.conf_win_bottom_offset = (resolution->Height - info->height) / 2;
   }
 
+  sps.bit_depth_luma_minus8 =  GST_VIDEO_INFO_COMP_DEPTH (info, 0) - 8;
+  sps.bit_depth_chroma_minus8 = sps.bit_depth_luma_minus8;
+  auto gop = priv->gop.GetGopStruct ();
+  sps.log2_max_pic_order_cnt_lsb_minus4 = gop.log2_max_pic_order_cnt_lsb_minus4;
+  sps.sub_layer_ordering_info_present_flag = 0;
+  sps.max_dec_pic_buffering_minus1[0] = vps->max_dec_pic_buffering_minus1[0];
+  sps.max_num_reorder_pics[0] = vps->max_num_reorder_pics[0];
+  sps.max_latency_increase_plus1[0] = vps->max_latency_increase_plus1[0];
+  sps.log2_min_luma_coding_block_size_minus3 =
+      (guint8) config_hevc.MinLumaCodingUnitSize;
+  sps.log2_diff_max_min_luma_coding_block_size =
+      (guint8) config_hevc.MaxLumaCodingUnitSize -
+      (guint8) config_hevc.MinLumaCodingUnitSize;
+  sps.log2_min_transform_block_size_minus2 =
+      (guint8) config_hevc.MinLumaTransformUnitSize;
+  sps.log2_diff_max_min_transform_block_size =
+      (guint8) config_hevc.MaxLumaTransformUnitSize -
+      (guint8) config_hevc.MinLumaTransformUnitSize;
+  sps.max_transform_hierarchy_depth_inter =
+      config_hevc.max_transform_hierarchy_depth_inter;
+  sps.max_transform_hierarchy_depth_intra =
+      config_hevc.max_transform_hierarchy_depth_intra;
+  sps.scaling_list_enabled_flag = 0;
+  if ((config_hevc.ConfigurationFlags &
+      D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_HEVC_FLAG_USE_ASYMETRIC_MOTION_PARTITION)
+      != 0) {
+    sps.amp_enabled_flag = 1;
+  } else {
+    sps.amp_enabled_flag = 0;
+  }
+
+  if ((config_hevc.ConfigurationFlags &
+      D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_HEVC_FLAG_ENABLE_SAO_FILTER)
+      != 0) {
+    sps.sample_adaptive_offset_enabled_flag = 1;
+  } else {
+    sps.sample_adaptive_offset_enabled_flag = 0;
+  }
+
+  sps.pcm_enabled_flag = 0;
+  sps.num_short_term_ref_pic_sets = 0;
+  sps.long_term_ref_pics_present_flag = 0;
+  sps.temporal_mvp_enabled_flag = 0;
+  sps.strong_intra_smoothing_enabled_flag = 0;
+
   sps.vui_parameters_present_flag = 1;
-  auto & vui = sps.vui_parameters;
+  auto & vui = sps.vui_params;
   const auto colorimetry = &info->colorimetry;
 
   if (info->par_n > 0 && info->par_d > 0) {
@@ -1125,6 +1320,7 @@ gst_d3d12_h264_enc_build_sps (GstD3D12H264Enc * self, const GstVideoInfo * info,
     }
   }
 
+  vui.overscan_info_present_flag = 0;
   vui.video_signal_type_present_flag = 1;
   /* Unspecified */
   vui.video_format = 5;
@@ -1136,27 +1332,36 @@ gst_d3d12_h264_enc_build_sps (GstD3D12H264Enc * self, const GstVideoInfo * info,
   vui.transfer_characteristics =
       gst_video_transfer_function_to_iso (colorimetry->transfer);
   vui.matrix_coefficients = gst_video_color_matrix_to_iso (colorimetry->matrix);
+
+  vui.chroma_loc_info_present_flag = 0;
+  vui.neutral_chroma_indication_flag = 0;
+  vui.field_seq_flag = 0;
+  vui.frame_field_info_present_flag = 0;
+  vui.default_display_window_flag = 0;
   if (info->fps_n > 0 && info->fps_d > 0) {
     vui.timing_info_present_flag = 1;
+    vui.time_scale = info->fps_n;
     vui.num_units_in_tick = info->fps_d;
-    vui.time_scale = 2 * (guint) info->fps_n;
+    vui.poc_proportional_to_timing_flag = 0;
+    vui.hrd_parameters_present_flag = 0;
   }
+  vui.bitstream_restriction_flag = 0;
 
-  /* TODO: pic_struct_present_flag = 1 for picture timeing SEI */
+  sps.sps_extension_flag = 0;
 
   guint nal_size = G_N_ELEMENTS (sps_buf);
-  GstH264BitWriterResult write_ret =
-      gst_h264_bit_writer_sps (&sps, TRUE, sps_buf, &nal_size);
-  if (write_ret != GST_H264_BIT_WRITER_OK) {
+  GstH265BitWriterResult write_ret =
+      gst_h265_bit_writer_sps (&sps, TRUE, sps_buf, &nal_size);
+  if (write_ret != GST_H265_BIT_WRITER_OK) {
     GST_ERROR_OBJECT (self, "Couldn't build SPS");
     return FALSE;
   }
 
   priv->sps.bytes.resize (G_N_ELEMENTS (sps_buf));
   guint written_size = priv->sps.bytes.size ();
-  write_ret = gst_h264_bit_writer_convert_to_nal (4, FALSE, TRUE, FALSE,
+  write_ret = gst_h265_bit_writer_convert_to_nal (4, FALSE, TRUE, FALSE,
       sps_buf, nal_size * 8, priv->sps.bytes.data (), &written_size);
-  if (write_ret != GST_H264_BIT_WRITER_OK) {
+  if (write_ret != GST_H265_BIT_WRITER_OK) {
     GST_ERROR_OBJECT (self, "Couldn't build SPS bytes");
     return FALSE;
   }
@@ -1166,9 +1371,10 @@ gst_d3d12_h264_enc_build_sps (GstD3D12H264Enc * self, const GstVideoInfo * info,
 }
 
 static gboolean
-gst_d3d12_h264_enc_build_pps (GstD3D12H264Enc * self, guint num_ref)
+gst_d3d12_h265_enc_build_pps (GstD3D12H265Enc * self, guint num_ref)
 {
   auto priv = self->priv;
+  const auto & config_hevc = priv->config_hevc;
 
   /* Driver does not seem to use num_ref_idx_active_override_flag.
    * Needs multiple PPS to signal ref pics */
@@ -1183,58 +1389,78 @@ gst_d3d12_h264_enc_build_pps (GstD3D12H264Enc * self, guint num_ref)
     auto & pps = d3d12_pps.pps;
 
     pps.id = i;
-    pps.sequence = &priv->sps.sps;
-    if ((priv->config_h264.ConfigurationFlags &
-            D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_H264_FLAG_ENABLE_CABAC_ENCODING)
-        != 0) {
-      pps.entropy_coding_mode_flag = 1;
-    } else {
-      pps.entropy_coding_mode_flag = 0;
-    }
-
-    pps.pic_order_present_flag = 0;
-    pps.num_slice_groups_minus1 = 0;
-    pps.num_ref_idx_l0_active_minus1 = i;
-    pps.num_ref_idx_l1_active_minus1 = 0;
-    pps.weighted_pred_flag = 0;
-    pps.weighted_bipred_idc = 0;
-    pps.pic_init_qp_minus26 = 0;
-    pps.pic_init_qs_minus26 = 0;
-    pps.chroma_qp_index_offset = 0;
-    pps.deblocking_filter_control_present_flag = 1;
-    if ((priv->config_h264.ConfigurationFlags &
-            D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_H264_FLAG_USE_CONSTRAINED_INTRAPREDICTION)
+    pps.sps_id = 0;
+    pps.sps = &priv->sps.sps;
+    pps.dependent_slice_segments_enabled_flag = 0;
+    pps.output_flag_present_flag = 0;
+    pps.num_extra_slice_header_bits = 0;
+    pps.sign_data_hiding_enabled_flag = 0;
+    pps.cabac_init_present_flag = 1;
+    pps.num_ref_idx_l0_default_active_minus1 = i;
+    /* FIXME: support B frame */
+    pps.num_ref_idx_l1_default_active_minus1 = 0;
+    pps.init_qp_minus26 = 0;
+    if ((config_hevc.ConfigurationFlags &
+            D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_HEVC_FLAG_USE_CONSTRAINED_INTRAPREDICTION)
         != 0) {
       pps.constrained_intra_pred_flag = 1;
     } else {
       pps.constrained_intra_pred_flag = 0;
     }
-    pps.redundant_pic_cnt_present_flag = 0;
-    if ((priv->config_h264.ConfigurationFlags &
-            D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_H264_FLAG_USE_ADAPTIVE_8x8_TRANSFORM)
+
+    if ((config_hevc.ConfigurationFlags &
+            D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_HEVC_FLAG_ENABLE_TRANSFORM_SKIPPING)
         != 0) {
-      /* double check. This is not allowed for baseline and main profiles */
-      pps.transform_8x8_mode_flag = 1;
+      pps.transform_skip_enabled_flag = 1;
     } else {
-      pps.transform_8x8_mode_flag = 0;
+      pps.transform_skip_enabled_flag = 0;
     }
 
-    pps.pic_scaling_matrix_present_flag = 0;
-    pps.second_chroma_qp_index_offset = 0;
+    pps.cu_qp_delta_enabled_flag = 1;
+    pps.diff_cu_qp_delta_depth = 0;
+    pps.cb_qp_offset = 0;
+    pps.cr_qp_offset = 0;
+    pps.slice_chroma_qp_offsets_present_flag = 1;
+    pps.weighted_pred_flag = 0;
+    pps.weighted_bipred_flag = 0;
+    pps.transquant_bypass_enabled_flag = 0;
+    pps.tiles_enabled_flag = 0;
+    pps.entropy_coding_sync_enabled_flag = 0;
+
+    if ((config_hevc.ConfigurationFlags &
+            D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_HEVC_FLAG_DISABLE_LOOP_FILTER_ACROSS_SLICES)
+        != 0) {
+      pps.loop_filter_across_slices_enabled_flag = 0;
+    } else {
+      pps.loop_filter_across_slices_enabled_flag = 1;
+    }
+
+    pps.deblocking_filter_control_present_flag = 1;
+    pps.deblocking_filter_override_enabled_flag = 0;
+    pps.deblocking_filter_disabled_flag = 0;
+    pps.beta_offset_div2 = 0;
+    pps.tc_offset_div2 = 0;
+
+    pps.scaling_list_data_present_flag = 0;
+    /* TODO: need modification if B frame is enabled ? */
+    pps.lists_modification_present_flag = 0;
+    pps.log2_parallel_merge_level_minus2 = 0;
+    pps.slice_segment_header_extension_present_flag = 0;
+    pps.pps_extension_flag = 0;
 
     guint nal_size = G_N_ELEMENTS (pps_buf);
     d3d12_pps.bytes.resize (nal_size);
-    GstH264BitWriterResult write_ret =
-        gst_h264_bit_writer_pps (&pps, TRUE, pps_buf, &nal_size);
-    if (write_ret != GST_H264_BIT_WRITER_OK) {
+    GstH265BitWriterResult write_ret =
+        gst_h265_bit_writer_pps (&pps, TRUE, pps_buf, &nal_size);
+    if (write_ret != GST_H265_BIT_WRITER_OK) {
       GST_ERROR_OBJECT (self, "Couldn't build PPS");
       return FALSE;
     }
 
     guint written_size = d3d12_pps.bytes.size ();
-    write_ret = gst_h264_bit_writer_convert_to_nal (4, FALSE, TRUE, FALSE,
+    write_ret = gst_h265_bit_writer_convert_to_nal (4, FALSE, TRUE, FALSE,
         pps_buf, nal_size * 8, d3d12_pps.bytes.data (), &written_size);
-    if (write_ret != GST_H264_BIT_WRITER_OK) {
+    if (write_ret != GST_H265_BIT_WRITER_OK) {
       GST_ERROR_OBJECT (self, "Couldn't build PPS bytes");
       return FALSE;
     }
@@ -1245,8 +1471,8 @@ gst_d3d12_h264_enc_build_pps (GstD3D12H264Enc * self, guint num_ref)
   return TRUE;
 }
 
-static guint
-gst_d3d12_h264_enc_get_max_ref_frames (GstD3D12H264Enc * self)
+static gboolean
+gst_d3d12_h265_enc_get_max_ref_frames (GstD3D12H265Enc * self)
 {
   auto priv = self->priv;
   const auto & pic_ctrl_support = priv->pic_ctrl_support;
@@ -1274,7 +1500,7 @@ gst_d3d12_h264_enc_get_max_ref_frames (GstD3D12H264Enc * self)
 }
 
 static gboolean
-gst_d3d12_h264_enc_update_gop (GstD3D12H264Enc * self,
+gst_d3d12_h265_enc_update_gop (GstD3D12H265Enc * self,
     ID3D12VideoDevice * video_device, GstD3D12EncoderConfig * config,
     D3D12_VIDEO_ENCODER_SEQUENCE_CONTROL_FLAGS * seq_flags)
 {
@@ -1283,7 +1509,7 @@ gst_d3d12_h264_enc_update_gop (GstD3D12H264Enc * self,
   if (seq_flags && !priv->gop_updated)
     return TRUE;
 
-  auto ref_frames = gst_d3d12_h264_enc_get_max_ref_frames (self);
+  auto ref_frames = gst_d3d12_h265_enc_get_max_ref_frames (self);
   auto gop_size = priv->gop_size;
   if (ref_frames == 0)
     gop_size = 1;
@@ -1295,12 +1521,12 @@ gst_d3d12_h264_enc_update_gop (GstD3D12H264Enc * self,
 
   priv->selected_ref_frames = ref_frames;
   priv->gop.Init (gop_size);
-  priv->gop_struct_h264 = priv->gop.GetGopStruct ();
+  priv->gop_struct_hevc = priv->gop.GetGopStruct ();
 
   if (seq_flags) {
     if (prev_ref_frames != ref_frames ||
-        memcmp (&prev_gop_struct, &priv->gop_struct_h264,
-            sizeof (priv->gop_struct_h264)) != 0) {
+        memcmp (&prev_gop_struct, &priv->gop_struct_hevc,
+            sizeof (priv->gop_struct_hevc)) != 0) {
       GST_DEBUG_OBJECT (self, "Gop struct updated");
       *seq_flags |=
           D3D12_VIDEO_ENCODER_SEQUENCE_CONTROL_FLAG_GOP_SEQUENCE_CHANGE;
@@ -1309,12 +1535,9 @@ gst_d3d12_h264_enc_update_gop (GstD3D12H264Enc * self,
 
   GST_DEBUG_OBJECT (self,
       "Configured GOP struct, GOPLength: %u, PPicturePeriod: %u, "
-      "pic_order_cnt_type: %d, log2_max_frame_num_minus4: %d, "
-      "log2_max_pic_order_cnt_lsb_minus4: %d", priv->gop_struct_h264.GOPLength,
-      priv->gop_struct_h264.PPicturePeriod,
-      priv->gop_struct_h264.pic_order_cnt_type,
-      priv->gop_struct_h264.log2_max_frame_num_minus4,
-      priv->gop_struct_h264.log2_max_pic_order_cnt_lsb_minus4);
+      "log2_max_pic_order_cnt_lsb_minus4: %d", priv->gop_struct_hevc.GOPLength,
+      priv->gop_struct_hevc.PPicturePeriod,
+      priv->gop_struct_hevc.log2_max_pic_order_cnt_lsb_minus4);
 
   priv->gop_updated = FALSE;
 
@@ -1323,7 +1546,7 @@ gst_d3d12_h264_enc_update_gop (GstD3D12H264Enc * self,
 
 /* called with prop_lock taken */
 static gboolean
-gst_d3d12_h264_enc_update_rate_control (GstD3D12H264Enc * self,
+gst_d3d12_h265_enc_update_rate_control (GstD3D12H265Enc * self,
     ID3D12VideoDevice * video_device, GstD3D12EncoderConfig * config,
     D3D12_VIDEO_ENCODER_SEQUENCE_CONTROL_FLAGS * seq_flags)
 {
@@ -1381,7 +1604,7 @@ gst_d3d12_h264_enc_update_rate_control (GstD3D12H264Enc * self,
   config->qvbr.ConstantQualityTarget = priv->qvbr_quality;
 
   D3D12_FEATURE_DATA_VIDEO_ENCODER_RATE_CONTROL_MODE feature_data = { };
-  feature_data.Codec = D3D12_VIDEO_ENCODER_CODEC_H264;
+  feature_data.Codec = D3D12_VIDEO_ENCODER_CODEC_HEVC;
   feature_data.RateControlMode = priv->rc_mode;
 
   auto hr = video_device->CheckFeatureSupport
@@ -1481,7 +1704,7 @@ gst_d3d12_h264_enc_update_rate_control (GstD3D12H264Enc * self,
 }
 
 static gboolean
-gst_d3d12_h264_enc_update_slice (GstD3D12H264Enc * self,
+gst_d3d12_h265_enc_update_slice (GstD3D12H265Enc * self,
     ID3D12VideoDevice * video_device, GstD3D12EncoderConfig * config,
     D3D12_VIDEO_ENCODER_SEQUENCE_CONTROL_FLAGS * seq_flags,
     D3D12_VIDEO_ENCODER_SUPPORT_FLAGS * support_flags)
@@ -1502,10 +1725,10 @@ gst_d3d12_h264_enc_update_slice (GstD3D12H264Enc * self,
 
   D3D12_FEATURE_DATA_VIDEO_ENCODER_SUPPORT support = { };
   D3D12_FEATURE_DATA_VIDEO_ENCODER_RESOLUTION_SUPPORT_LIMITS limits = { };
-  D3D12_VIDEO_ENCODER_PROFILE_H264 suggested_profile = priv->profile_h264;
-  D3D12_VIDEO_ENCODER_LEVELS_H264 suggested_level;
+  D3D12_VIDEO_ENCODER_PROFILE_HEVC suggested_profile = priv->profile_hevc;
+  D3D12_VIDEO_ENCODER_LEVEL_TIER_CONSTRAINTS_HEVC suggested_level;
 
-  support.Codec = D3D12_VIDEO_ENCODER_CODEC_H264;
+  support.Codec = D3D12_VIDEO_ENCODER_CODEC_HEVC;
   support.InputFormat = DXGI_FORMAT_NV12;
   support.CodecConfiguration = config->codec_config;
   support.CodecGopSequence = config->gop_struct;
@@ -1517,9 +1740,9 @@ gst_d3d12_h264_enc_update_slice (GstD3D12H264Enc * self,
   support.MaxReferenceFramesInDPB = priv->selected_ref_frames;
   support.pResolutionDependentSupport = &limits;
   support.SuggestedProfile.DataSize = sizeof (suggested_profile);
-  support.SuggestedProfile.pH264Profile = &suggested_profile;
+  support.SuggestedProfile.pHEVCProfile = &suggested_profile;
   support.SuggestedLevel.DataSize = sizeof (suggested_level);
-  support.SuggestedLevel.pH264LevelSetting = &suggested_level;
+  support.SuggestedLevel.pHEVCLevelSetting = &suggested_level;
 
   HRESULT hr;
   if (priv->slice_mode !=
@@ -1528,7 +1751,7 @@ gst_d3d12_h264_enc_update_slice (GstD3D12H264Enc * self,
     /* TODO: fallback to other mode if possible */
     D3D12_FEATURE_DATA_VIDEO_ENCODER_FRAME_SUBREGION_LAYOUT_MODE
         feature_layout = { };
-    feature_layout.Codec = D3D12_VIDEO_ENCODER_CODEC_H264;
+    feature_layout.Codec = D3D12_VIDEO_ENCODER_CODEC_HEVC;
     feature_layout.Profile = config->profile_desc;
     feature_layout.Level = config->level;
     feature_layout.SubregionMode = priv->slice_mode;
@@ -1653,7 +1876,7 @@ gst_d3d12_h264_enc_update_slice (GstD3D12H264Enc * self,
 }
 
 static gboolean
-gst_d3d12_h264_enc_reconfigure (GstD3D12H264Enc * self,
+gst_d3d12_h265_enc_reconfigure (GstD3D12H265Enc * self,
     ID3D12VideoDevice * video_device, GstD3D12EncoderConfig * config,
     D3D12_VIDEO_ENCODER_SEQUENCE_CONTROL_FLAGS * seq_flags)
 {
@@ -1661,20 +1884,20 @@ gst_d3d12_h264_enc_reconfigure (GstD3D12H264Enc * self,
   auto priv = self->priv;
   auto prev_config = *config;
 
-  if (!gst_d3d12_h264_enc_update_gop (self, video_device, config, seq_flags))
+  if (!gst_d3d12_h265_enc_update_gop (self, video_device, config, seq_flags))
     return FALSE;
 
-  if (!gst_d3d12_h264_enc_update_rate_control (self,
+  if (!gst_d3d12_h265_enc_update_rate_control (self,
           video_device, config, seq_flags)) {
     return FALSE;
   }
 
   D3D12_FEATURE_DATA_VIDEO_ENCODER_SUPPORT support = { };
   D3D12_FEATURE_DATA_VIDEO_ENCODER_RESOLUTION_SUPPORT_LIMITS limits = { };
-  D3D12_VIDEO_ENCODER_PROFILE_H264 suggested_profile = priv->profile_h264;
+  D3D12_VIDEO_ENCODER_PROFILE_HEVC suggested_profile = priv->profile_hevc;
 
-  support.Codec = D3D12_VIDEO_ENCODER_CODEC_H264;
-  support.InputFormat = DXGI_FORMAT_NV12;
+  support.Codec = D3D12_VIDEO_ENCODER_CODEC_HEVC;
+  support.InputFormat = config->encoder_format;
   support.CodecConfiguration = config->codec_config;
   support.CodecGopSequence = config->gop_struct;
   support.RateControl = config->rate_control;
@@ -1686,7 +1909,7 @@ gst_d3d12_h264_enc_reconfigure (GstD3D12H264Enc * self,
   support.MaxReferenceFramesInDPB = priv->selected_ref_frames;
   support.pResolutionDependentSupport = &limits;
   support.SuggestedProfile.DataSize = sizeof (suggested_profile);
-  support.SuggestedProfile.pH264Profile = &suggested_profile;
+  support.SuggestedProfile.pHEVCProfile = &suggested_profile;
   support.SuggestedLevel = config->level;
 
   auto hr = video_device->CheckFeatureSupport
@@ -1697,8 +1920,27 @@ gst_d3d12_h264_enc_reconfigure (GstD3D12H264Enc * self,
   if (!gst_d3d12_result (hr, encoder->device) ||
       !CHECK_SUPPORT_FLAG (support.SupportFlags, GENERAL_SUPPORT_OK) ||
       (support.ValidationFlags != D3D12_VIDEO_ENCODER_VALIDATION_FLAG_NONE)) {
-    GST_ERROR_OBJECT (self, "Couldn't query encoder support");
+    GST_ERROR_OBJECT (self, "Couldn't query encoder support, 0x%x, 0x%x, 0x%x",
+        hr, support.SupportFlags, support.ValidationFlags);
+
     return FALSE;
+  }
+
+  if (!seq_flags) {
+    if (limits.SubregionBlockPixelsSize == 0) {
+      GST_ERROR_OBJECT (self, "Unknown subregion block pixel size");
+      return FALSE;
+    }
+
+    GST_DEBUG_OBJECT (self, "Adjusting resolution to be multiple of %d",
+        limits.SubregionBlockPixelsSize);
+
+    config->resolution.Width = ((priv->info.width +
+        limits.SubregionBlockPixelsSize - 1) / limits.SubregionBlockPixelsSize)
+        * limits.SubregionBlockPixelsSize;
+    config->resolution.Height = ((priv->info.height +
+        limits.SubregionBlockPixelsSize - 1) / limits.SubregionBlockPixelsSize)
+        * limits.SubregionBlockPixelsSize;
   }
 
   /* Update rate control flags based on support flags */
@@ -1761,7 +2003,7 @@ gst_d3d12_h264_enc_reconfigure (GstD3D12H264Enc * self,
     }
   }
 
-  if (!gst_d3d12_h264_enc_update_slice (self, video_device, config,
+  if (!gst_d3d12_h265_enc_update_slice (self, video_device, config,
           seq_flags, &support.SupportFlags)) {
     return FALSE;
   }
@@ -1772,15 +2014,17 @@ gst_d3d12_h264_enc_reconfigure (GstD3D12H264Enc * self,
       (*seq_flags &
           D3D12_VIDEO_ENCODER_SEQUENCE_CONTROL_FLAG_GOP_SEQUENCE_CHANGE) != 0) {
     priv->gop.ForceKeyUnit ();
-    gst_d3d12_h264_enc_build_sps (self, &priv->info, &config->resolution,
+    gst_d3d12_h265_enc_build_profile_tier_level (self);
+    gst_d3d12_h265_enc_build_vps (self);
+    gst_d3d12_h265_enc_build_sps (self, &priv->info, &config->resolution,
         priv->selected_ref_frames);
-    gst_d3d12_h264_enc_build_pps (self, priv->selected_ref_frames);
+    gst_d3d12_h265_enc_build_pps (self, priv->selected_ref_frames);
 
     bool array_of_textures = !CHECK_SUPPORT_FLAG (config->support_flags,
         RECONSTRUCTED_FRAMES_REQUIRE_TEXTURE_ARRAYS);
-    auto dpb = std::make_unique < GstD3D12H264EncDpb > (encoder->device,
-        config->resolution.Width, config->resolution.Height,
-        priv->selected_ref_frames,
+    auto dpb = std::make_unique < GstD3D12H265EncDpb > (encoder->device,
+        config->encoder_format, config->resolution.Width,
+        config->resolution.Height, priv->selected_ref_frames,
         array_of_textures);
     if (!dpb->IsValid ()) {
       GST_ERROR_OBJECT (self, "Couldn't create dpb");
@@ -1797,11 +2041,13 @@ gst_d3d12_h264_enc_reconfigure (GstD3D12H264Enc * self,
 }
 
 static gboolean
-gst_d3d12_h264_enc_new_sequence (GstD3D12Encoder * encoder,
+gst_d3d12_h265_enc_new_sequence (GstD3D12Encoder * encoder,
     ID3D12VideoDevice * video_device, GstVideoCodecState * state,
     GstD3D12EncoderConfig * config)
 {
-  auto self = GST_D3D12_H264_ENC (encoder);
+  auto self = GST_D3D12_H265_ENC (encoder);
+  auto klass = GST_D3D12_H265_ENC_GET_CLASS (self);
+  auto cdata = klass->cdata;
   auto priv = self->priv;
   auto info = &state->info;
 
@@ -1810,70 +2056,38 @@ gst_d3d12_h264_enc_new_sequence (GstD3D12Encoder * encoder,
   priv->dpb = nullptr;
   priv->info = state->info;
 
-  config->profile_desc.DataSize = sizeof (D3D12_VIDEO_ENCODER_PROFILE_H264);
-  config->profile_desc.pH264Profile = &priv->profile_h264;
+  config->profile_desc.DataSize = sizeof (D3D12_VIDEO_ENCODER_PROFILE_HEVC);
+  config->profile_desc.pHEVCProfile = &priv->profile_hevc;
 
   config->codec_config.DataSize =
-      sizeof (D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_H264);
-  config->codec_config.pH264Config = &priv->config_h264;
+      sizeof (D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_HEVC);
+  config->codec_config.pHEVCConfig = &priv->config_hevc;
 
-  config->level.DataSize = sizeof (D3D12_VIDEO_ENCODER_LEVELS_H264);
-  config->level.pH264LevelSetting = &priv->level_h264;
+  config->level.DataSize =
+      sizeof (D3D12_VIDEO_ENCODER_LEVEL_TIER_CONSTRAINTS_HEVC);
+  config->level.pHEVCLevelSetting = &priv->level_tier;
 
   config->layout.DataSize =
       sizeof
       (D3D12_VIDEO_ENCODER_PICTURE_CONTROL_SUBREGIONS_LAYOUT_DATA_SLICES);
-  config->layout.pSlicesPartition_H264 = &priv->layout_slices;
+  config->layout.pSlicesPartition_HEVC = &priv->layout_slices;
 
   config->gop_struct.DataSize =
-      sizeof (D3D12_VIDEO_ENCODER_SEQUENCE_GOP_STRUCTURE_H264);
-  config->gop_struct.pH264GroupOfPictures = &priv->gop_struct_h264;
+      sizeof (D3D12_VIDEO_ENCODER_SEQUENCE_GOP_STRUCTURE_HEVC);
+  config->gop_struct.pHEVCGroupOfPictures = &priv->gop_struct_hevc;
 
-  config->resolution.Width = GST_ROUND_UP_16 (info->width);
-  config->resolution.Height = GST_ROUND_UP_16 (info->height);
-
+  const gchar *profile_str = "main";
+  priv->profile_hevc = D3D12_VIDEO_ENCODER_PROFILE_HEVC_MAIN;
+  priv->config_support = cdata->config_support[0];
   config->encoder_format = DXGI_FORMAT_NV12;
-
-  priv->selected_profile = GST_H264_PROFILE_MAIN;
-  priv->profile_h264 = D3D12_VIDEO_ENCODER_PROFILE_H264_MAIN;
-
-  auto allowed_caps =
-      gst_pad_get_allowed_caps (GST_VIDEO_ENCODER_SRC_PAD (encoder));
-  if (allowed_caps && !gst_caps_is_any (allowed_caps)) {
-    allowed_caps = gst_caps_fixate (gst_caps_make_writable (allowed_caps));
-    auto s = gst_caps_get_structure (allowed_caps, 0);
-    auto profile_str = gst_structure_get_string (s, "profile");
-    if (g_strcmp0 (profile_str, "high") == 0) {
-      priv->selected_profile = GST_H264_PROFILE_HIGH;
-      priv->profile_h264 = D3D12_VIDEO_ENCODER_PROFILE_H264_HIGH;
-    } else if (g_strcmp0 (profile_str, "constrained-baseline") == 0) {
-      priv->selected_profile = GST_H264_PROFILE_BASELINE;
-      priv->profile_h264 = D3D12_VIDEO_ENCODER_PROFILE_H264_MAIN;
-    } else {
-      priv->selected_profile = GST_H264_PROFILE_MAIN;
-      priv->profile_h264 = D3D12_VIDEO_ENCODER_PROFILE_H264_MAIN;
-    }
+  if (GST_VIDEO_INFO_FORMAT (info) == GST_VIDEO_FORMAT_P010_10LE) {
+    profile_str = "main10";
+    priv->profile_hevc = D3D12_VIDEO_ENCODER_PROFILE_HEVC_MAIN10;
+    priv->config_support = cdata->config_support[1];
+    config->encoder_format = DXGI_FORMAT_P010;
   }
 
-  gst_clear_caps (&allowed_caps);
-
-  const gchar *profile_str = nullptr;
-  switch (priv->selected_profile) {
-    case GST_H264_PROFILE_BASELINE:
-      profile_str = "constrained-baseline";
-      break;
-    case GST_H264_PROFILE_MAIN:
-      profile_str = "main";
-      break;
-    case GST_H264_PROFILE_HIGH:
-      profile_str = "high";
-      break;
-    default:
-      g_assert_not_reached ();
-      break;
-  }
-
-  auto caps = gst_caps_new_simple ("video/x-h264",
+  auto caps = gst_caps_new_simple ("video/x-h265",
       "alignment", G_TYPE_STRING, "au", "profile", G_TYPE_STRING, profile_str,
       "stream-format", G_TYPE_STRING, "byte-stream", nullptr);
   auto output_state =
@@ -1881,13 +2095,45 @@ gst_d3d12_h264_enc_new_sequence (GstD3D12Encoder * encoder,
       state);
   gst_video_codec_state_unref (output_state);
 
+  priv->config_hevc.ConfigurationFlags =
+      D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_HEVC_FLAG_NONE;
+  priv->config_hevc.MinLumaCodingUnitSize =
+      priv->config_support.MinLumaCodingUnitSize;
+  priv->config_hevc.MaxLumaCodingUnitSize =
+      priv->config_support.MaxLumaCodingUnitSize;
+  priv->config_hevc.MinLumaTransformUnitSize =
+      priv->config_support.MinLumaTransformUnitSize;
+  priv->config_hevc.MaxLumaTransformUnitSize =
+      priv->config_support.MaxLumaTransformUnitSize;
+  priv->config_hevc.max_transform_hierarchy_depth_inter =
+      priv->config_support.max_transform_hierarchy_depth_inter;
+  priv->config_hevc.max_transform_hierarchy_depth_intra =
+      priv->config_support.max_transform_hierarchy_depth_intra;
+
+  if ((priv->config_support.SupportFlags &
+      D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_SUPPORT_HEVC_FLAG_ASYMETRIC_MOTION_PARTITION_REQUIRED)
+      != 0) {
+    priv->config_hevc.ConfigurationFlags |=
+        D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_HEVC_FLAG_USE_ASYMETRIC_MOTION_PARTITION;
+  }
+
+  GST_DEBUG_OBJECT (self, "Codec config, "
+      "MinCU: %d, MaxCU: %d, MinTU: %d, MaxTU: %d, "
+      "max-transform-depth-inter: %d, max-transform-depth-intra: %d",
+      priv->config_hevc.MinLumaCodingUnitSize,
+      priv->config_hevc.MaxLumaCodingUnitSize,
+      priv->config_hevc.MinLumaTransformUnitSize,
+      priv->config_hevc.MaxLumaTransformUnitSize,
+      priv->config_hevc.max_transform_hierarchy_depth_inter,
+      priv->config_hevc.max_transform_hierarchy_depth_intra);
+
   D3D12_FEATURE_DATA_VIDEO_ENCODER_CODEC_PICTURE_CONTROL_SUPPORT
       feature_pic_ctrl = { };
-  feature_pic_ctrl.Codec = D3D12_VIDEO_ENCODER_CODEC_H264;
-  feature_pic_ctrl.Profile.DataSize = sizeof (priv->profile_h264);
-  feature_pic_ctrl.Profile.pH264Profile = &priv->profile_h264;
+  feature_pic_ctrl.Codec = D3D12_VIDEO_ENCODER_CODEC_HEVC;
+  feature_pic_ctrl.Profile.DataSize = sizeof (priv->profile_hevc);
+  feature_pic_ctrl.Profile.pHEVCProfile = &priv->profile_hevc;
   feature_pic_ctrl.PictureSupport.DataSize = sizeof (priv->pic_ctrl_support);
-  feature_pic_ctrl.PictureSupport.pH264Support = &priv->pic_ctrl_support;
+  feature_pic_ctrl.PictureSupport.pHEVCSupport = &priv->pic_ctrl_support;
   auto hr = video_device->CheckFeatureSupport
       (D3D12_FEATURE_VIDEO_ENCODER_CODEC_PICTURE_CONTROL_SUPPORT,
       &feature_pic_ctrl, sizeof (feature_pic_ctrl));
@@ -1895,6 +2141,16 @@ gst_d3d12_h264_enc_new_sequence (GstD3D12Encoder * encoder,
     GST_ERROR_OBJECT (self, "Couldn't query picture control support");
     return FALSE;
   }
+
+  /* Round up to CTU size and will be adjusted later */
+  guint round_factor = 64;
+  if (priv->config_support.MaxLumaCodingUnitSize ==
+      D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_HEVC_CUSIZE_32x32) {
+    round_factor = 32;
+  }
+
+  config->resolution.Width = GST_ROUND_UP_N (info->width, round_factor);
+  config->resolution.Height = GST_ROUND_UP_N (info->height, round_factor);
 
   if (info->fps_n > 0 && info->fps_d > 0) {
     config->rate_control.TargetFrameRate.Numerator = info->fps_n;
@@ -1904,23 +2160,11 @@ gst_d3d12_h264_enc_new_sequence (GstD3D12Encoder * encoder,
     config->rate_control.TargetFrameRate.Denominator = 1;
   }
 
-  priv->config_h264.ConfigurationFlags =
-      D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_H264_FLAG_NONE;
-  priv->config_h264.DirectModeConfig =
-      D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_H264_DIRECT_MODES_DISABLED;
-  priv->config_h264.DisableDeblockingFilterConfig =
-      D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_H264_SLICES_DEBLOCKING_MODE_0_ALL_LUMA_CHROMA_SLICE_BLOCK_EDGES_ALWAYS_FILTERED;
-
-  if (priv->selected_profile != GST_H264_PROFILE_BASELINE) {
-    priv->config_h264.ConfigurationFlags |=
-        D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_H264_FLAG_ENABLE_CABAC_ENCODING;
-  }
-
-  return gst_d3d12_h264_enc_reconfigure (self, video_device, config, nullptr);
+  return gst_d3d12_h265_enc_reconfigure (self, video_device, config, nullptr);
 }
 
 static gboolean
-gst_d3d12_h264_enc_foreach_caption_meta (GstBuffer * buffer, GstMeta ** meta,
+gst_d3d12_h265_enc_foreach_caption_meta (GstBuffer * buffer, GstMeta ** meta,
     GArray * cc_sei)
 {
   if ((*meta)->info->api != GST_VIDEO_CAPTION_META_API_TYPE)
@@ -1930,8 +2174,8 @@ gst_d3d12_h264_enc_foreach_caption_meta (GstBuffer * buffer, GstMeta ** meta,
   if (cc_meta->caption_type != GST_VIDEO_CAPTION_TYPE_CEA708_RAW)
     return TRUE;
 
-  GstH264SEIMessage sei = { };
-  sei.payloadType = GST_H264_SEI_REGISTERED_USER_DATA;
+  GstH265SEIMessage sei = { };
+  sei.payloadType = GST_H265_SEI_REGISTERED_USER_DATA;
   auto rud = &sei.payload.registered_user_data;
 
   rud->country_code = 181;
@@ -1964,17 +2208,17 @@ gst_d3d12_h264_enc_foreach_caption_meta (GstBuffer * buffer, GstMeta ** meta,
 }
 
 static gboolean
-gst_d3d12_h264_enc_start_frame (GstD3D12Encoder * encoder,
+gst_d3d12_h265_enc_start_frame (GstD3D12Encoder * encoder,
     ID3D12VideoDevice * video_device, GstVideoCodecFrame * frame,
     D3D12_VIDEO_ENCODER_SEQUENCE_CONTROL_DESC * seq_ctrl,
     D3D12_VIDEO_ENCODER_PICTURE_CONTROL_DESC * picture_ctrl,
     D3D12_VIDEO_ENCODER_RECONSTRUCTED_PICTURE * recon_pic,
     GstD3D12EncoderConfig * config, gboolean * need_new_session)
 {
-  auto self = GST_D3D12_H264_ENC (encoder);
+  auto self = GST_D3D12_H265_ENC (encoder);
   auto priv = self->priv;
   static guint8 aud_data[] = {
-    0x00, 0x00, 0x00, 0x01, 0x09, 0xf0
+    0x00, 0x00, 0x00, 0x01, 0x46, 0x01, 0x50
   };
 
   *need_new_session = FALSE;
@@ -1988,8 +2232,8 @@ gst_d3d12_h264_enc_start_frame (GstD3D12Encoder * encoder,
     priv->gop.ForceKeyUnit ();
   }
 
-  auto prev_level = priv->level_h264;
-  if (!gst_d3d12_h264_enc_reconfigure (self, video_device, config,
+  auto prev_level = priv->level_tier;
+  if (!gst_d3d12_h265_enc_reconfigure (self, video_device, config,
           &seq_ctrl->Flags)) {
     GST_ERROR_OBJECT (self, "Reconfigure failed");
     return FALSE;
@@ -2001,8 +2245,10 @@ gst_d3d12_h264_enc_start_frame (GstD3D12Encoder * encoder,
         seq_ctrl->Flags);
   }
 
-  if (priv->level_h264 != prev_level)
+  if (priv->level_tier.Level != prev_level.Level ||
+      priv->level_tier.Tier != prev_level.Tier) {
     *need_new_session = TRUE;
+  }
 
   if (*need_new_session) {
     seq_ctrl->Flags = D3D12_VIDEO_ENCODER_SEQUENCE_CONTROL_FLAG_NONE;
@@ -2011,10 +2257,10 @@ gst_d3d12_h264_enc_start_frame (GstD3D12Encoder * encoder,
     priv->gop.ForceKeyUnit ();
   }
 
-  priv->gop.FillPicCtrl (priv->pic_control_h264);
+  priv->gop.FillPicCtrl (priv->pic_control_hevc);
 
-  if (priv->pic_control_h264.FrameType ==
-      D3D12_VIDEO_ENCODER_FRAME_TYPE_H264_IDR_FRAME) {
+  if (priv->pic_control_hevc.FrameType ==
+      D3D12_VIDEO_ENCODER_FRAME_TYPE_HEVC_IDR_FRAME) {
     GST_LOG_OBJECT (self, "Sync point at frame %" G_GUINT64_FORMAT,
         priv->display_order);
     GST_VIDEO_CODEC_FRAME_SET_SYNC_POINT (frame);
@@ -2035,12 +2281,12 @@ gst_d3d12_h264_enc_start_frame (GstD3D12Encoder * encoder,
       D3D12_VIDEO_ENCODER_PICTURE_CONTROL_FLAG_USED_AS_REFERENCE_PICTURE :
       D3D12_VIDEO_ENCODER_PICTURE_CONTROL_FLAG_NONE;
   picture_ctrl->PictureControlCodecData.DataSize =
-      sizeof (priv->pic_control_h264);
-  picture_ctrl->PictureControlCodecData.pH264PicData = &priv->pic_control_h264;
+      sizeof (priv->pic_control_hevc);
+  picture_ctrl->PictureControlCodecData.pHEVCPicData = &priv->pic_control_hevc;
 
   if (!priv->dpb->StartFrame (picture_ctrl->Flags ==
           D3D12_VIDEO_ENCODER_PICTURE_CONTROL_FLAG_USED_AS_REFERENCE_PICTURE,
-          &priv->pic_control_h264, recon_pic, &picture_ctrl->ReferenceFrames,
+          &priv->pic_control_hevc, recon_pic, &picture_ctrl->ReferenceFrames,
           priv->display_order)) {
     GST_ERROR_OBJECT (self, "Start frame failed");
     return FALSE;
@@ -2048,25 +2294,23 @@ gst_d3d12_h264_enc_start_frame (GstD3D12Encoder * encoder,
 
   priv->display_order++;
 
-  priv->pic_control_h264.Flags =
-      D3D12_VIDEO_ENCODER_PICTURE_CONTROL_CODEC_DATA_H264_FLAG_NONE;
+  priv->pic_control_hevc.Flags =
+      D3D12_VIDEO_ENCODER_PICTURE_CONTROL_CODEC_DATA_HEVC_FLAG_NONE;
   /* FIXME: count L1 too */
-  priv->pic_control_h264.pic_parameter_set_id =
-      priv->pic_control_h264.List0ReferenceFramesCount > 1 ?
-      priv->pic_control_h264.List0ReferenceFramesCount - 1 : 0;
-  priv->pic_control_h264.adaptive_ref_pic_marking_mode_flag = 0;
-  priv->pic_control_h264.RefPicMarkingOperationsCommandsCount = 0;
-  priv->pic_control_h264.pRefPicMarkingOperationsCommands = nullptr;
-  priv->pic_control_h264.List0RefPicModificationsCount = 0;
-  priv->pic_control_h264.pList0RefPicModifications = nullptr;
-  priv->pic_control_h264.List1RefPicModificationsCount = 0;
-  priv->pic_control_h264.pList1RefPicModifications = nullptr;
-  priv->pic_control_h264.QPMapValuesCount = 0;
-  priv->pic_control_h264.pRateControlQPMap = nullptr;
+  priv->pic_control_hevc.slice_pic_parameter_set_id =
+      priv->pic_control_hevc.List0ReferenceFramesCount > 1 ?
+      priv->pic_control_hevc.List0ReferenceFramesCount - 1 : 0;
+  priv->pic_control_hevc.List0RefPicModificationsCount = 0;
+  priv->pic_control_hevc.pList0RefPicModifications = nullptr;
+  priv->pic_control_hevc.List1RefPicModificationsCount = 0;
+  priv->pic_control_hevc.pList1RefPicModifications = nullptr;
+  priv->pic_control_hevc.QPMapValuesCount = 0;
+  priv->pic_control_hevc.pRateControlQPMap = nullptr;
 
-  if (priv->pic_control_h264.FrameType ==
-      D3D12_VIDEO_ENCODER_FRAME_TYPE_H264_IDR_FRAME) {
-    auto buf_size = priv->sps.bytes.size () + priv->pps[0].bytes.size ();
+  if (priv->pic_control_hevc.FrameType ==
+      D3D12_VIDEO_ENCODER_FRAME_TYPE_HEVC_IDR_FRAME) {
+    auto buf_size = priv->vps.bytes.size () + priv->sps.bytes.size () +
+        priv->pps[0].bytes.size ();
     if (priv->aud)
       buf_size += sizeof (aud_data);
 
@@ -2080,6 +2324,9 @@ gst_d3d12_h264_enc_start_frame (GstD3D12Encoder * encoder,
       data += sizeof (aud_data);
     }
 
+    memcpy (data, priv->vps.bytes.data (), priv->vps.bytes.size ());
+    data += priv->vps.bytes.size ();
+
     memcpy (data, priv->sps.bytes.data (), priv->sps.bytes.size ());
     data += priv->sps.bytes.size ();
 
@@ -2088,9 +2335,10 @@ gst_d3d12_h264_enc_start_frame (GstD3D12Encoder * encoder,
     frame->output_buffer = output_buf;
 
     priv->last_pps_id = 0;
-  } else if (priv->pic_control_h264.pic_parameter_set_id != priv->last_pps_id) {
+  } else if (priv->pic_control_hevc.slice_pic_parameter_set_id !=
+      priv->last_pps_id) {
     const auto & cur_pps =
-        priv->pps[priv->pic_control_h264.pic_parameter_set_id];
+        priv->pps[priv->pic_control_hevc.slice_pic_parameter_set_id];
     auto buf_size = cur_pps.bytes.size ();
 
     if (priv->aud)
@@ -2110,7 +2358,7 @@ gst_d3d12_h264_enc_start_frame (GstD3D12Encoder * encoder,
     gst_buffer_unmap (output_buf, &map_info);
     frame->output_buffer = output_buf;
 
-    priv->last_pps_id = priv->pic_control_h264.pic_parameter_set_id;
+    priv->last_pps_id = priv->pic_control_hevc.slice_pic_parameter_set_id;
   } else if (priv->aud) {
     auto buf_size = sizeof (aud_data);
     auto output_buf = gst_buffer_new_and_alloc (buf_size);
@@ -2124,10 +2372,10 @@ gst_d3d12_h264_enc_start_frame (GstD3D12Encoder * encoder,
   if (priv->cc_insert != GST_D3D12_ENCODER_SEI_DISABLED) {
     g_array_set_size (priv->cc_sei, 0);
     gst_buffer_foreach_meta (frame->input_buffer,
-        (GstBufferForeachMetaFunc) gst_d3d12_h264_enc_foreach_caption_meta,
+        (GstBufferForeachMetaFunc) gst_d3d12_h265_enc_foreach_caption_meta,
         priv->cc_sei);
     if (priv->cc_sei->len > 0) {
-      auto mem = gst_h264_create_sei_memory (4, priv->cc_sei);
+      auto mem = gst_h265_create_sei_memory (0, 1, 4, priv->cc_sei);
       if (mem) {
         GST_TRACE_OBJECT (self, "Inserting CC SEI");
 
@@ -2143,9 +2391,9 @@ gst_d3d12_h264_enc_start_frame (GstD3D12Encoder * encoder,
 }
 
 static gboolean
-gst_d3d12_h264_enc_end_frame (GstD3D12Encoder * encoder)
+gst_d3d12_h265_enc_end_frame (GstD3D12Encoder * encoder)
 {
-  auto self = GST_D3D12_H264_ENC (encoder);
+  auto self = GST_D3D12_H265_ENC (encoder);
   auto priv = self->priv;
 
   priv->dpb->EndFrame ();
@@ -2154,41 +2402,41 @@ gst_d3d12_h264_enc_end_frame (GstD3D12Encoder * encoder)
 }
 
 void
-gst_d3d12_h264_enc_register (GstPlugin * plugin, GstD3D12Device * device,
+gst_d3d12_h265_enc_register (GstPlugin * plugin, GstD3D12Device * device,
     ID3D12VideoDevice * video_device, guint rank)
 {
   HRESULT hr;
   std::vector < std::string > profiles;
 
-  GST_DEBUG_CATEGORY_INIT (gst_d3d12_h264_enc_debug,
-      "d3d12h264enc", 0, "d3d12h264enc");
+  GST_DEBUG_CATEGORY_INIT (gst_d3d12_h265_enc_debug,
+      "d3d12h265enc", 0, "d3d12h265enc");
 
   D3D12_FEATURE_DATA_VIDEO_ENCODER_CODEC feature_codec = { };
-  feature_codec.Codec = D3D12_VIDEO_ENCODER_CODEC_H264;
+  feature_codec.Codec = D3D12_VIDEO_ENCODER_CODEC_HEVC;
   hr = video_device->CheckFeatureSupport (D3D12_FEATURE_VIDEO_ENCODER_CODEC,
       &feature_codec, sizeof (feature_codec));
 
   if (!gst_d3d12_result (hr, device) || !feature_codec.IsSupported) {
-    GST_INFO_OBJECT (device, "Device does not support H.264 encoding");
+    GST_INFO_OBJECT (device, "Device does not support H.265 encoding");
     return;
   }
 
   D3D12_FEATURE_DATA_VIDEO_ENCODER_PROFILE_LEVEL feature_profile_level = { };
-  D3D12_VIDEO_ENCODER_PROFILE_H264 profile_h264 =
-      D3D12_VIDEO_ENCODER_PROFILE_H264_MAIN;
-  D3D12_VIDEO_ENCODER_LEVELS_H264 level_h264_min;
-  D3D12_VIDEO_ENCODER_LEVELS_H264 level_h264_max;
+  D3D12_VIDEO_ENCODER_PROFILE_HEVC profile_hevc =
+      D3D12_VIDEO_ENCODER_PROFILE_HEVC_MAIN;
+  D3D12_VIDEO_ENCODER_LEVEL_TIER_CONSTRAINTS_HEVC level_hevc_min;
+  D3D12_VIDEO_ENCODER_LEVEL_TIER_CONSTRAINTS_HEVC level_hevc_max;
 
-  feature_profile_level.Codec = D3D12_VIDEO_ENCODER_CODEC_H264;
-  feature_profile_level.Profile.DataSize = sizeof (profile_h264);
-  feature_profile_level.Profile.pH264Profile = &profile_h264;
-  feature_profile_level.MinSupportedLevel.DataSize = sizeof (level_h264_min);
-  feature_profile_level.MinSupportedLevel.pH264LevelSetting = &level_h264_min;
-  feature_profile_level.MaxSupportedLevel.DataSize = sizeof (level_h264_max);
-  feature_profile_level.MaxSupportedLevel.pH264LevelSetting = &level_h264_max;
+  feature_profile_level.Codec = D3D12_VIDEO_ENCODER_CODEC_HEVC;
+  feature_profile_level.Profile.DataSize = sizeof (profile_hevc);
+  feature_profile_level.Profile.pHEVCProfile = &profile_hevc;
+  feature_profile_level.MinSupportedLevel.DataSize = sizeof (level_hevc_min);
+  feature_profile_level.MinSupportedLevel.pHEVCLevelSetting = &level_hevc_min;
+  feature_profile_level.MaxSupportedLevel.DataSize = sizeof (level_hevc_max);
+  feature_profile_level.MaxSupportedLevel.pHEVCLevelSetting = &level_hevc_max;
 
   D3D12_FEATURE_DATA_VIDEO_ENCODER_INPUT_FORMAT feature_input_format = { };
-  feature_input_format.Codec = D3D12_VIDEO_ENCODER_CODEC_H264;
+  feature_input_format.Codec = D3D12_VIDEO_ENCODER_CODEC_HEVC;
   feature_input_format.Profile = feature_profile_level.Profile;
 
   hr = video_device->CheckFeatureSupport
@@ -2208,19 +2456,133 @@ gst_d3d12_h264_enc_register (GstPlugin * plugin, GstD3D12Device * device,
     return;
   }
 
-  profiles.push_back ("constrained-baseline");
+  static const D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_SUPPORT_HEVC config_set[] = {
+    {
+      D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_SUPPORT_HEVC_FLAG_NONE,
+      D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_HEVC_CUSIZE_8x8,
+      D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_HEVC_CUSIZE_64x64,
+      D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_HEVC_TUSIZE_4x4,
+      D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_HEVC_TUSIZE_32x32,
+      4, 4
+    },
+    {
+      D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_SUPPORT_HEVC_FLAG_NONE,
+      D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_HEVC_CUSIZE_8x8,
+      D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_HEVC_CUSIZE_64x64,
+      D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_HEVC_TUSIZE_4x4,
+      D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_HEVC_TUSIZE_32x32,
+      3, 3
+    },
+    {
+      D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_SUPPORT_HEVC_FLAG_NONE,
+      D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_HEVC_CUSIZE_8x8,
+      D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_HEVC_CUSIZE_32x32,
+      D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_HEVC_TUSIZE_4x4,
+      D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_HEVC_TUSIZE_32x32,
+      3, 3
+    },
+    {
+      D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_SUPPORT_HEVC_FLAG_NONE,
+      D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_HEVC_CUSIZE_8x8,
+      D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_HEVC_CUSIZE_32x32,
+      D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_HEVC_TUSIZE_4x4,
+      D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_HEVC_TUSIZE_32x32,
+      2, 2
+    },
+    {
+      D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_SUPPORT_HEVC_FLAG_NONE,
+      D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_HEVC_CUSIZE_8x8,
+      D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_HEVC_CUSIZE_32x32,
+      D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_HEVC_TUSIZE_4x4,
+      D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_HEVC_TUSIZE_32x32,
+      1, 1
+    },
+    {
+      D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_SUPPORT_HEVC_FLAG_NONE,
+      D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_HEVC_CUSIZE_8x8,
+      D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_HEVC_CUSIZE_32x32,
+      D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_HEVC_TUSIZE_4x4,
+      D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_HEVC_TUSIZE_32x32,
+      0, 0
+    }
+  };
+
+  D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_SUPPORT_HEVC config_main = { };
+  D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_SUPPORT_HEVC config_main10 = { };
+  D3D12_FEATURE_DATA_VIDEO_ENCODER_CODEC_CONFIGURATION_SUPPORT
+      config_support = { };
+  config_support.Codec = D3D12_VIDEO_ENCODER_CODEC_HEVC;
+  config_support.Profile.DataSize = sizeof (profile_hevc);
+  config_support.Profile.pHEVCProfile = &profile_hevc;
+  config_support.CodecSupportLimits.DataSize = sizeof (config_main);
+
+  for (guint i = 0; i < G_N_ELEMENTS (config_set); i++) {
+    auto test_config = config_set[i];
+    config_support.CodecSupportLimits.pHEVCSupport = &test_config;
+    hr = video_device->CheckFeatureSupport (D3D12_FEATURE_VIDEO_ENCODER_CODEC_CONFIGURATION_SUPPORT,
+        &config_support, sizeof (config_support));
+    if (SUCCEEDED (hr) && config_support.IsSupported) {
+      GST_INFO_OBJECT (device, "Supported config for main profile, "
+        "MinCU: %d, MaxCU: %d, MinTU: %d, MaxTU: %d, max-transform-depth: %d",
+        test_config.MinLumaCodingUnitSize, test_config.MaxLumaCodingUnitSize,
+        test_config.MinLumaTransformUnitSize,
+        test_config.MaxLumaTransformUnitSize,
+        test_config.max_transform_hierarchy_depth_inter);
+      config_main = test_config;
+      break;
+    }
+  }
+
+  if (!config_support.IsSupported) {
+    GST_WARNING_OBJECT (device, "Couldn't find supported config");
+    return;
+  }
+
   profiles.push_back ("main");
   GST_INFO_OBJECT (device, "Main profile is supported, level [%d, %d]",
-      level_h264_min, level_h264_max);
+      level_hevc_min.Level, level_hevc_max.Level);
 
-  profile_h264 = D3D12_VIDEO_ENCODER_PROFILE_H264_HIGH;
+  D3D12_VIDEO_ENCODER_LEVEL_TIER_CONSTRAINTS_HEVC main10_level_hevc_min;
+  D3D12_VIDEO_ENCODER_LEVEL_TIER_CONSTRAINTS_HEVC main10_level_hevc_max;
+  profile_hevc = D3D12_VIDEO_ENCODER_PROFILE_HEVC_MAIN10;
+  feature_profile_level.MinSupportedLevel.pHEVCLevelSetting =
+      &main10_level_hevc_min;
+  feature_profile_level.MaxSupportedLevel.pHEVCLevelSetting =
+      &main10_level_hevc_max;
   hr = video_device->CheckFeatureSupport
       (D3D12_FEATURE_VIDEO_ENCODER_PROFILE_LEVEL, &feature_profile_level,
       sizeof (feature_profile_level));
-  if (gst_d3d12_result (hr, device) && feature_profile_level.IsSupported) {
-    profiles.push_back ("high");
-    GST_INFO_OBJECT (device, "High profile is supported, level [%d, %d]",
-        level_h264_min, level_h264_max);
+  if (SUCCEEDED (hr) && feature_profile_level.IsSupported) {
+    feature_input_format.Format = DXGI_FORMAT_P010;
+    hr = video_device->CheckFeatureSupport
+        (D3D12_FEATURE_VIDEO_ENCODER_INPUT_FORMAT, &feature_input_format,
+        sizeof (feature_input_format));
+    if (SUCCEEDED (hr) && feature_input_format.IsSupported) {
+      config_support.IsSupported = FALSE;
+      for (guint i = 0; i < G_N_ELEMENTS (config_set); i++) {
+        auto test_config = config_set[i];
+        config_support.CodecSupportLimits.pHEVCSupport = &test_config;
+        hr = video_device->CheckFeatureSupport (D3D12_FEATURE_VIDEO_ENCODER_CODEC_CONFIGURATION_SUPPORT,
+            &config_support, sizeof (config_support));
+        if (SUCCEEDED (hr) && config_support.IsSupported) {
+          GST_INFO_OBJECT (device, "Supported config for main10 profile, "
+            "MinCU: %d, MaxCU: %d, MinTU: %d, MaxTU: %d, "
+            "max-transform-depth: %d", test_config.MinLumaCodingUnitSize,
+            test_config.MaxLumaCodingUnitSize,
+            test_config.MinLumaTransformUnitSize,
+            test_config.MaxLumaTransformUnitSize,
+            test_config.max_transform_hierarchy_depth_inter);
+          config_main10 = test_config;
+          break;
+        }
+      }
+
+      if (config_support.IsSupported) {
+        profiles.push_back ("main-10");
+        GST_INFO_OBJECT (device, "Main10 profile is supported, level [%d, %d]",
+            main10_level_hevc_min.Level, main10_level_hevc_max.Level);
+      }
+    }
   }
 
   if (profiles.empty ()) {
@@ -2230,7 +2592,7 @@ gst_d3d12_h264_enc_register (GstPlugin * plugin, GstD3D12Device * device,
 
   D3D12_FEATURE_DATA_VIDEO_ENCODER_OUTPUT_RESOLUTION_RATIOS_COUNT ratios_count
       = { };
-  ratios_count.Codec = D3D12_VIDEO_ENCODER_CODEC_H264;
+  ratios_count.Codec = D3D12_VIDEO_ENCODER_CODEC_HEVC;
   hr = video_device->CheckFeatureSupport
       (D3D12_FEATURE_VIDEO_ENCODER_OUTPUT_RESOLUTION_RATIOS_COUNT,
       &ratios_count, sizeof (ratios_count));
@@ -2243,7 +2605,7 @@ gst_d3d12_h264_enc_register (GstPlugin * plugin, GstD3D12Device * device,
   std::vector < D3D12_VIDEO_ENCODER_PICTURE_RESOLUTION_RATIO_DESC > ratios;
 
   D3D12_FEATURE_DATA_VIDEO_ENCODER_OUTPUT_RESOLUTION feature_resolution = { };
-  feature_resolution.Codec = D3D12_VIDEO_ENCODER_CODEC_H264;
+  feature_resolution.Codec = D3D12_VIDEO_ENCODER_CODEC_HEVC;
   feature_resolution.ResolutionRatiosCount = ratios_count.ResolutionRatiosCount;
   if (ratios_count.ResolutionRatiosCount > 0) {
     ratios.resize (ratios_count.ResolutionRatiosCount);
@@ -2269,7 +2631,7 @@ gst_d3d12_h264_enc_register (GstPlugin * plugin, GstD3D12Device * device,
 
   guint rc_support = 0;
   D3D12_FEATURE_DATA_VIDEO_ENCODER_RATE_CONTROL_MODE feature_rate_control = { };
-  feature_rate_control.Codec = D3D12_VIDEO_ENCODER_CODEC_H264;
+  feature_rate_control.Codec = D3D12_VIDEO_ENCODER_CODEC_HEVC;
   feature_rate_control.RateControlMode =
       D3D12_VIDEO_ENCODER_RATE_CONTROL_MODE_CQP;
 
@@ -2316,13 +2678,14 @@ gst_d3d12_h264_enc_register (GstPlugin * plugin, GstD3D12Device * device,
     return;
   }
 
-  profile_h264 = D3D12_VIDEO_ENCODER_PROFILE_H264_MAIN;
+  profile_hevc = D3D12_VIDEO_ENCODER_PROFILE_HEVC_MAIN;
   D3D12_FEATURE_DATA_VIDEO_ENCODER_FRAME_SUBREGION_LAYOUT_MODE
       feature_layout = { };
-  feature_layout.Codec = D3D12_VIDEO_ENCODER_CODEC_H264;
-  feature_layout.Profile.DataSize = sizeof (profile_h264);
-  feature_layout.Profile.pH264Profile = &profile_h264;
-  feature_layout.Level.DataSize = sizeof (D3D12_VIDEO_ENCODER_LEVELS_H264);
+  feature_layout.Codec = D3D12_VIDEO_ENCODER_CODEC_HEVC;
+  feature_layout.Profile.DataSize = sizeof (profile_hevc);
+  feature_layout.Profile.pHEVCProfile = &profile_hevc;
+  feature_layout.Level.DataSize =
+      sizeof (D3D12_VIDEO_ENCODER_LEVEL_TIER_CONSTRAINTS_HEVC);
 
   D3D12_VIDEO_ENCODER_FRAME_SUBREGION_LAYOUT_MODE layout_modes[] = {
     D3D12_VIDEO_ENCODER_FRAME_SUBREGION_LAYOUT_MODE_FULL_FRAME,
@@ -2335,10 +2698,13 @@ gst_d3d12_h264_enc_register (GstPlugin * plugin, GstD3D12Device * device,
   guint slice_mode_support = 0;
   for (guint i = 0; i < G_N_ELEMENTS (layout_modes); i++) {
     feature_layout.SubregionMode = layout_modes[i];
-    for (guint level = (guint) level_h264_min; level <= (guint) level_h264_max;
+    for (guint level = (guint) level_hevc_min.Level;
+        level <= (guint) level_hevc_max.Level;
         level++) {
-      auto level_h264 = (D3D12_VIDEO_ENCODER_LEVELS_H264) level;
-      feature_layout.Level.pH264LevelSetting = &level_h264;
+      D3D12_VIDEO_ENCODER_LEVEL_TIER_CONSTRAINTS_HEVC level_hevc;
+      level_hevc.Level = (D3D12_VIDEO_ENCODER_LEVELS_HEVC) level;
+      level_hevc.Tier = D3D12_VIDEO_ENCODER_TIER_HEVC_MAIN;
+      feature_layout.Level.pHEVCLevelSetting = &level_hevc;
       hr = video_device->CheckFeatureSupport
           (D3D12_FEATURE_VIDEO_ENCODER_FRAME_SUBREGION_LAYOUT_MODE,
           &feature_layout, sizeof (feature_layout));
@@ -2354,8 +2720,8 @@ gst_d3d12_h264_enc_register (GstPlugin * plugin, GstD3D12Device * device,
     return;
   }
 
-  if ((slice_mode_support & (1 <<
-              D3D12_VIDEO_ENCODER_FRAME_SUBREGION_LAYOUT_MODE_FULL_FRAME))
+  if (slice_mode_support & (1 <<
+          D3D12_VIDEO_ENCODER_FRAME_SUBREGION_LAYOUT_MODE_FULL_FRAME)
       == 0) {
     GST_WARNING_OBJECT (device, "Full frame encoding is not supported");
     return;
@@ -2367,15 +2733,15 @@ gst_d3d12_h264_enc_register (GstPlugin * plugin, GstD3D12Device * device,
   GST_INFO_OBJECT (device, "Supported subregion modes: \"%s\"", subregions);
   g_free (subregions);
 
-  D3D12_VIDEO_ENCODER_CODEC_PICTURE_CONTROL_SUPPORT_H264 picture_ctrl_h264;
+  D3D12_VIDEO_ENCODER_CODEC_PICTURE_CONTROL_SUPPORT_HEVC picture_ctrl_hevc;
   D3D12_FEATURE_DATA_VIDEO_ENCODER_CODEC_PICTURE_CONTROL_SUPPORT
       feature_pic_ctrl = { };
 
-  feature_pic_ctrl.Codec = D3D12_VIDEO_ENCODER_CODEC_H264;
-  feature_pic_ctrl.Profile.DataSize = sizeof (profile_h264);
-  feature_pic_ctrl.Profile.pH264Profile = &profile_h264;
-  feature_pic_ctrl.PictureSupport.DataSize = sizeof (picture_ctrl_h264);
-  feature_pic_ctrl.PictureSupport.pH264Support = &picture_ctrl_h264;
+  feature_pic_ctrl.Codec = D3D12_VIDEO_ENCODER_CODEC_HEVC;
+  feature_pic_ctrl.Profile.DataSize = sizeof (profile_hevc);
+  feature_pic_ctrl.Profile.pHEVCProfile = &profile_hevc;
+  feature_pic_ctrl.PictureSupport.DataSize = sizeof (picture_ctrl_hevc);
+  feature_pic_ctrl.PictureSupport.pHEVCSupport = &picture_ctrl_hevc;
 
   hr = video_device->CheckFeatureSupport
       (D3D12_FEATURE_VIDEO_ENCODER_CODEC_PICTURE_CONTROL_SUPPORT,
@@ -2387,11 +2753,11 @@ gst_d3d12_h264_enc_register (GstPlugin * plugin, GstD3D12Device * device,
 
   GST_INFO_OBJECT (device, "MaxL0ReferencesForP: %u, MaxL0ReferencesForB: %u, "
       "MaxL1ReferencesForB: %u, MaxLongTermReferences: %u, MaxDPBCapacity %u",
-      picture_ctrl_h264.MaxL0ReferencesForP,
-      picture_ctrl_h264.MaxL0ReferencesForB,
-      picture_ctrl_h264.MaxL1ReferencesForB,
-      picture_ctrl_h264.MaxLongTermReferences,
-      picture_ctrl_h264.MaxDPBCapacity);
+      picture_ctrl_hevc.MaxL0ReferencesForP,
+      picture_ctrl_hevc.MaxL0ReferencesForB,
+      picture_ctrl_hevc.MaxL1ReferencesForB,
+      picture_ctrl_hevc.MaxLongTermReferences,
+      picture_ctrl_hevc.MaxDPBCapacity);
 
   std::string resolution_str = "width = (int) [" +
       std::to_string (feature_resolution.MinResolutionSupported.Width) + ", " +
@@ -2399,16 +2765,20 @@ gst_d3d12_h264_enc_register (GstPlugin * plugin, GstD3D12Device * device,
       "], height = (int) [" +
       std::to_string (feature_resolution.MinResolutionSupported.Height) + ", " +
       std::to_string (feature_resolution.MaxResolutionSupported.Height) + " ]";
-  std::string sink_caps_str = "video/x-raw, format = (string) NV12, " +
+  std::string format_str = "format = (string) ";
+  if (profiles.size () == 1)
+    format_str += "NV12, ";
+  else
+    format_str += " { NV12, P010_10LE }, ";
+  std::string sink_caps_str = "video/x-raw, " + format_str +
       resolution_str + ", interlace-mode = (string) progressive";
 
-  std::string src_caps_str = "video/x-h264, " + resolution_str +
+  std::string src_caps_str = "video/x-h265, " + resolution_str +
       ", stream-format = (string) byte-stream, alignment = (string) au, ";
   if (profiles.size () == 1) {
     src_caps_str += "profile = (string) " + profiles[0];
   } else {
     src_caps_str += "profile = (string) { ";
-    std::reverse (profiles.begin (), profiles.end ());
     for (size_t i = 0; i < profiles.size (); i++) {
       if (i != 0)
         src_caps_str += ", ";
@@ -2427,7 +2797,7 @@ gst_d3d12_h264_enc_register (GstPlugin * plugin, GstD3D12Device * device,
   GST_MINI_OBJECT_FLAG_SET (sink_caps, GST_MINI_OBJECT_FLAG_MAY_BE_LEAKED);
   GST_MINI_OBJECT_FLAG_SET (src_caps, GST_MINI_OBJECT_FLAG_MAY_BE_LEAKED);
 
-  GstD3D12H264EncClassData *cdata = new GstD3D12H264EncClassData ();
+  GstD3D12H265EncClassData *cdata = new GstD3D12H265EncClassData ();
   g_object_get (device, "adapter-luid", &cdata->luid,
       "device-id", &cdata->device_id, "vendor-id", &cdata->vendor_id,
       "description", &cdata->description, nullptr);
@@ -2435,33 +2805,35 @@ gst_d3d12_h264_enc_register (GstPlugin * plugin, GstD3D12Device * device,
   cdata->src_caps = src_caps;
   cdata->rc_support = rc_support;
   cdata->slice_mode_support = slice_mode_support;
+  cdata->config_support[0] = config_main;
+  cdata->config_support[1] = config_main10;
 
   GType type;
   gchar *type_name;
   gchar *feature_name;
   guint index = 0;
   GTypeInfo type_info = {
-    sizeof (GstD3D12H264EncClass),
+    sizeof (GstD3D12H265EncClass),
     nullptr,
     nullptr,
-    (GClassInitFunc) gst_d3d12_h264_enc_class_init,
+    (GClassInitFunc) gst_d3d12_h265_enc_class_init,
     nullptr,
     nullptr,
-    sizeof (GstD3D12H264Enc),
+    sizeof (GstD3D12H265Enc),
     0,
-    (GInstanceInitFunc) gst_d3d12_h264_enc_init,
+    (GInstanceInitFunc) gst_d3d12_h265_enc_init,
   };
 
   type_info.class_data = cdata;
 
-  type_name = g_strdup ("GstD3D12H264Enc");
-  feature_name = g_strdup ("d3d12h264enc");
+  type_name = g_strdup ("GstD3D12H265Enc");
+  feature_name = g_strdup ("d3d12h265enc");
   while (g_type_from_name (type_name)) {
     index++;
     g_free (type_name);
     g_free (feature_name);
-    type_name = g_strdup_printf ("GstD3D12H264Device%dEnc", index);
-    feature_name = g_strdup_printf ("d3d12h264device%denc", index);
+    type_name = g_strdup_printf ("GstD3D12H265Device%dEnc", index);
+    feature_name = g_strdup_printf ("d3d12h265device%denc", index);
   }
 
   type = g_type_register_static (GST_TYPE_D3D12_ENCODER,
