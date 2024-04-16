@@ -46,6 +46,8 @@ GST_DEBUG_CATEGORY_STATIC (GST_CAT_DEFAULT);
 #define UNIFORM_TRIPLANAR_PLANE0 "Ytex"
 #define UNIFORM_TRIPLANAR_PLANE1 "Utex"
 #define UNIFORM_TRIPLANAR_PLANE2 "Vtex"
+#define UNIFORM_BIPLANAR_PLANE0 "Ytex"
+#define UNIFORM_BIPLANAR_PLANE1 "UVtex"
 
 /* matrices from glcolorconvert */
 /* FIXME: use the colormatrix support from videoconvert */
@@ -114,6 +116,10 @@ public:
         tex_names[0] = UNIFORM_TRIPLANAR_PLANE0;
         tex_names[1] = UNIFORM_TRIPLANAR_PLANE1;
         tex_names[2] = UNIFORM_TRIPLANAR_PLANE2;
+        break;
+      case GST_VIDEO_FORMAT_NV12:
+        tex_names[0] = UNIFORM_BIPLANAR_PLANE0;
+        tex_names[1] = UNIFORM_BIPLANAR_PLANE1;
         break;
       default:
         g_assert_not_reached ();
@@ -186,6 +192,7 @@ G_PASTE(GstQSGMaterial_,format)::~G_PASTE(GstQSGMaterial_,format)() {}
 DEFINE_MATERIAL(RGBA);
 DEFINE_MATERIAL(RGBA_SWIZZLE);
 DEFINE_MATERIAL(YUV_TRIPLANAR);
+DEFINE_MATERIAL(YUV_BIPLANAR);
 
 GstQSGMaterial *
 GstQSGMaterial::new_for_format(GstVideoFormat format)
@@ -198,6 +205,8 @@ GstQSGMaterial::new_for_format(GstVideoFormat format)
       return static_cast<GstQSGMaterial *>(new GstQSGMaterial_RGBA_SWIZZLE());
     case GST_VIDEO_FORMAT_YV12:
       return static_cast<GstQSGMaterial *>(new GstQSGMaterial_YUV_TRIPLANAR());
+    case GST_VIDEO_FORMAT_NV12:
+      return static_cast<GstQSGMaterial *>(new GstQSGMaterial_YUV_BIPLANAR());
     default:
       g_assert_not_reached ();
   }
@@ -220,6 +229,7 @@ GstQSGMaterial::GstQSGMaterial ()
   this->buffer_ = NULL;
   this->buffer_was_bound = FALSE;
   this->sync_buffer_ = gst_buffer_new ();
+  memset (&this->dummy_textures, 0, sizeof (this->dummy_textures));
 }
 
 GstQSGMaterial::~GstQSGMaterial ()
@@ -262,6 +272,9 @@ vertexShaderForFormat(GstVideoFormat v_format)
   "uniform sampler2D " UNIFORM_TRIPLANAR_PLANE0 ";\n" \
   "uniform sampler2D " UNIFORM_TRIPLANAR_PLANE1 ";\n" \
   "uniform sampler2D " UNIFORM_TRIPLANAR_PLANE2 ";\n"
+#define biplanar_texture_input \
+  "uniform sampler2D " UNIFORM_BIPLANAR_PLANE0 ";\n" \
+  "uniform sampler2D " UNIFORM_BIPLANAR_PLANE1 ";\n"
 
 #define uniform_swizzle \
   "uniform int " UNIFORM_SWIZZLE_COMPONENTS_NAME "[4];\n"
@@ -320,6 +333,27 @@ fragmentShaderForFormat(GstVideoFormat v_format, GstGLContext * context)
       g_clear_pointer (&swizzle, g_free);
       return ret;
     }
+    case GST_VIDEO_FORMAT_NV12: {
+      char *yuv_to_rgb = gst_gl_color_convert_yuv_to_rgb_shader_string (context);
+      char *swizzle = gst_gl_color_convert_swizzle_shader_string (context);
+      char *ret = g_strdup_printf (texcoord_input biplanar_texture_input uniform_swizzle uniform_yuv_to_rgb_color_matrix uniform_opacity
+        "%s\n"
+        "%s\n"
+        "void main(void) {\n"
+        "  vec4 yuva, rgba;\n"
+        "  yuva.x = texture2D(Ytex, v_texcoord).r;\n"
+        "  yuva.y = texture2D(UVtex, v_texcoord).r;\n"
+        "  yuva.z = texture2D(UVtex, v_texcoord).g;\n"
+        "  yuva.a = 1.0;\n"
+        "  yuva = swizzle(yuva, " UNIFORM_SWIZZLE_COMPONENTS_NAME ");\n"
+        "  rgba.rgb = yuv_to_rgb (yuva.xyz, " UNIFORM_YUV_OFFSET_NAME ", " UNIFORM_YUV_YCOEFF_NAME ", " UNIFORM_YUV_UCOEFF_NAME ", " UNIFORM_YUV_VCOEFF_NAME ");\n"
+        "  rgba.a = yuva.a;\n"
+        "  gl_FragColor = rgba * " UNIFORM_OPACITY_NAME ";\n"
+        "}\n", yuv_to_rgb, swizzle);
+      g_clear_pointer (&yuv_to_rgb, g_free);
+      g_clear_pointer (&swizzle, g_free);
+      return ret;
+    }
     default:
       return NULL;
   }
@@ -336,6 +370,32 @@ GstQSGMaterial::createShader() const
     return nullptr;
 
   return new GstQSGMaterialShader(v_format, vertex, fragment);
+}
+
+void
+GstQSGMaterial::initYuvShaders (GstQSGMaterialShader *shader,
+    const GstVideoColorimetry *cinfo)
+{
+  g_return_if_fail (shader);
+
+  if (cinfo && gst_video_colorimetry_matches (cinfo,
+          GST_VIDEO_COLORIMETRY_BT709)) {
+    this->cms_offset = (gfloat *) from_yuv_bt709_offset;
+    this->cms_ycoeff = (gfloat *) from_yuv_bt709_rcoeff;
+    this->cms_ucoeff = (gfloat *) from_yuv_bt709_gcoeff;
+    this->cms_vcoeff = (gfloat *) from_yuv_bt709_bcoeff;
+  } else {
+    /* defaults/bt601 */
+    this->cms_offset = (gfloat *) from_yuv_bt601_offset;
+    this->cms_ycoeff = (gfloat *) from_yuv_bt601_rcoeff;
+    this->cms_ucoeff = (gfloat *) from_yuv_bt601_gcoeff;
+    this->cms_vcoeff = (gfloat *) from_yuv_bt601_bcoeff;
+  }
+
+  shader->program()->setUniformValue(shader->cms_uniform_offset, QVector3D(this->cms_offset[0], this->cms_offset[1], this->cms_offset[2]));
+  shader->program()->setUniformValue(shader->cms_uniform_ycoeff, QVector3D(this->cms_ycoeff[0], this->cms_ycoeff[1], this->cms_ycoeff[2]));
+  shader->program()->setUniformValue(shader->cms_uniform_ucoeff, QVector3D(this->cms_ucoeff[0], this->cms_ucoeff[1], this->cms_ucoeff[2]));
+  shader->program()->setUniformValue(shader->cms_uniform_vcoeff, QVector3D(this->cms_vcoeff[0], this->cms_vcoeff[1], this->cms_vcoeff[2]));
 }
 
 /* only called from the streaming thread with scene graph thread blocked */
@@ -426,28 +486,10 @@ GstQSGMaterial::bind(GstQSGMaterialShader *shader, GstVideoFormat v_format)
 
   gst_gl_sync_meta_wait (sync_meta, qt_context);
 
-  if (this->v_frame.info.finfo->flags & GST_VIDEO_FORMAT_FLAG_YUV) {
-    if (gst_video_colorimetry_matches (&this->v_frame.info.colorimetry,
-            GST_VIDEO_COLORIMETRY_BT709)) {
-      this->cms_offset = (gfloat *) from_yuv_bt709_offset;
-      this->cms_ycoeff = (gfloat *) from_yuv_bt709_rcoeff;
-      this->cms_ucoeff = (gfloat *) from_yuv_bt709_gcoeff;
-      this->cms_vcoeff = (gfloat *) from_yuv_bt709_bcoeff;
-    } else {
-      /* defaults/bt601 */
-      this->cms_offset = (gfloat *) from_yuv_bt601_offset;
-      this->cms_ycoeff = (gfloat *) from_yuv_bt601_rcoeff;
-      this->cms_ucoeff = (gfloat *) from_yuv_bt601_gcoeff;
-      this->cms_vcoeff = (gfloat *) from_yuv_bt601_bcoeff;
-    }
-
-    shader->program()->setUniformValue(shader->cms_uniform_offset, QVector3D(this->cms_offset[0], this->cms_offset[1], this->cms_offset[2]));
-    shader->program()->setUniformValue(shader->cms_uniform_ycoeff, QVector3D(this->cms_ycoeff[0], this->cms_ycoeff[1], this->cms_ycoeff[2]));
-    shader->program()->setUniformValue(shader->cms_uniform_ucoeff, QVector3D(this->cms_ucoeff[0], this->cms_ucoeff[1], this->cms_ucoeff[2]));
-    shader->program()->setUniformValue(shader->cms_uniform_vcoeff, QVector3D(this->cms_vcoeff[0], this->cms_vcoeff[1], this->cms_vcoeff[2]));
-  } else {
+  if (this->v_frame.info.finfo->flags & GST_VIDEO_FORMAT_FLAG_YUV)
+    initYuvShaders (shader, &this->v_frame.info.colorimetry);
+  else
     this->cms_offset = this->cms_ycoeff = this->cms_ucoeff = this->cms_vcoeff = NULL;
-  }
 
   /* reversed iteration order so that glActiveTexture(GL_TEXTURE0) is last which keeps
    * us in the default GL state expected by several other qml components
@@ -475,6 +517,9 @@ out:
     QOpenGLFunctions *funcs = qglcontext->functions ();
     const GstVideoFormatInfo *finfo = gst_video_format_get_info (v_format);
 
+    if (finfo->flags == GST_VIDEO_FORMAT_FLAG_YUV)
+      initYuvShaders (shader, nullptr);
+
     /* Create dummy texture if not already present.
      * Use the Qt OpenGL functions instead of the GstGL ones,
      * since we are using the Qt OpenGL context here, and we must
@@ -492,17 +537,33 @@ out:
         const int tex_sidelength = 64;
 
         std::vector < guint8 > dummy_data (tex_sidelength * tex_sidelength * 4, 0);
+        guint8 *data = dummy_data.data();
+
         switch (v_format) {
           case GST_VIDEO_FORMAT_RGBA:
           case GST_VIDEO_FORMAT_BGRA:
           case GST_VIDEO_FORMAT_RGB:
+            for (gsize j = 0; j < tex_sidelength; j++) {
+              for (gsize k = 0; k < tex_sidelength; k++) {
+                data[(j * tex_sidelength + k) * 4 + 3] = 0xFF; // opaque
+              }
+            }
             break;
           case GST_VIDEO_FORMAT_YV12:
             if (i == 1 || i == 2) {
-              guint8 *data = dummy_data.data();
               for (gsize j = 0; j < tex_sidelength; j++) {
                 for (gsize k = 0; k < tex_sidelength; k++) {
                   data[(j * tex_sidelength + k) * 4 + 0] = 0x7F;
+                }
+              }
+            }
+            break;
+          case GST_VIDEO_FORMAT_NV12:
+            if (i == 1) {
+              for (gsize j = 0; j < tex_sidelength; j++) {
+                for (gsize k = 0; k < tex_sidelength; k++) {
+                  data[(j * tex_sidelength + k) * 4 + 0] = 0x7F;
+                  data[(j * tex_sidelength + k) * 4 + 1] = 0x7F;
                 }
               }
             }
@@ -517,7 +578,7 @@ out:
         funcs->glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         funcs->glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         funcs->glTexImage2D (GL_TEXTURE_2D, 0, GL_RGBA, tex_sidelength,
-            tex_sidelength, 0, GL_RGBA, GL_UNSIGNED_BYTE, &dummy_data[0]);
+            tex_sidelength, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
       }
 
       g_assert (this->dummy_textures[i] != 0);

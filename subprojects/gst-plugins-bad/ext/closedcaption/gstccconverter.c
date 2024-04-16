@@ -247,26 +247,7 @@ gst_cc_converter_transform_caps (GstBaseTransform * base,
           res = gst_caps_merge (res, gst_static_caps_get (&cdp_caps_framerate));
 
           /* Or anything else with a CDP framerate */
-          if (framerate) {
-            GstCaps *tmp;
-            GstStructure *t;
-            const GValue *cdp_framerate;
-
-            /* Create caps that contain the intersection of all framerates with
-             * the CDP allowed framerates */
-            tmp =
-                gst_caps_make_writable (gst_static_caps_get
-                (&cdp_caps_framerate));
-            t = gst_caps_get_structure (tmp, 0);
-
-            /* There's an intersection between the framerates so we can convert
-             * into CDP with exactly those framerates from anything else */
-            cdp_framerate = gst_structure_get_value (t, "framerate");
-            tmp = gst_caps_make_writable (gst_static_caps_get (&non_cdp_caps));
-            tmp = gst_caps_merge (tmp, gst_static_caps_get (&raw_608_caps));
-            gst_caps_set_value (tmp, "framerate", cdp_framerate);
-            res = gst_caps_merge (res, tmp);
-          } else {
+          {
             GstCaps *tmp, *cdp_caps;
             const GValue *cdp_framerate;
 
@@ -1255,11 +1236,15 @@ convert_cea708_cdp_cea608_raw (GstCCConverter * self, GstBuffer * inbuf,
   gst_buffer_map (outbuf, &out, GST_MAP_WRITE);
   cea608_len = out.size;
   if (self->out_field == 0) {
+    guint8 unused_field[MAX_CEA608_LEN];
+    guint unused_len = MAX_CEA608_LEN;
     cc_buffer_take_separated (self->cc_buffer, out_fps_entry, out.data,
-        &cea608_len, NULL, 0, NULL, 0);
+        &cea608_len, unused_field, &unused_len, NULL, 0);
   } else {
-    cc_buffer_take_separated (self->cc_buffer, out_fps_entry, NULL, 0, out.data,
-        &cea608_len, NULL, 0);
+    guint8 unused_field[MAX_CEA608_LEN];
+    guint unused_len = MAX_CEA608_LEN;
+    cc_buffer_take_separated (self->cc_buffer, out_fps_entry, unused_field,
+        &unused_len, out.data, &cea608_len, NULL, 0);
   }
   gst_buffer_unmap (outbuf, &out);
   self->output_frames++;

@@ -22,14 +22,13 @@
 #endif
 
 #include "gstd3d12overlaycompositor.h"
+#include "gstd3d12pluginutils.h"
 #include <directx/d3dx12.h>
 #include <wrl.h>
 #include <memory>
 #include <vector>
 #include <algorithm>
-#include "PSMain_sample.h"
-#include "PSMain_sample_premul.h"
-#include "VSMain_coord.h"
+#include <gst/d3dshader/gstd3dshader.h>
 
 GST_DEBUG_CATEGORY_STATIC (gst_d3d12_overlay_compositor_debug);
 #define GST_CAT_DEFAULT gst_d3d12_overlay_compositor_debug
@@ -168,7 +167,7 @@ gst_d3d12_overlay_rect_free (GstD3D12OverlayRect * rect)
 
 static GstD3D12OverlayRect *
 gst_d3d12_overlay_rect_new (GstD3D12OverlayCompositor * self,
-    GstVideoOverlayRectangle * overlay_rect)
+    GstVideoOverlayRectangle * overlay_rect, guint64 & fence_val)
 {
   auto priv = self->priv;
   gint x, y;
@@ -178,6 +177,8 @@ gst_d3d12_overlay_rect_new (GstD3D12OverlayCompositor * self,
   gdouble val;
   GstVideoOverlayFormatFlags flags;
   gboolean premul_alpha = FALSE;
+
+  fence_val = 0;
 
   if (!gst_video_overlay_rectangle_get_render_rectangle (overlay_rect, &x, &y,
           &width, &height)) {
@@ -200,74 +201,91 @@ gst_d3d12_overlay_rect_new (GstD3D12OverlayCompositor * self,
     return nullptr;
   }
 
-  auto vmeta = gst_buffer_get_video_meta (buf);
-  if (!vmeta) {
-    GST_ERROR_OBJECT (self, "Failed to get video meta");
-    return nullptr;
-  }
-
   auto device = gst_d3d12_device_get_device_handle (self->device);
-  D3D12_HEAP_PROPERTIES heap_prop =
-      CD3DX12_HEAP_PROPERTIES (D3D12_HEAP_TYPE_DEFAULT);
-  D3D12_RESOURCE_DESC desc =
-      CD3DX12_RESOURCE_DESC::Tex2D (DXGI_FORMAT_B8G8R8A8_UNORM, vmeta->width,
-      vmeta->height, 1, 1);
-
+  auto mem = gst_buffer_peek_memory (buf, 0);
+  bool is_d3d12 = false;
   ComPtr < ID3D12Resource > texture;
-  auto hr = device->CreateCommittedResource (&heap_prop,
-      D3D12_HEAP_FLAG_CREATE_NOT_ZEROED,
-      &desc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS (&texture));
-  if (!gst_d3d12_result (hr, self->device)) {
-    GST_ERROR_OBJECT (self, "Couldn't create texture");
-    return nullptr;
-  }
-
-  D3D12_PLACED_SUBRESOURCE_FOOTPRINT layout;
-  UINT64 size;
-  device->GetCopyableFootprints (&desc, 0, 1, 0, &layout, nullptr, nullptr,
-      &size);
-
-  ComPtr < ID3D12Resource > staging;
-  heap_prop = CD3DX12_HEAP_PROPERTIES (D3D12_HEAP_TYPE_UPLOAD);
-  desc = CD3DX12_RESOURCE_DESC::Buffer (size);
-  hr = device->CreateCommittedResource (&heap_prop,
-      D3D12_HEAP_FLAG_CREATE_NOT_ZEROED,
-      &desc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
-      IID_PPV_ARGS (&staging));
-  if (!gst_d3d12_result (hr, self->device)) {
-    GST_ERROR_OBJECT (self, "Couldn't create upload buffer");
-    return nullptr;
-  }
-
-  guint8 *map_data;
-  hr = staging->Map (0, nullptr, (void **) &map_data);
-  if (!gst_d3d12_result (hr, self->device)) {
-    GST_ERROR_OBJECT (self, "Couldn't map staging");
-    return nullptr;
-  }
-
-  guint8 *data;
-  gint stride;
-  GstMapInfo info;
-  if (!gst_video_meta_map (vmeta,
-          0, &info, (gpointer *) & data, &stride, GST_MAP_READ)) {
-    GST_ERROR_OBJECT (self, "Failed to map");
-    return nullptr;
-  }
-
-  if (layout.Footprint.RowPitch == (UINT) stride) {
-    memcpy (map_data, data, stride * layout.Footprint.Height);
-  } else {
-    guint width_in_bytes = 4 * layout.Footprint.Width;
-    for (UINT i = 0; i < layout.Footprint.Height; i++) {
-      memcpy (map_data, data, width_in_bytes);
-      map_data += layout.Footprint.RowPitch;
-      data += stride;
+  if (gst_is_d3d12_memory (mem)) {
+    GST_LOG_OBJECT (self, "Overlay is d3d12 memory");
+    auto dmem = GST_D3D12_MEMORY_CAST (mem);
+    if (gst_d3d12_device_is_equal (dmem->device, self->device) &&
+        gst_d3d12_memory_get_shader_resource_view_heap (dmem)) {
+      texture = gst_d3d12_memory_get_resource_handle (dmem);
+      is_d3d12 = true;
+      fence_val = dmem->fence_value;
     }
   }
 
-  staging->Unmap (0, nullptr);
-  gst_video_meta_unmap (vmeta, 0, &info);
+  ComPtr < ID3D12Resource > staging;
+  D3D12_PLACED_SUBRESOURCE_FOOTPRINT layout;
+  if (!is_d3d12) {
+    auto vmeta = gst_buffer_get_video_meta (buf);
+
+    if (!vmeta) {
+      GST_ERROR_OBJECT (self, "Failed to get video meta");
+      return nullptr;
+    }
+
+    D3D12_HEAP_PROPERTIES heap_prop =
+        CD3DX12_HEAP_PROPERTIES (D3D12_HEAP_TYPE_DEFAULT);
+    D3D12_RESOURCE_DESC desc =
+        CD3DX12_RESOURCE_DESC::Tex2D (DXGI_FORMAT_B8G8R8A8_UNORM, vmeta->width,
+        vmeta->height, 1, 1);
+
+    auto hr = device->CreateCommittedResource (&heap_prop,
+        D3D12_HEAP_FLAG_CREATE_NOT_ZEROED,
+        &desc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr,
+        IID_PPV_ARGS (&texture));
+    if (!gst_d3d12_result (hr, self->device)) {
+      GST_ERROR_OBJECT (self, "Couldn't create texture");
+      return nullptr;
+    }
+
+    UINT64 size;
+    device->GetCopyableFootprints (&desc, 0, 1, 0, &layout, nullptr, nullptr,
+        &size);
+
+    heap_prop = CD3DX12_HEAP_PROPERTIES (D3D12_HEAP_TYPE_UPLOAD);
+    desc = CD3DX12_RESOURCE_DESC::Buffer (size);
+    hr = device->CreateCommittedResource (&heap_prop,
+        D3D12_HEAP_FLAG_CREATE_NOT_ZEROED,
+        &desc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
+        IID_PPV_ARGS (&staging));
+    if (!gst_d3d12_result (hr, self->device)) {
+      GST_ERROR_OBJECT (self, "Couldn't create upload buffer");
+      return nullptr;
+    }
+
+    guint8 *map_data;
+    hr = staging->Map (0, nullptr, (void **) &map_data);
+    if (!gst_d3d12_result (hr, self->device)) {
+      GST_ERROR_OBJECT (self, "Couldn't map staging");
+      return nullptr;
+    }
+
+    guint8 *data;
+    gint stride;
+    GstMapInfo info;
+    if (!gst_video_meta_map (vmeta,
+            0, &info, (gpointer *) & data, &stride, GST_MAP_READ)) {
+      GST_ERROR_OBJECT (self, "Failed to map");
+      return nullptr;
+    }
+
+    if (layout.Footprint.RowPitch == (UINT) stride) {
+      memcpy (map_data, data, stride * layout.Footprint.Height);
+    } else {
+      guint width_in_bytes = 4 * layout.Footprint.Width;
+      for (UINT i = 0; i < layout.Footprint.Height; i++) {
+        memcpy (map_data, data, width_in_bytes);
+        map_data += layout.Footprint.RowPitch;
+        data += stride;
+      }
+    }
+
+    staging->Unmap (0, nullptr);
+    gst_video_meta_unmap (vmeta, 0, &info);
+  }
 
   /* bottom left */
   gst_util_fraction_to_double (x, GST_VIDEO_INFO_WIDTH (&priv->info), &val);
@@ -314,9 +332,11 @@ gst_d3d12_overlay_rect_new (GstD3D12OverlayCompositor * self,
   vertex_data[3].texture.v = 1.0f;
 
   ComPtr < ID3D12Resource > vertex_buf;
-  heap_prop = CD3DX12_HEAP_PROPERTIES (D3D12_HEAP_TYPE_UPLOAD);
-  desc = CD3DX12_RESOURCE_DESC::Buffer (sizeof (VertexData) * 4);
-  hr = device->CreateCommittedResource (&heap_prop,
+  D3D12_HEAP_PROPERTIES heap_prop =
+      CD3DX12_HEAP_PROPERTIES (D3D12_HEAP_TYPE_UPLOAD);
+  D3D12_RESOURCE_DESC desc =
+      CD3DX12_RESOURCE_DESC::Buffer (sizeof (VertexData) * 4);
+  auto hr = device->CreateCommittedResource (&heap_prop,
       D3D12_HEAP_FLAG_CREATE_NOT_ZEROED,
       &desc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
       IID_PPV_ARGS (&vertex_buf));
@@ -325,6 +345,7 @@ gst_d3d12_overlay_rect_new (GstD3D12OverlayCompositor * self,
     return nullptr;
   }
 
+  guint8 *map_data;
   hr = vertex_buf->Map (0, nullptr, (void **) &map_data);
   if (!gst_d3d12_result (hr, self->device)) {
     GST_ERROR_OBJECT (self, "Couldn't map vertex buffer");
@@ -340,8 +361,7 @@ gst_d3d12_overlay_rect_new (GstD3D12OverlayCompositor * self,
     return nullptr;
   }
 
-  ComPtr < ID3D12DescriptorHeap > srv_heap_handle;
-  gst_d3d12_descriptor_get_handle (srv_heap, &srv_heap_handle);
+  auto srv_heap_handle = gst_d3d12_descriptor_get_handle (srv_heap);
   D3D12_SHADER_RESOURCE_VIEW_DESC srv_desc = { };
   srv_desc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
   srv_desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
@@ -349,7 +369,7 @@ gst_d3d12_overlay_rect_new (GstD3D12OverlayCompositor * self,
   srv_desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
 
   device->CreateShaderResourceView (texture.Get (), &srv_desc,
-      srv_heap_handle->GetCPUDescriptorHandleForHeapStart ());
+      GetCPUDescriptorHandleForHeapStart (srv_heap_handle));
 
   auto rect = new GstD3D12OverlayRect ();
   gst_mini_object_init (rect, 0, gst_d3d12_overlay_rect_get_type (),
@@ -366,6 +386,8 @@ gst_d3d12_overlay_rect_new (GstD3D12OverlayCompositor * self,
   rect->layout = layout;
   rect->srv_heap = srv_heap;
   rect->premul_alpha = premul_alpha;
+  if (is_d3d12)
+    rect->need_upload = FALSE;
 
   return rect;
 }
@@ -430,6 +452,27 @@ gst_d3d12_overlay_compositor_setup_shader (GstD3D12OverlayCompositor * self)
   gst_d3d12_device_get_format (self->device, GST_VIDEO_INFO_FORMAT (info),
       &device_format);
 
+  GstD3DShaderByteCode vs_code;
+  GstD3DShaderByteCode ps_sample_code;
+  GstD3DShaderByteCode ps_sample_premul_code;
+  if (!gst_d3d_plugin_shader_get_vs_blob (GST_D3D_PLUGIN_VS_COORD,
+          GST_D3D_SM_5_0, &vs_code)) {
+    GST_ERROR_OBJECT (self, "Couldn't get vs bytecode");
+    return FALSE;
+  }
+
+  if (!gst_d3d_plugin_shader_get_ps_blob (GST_D3D_PLUGIN_PS_SAMPLE,
+          GST_D3D_SM_5_0, &ps_sample_code)) {
+    GST_ERROR_OBJECT (self, "Couldn't get ps bytecode");
+    return FALSE;
+  }
+
+  if (!gst_d3d_plugin_shader_get_ps_blob (GST_D3D_PLUGIN_PS_SAMPLE_PREMULT,
+          GST_D3D_SM_5_0, &ps_sample_premul_code)) {
+    GST_ERROR_OBJECT (self, "Couldn't get ps bytecode");
+    return FALSE;
+  }
+
   auto device = gst_d3d12_device_get_device_handle (self->device);
   ComPtr < ID3D12RootSignature > rs;
   device->CreateRootSignature (0, rs_blob->GetBufferPointer (),
@@ -455,10 +498,10 @@ gst_d3d12_overlay_compositor_setup_shader (GstD3D12OverlayCompositor * self)
 
   auto & pso_desc = priv->pso_desc;
   pso_desc.pRootSignature = rs.Get ();
-  pso_desc.VS.BytecodeLength = sizeof (g_VSMain_coord);
-  pso_desc.VS.pShaderBytecode = g_VSMain_coord;
-  pso_desc.PS.BytecodeLength = sizeof (g_PSMain_sample);
-  pso_desc.PS.pShaderBytecode = g_PSMain_sample;
+  pso_desc.VS.BytecodeLength = vs_code.byte_code_len;
+  pso_desc.VS.pShaderBytecode = vs_code.byte_code;
+  pso_desc.PS.BytecodeLength = ps_sample_code.byte_code_len;
+  pso_desc.PS.pShaderBytecode = ps_sample_code.byte_code;
   pso_desc.BlendState = CD3DX12_BLEND_DESC (D3D12_DEFAULT);
   pso_desc.BlendState.RenderTarget[0].BlendEnable = TRUE;
   pso_desc.BlendState.RenderTarget[0].LogicOpEnable = FALSE;
@@ -494,8 +537,8 @@ gst_d3d12_overlay_compositor_setup_shader (GstD3D12OverlayCompositor * self)
   ComPtr < ID3D12PipelineState > pso_premul;
   auto & pso_premul_desc = priv->pso_premul_desc;
   pso_premul_desc = priv->pso_desc;
-  pso_premul_desc.PS.BytecodeLength = sizeof (g_PSMain_sample_premul);
-  pso_premul_desc.PS.pShaderBytecode = g_PSMain_sample_premul;
+  pso_premul_desc.PS.BytecodeLength = ps_sample_premul_code.byte_code_len;
+  pso_premul_desc.PS.pShaderBytecode = ps_sample_premul_code.byte_code;
   hr = device->CreateGraphicsPipelineState (&pso_premul_desc,
       IID_PPV_ARGS (&pso_premul));
   if (!gst_d3d12_result (hr, self->device)) {
@@ -539,9 +582,8 @@ gst_d3d12_overlay_compositor_setup_shader (GstD3D12OverlayCompositor * self)
   priv->idv.SizeInBytes = sizeof (indices);
   priv->idv.Format = DXGI_FORMAT_R16_UINT;
   priv->index_buf = index_buf;
-  priv->srv_heap_pool = gst_d3d12_descriptor_pool_new (self->device,
-      &heap_desc);
-  priv->ca_pool = gst_d3d12_command_allocator_pool_new (self->device,
+  priv->srv_heap_pool = gst_d3d12_descriptor_pool_new (device, &heap_desc);
+  priv->ca_pool = gst_d3d12_command_allocator_pool_new (device,
       D3D12_COMMAND_LIST_TYPE_DIRECT);
 
   priv->viewport.TopLeftX = 0;
@@ -609,13 +651,15 @@ gst_d3d12_overlay_compositor_foreach_meta (GstBuffer * buffer, GstMeta ** meta,
 
 gboolean
 gst_d3d12_overlay_compositor_upload (GstD3D12OverlayCompositor * compositor,
-    GstBuffer * buf)
+    GstBuffer * buf, guint64 * fence_val)
 {
   g_return_val_if_fail (compositor != nullptr, FALSE);
   g_return_val_if_fail (GST_IS_BUFFER (buf), FALSE);
 
   auto priv = compositor->priv;
   priv->rects_to_upload.clear ();
+
+  *fence_val = 0;
 
   gst_buffer_foreach_meta (buf,
       (GstBufferForeachMetaFunc) gst_d3d12_overlay_compositor_foreach_meta,
@@ -631,6 +675,7 @@ gst_d3d12_overlay_compositor_upload (GstD3D12OverlayCompositor * compositor,
   GST_LOG_OBJECT (compositor, "Found %" G_GSIZE_FORMAT
       " overlay rectangles", priv->rects_to_upload.size ());
 
+  guint64 max_fence_val = 0;
   for (size_t i = 0; i < priv->rects_to_upload.size (); i++) {
     GList *iter;
     bool found = false;
@@ -643,10 +688,14 @@ gst_d3d12_overlay_compositor_upload (GstD3D12OverlayCompositor * compositor,
     }
 
     if (!found) {
+      guint64 cur_fence_val = 0;
       auto new_rect = gst_d3d12_overlay_rect_new (compositor,
-          priv->rects_to_upload[i]);
-      if (new_rect)
+          priv->rects_to_upload[i], cur_fence_val);
+      if (new_rect) {
         priv->overlays = g_list_append (priv->overlays, new_rect);
+        if (max_fence_val < cur_fence_val)
+          max_fence_val = cur_fence_val;
+      }
     }
   }
 
@@ -666,6 +715,8 @@ gst_d3d12_overlay_compositor_upload (GstD3D12OverlayCompositor * compositor,
       priv->overlays = g_list_delete_link (priv->overlays, iter);
     }
   }
+
+  *fence_val = max_fence_val;
 
   return TRUE;
 }
@@ -700,8 +751,8 @@ gst_d3d12_overlay_compositor_execute (GstD3D12OverlayCompositor * self,
   auto priv = self->priv;
 
   auto mem = (GstD3D12Memory *) gst_buffer_peek_memory (buf, 0);
-  ComPtr < ID3D12DescriptorHeap > rtv_heap;
-  if (!gst_d3d12_memory_get_render_target_view_heap (mem, &rtv_heap)) {
+  auto rtv_heap = gst_d3d12_memory_get_render_target_view_heap (mem);
+  if (!rtv_heap) {
     GST_ERROR_OBJECT (self, "Couldn't get rtv heap");
     return FALSE;
   }
@@ -740,19 +791,18 @@ gst_d3d12_overlay_compositor_execute (GstD3D12OverlayCompositor * self,
       cl->RSSetViewports (1, &priv->viewport);
       cl->RSSetScissorRects (1, &priv->scissor_rect);
       D3D12_CPU_DESCRIPTOR_HANDLE rtv_heaps[] = {
-        rtv_heap->GetCPUDescriptorHandleForHeapStart ()
+        GetCPUDescriptorHandleForHeapStart (rtv_heap)
       };
       cl->OMSetRenderTargets (1, rtv_heaps, FALSE, nullptr);
     } else if (pso != prev_pso) {
       cl->SetPipelineState (pso.Get ());
     }
 
-    ComPtr < ID3D12DescriptorHeap > srv_heap;
-    gst_d3d12_descriptor_get_handle (rect->srv_heap, &srv_heap);
-    ID3D12DescriptorHeap *heaps[] = { srv_heap.Get () };
+    auto srv_heap = gst_d3d12_descriptor_get_handle (rect->srv_heap);
+    ID3D12DescriptorHeap *heaps[] = { srv_heap };
     cl->SetDescriptorHeaps (1, heaps);
     cl->SetGraphicsRootDescriptorTable (0,
-        srv_heap->GetGPUDescriptorHandleForHeapStart ());
+        GetGPUDescriptorHandleForHeapStart (srv_heap));
     cl->IASetVertexBuffers (0, 1, &rect->vbv);
 
     cl->DrawIndexedInstanced (6, 1, 0, 0, 0);
@@ -790,7 +840,7 @@ gst_d3d12_overlay_compositor_draw (GstD3D12OverlayCompositor * compositor,
 
   auto mem = (GstD3D12Memory *) gst_buffer_peek_memory (buf, 0);
   auto resource = gst_d3d12_memory_get_resource_handle (mem);
-  auto desc = resource->GetDesc ();
+  auto desc = GetDesc (resource);
   if (desc.SampleDesc.Count != priv->sample_desc.Count ||
       desc.SampleDesc.Quality != priv->sample_desc.Quality) {
     auto device = gst_d3d12_device_get_device_handle (compositor->device);

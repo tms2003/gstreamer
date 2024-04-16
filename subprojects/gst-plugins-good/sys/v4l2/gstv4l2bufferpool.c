@@ -84,7 +84,8 @@ static void gst_v4l2_buffer_pool_complete_release_buffer (GstBufferPool * bpool,
     GstBuffer * buffer, gboolean queued);
 
 static gboolean
-gst_v4l2_is_buffer_valid (GstBuffer * buffer, GstV4l2MemoryGroup ** out_group)
+gst_v4l2_is_buffer_valid (GstBuffer * buffer, GstV4l2MemoryGroup ** out_group,
+    gboolean check_writable)
 {
   GstMemory *mem = gst_buffer_peek_memory (buffer, 0);
   gboolean valid = FALSE;
@@ -108,7 +109,7 @@ gst_v4l2_is_buffer_valid (GstBuffer * buffer, GstV4l2MemoryGroup ** out_group)
       if (group->mem[i] != gst_buffer_peek_memory (buffer, i))
         goto done;
 
-      if (!gst_memory_is_writable (group->mem[i]))
+      if (check_writable && !gst_memory_is_writable (group->mem[i]))
         goto done;
     }
 
@@ -127,7 +128,7 @@ gst_v4l2_buffer_pool_resize_buffer (GstBufferPool * bpool, GstBuffer * buffer)
   GstV4l2BufferPool *pool = GST_V4L2_BUFFER_POOL (bpool);
   GstV4l2MemoryGroup *group;
 
-  if (gst_v4l2_is_buffer_valid (buffer, &group)) {
+  if (gst_v4l2_is_buffer_valid (buffer, &group, TRUE)) {
     gst_v4l2_allocator_reset_group (pool->vallocator, group);
   } else {
     GST_BUFFER_FLAG_SET (buffer, GST_BUFFER_FLAG_TAG_MEMORY);
@@ -238,7 +239,7 @@ gst_v4l2_buffer_pool_import_userptr (GstV4l2BufferPool * pool,
   GST_LOG_OBJECT (pool, "importing userptr");
 
   /* get the group */
-  if (!gst_v4l2_is_buffer_valid (dest, &group))
+  if (!gst_v4l2_is_buffer_valid (dest, &group, TRUE))
     goto not_our_buffer;
 
   if (V4L2_TYPE_IS_OUTPUT (pool->obj->type))
@@ -355,7 +356,7 @@ gst_v4l2_buffer_pool_import_dmabuf (GstV4l2BufferPool * pool,
 
   GST_LOG_OBJECT (pool, "importing dmabuf");
 
-  if (!gst_v4l2_is_buffer_valid (dest, &group))
+  if (!gst_v4l2_is_buffer_valid (dest, &group, TRUE))
     goto not_our_buffer;
 
   if (n_mem > GST_VIDEO_MAX_PLANES)
@@ -1237,6 +1238,7 @@ static GstFlowReturn
 gst_v4l2_buffer_pool_dqbuf (GstV4l2BufferPool * pool, GstBuffer ** buffer,
     gboolean * outstanding, gboolean wait)
 {
+  GstBufferPool *bpool = GST_BUFFER_POOL_CAST (pool);
   GstFlowReturn res;
   GstBuffer *outbuf = NULL;
   GstV4l2Object *obj = pool->obj;
@@ -1280,12 +1282,6 @@ gst_v4l2_buffer_pool_dqbuf (GstV4l2BufferPool * pool, GstBuffer ** buffer,
         group->buffer.index);
   }
 
-  if (group->buffer.flags & V4L2_BUF_FLAG_LAST &&
-      group->planes[0].bytesused == 0) {
-    GST_DEBUG_OBJECT (pool, "Empty last buffer, signalling eos.");
-    goto eos;
-  }
-
   outbuf = pool->buffers[group->buffer.index];
   if (outbuf == NULL)
     goto no_buffer;
@@ -1295,6 +1291,16 @@ gst_v4l2_buffer_pool_dqbuf (GstV4l2BufferPool * pool, GstBuffer ** buffer,
     GST_OBJECT_LOCK (pool);
     pool->empty = TRUE;
     GST_OBJECT_UNLOCK (pool);
+  }
+
+  if (group->buffer.flags & V4L2_BUF_FLAG_LAST &&
+      group->planes[0].bytesused == 0) {
+    GST_DEBUG_OBJECT (pool, "Empty last buffer, signalling eos.");
+    *buffer = outbuf;
+    outbuf = NULL;
+    gst_buffer_ref (*buffer);
+    gst_v4l2_buffer_pool_complete_release_buffer (bpool, *buffer, FALSE);
+    goto eos;
   }
 
   timestamp = GST_TIMEVAL_TO_TIME (group->buffer.timestamp);
@@ -1312,15 +1318,18 @@ gst_v4l2_buffer_pool_dqbuf (GstV4l2BufferPool * pool, GstBuffer ** buffer,
     if (GST_VIDEO_INFO_FORMAT (&pool->caps_info) == GST_VIDEO_FORMAT_ENCODED)
       break;
 
-    /* Ensure our offset matches the expected plane size, or image size if
-     * there is only one memory */
-    if (group->n_mem == 1) {
-      gst_memory_resize (group->mem[0], 0, info->size + info->offset[0]);
-      break;
-    }
+    if (obj->type == V4L2_BUF_TYPE_VIDEO_CAPTURE ||
+        obj->type == V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE) {
+      /* Ensure our offset matches the expected plane size, or image size if
+       * there is only one memory */
+      if (group->n_mem == 1) {
+        gst_memory_resize (group->mem[0], 0, info->size + info->offset[0]);
+        break;
+      }
 
-    if (!GST_VIDEO_FORMAT_INFO_IS_TILED (finfo))
-      gst_memory_resize (group->mem[i], 0, obj->plane_size[i]);
+      if (!GST_VIDEO_FORMAT_INFO_IS_TILED (finfo))
+        gst_memory_resize (group->mem[i], 0, obj->plane_size[i]);
+    }
   }
 
   /* Ignore timestamp and field for OUTPUT device */
@@ -1520,7 +1529,7 @@ done:
   /* Mark buffer as outstanding */
   if (ret == GST_FLOW_OK) {
     GstV4l2MemoryGroup *group;
-    if (gst_v4l2_is_buffer_valid (*buffer, &group)) {
+    if (gst_v4l2_is_buffer_valid (*buffer, &group, TRUE)) {
       GST_LOG_OBJECT (pool, "mark buffer %u outstanding", group->buffer.index);
       g_atomic_int_or (&pool->buffer_state[group->buffer.index],
           BUFFER_STATE_OUTSTANDING);
@@ -1571,7 +1580,7 @@ gst_v4l2_buffer_pool_complete_release_buffer (GstBufferPool * bpool,
         case GST_V4L2_IO_DMABUF_IMPORT:
         {
           GstV4l2MemoryGroup *group;
-          if (gst_v4l2_is_buffer_valid (buffer, &group)) {
+          if (gst_v4l2_is_buffer_valid (buffer, &group, TRUE)) {
             GstFlowReturn ret = GST_FLOW_OK;
 
             gst_v4l2_allocator_reset_group (pool->vallocator, group);
@@ -1612,7 +1621,7 @@ gst_v4l2_buffer_pool_complete_release_buffer (GstBufferPool * bpool,
           GstV4l2MemoryGroup *group;
           guint index;
 
-          if (!gst_v4l2_is_buffer_valid (buffer, &group)) {
+          if (!gst_v4l2_is_buffer_valid (buffer, &group, TRUE)) {
             /* Simply release invalid/modified buffer, the allocator will
              * give it back later */
             GST_BUFFER_FLAG_SET (buffer, GST_BUFFER_FLAG_TAG_MEMORY);
@@ -1663,7 +1672,7 @@ gst_v4l2_buffer_pool_release_buffer (GstBufferPool * bpool, GstBuffer * buffer)
   GstV4l2MemoryGroup *group;
   gboolean queued = FALSE;
 
-  if (gst_v4l2_is_buffer_valid (buffer, &group)) {
+  if (gst_v4l2_is_buffer_valid (buffer, &group, TRUE)) {
     gint old_buffer_state =
         g_atomic_int_and (&pool->buffer_state[group->buffer.index],
         ~BUFFER_STATE_OUTSTANDING);
@@ -2065,7 +2074,8 @@ gst_v4l2_buffer_pool_process (GstV4l2BufferPool * pool, GstBuffer ** buf,
           if ((*buf)->pool != bpool)
             goto copying;
 
-          if (!gst_v4l2_is_buffer_valid (*buf, &group))
+          /* Output buffers don't have to be writable */
+          if (!gst_v4l2_is_buffer_valid (*buf, &group, FALSE))
             goto copying;
 
           index = group->buffer.index;
@@ -2102,7 +2112,7 @@ gst_v4l2_buffer_pool_process (GstV4l2BufferPool * pool, GstBuffer ** buf,
             }
 
             /* retrieve the group */
-            gst_v4l2_is_buffer_valid (to_queue, &group);
+            gst_v4l2_is_buffer_valid (to_queue, &group, TRUE);
           }
 
           if ((ret =
@@ -2115,7 +2125,7 @@ gst_v4l2_buffer_pool_process (GstV4l2BufferPool * pool, GstBuffer ** buf,
            * streaming now */
           if (!gst_v4l2_buffer_pool_streamon (pool)) {
             /* don't check return value because qbuf would have failed */
-            gst_v4l2_is_buffer_valid (to_queue, &group);
+            gst_v4l2_is_buffer_valid (to_queue, &group, TRUE);
 
             /* qbuf has stored to_queue buffer but we are not in
              * streaming state, so the flush logic won't be performed.

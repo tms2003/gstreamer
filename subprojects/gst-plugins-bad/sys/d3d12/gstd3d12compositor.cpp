@@ -44,10 +44,7 @@
 #include <queue>
 #include <string.h>
 #include <wrl.h>
-#include "PSMain_checker_luma.h"
-#include "PSMain_checker_rgb.h"
-#include "PSMain_checker_vuya.h"
-#include "VSMain_pos.h"
+#include <gst/d3dshader/gstd3dshader.h>
 
 GST_DEBUG_CATEGORY_STATIC (gst_d3d12_compositor_debug);
 #define GST_CAT_DEFAULT gst_d3d12_compositor_debug
@@ -227,20 +224,23 @@ static const D3D12_ROOT_SIGNATURE_FLAGS g_rs_flags =
     D3D12_ROOT_SIGNATURE_FLAG_DENY_AMPLIFICATION_SHADER_ROOT_ACCESS |
     D3D12_ROOT_SIGNATURE_FLAG_DENY_MESH_SHADER_ROOT_ACCESS;
 
+/* *INDENT-OFF* */
 struct PadContext
 {
   PadContext (GstD3D12Device * dev)
   {
     event_handle = CreateEventEx (nullptr, nullptr, 0, EVENT_ALL_ACCESS);
     device = (GstD3D12Device *) gst_object_ref (dev);
-    ca_pool = gst_d3d12_command_allocator_pool_new (device,
+    auto device_handle = gst_d3d12_device_get_device_handle (device);
+    ca_pool = gst_d3d12_command_allocator_pool_new (device_handle,
         D3D12_COMMAND_LIST_TYPE_DIRECT);
     gst_video_info_init (&info);
   }
 
   PadContext () = delete;
 
-  ~PadContext () {
+  ~PadContext ()
+  {
     gst_d3d12_device_fence_wait (device, D3D12_COMMAND_LIST_TYPE_DIRECT,
         fence_val, event_handle);
 
@@ -261,6 +261,7 @@ struct PadContext
   HANDLE event_handle;
   guint64 fence_val = 0;
 };
+/* *INDENT-ON* */
 
 struct GstD3D12CompositorPadPrivate
 {
@@ -315,13 +316,15 @@ struct VertexData
   } texture;
 };
 
+/* *INDENT-OFF* */
 struct BackgroundRender
 {
   BackgroundRender (GstD3D12Device * dev, const GstVideoInfo & info)
   {
     event_handle = CreateEventEx (nullptr, nullptr, 0, EVENT_ALL_ACCESS);
     device = (GstD3D12Device *) gst_object_ref (dev);
-    ca_pool = gst_d3d12_command_allocator_pool_new (device,
+    auto device_handle = gst_d3d12_device_get_device_handle (device);
+    ca_pool = gst_d3d12_command_allocator_pool_new (device_handle,
         D3D12_COMMAND_LIST_TYPE_DIRECT);
 
     D3D12_VERSIONED_ROOT_SIGNATURE_DESC rs_desc = { };
@@ -342,7 +345,6 @@ struct BackgroundRender
       return;
     }
 
-    auto device_handle = gst_d3d12_device_get_device_handle (device);
     hr = device_handle->CreateRootSignature (0, rs_blob->GetBufferPointer (),
         rs_blob->GetBufferSize (), IID_PPV_ARGS (&rs));
     if (!gst_d3d12_result (hr, device)) {
@@ -363,20 +365,34 @@ struct BackgroundRender
     input_desc.InputSlotClass = D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA;
     input_desc.InstanceDataStepRate = 0;
 
+    GstD3DShaderByteCode vs_code;
+    if (!gst_d3d_plugin_shader_get_vs_blob (GST_D3D_PLUGIN_VS_POS,
+        GST_D3D_SM_5_0, &vs_code)) {
+      GST_ERROR_OBJECT (device, "Couldn't get vs bytecode");
+      return;
+    }
+
+    GstD3DShaderByteCode ps_code;
+    GstD3DPluginPS ps_type;
+    if (GST_VIDEO_INFO_IS_RGB (&info))
+      ps_type = GST_D3D_PLUGIN_PS_CHECKER_RGB;
+    else if (GST_VIDEO_INFO_FORMAT (&info) == GST_VIDEO_FORMAT_VUYA)
+      ps_type = GST_D3D_PLUGIN_PS_CHECKER_VUYA;
+    else
+      ps_type = GST_D3D_PLUGIN_PS_CHECKER_LUMA;
+
+    if (!gst_d3d_plugin_shader_get_ps_blob (ps_type,
+        GST_D3D_SM_5_0, &ps_code)) {
+      GST_ERROR_OBJECT (device, "Couldn't get ps bytecode");
+      return;
+    }
+
     D3D12_GRAPHICS_PIPELINE_STATE_DESC pso_desc = { };
     pso_desc.pRootSignature = rs.Get ();
-    pso_desc.VS.BytecodeLength = sizeof (g_VSMain_pos);
-    pso_desc.VS.pShaderBytecode = g_VSMain_pos;
-    if (GST_VIDEO_INFO_IS_RGB (&info)) {
-      pso_desc.PS.BytecodeLength = sizeof (g_PSMain_checker_rgb);
-      pso_desc.PS.pShaderBytecode = g_PSMain_checker_rgb;
-    } else if (GST_VIDEO_INFO_FORMAT (&info) == GST_VIDEO_FORMAT_VUYA) {
-      pso_desc.PS.BytecodeLength = sizeof (g_PSMain_checker_vuya);
-      pso_desc.PS.pShaderBytecode = g_PSMain_checker_vuya;
-    } else {
-      pso_desc.PS.BytecodeLength = sizeof (g_PSMain_checker_luma);
-      pso_desc.PS.pShaderBytecode = g_PSMain_checker_luma;
-    }
+    pso_desc.VS.BytecodeLength = vs_code.byte_code_len;
+    pso_desc.VS.pShaderBytecode = vs_code.byte_code;
+    pso_desc.PS.BytecodeLength = ps_code.byte_code_len;
+    pso_desc.PS.pShaderBytecode = ps_code.byte_code;
     pso_desc.BlendState = CD3DX12_BLEND_DESC (D3D12_DEFAULT);
     pso_desc.SampleMask = UINT_MAX;
     pso_desc.RasterizerState = CD3DX12_RASTERIZER_DESC (D3D12_DEFAULT);
@@ -491,7 +507,8 @@ struct BackgroundRender
   }
   BackgroundRender () = delete;
 
-  ~BackgroundRender () {
+  ~BackgroundRender ()
+  {
     gst_d3d12_device_fence_wait (device, D3D12_COMMAND_LIST_TYPE_DIRECT,
         fence_val, event_handle);
 
@@ -518,6 +535,7 @@ struct BackgroundRender
   HANDLE event_handle;
   guint64 fence_val = 0;
 };
+/* *INDENT-ON* */
 
 struct ClearColor
 {
@@ -1111,8 +1129,7 @@ gst_d3d12_compositor_preprare_func (GstVideoAggregatorPad * pad,
   gst_d3d12_fence_data_pool_acquire (self->priv->fence_data_pool, &fence_data);
   gst_d3d12_fence_data_add_notify_mini_object (fence_data, gst_ca);
 
-  ComPtr < ID3D12CommandAllocator > ca;
-  gst_d3d12_command_allocator_get_handle (gst_ca, &ca);
+  auto ca = gst_d3d12_command_allocator_get_handle (gst_ca);
 
   auto hr = ca->Reset ();
   if (!gst_d3d12_result (hr, priv->ctx->device)) {
@@ -1124,14 +1141,14 @@ gst_d3d12_compositor_preprare_func (GstVideoAggregatorPad * pad,
   if (!priv->ctx->cl) {
     auto device = gst_d3d12_device_get_device_handle (priv->ctx->device);
     hr = device->CreateCommandList (0, D3D12_COMMAND_LIST_TYPE_DIRECT,
-        ca.Get (), nullptr, IID_PPV_ARGS (&priv->ctx->cl));
+        ca, nullptr, IID_PPV_ARGS (&priv->ctx->cl));
     if (!gst_d3d12_result (hr, priv->ctx->device)) {
       GST_ERROR_OBJECT (cpad, "Couldn't create command list");
       gst_d3d12_fence_data_unref (fence_data);
       return FALSE;
     }
   } else {
-    hr = priv->ctx->cl->Reset (ca.Get (), nullptr);
+    hr = priv->ctx->cl->Reset (ca, nullptr);
     if (!gst_d3d12_result (hr, priv->ctx->device)) {
       GST_ERROR_OBJECT (self, "Couldn't reset command list");
       gst_d3d12_fence_data_unref (fence_data);
@@ -1963,7 +1980,7 @@ gst_d3d12_compositor_negotiated_src_caps (GstAggregator * agg, GstCaps * caps)
     auto params = gst_d3d12_allocation_params_new (self->device, &info,
         GST_D3D12_ALLOCATION_FLAG_DEFAULT,
         D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET |
-        D3D12_RESOURCE_FLAG_ALLOW_SIMULTANEOUS_ACCESS);
+        D3D12_RESOURCE_FLAG_ALLOW_SIMULTANEOUS_ACCESS, D3D12_HEAP_FLAG_NONE);
     gst_buffer_pool_config_set_d3d12_allocation_params (config, params);
     gst_d3d12_allocation_params_free (params);
     gst_buffer_pool_config_set_params (config, caps, info.size, 0, 0);
@@ -2039,7 +2056,7 @@ gst_d3d12_compositor_propose_allocation (GstAggregator * agg,
       auto params = gst_d3d12_allocation_params_new (self->device,
           &info, GST_D3D12_ALLOCATION_FLAG_DEFAULT,
           D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET |
-          D3D12_RESOURCE_FLAG_ALLOW_SIMULTANEOUS_ACCESS);
+          D3D12_RESOURCE_FLAG_ALLOW_SIMULTANEOUS_ACCESS, D3D12_HEAP_FLAG_NONE);
 
       gst_buffer_pool_config_set_d3d12_allocation_params (config, params);
       gst_d3d12_allocation_params_free (params);
@@ -2114,7 +2131,7 @@ gst_d3d12_compositor_decide_allocation (GstAggregator * agg, GstQuery * query)
       gst_clear_object (&pool);
     } else {
       GstD3D12BufferPool *dpool = GST_D3D12_BUFFER_POOL (pool);
-      if (dpool->device != self->device) {
+      if (!gst_d3d12_device_is_equal (dpool->device, self->device)) {
         GST_DEBUG_OBJECT (self, "Different device, will create new one");
         gst_clear_object (&pool);
       }
@@ -2143,7 +2160,7 @@ gst_d3d12_compositor_decide_allocation (GstAggregator * agg, GstQuery * query)
       params = gst_d3d12_allocation_params_new (self->device, &info,
           GST_D3D12_ALLOCATION_FLAG_DEFAULT,
           D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET |
-          D3D12_RESOURCE_FLAG_ALLOW_SIMULTANEOUS_ACCESS);
+          D3D12_RESOURCE_FLAG_ALLOW_SIMULTANEOUS_ACCESS, D3D12_HEAP_FLAG_NONE);
     } else {
       gst_d3d12_allocation_params_set_resource_flags (params,
           D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET |
@@ -2185,16 +2202,16 @@ gst_d3d12_compositor_draw_background (GstD3D12Compositor * self)
     auto mem = (GstD3D12Memory *)
         gst_buffer_peek_memory (priv->generated_output_buf, i);
     auto num_planes = gst_d3d12_memory_get_plane_count (mem);
-    ComPtr < ID3D12DescriptorHeap > rtv_heap;
+    auto rtv_heap = gst_d3d12_memory_get_render_target_view_heap (mem);
 
-    if (!gst_d3d12_memory_get_render_target_view_heap (mem, &rtv_heap)) {
+    if (!rtv_heap) {
       GST_ERROR_OBJECT (self, "Couldn't get rtv heap");
       return FALSE;
     }
 
     auto cpu_handle =
-        CD3DX12_CPU_DESCRIPTOR_HANDLE
-        (rtv_heap->GetCPUDescriptorHandleForHeapStart ());
+        CD3DX12_CPU_DESCRIPTOR_HANDLE (GetCPUDescriptorHandleForHeapStart
+        (rtv_heap));
 
     for (guint plane = 0; plane < num_planes; plane++) {
       D3D12_RECT rect = { };
@@ -2215,8 +2232,7 @@ gst_d3d12_compositor_draw_background (GstD3D12Compositor * self)
   gst_d3d12_fence_data_pool_acquire (priv->fence_data_pool, &fence_data);
   gst_d3d12_fence_data_add_notify_mini_object (fence_data, gst_ca);
 
-  ComPtr < ID3D12CommandAllocator > ca;
-  gst_d3d12_command_allocator_get_handle (gst_ca, &ca);
+  auto ca = gst_d3d12_command_allocator_get_handle (gst_ca);
 
   auto hr = ca->Reset ();
   if (!gst_d3d12_result (hr, self->device)) {
@@ -2228,14 +2244,14 @@ gst_d3d12_compositor_draw_background (GstD3D12Compositor * self)
   if (!bg_render->cl) {
     auto device = gst_d3d12_device_get_device_handle (self->device);
     hr = device->CreateCommandList (0, D3D12_COMMAND_LIST_TYPE_DIRECT,
-        ca.Get (), bg_render->pso.Get (), IID_PPV_ARGS (&bg_render->cl));
+        ca, bg_render->pso.Get (), IID_PPV_ARGS (&bg_render->cl));
     if (!gst_d3d12_result (hr, self->device)) {
       GST_ERROR_OBJECT (self, "Couldn't create command list");
       gst_d3d12_fence_data_unref (fence_data);
       return FALSE;
     }
   } else {
-    hr = bg_render->cl->Reset (ca.Get (), bg_render->pso.Get ());
+    hr = bg_render->cl->Reset (ca, bg_render->pso.Get ());
     if (!gst_d3d12_result (hr, self->device)) {
       GST_ERROR_OBJECT (self, "Couldn't reset command list");
       gst_d3d12_fence_data_unref (fence_data);
@@ -2469,7 +2485,7 @@ gst_d3d12_compositor_check_device_update (GstElement * agg,
   dmem = GST_D3D12_MEMORY_CAST (mem);
 
   /* We can use existing device */
-  if (dmem->device == self->device) {
+  if (gst_d3d12_device_is_equal (dmem->device, self->device)) {
     data->have_same_device = TRUE;
     return FALSE;
   }

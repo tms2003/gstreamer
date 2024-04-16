@@ -262,6 +262,51 @@ gst_va_encoder_close (GstVaEncoder * self)
   return TRUE;
 }
 
+/* for querying the customized surface alignment */
+guint
+gst_va_encoder_get_surface_alignment (GstVaDisplay * display,
+    VAProfile profile, VAEntrypoint entrypoint)
+{
+  guint alignment = 0;
+#if VA_CHECK_VERSION(1, 21, 0)
+  VAConfigAttrib *attrib = NULL;
+  VASurfaceAttrib *attr_list;
+  guint i, count;
+  VAConfigID config;
+  VADisplay dpy;
+  VAStatus status;
+
+  dpy = gst_va_display_get_va_dpy (display);
+  status = vaCreateConfig (dpy, profile, entrypoint, attrib, 0, &config);
+  if (status != VA_STATUS_SUCCESS) {
+    GST_ERROR_OBJECT (display, "vaCreateConfig: %s", vaErrorStr (status));
+    return alignment;
+  }
+  attr_list = gst_va_get_surface_attribs (display, config, &count);
+  if (!attr_list)
+    goto bail;
+
+  for (i = 0; i < count; i++) {
+    if (attr_list[i].type == VASurfaceAttribAlignmentSize) {
+      alignment = attr_list[i].value.value.i;
+      GST_INFO_OBJECT (display,
+          "Using customized surface alignment [%dx%d]\n",
+          1 << (alignment & 0xf), 1 << ((alignment & 0xf0) >> 4));
+      break;
+    }
+  }
+  g_free (attr_list);
+
+bail:
+  status = vaDestroyConfig (dpy, config);
+  if (status != VA_STATUS_SUCCESS) {
+    GST_ERROR_OBJECT (display, "vaDestroyConfig: %s", vaErrorStr (status));
+    return alignment;
+  }
+#endif
+  return alignment;
+}
+
 static GArray *
 _get_surface_formats (GstVaDisplay * display, VAConfigID config)
 {
@@ -531,6 +576,8 @@ gst_va_encoder_new (GstVaDisplay * display, guint32 codec,
 
   self = g_object_new (GST_TYPE_VA_ENCODER, "display", display,
       "va-entrypoint", entrypoint, NULL);
+  gst_object_ref_sink (self);
+
   if (!gst_va_encoder_initialize (self, codec))
     gst_clear_object (&self);
 
@@ -1241,11 +1288,11 @@ static const GEnumValue rate_control_map[] = {
   {VA_RC_CQP, "Constant Quantizer", "cqp"},
   /* {VA_RC_VBR_CONSTRAINED, "VBR with peak rate higher than average bitrate", */
   /*  "vbr-constrained"}, */
-  /* {VA_RC_ICQ, "Intelligent Constant Quality", "icq"}, */
+  {VA_RC_ICQ, "Intelligent Constant Quality", "icq"},
   /* {VA_RC_MB, "Macroblock based rate control", "mb"}, */
   /* {VA_RC_CFS, "Constant Frame Size", "cfs"}, */
   /* {VA_RC_PARALLEL, "Parallel BRC", "parallel"}, */
-  /* {VA_RC_QVBR, "Quality defined VBR", "qvbr"}, */
+  {VA_RC_QVBR, "Quality defined VBR", "qvbr"},
   /* {VA_RC_AVBR, "Average VBR", "avbr"}, */
 };
 

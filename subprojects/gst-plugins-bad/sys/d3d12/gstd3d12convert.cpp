@@ -82,7 +82,8 @@ struct ConvertContext
   {
     event_handle = CreateEventEx (nullptr, nullptr, 0, EVENT_ALL_ACCESS);
     device = (GstD3D12Device *) gst_object_ref (dev);
-    ca_pool = gst_d3d12_command_allocator_pool_new (device,
+    auto device_handle = gst_d3d12_device_get_device_handle (device);
+    ca_pool = gst_d3d12_command_allocator_pool_new (device_handle,
         D3D12_COMMAND_LIST_TYPE_DIRECT);
   }
 
@@ -499,87 +500,6 @@ gst_d3d12_convert_stop (GstBaseTransform * trans)
   priv->ctx = nullptr;
 
   return GST_BASE_TRANSFORM_CLASS (parent_class)->stop (trans);
-}
-
-/* copies the given caps */
-static GstCaps *
-gst_d3d12_convert_caps_remove_format_info (GstCaps * caps)
-{
-  GstStructure *st;
-  GstCapsFeatures *f;
-  gint i, n;
-  GstCaps *res;
-  GstCapsFeatures *feature =
-      gst_caps_features_from_string (GST_CAPS_FEATURE_MEMORY_D3D12_MEMORY);
-
-  res = gst_caps_new_empty ();
-
-  n = gst_caps_get_size (caps);
-  for (i = 0; i < n; i++) {
-    st = gst_caps_get_structure (caps, i);
-    f = gst_caps_get_features (caps, i);
-
-    /* If this is already expressed by the existing caps
-     * skip this structure */
-    if (i > 0 && gst_caps_is_subset_structure_full (res, st, f))
-      continue;
-
-    st = gst_structure_copy (st);
-    /* Only remove format info for the cases when we can actually convert */
-    if (!gst_caps_features_is_any (f)
-        && gst_caps_features_is_equal (f, feature)) {
-      gst_structure_remove_fields (st, "format", "colorimetry", "chroma-site",
-          nullptr);
-    }
-
-    gst_caps_append_structure_full (res, st, gst_caps_features_copy (f));
-  }
-  gst_caps_features_free (feature);
-
-  return res;
-}
-
-static GstCaps *
-gst_d3d12_convert_caps_rangify_size_info (GstCaps * caps)
-{
-  GstStructure *st;
-  GstCapsFeatures *f;
-  gint i, n;
-  GstCaps *res;
-  GstCapsFeatures *feature =
-      gst_caps_features_from_string (GST_CAPS_FEATURE_MEMORY_D3D12_MEMORY);
-
-  res = gst_caps_new_empty ();
-
-  n = gst_caps_get_size (caps);
-  for (i = 0; i < n; i++) {
-    st = gst_caps_get_structure (caps, i);
-    f = gst_caps_get_features (caps, i);
-
-    /* If this is already expressed by the existing caps
-     * skip this structure */
-    if (i > 0 && gst_caps_is_subset_structure_full (res, st, f))
-      continue;
-
-    st = gst_structure_copy (st);
-    /* Only remove format info for the cases when we can actually convert */
-    if (!gst_caps_features_is_any (f)
-        && gst_caps_features_is_equal (f, feature)) {
-      gst_structure_set (st, "width", GST_TYPE_INT_RANGE, 1, G_MAXINT,
-          "height", GST_TYPE_INT_RANGE, 1, G_MAXINT, nullptr);
-
-      /* if pixel aspect ratio, make a range of it */
-      if (gst_structure_has_field (st, "pixel-aspect-ratio")) {
-        gst_structure_set (st, "pixel-aspect-ratio",
-            GST_TYPE_FRACTION_RANGE, 1, G_MAXINT, G_MAXINT, 1, nullptr);
-      }
-    }
-
-    gst_caps_append_structure_full (res, st, gst_caps_features_copy (f));
-  }
-  gst_caps_features_free (feature);
-
-  return res;
 }
 
 static GstCaps *
@@ -1537,7 +1457,7 @@ gst_d3d12_convert_propose_allocation (GstBaseTransform * trans,
         gst_clear_object (&pool);
       } else {
         auto dpool = GST_D3D12_BUFFER_POOL (pool);
-        if (dpool->device != filter->device)
+        if (!gst_d3d12_device_is_equal (dpool->device, filter->device))
           gst_clear_object (&pool);
       }
     }
@@ -1554,7 +1474,7 @@ gst_d3d12_convert_propose_allocation (GstBaseTransform * trans,
   if (!d3d12_params) {
     d3d12_params = gst_d3d12_allocation_params_new (filter->device, &info,
         GST_D3D12_ALLOCATION_FLAG_DEFAULT,
-        D3D12_RESOURCE_FLAG_ALLOW_SIMULTANEOUS_ACCESS);
+        D3D12_RESOURCE_FLAG_ALLOW_SIMULTANEOUS_ACCESS, D3D12_HEAP_FLAG_NONE);
   } else {
     gst_d3d12_allocation_params_set_resource_flags (d3d12_params,
         D3D12_RESOURCE_FLAG_ALLOW_SIMULTANEOUS_ACCESS);
@@ -1628,7 +1548,7 @@ gst_d3d12_convert_decide_allocation (GstBaseTransform * trans, GstQuery * query)
         gst_clear_object (&pool);
       } else {
         auto dpool = GST_D3D12_BUFFER_POOL (pool);
-        if (dpool->device != filter->device)
+        if (!gst_d3d12_device_is_equal (dpool->device, filter->device))
           gst_clear_object (&pool);
       }
     }
@@ -1648,7 +1568,7 @@ gst_d3d12_convert_decide_allocation (GstBaseTransform * trans, GstQuery * query)
     d3d12_params = gst_d3d12_allocation_params_new (filter->device, &info,
         GST_D3D12_ALLOCATION_FLAG_DEFAULT,
         D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET |
-        D3D12_RESOURCE_FLAG_ALLOW_SIMULTANEOUS_ACCESS);
+        D3D12_RESOURCE_FLAG_ALLOW_SIMULTANEOUS_ACCESS, D3D12_HEAP_FLAG_NONE);
   } else {
     gst_d3d12_allocation_params_set_resource_flags (d3d12_params,
         D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET |
@@ -2059,8 +1979,7 @@ gst_d3d12_convert_transform (GstBaseTransform * trans, GstBuffer * inbuf,
     return GST_FLOW_ERROR;
   }
 
-  ComPtr < ID3D12CommandAllocator > ca;
-  gst_d3d12_command_allocator_get_handle (gst_ca, &ca);
+  auto ca = gst_d3d12_command_allocator_get_handle (gst_ca);
 
   auto hr = ca->Reset ();
   if (!gst_d3d12_result (hr, priv->ctx->device)) {
@@ -2072,14 +1991,14 @@ gst_d3d12_convert_transform (GstBaseTransform * trans, GstBuffer * inbuf,
   if (!priv->ctx->cl) {
     auto device = gst_d3d12_device_get_device_handle (priv->ctx->device);
     hr = device->CreateCommandList (0, D3D12_COMMAND_LIST_TYPE_DIRECT,
-        ca.Get (), nullptr, IID_PPV_ARGS (&priv->ctx->cl));
+        ca, nullptr, IID_PPV_ARGS (&priv->ctx->cl));
     if (!gst_d3d12_result (hr, priv->ctx->device)) {
       GST_ERROR_OBJECT (self, "Couldn't create command list");
       gst_d3d12_command_allocator_unref (gst_ca);
       return GST_FLOW_ERROR;
     }
   } else {
-    hr = priv->ctx->cl->Reset (ca.Get (), nullptr);
+    hr = priv->ctx->cl->Reset (ca, nullptr);
     if (!gst_d3d12_result (hr, priv->ctx->device)) {
       GST_ERROR_OBJECT (self, "Couldn't reset command list");
       gst_d3d12_command_allocator_unref (gst_ca);

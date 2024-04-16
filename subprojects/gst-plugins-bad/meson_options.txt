@@ -92,7 +92,6 @@ option('amfcodec', type : 'feature', value : 'auto', description : 'AMD AMF code
 option('androidmedia', type : 'feature', value : 'auto', description : 'Video capture and codec plugins for Android')
 option('applemedia', type : 'feature', value : 'auto', description : 'Video capture and codec access plugins for macOS and iOS')
 option('asio', type : 'feature', value : 'auto', description : 'Steinberg Audio Streaming Input Output (ASIO) plugin')
-option('asio-sdk-path', type : 'string', value : '', description : 'Full path to Steinberg Audio Streaming Input Output (ASIO) SDK')
 option('assrender', type : 'feature', value : 'auto', description : 'ASS/SSA subtitle renderer plugin')
 option('bluez', type : 'feature', value : 'auto', description : 'Bluetooth audio A2DP/AVDTP sink, AVDTP source plugin')
 option('bs2b', type : 'feature', value : 'auto', description : 'Bauer stereophonic-to-binaural audio plugin')
@@ -182,6 +181,7 @@ option('voamrwbenc', type : 'feature', value : 'auto', description : 'AMR-WB aud
 option('vulkan', type : 'feature', value : 'auto', description : 'Vulkan video sink plugin')
 option('wasapi', type : 'feature', value : 'auto', description : 'Windows Audio Session API source/sink plugin')
 option('wasapi2', type : 'feature', value : 'auto', description : 'Windows Audio Session API source/sink plugin with WinRT API')
+option('webview2', type : 'feature', value : 'auto', description : 'WebView2 plugin')
 option('webp', type : 'feature', value : 'auto', description : 'WebP image codec plugin')
 option('webrtc', type : 'feature', value : 'auto', yield: true, description : 'WebRTC audio/video network bin plugin')
 option('webrtcdsp', type : 'feature', value : 'auto', description : 'Plugin with various audio filters provided by the WebRTC audio processing library')
@@ -211,10 +211,16 @@ option('isac', type : 'feature', value : 'auto', description : 'iSAC plugin')
 option('aja-sdk-dir', type : 'string', value : '',
   description : 'Directory with AJA SDK, e.g. ntv2sdklinux_16.0.0.4')
 
+# D3D11/D3D12 HLSL library options
+option('d3d-hlsl-precompile', type : 'feature', value : 'auto', description : 'Enable buildtime HLSL compile for d3d11/d3d12 library/plugin')
+
 # D3D11 plugin options
 option('d3d11-math', type : 'feature', value : 'auto', description : 'Enable DirectX SIMD Math support')
 option('d3d11-hlsl-precompile', type : 'feature', value : 'auto', description : 'Enable buildtime HLSL compile for d3d11 library/plugin')
 option('d3d11-wgc', type : 'feature', value : 'auto', description : 'Windows Graphics Capture API support in d3d11 plugin')
+
+# D3D12 plugin options
+option('d3d12-wgc', type : 'feature', value : 'auto', description : 'Windows Graphics Capture API support in d3d12 plugin')
 
 # HLS plugin options
 option('hls', type : 'feature', value : 'auto', description : 'HTTP Live Streaming plugin')

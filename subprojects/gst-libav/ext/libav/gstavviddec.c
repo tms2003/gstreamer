@@ -2277,10 +2277,10 @@ gst_ffmpegviddec_handle_frame (GstVideoDecoder * decoder,
   GST_VIDEO_DECODER_STREAM_UNLOCK (ffmpegdec);
   if (avcodec_send_packet (ffmpegdec->context, packet) < 0) {
     GST_VIDEO_DECODER_STREAM_LOCK (ffmpegdec);
-    av_packet_unref (packet);
+    av_packet_free (&packet);
     goto send_packet_failed;
   }
-  av_packet_unref (packet);
+  av_packet_free (&packet);
   GST_VIDEO_DECODER_STREAM_LOCK (ffmpegdec);
 
   do {
@@ -2686,9 +2686,10 @@ gst_ffmpegviddec_register (GstPlugin * plugin)
         in_plugin->id == AV_CODEC_ID_V210X ||
         in_plugin->id == AV_CODEC_ID_V308 ||
         in_plugin->id == AV_CODEC_ID_V408 ||
-        in_plugin->id == AV_CODEC_ID_V410 ||
-        in_plugin->id == AV_CODEC_ID_R210
+        in_plugin->id == AV_CODEC_ID_V410 || in_plugin->id == AV_CODEC_ID_R210
+#if LIBAVCODEC_VERSION_MAJOR < 61
         || in_plugin->id == AV_CODEC_ID_AYUV
+#endif
         || in_plugin->id == AV_CODEC_ID_Y41P
         || in_plugin->id == AV_CODEC_ID_012V
         || in_plugin->id == AV_CODEC_ID_YUV4

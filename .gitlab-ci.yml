@@ -45,7 +45,9 @@ variables:
     -Dlibnice:examples=disabled
     -Dlibnice:gupnp=disabled
     -Dopenh264:tests=disabled
+    -Dgst-plugins-base:opus=enabled
     -Dgst-plugins-good:soup-lookup-dep=true
+    -Dgst-plugins-good:vpx=enabled
     -Dpygobject:tests=false
     -Dpython=enabled
     -Dlibav=enabled
@@ -134,8 +136,9 @@ fedora amd64 docker:
     - '.fdo.container-build@fedora'
   stage: 'preparation'
   needs: []
-  tags:
-    - 'packet.net'
+  # Note: assumption is that placeholder jobs run on a packet runner
+  # (which has faster network connectivity to the registry).
+  tags: [ 'placeholder-job' ]
 
 .gst-indent image:
   tags: [ 'placeholder-job' ]
@@ -339,11 +342,11 @@ commitlint:
     GST_WERROR: "true"
     MESON_ARGS: "${SIMPLE_BUILD}"
     SUBPROJECTS_CACHE_DIR: "/subprojects"
-
   script:
     - $CI_PROJECT_DIR/ci/scripts/build.sh
     - ./gst-env.py gst-inspect-1.0 --version
     - ./gst-env.py gst-inspect-1.0
+    - G_DEBUG=fatal_criticals ./gst-env.py gst-inspect-1.0 --print-all --gst-disable-registry-fork > /dev/null
     - meson install --destdir $CI_PROJECT_DIR/destdir -C build
     - rm -rf $CI_PROJECT_DIR/destdir
 

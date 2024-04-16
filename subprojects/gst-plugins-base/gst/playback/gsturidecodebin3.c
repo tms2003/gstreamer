@@ -149,6 +149,9 @@ struct _GstSourceHandler
 
   /* List of GstSourcePad */
   GList *sourcepads;
+
+  /* If we saw a redirection message from this source. */
+  gboolean saw_redirection;
 };
 
 /* Structure wrapping everything related to a urisourcebin pad */
@@ -1096,6 +1099,8 @@ switch_and_activate_input_locked (GstURIDecodeBin3 * uridecodebin,
   GList *to_activate = NULL;
   GList *iternew, *iterold;
   gboolean inactive_previous_item = old_pads == NULL;
+  GstMessage *pending_buffering_msg = NULL;
+  gboolean pending_about_to_finish = FALSE;
 
   /* Deactivate old urisourcebins first ? Problem is they might remove the pads */
 
@@ -1211,19 +1216,30 @@ switch_and_activate_input_locked (GstURIDecodeBin3 * uridecodebin,
   /* and set new one as input item */
   uridecodebin->input_item = new_item;
 
-  /* If the new source is already drained, propagate about-to-finish */
-  if (new_item->pending_about_to_finish) {
-    emit_and_handle_about_to_finish (uridecodebin, new_item);
+  pending_about_to_finish = new_item->pending_about_to_finish;
+  if (new_item->main_item->handler->pending_buffering_msg) {
+    pending_buffering_msg = new_item->main_item->handler->pending_buffering_msg;
+    new_item->main_item->handler->pending_buffering_msg = NULL;
   }
 
-  /* Finally propagate pending buffering message */
-  if (new_item->main_item->handler->pending_buffering_msg) {
-    GstMessage *msg = new_item->main_item->handler->pending_buffering_msg;
-    new_item->main_item->handler->pending_buffering_msg = NULL;
-    GST_DEBUG_OBJECT (uridecodebin,
-        "Posting pending buffering message %" GST_PTR_FORMAT, msg);
+  /* If we have to post message or emit signals, it might trigger some
+   * re-entring actions (like setting the next URI). Make sure we release the
+   * lock when posting/emitting */
+  if (pending_buffering_msg || pending_about_to_finish) {
     PLAY_ITEMS_UNLOCK (uridecodebin);
-    GST_BIN_CLASS (parent_class)->handle_message ((GstBin *) uridecodebin, msg);
+    /* If the new source is already drained, propagate about-to-finish */
+    if (pending_about_to_finish) {
+      emit_and_handle_about_to_finish (uridecodebin, new_item);
+    }
+
+    /* Finally propagate pending buffering message */
+    if (pending_buffering_msg) {
+      GST_DEBUG_OBJECT (uridecodebin,
+          "Posting pending buffering message %" GST_PTR_FORMAT,
+          pending_buffering_msg);
+      GST_BIN_CLASS (parent_class)->handle_message ((GstBin *) uridecodebin,
+          pending_buffering_msg);
+    }
     PLAY_ITEMS_LOCK (uridecodebin);
   }
 }
@@ -2167,11 +2183,15 @@ gst_uri_decode_bin3_handle_redirection (GstURIDecodeBin3 * uridecodebin,
 
   if (g_strcmp0 (current_uri, uri)) {
     gboolean was_instant = uridecodebin->instant_uri;
-    GST_DEBUG_OBJECT (uridecodebin, "Doing instant switch to '%s'", uri);
-    uridecodebin->instant_uri = TRUE;
-    /* Force instant switch */
-    gst_uri_decode_bin3_set_uri (uridecodebin, uri);
-    uridecodebin->instant_uri = was_instant;
+    /* We only want to handle the redirection once */
+    if (!handler->saw_redirection) {
+      handler->saw_redirection = TRUE;
+      GST_DEBUG_OBJECT (uridecodebin, "Doing instant switch to '%s'", uri);
+      uridecodebin->instant_uri = TRUE;
+      /* Force instant switch */
+      gst_uri_decode_bin3_set_uri (uridecodebin, uri);
+      uridecodebin->instant_uri = was_instant;
+    }
     gst_message_unref (message);
     message = NULL;
   }

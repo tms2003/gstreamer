@@ -3178,6 +3178,8 @@ default_frame_sizes:
       min_w = min_h = 1;
     if (max_w == 0 || max_h == 0)
       max_w = max_h = GST_V4L2_MAX_SIZE;
+    v4l2object->max_width = max_w;
+    v4l2object->max_height = max_h;
 
     /* Since we can't get framerate directly, try to use the current norm */
     if (v4l2object->tv_norm && v4l2object->norms) {
@@ -3549,7 +3551,9 @@ gst_v4l2_object_save_format (GstV4l2Object * v4l2object,
   if (GST_VIDEO_FORMAT_INFO_IS_TILED (finfo)) {
     guint tile_height;
     tile_height = GST_VIDEO_FORMAT_INFO_TILE_HEIGHT (finfo, 0);
-    padded_height = (padded_height + tile_height - 1) / tile_height;
+    /* Round-up to tile_height as drivers are not forced to do so */
+    padded_height =
+        (padded_height + tile_height - 1) / tile_height * tile_height;
   }
 
   align->padding_bottom =
@@ -4998,10 +5002,24 @@ gst_v4l2_object_probe_caps (GstV4l2Object * v4l2object, GstCaps * filter)
 
     cropcap.type = v4l2object->type;
     if (v4l2object->ioctl (v4l2object->video_fd, VIDIOC_CROPCAP, &cropcap) < 0) {
-      if (errno != ENOTTY)
-        GST_WARNING_OBJECT (v4l2object->dbg_obj,
-            "Failed to probe pixel aspect ratio with VIDIOC_CROPCAP: %s",
-            g_strerror (errno));
+
+      switch (errno) {
+        case ENODATA:
+        case ENOTTY:
+          GST_INFO_OBJECT (v4l2object->dbg_obj,
+              "Driver does not support VIDIOC_CROPCAP (%s), assuming pixel aspect ratio 1/1",
+              g_strerror (errno));
+          break;
+
+        default:
+          GST_WARNING_OBJECT (v4l2object->dbg_obj,
+              "Failed to probe pixel aspect ratio with VIDIOC_CROPCAP: %s",
+              g_strerror (errno));
+      }
+      v4l2object->par = g_new0 (GValue, 1);
+      g_value_init (v4l2object->par, GST_TYPE_FRACTION);
+      gst_value_set_fraction (v4l2object->par, 1, 1);
+
     } else if (cropcap.pixelaspect.numerator && cropcap.pixelaspect.denominator) {
       v4l2object->par = g_new0 (GValue, 1);
       g_value_init (v4l2object->par, GST_TYPE_FRACTION);

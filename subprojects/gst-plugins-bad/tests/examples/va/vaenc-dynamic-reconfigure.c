@@ -200,8 +200,8 @@ print_keyboard_help (void)
     "<", "Decrease bitrate by 100 kbps"}, {
     "]", "Increase target usage"}, {
     "[", "Decrease target usage"}, {
-    "}", "Increase target percentage by 10% (only in VBR)"}, {
-    "{", "Decrease target percentage by 10% (only in VBR)"}, {
+    "}", "Increase target percentage by 10% (only in [Q]VBR)"}, {
+    "{", "Decrease target percentage by 10% (only in [Q]VBR)"}, {
     "I", "Increase QP-I"}, {
     "i", "Decrease QP-I"}, {
     "P", "Increase QP-P (only in CQP)"}, {
@@ -284,7 +284,8 @@ keyboard_cb (gchar input, gboolean is_ascii, gpointer user_data)
       case '>':{
         guint bitrate;
 
-        if (is_ratectl (data->encoder, 0x00000010 /* VA_RC_CQP */ ))
+        if (is_ratectl (data->encoder, 0x00000010 /* VA_RC_CQP */ )
+            || is_ratectl (data->encoder, 0x00000040 /* VA_RC_ICQ */ ))
           break;
 
         g_object_get (data->encoder, "bitrate", &bitrate, NULL);
@@ -296,7 +297,8 @@ keyboard_cb (gchar input, gboolean is_ascii, gpointer user_data)
       case '<':{
         gint bitrate;
 
-        if (is_ratectl (data->encoder, 0x00000010 /* VA_RC_CQP */ ))
+        if (is_ratectl (data->encoder, 0x00000010 /* VA_RC_CQP */ )
+            || is_ratectl (data->encoder, 0x00000040 /* VA_RC_ICQ */ ))
           break;
 
         g_object_get (data->encoder, "bitrate", &bitrate, NULL);
@@ -327,7 +329,8 @@ keyboard_cb (gchar input, gboolean is_ascii, gpointer user_data)
       case '}':{
         guint target;
 
-        if (!is_ratectl (data->encoder, 0x00000004 /* VA_RC_VBR */ ))
+        if (!is_ratectl (data->encoder, 0x00000004 /* VA_RC_VBR */ )
+            || is_ratectl (data->encoder, 0x00000400 /* VA_RC_QVBR */ ))
           break;
 
         g_object_get (data->encoder, "target-percentage", &target, NULL);
@@ -339,7 +342,8 @@ keyboard_cb (gchar input, gboolean is_ascii, gpointer user_data)
       case '{':{
         guint target;
 
-        if (!is_ratectl (data->encoder, 0x00000004 /* VA_RC_VBR */ ))
+        if (!is_ratectl (data->encoder, 0x00000004 /* VA_RC_VBR */ )
+            || is_ratectl (data->encoder, 0x00000400 /* VA_RC_QVBR */ ))
           break;
 
         g_object_get (data->encoder, "target-percentage", &target, NULL);
@@ -441,7 +445,8 @@ main (gint argc, gchar ** argv)
   /* *INDENT-OFF* */
   const GOptionEntry options[] = {
     {"codec", 'c', 0, G_OPTION_ARG_STRING, &codec,
-        "Codec to test: [ *h264, h265 ]"},
+        "Codec to test: "
+        "[ *h264, h265, vp9, av1, h264lp, h265lp, vp9lp, av1lp ]"},
     {NULL}
   };
   const struct {
@@ -452,6 +457,12 @@ main (gint argc, gchar ** argv)
   } elements_map[] = {
     { "h264", "vah264enc", "h264parse", "vah264dec" },
     { "h265", "vah265enc", "h265parse", "vah265dec" },
+    { "vp9", "vavp9enc", "vp9parse", "vavp9dec" },
+    { "av1", "vaav1enc", "av1parse", "vaav1dec" },
+    { "h264lp", "vah264lpenc", "h264parse", "vah264dec" },
+    { "h265lp", "vah265lpenc", "h265parse", "vah265dec" },
+    { "vp9lp", "vavp9lpenc", "vp9parse", "vavp9dec" },
+    { "av1lp", "vaav1lpenc", "av1parse", "vaav1dec" },
   };
   /* *INDENT-ON* */
 

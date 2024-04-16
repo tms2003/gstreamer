@@ -28,8 +28,8 @@
 #endif
 
 #include <gst/gst.h>
-#include "gstd3d12.h"
-#include "gstd3d12-private.h"
+#include <gst/d3d12/gstd3d12.h>
+#include "gstd3d12pluginutils.h"
 #include "gstd3d12convert.h"
 #include "gstd3d12download.h"
 #include "gstd3d12upload.h"
@@ -45,46 +45,32 @@
 #include "gstd3d12vp8dec.h"
 #include "gstd3d12vp9dec.h"
 #include "gstd3d12av1dec.h"
+#include "gstd3d12ipcclient.h"
+#include "gstd3d12ipcsrc.h"
+#include "gstd3d12ipcsink.h"
 #include <windows.h>
 #include <versionhelpers.h>
 #include <wrl.h>
+#include <glib/gi18n-lib.h>
 
 /* *INDENT-OFF* */
 using namespace Microsoft::WRL;
 /* *INDENT-ON* */
 
-GST_DEBUG_CATEGORY (gst_d3d12_debug);
-GST_DEBUG_CATEGORY (gst_d3d12_allocator_debug);
-GST_DEBUG_CATEGORY (gst_d3d12_decoder_debug);
-GST_DEBUG_CATEGORY (gst_d3d12_format_debug);
-GST_DEBUG_CATEGORY (gst_d3d12_utils_debug);
-
-#define GST_CAT_DEFAULT gst_d3d12_debug
-
 static void
 plugin_deinit (gpointer data)
 {
-  gst_d3d12_sync_background_thread ();
+  gst_d3d12_ipc_client_deinit ();
 }
 
 static gboolean
 plugin_init (GstPlugin * plugin)
 {
-  GST_DEBUG_CATEGORY_INIT (gst_d3d12_debug, "d3d12", 0, "d3d12");
-
   if (!IsWindows8OrGreater ()) {
-    GST_WARNING ("Not supported OS");
+    gst_plugin_add_status_warning (plugin,
+        N_("This plugin requires at least Windows 8 or newer."));
     return TRUE;
   }
-
-  GST_DEBUG_CATEGORY_INIT (gst_d3d12_allocator_debug, "d3d12allocator", 0,
-      "d3d12allocator");
-  GST_DEBUG_CATEGORY_INIT (gst_d3d12_decoder_debug, "d3d12decoder", 0,
-      "d3d12decoder");
-  GST_DEBUG_CATEGORY_INIT (gst_d3d12_format_debug, "d3d12format", 0,
-      "d3d12format");
-  GST_DEBUG_CATEGORY_INIT (gst_d3d12_utils_debug,
-      "d3d12utils", 0, "d3d12utils");
 
   /* Enumerate devices to register decoders per device and to get the highest
    * feature level */
@@ -143,6 +129,10 @@ plugin_init (GstPlugin * plugin)
   gst_device_provider_register (plugin,
       "d3d12screencapturedeviceprovider", GST_RANK_PRIMARY,
       GST_TYPE_D3D12_SCREEN_CAPTURE_DEVICE_PROVIDER);
+  gst_element_register (plugin,
+      "d3d12ipcsrc", GST_RANK_NONE, GST_TYPE_D3D12_IPC_SRC);
+  gst_element_register (plugin,
+      "d3d12ipcsink", GST_RANK_NONE, GST_TYPE_D3D12_IPC_SINK);
 
   g_object_set_data_full (G_OBJECT (plugin),
       "plugin-d3d12-shutdown", (gpointer) "shutdown-data",

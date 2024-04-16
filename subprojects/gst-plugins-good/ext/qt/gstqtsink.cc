@@ -19,7 +19,7 @@
  */
 
 /**
- * SECTION:gstqtsink
+ * SECTION:element-qmlglsink
  *
  * qmlglsink provides a way to render a video stream as a Qml object inside
  * the Qml scene graph.  This is achieved by providing the incoming OpenGL
@@ -108,7 +108,7 @@ GST_STATIC_PAD_TEMPLATE ("sink",
     GST_PAD_SINK,
     GST_PAD_ALWAYS,
     GST_STATIC_CAPS ("video/x-raw(" GST_CAPS_FEATURE_MEMORY_GL_MEMORY "), "
-    "format = (string) { RGB, RGBA, BGRA, YV12 }, "
+    "format = (string) { RGB, RGBA, BGRA, YV12, NV12 }, "
     "width = " GST_VIDEO_SIZE_RANGE ", "
     "height = " GST_VIDEO_SIZE_RANGE ", "
     "framerate = " GST_VIDEO_FPS_RANGE ", "

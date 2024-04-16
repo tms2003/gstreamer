@@ -21,7 +21,7 @@
 
 #include <gst/gst.h>
 #include <gst/video/video.h>
-#include "gstd3d12.h"
+#include <gst/d3d12/gstd3d12.h>
 
 G_BEGIN_DECLS
 
@@ -29,11 +29,14 @@ G_BEGIN_DECLS
 G_DECLARE_FINAL_TYPE (GstD3D12OverlayCompositor, gst_d3d12_overlay_compositor,
     GST, D3D12_OVERLAY_COMPOSITOR, GstObject)
 
+GType gst_d3d12_overlay_rect_get_type (void);
+
 GstD3D12OverlayCompositor * gst_d3d12_overlay_compositor_new  (GstD3D12Device * device,
                                                                const GstVideoInfo * info);
 
 gboolean                    gst_d3d12_overlay_compositor_upload (GstD3D12OverlayCompositor * compositor,
-                                                                 GstBuffer * buf);
+                                                                 GstBuffer * buf,
+                                                                 guint64 * fence_val);
 
 gboolean                    gst_d3d12_overlay_compositor_update_viewport (GstD3D12OverlayCompositor * compositor,
                                                                           GstVideoRectangle * viewport);

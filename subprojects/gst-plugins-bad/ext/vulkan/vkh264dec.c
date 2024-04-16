@@ -59,9 +59,6 @@ struct _GstVulkanH264Decoder
 
   GstVulkanDecoder *decoder;
 
-  GstBuffer *inbuf;
-  GstMapInfo in_mapinfo;
-
   gboolean need_negotiation;
   gboolean need_params_update;
 
@@ -75,9 +72,6 @@ struct _GstVulkanH264Decoder
   VkChromaLocation xloc, yloc;
 
   GstVideoCodecState *output_state;
-
-  GstBufferPool *dpb_pool;
-  GstBuffer *layered_dpb;
 };
 
 static GstStaticPadTemplate gst_vulkan_h264dec_sink_template =
@@ -183,28 +177,25 @@ gst_vulkan_h264_decoder_close (GstVideoDecoder * decoder)
 {
   GstVulkanH264Decoder *self = GST_VULKAN_H264_DECODER (decoder);
 
-  if (self->decoder)
-    gst_vulkan_decoder_stop (self->decoder);
-
-  if (self->inbuf)
-    gst_buffer_unmap (self->inbuf, &self->in_mapinfo);
-  gst_clear_buffer (&self->inbuf);
-
-  if (self->output_state)
-    gst_video_codec_state_unref (self->output_state);
-
   gst_clear_object (&self->decoder);
   gst_clear_object (&self->decode_queue);
   gst_clear_object (&self->graphic_queue);
   gst_clear_object (&self->device);
   gst_clear_object (&self->instance);
 
-  if (self->dpb_pool) {
-    gst_buffer_pool_set_active (self->dpb_pool, FALSE);
-    gst_clear_object (&self->dpb_pool);
-  }
+  return TRUE;
+}
 
-  gst_clear_buffer (&self->layered_dpb);
+static gboolean
+gst_vulkan_h264_decoder_stop (GstVideoDecoder * decoder)
+{
+  GstVulkanH264Decoder *self = GST_VULKAN_H264_DECODER (decoder);
+
+  if (self->decoder)
+    gst_vulkan_decoder_stop (self->decoder);
+
+  if (self->output_state)
+    gst_video_codec_state_unref (self->output_state);
 
   return TRUE;
 }
@@ -1329,6 +1320,7 @@ gst_vulkan_h264_decoder_class_init (GstVulkanH264DecoderClass * klass)
 
   decoder_class->open = GST_DEBUG_FUNCPTR (gst_vulkan_h264_decoder_open);
   decoder_class->close = GST_DEBUG_FUNCPTR (gst_vulkan_h264_decoder_close);
+  decoder_class->stop = GST_DEBUG_FUNCPTR (gst_vulkan_h264_decoder_stop);
   decoder_class->src_query =
       GST_DEBUG_FUNCPTR (gst_vulkan_h264_decoder_src_query);
   decoder_class->sink_query =

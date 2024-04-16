@@ -60,9 +60,6 @@ struct _GstVulkanH265Decoder
 
   GstVulkanDecoder *decoder;
 
-  GstBuffer *inbuf;
-  GstMapInfo in_mapinfo;
-
   gboolean need_negotiation;
   gboolean need_params_update;
 
@@ -75,9 +72,6 @@ struct _GstVulkanH265Decoder
   VkChromaLocation xloc, yloc;
 
   GstVideoCodecState *output_state;
-
-  GstBufferPool *dpb_pool;
-  GstBuffer *layered_dpb;
 };
 
 static GstStaticPadTemplate gst_vulkan_h265dec_sink_template =
@@ -241,28 +235,25 @@ gst_vulkan_h265_decoder_close (GstVideoDecoder * decoder)
 {
   GstVulkanH265Decoder *self = GST_VULKAN_H265_DECODER (decoder);
 
-  if (self->decoder)
-    gst_vulkan_decoder_stop (self->decoder);
-
-  if (self->inbuf)
-    gst_buffer_unmap (self->inbuf, &self->in_mapinfo);
-  gst_clear_buffer (&self->inbuf);
-
-  if (self->output_state)
-    gst_video_codec_state_unref (self->output_state);
-
   gst_clear_object (&self->decoder);
   gst_clear_object (&self->decode_queue);
   gst_clear_object (&self->graphic_queue);
   gst_clear_object (&self->device);
   gst_clear_object (&self->instance);
 
-  if (self->dpb_pool) {
-    gst_buffer_pool_set_active (self->dpb_pool, FALSE);
-    gst_clear_object (&self->dpb_pool);
-  }
+  return TRUE;
+}
 
-  gst_clear_buffer (&self->layered_dpb);
+static gboolean
+gst_vulkan_h265_decoder_stop (GstVideoDecoder * decoder)
+{
+  GstVulkanH265Decoder *self = GST_VULKAN_H265_DECODER (decoder);
+
+  if (self->decoder)
+    gst_vulkan_decoder_stop (self->decoder);
+
+  if (self->output_state)
+    gst_video_codec_state_unref (self->output_state);
 
   return TRUE;
 }
@@ -1316,6 +1307,7 @@ _update_parameters (GstVulkanH265Decoder * self, const GstH265PPS * pps)
       /* .pNext =  */
       .maxStdSPSCount = params.stdSPSCount,
       .maxStdPPSCount = params.stdPPSCount,
+      .maxStdVPSCount = params.stdVPSCount,
       .pParametersAddInfo = &params,
     }
   };
@@ -1396,8 +1388,8 @@ _fill_ref_slot (GstVulkanH265Decoder * self, GstH265Picture * picture,
   *res = (VkVideoPictureResourceInfoKHR) {
     .sType = VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR,
     .codedOffset = { self->x, self->y },
-    .codedExtent = { self->width, self->height },
-    .baseArrayLayer = self->layered_dpb ? pic->slot_idx : 0,
+    .codedExtent = { self->coded_width, self->coded_height },
+    .baseArrayLayer = self->decoder->layered_dpb ? pic->slot_idx : 0,
     .imageViewBinding = pic->base.img_view_ref->view,
   };
 
@@ -1674,6 +1666,7 @@ gst_vulkan_h265_decoder_class_init (GstVulkanH265DecoderClass * klass)
       GST_DEBUG_FUNCPTR (gst_vulkan_h265_decoder_sink_query);
   decoder_class->open = GST_DEBUG_FUNCPTR (gst_vulkan_h265_decoder_open);
   decoder_class->close = GST_DEBUG_FUNCPTR (gst_vulkan_h265_decoder_close);
+  decoder_class->stop = GST_DEBUG_FUNCPTR (gst_vulkan_h265_decoder_stop);
   decoder_class->negotiate =
       GST_DEBUG_FUNCPTR (gst_vulkan_h265_decoder_negotiate);
   decoder_class->decide_allocation =

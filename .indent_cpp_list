@@ -1,6 +1,7 @@
 subprojects/gst-plugins-bad/ext/qt6d3d11
 subprojects/gst-plugins-bad/gst-libs/gst/cuda
 subprojects/gst-plugins-bad/gst-libs/gst/d3d11
+subprojects/gst-plugins-bad/gst-libs/gst/d3d12
 subprojects/gst-plugins-bad/gst-libs/gst/dxva
 subprojects/gst-plugins-bad/gst-libs/gst/va
 subprojects/gst-plugins-bad/gst-libs/gst/winrt
@@ -13,5 +14,6 @@ subprojects/gst-plugins-bad/sys/nvcodec
 ^(subprojects/gst-plugins-bad/sys/qsv/)+(\w)+([^/])+(cpp$)
 subprojects/gst-plugins-bad/sys/va
 subprojects/gst-plugins-bad/sys/wasapi2
+subprojects/gst-plugins-bad/sys/webview2
 subprojects/gst-plugins-bad/sys/wic
 ^(subprojects/gst-plugins-bad/sys/win32ipc/)+(\w)+([^/])+(cpp$)

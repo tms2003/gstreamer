@@ -22,6 +22,8 @@
 #endif
 
 #include "gstd3d12pluginutils.h"
+#include <directx/d3dx12.h>
+#include <vector>
 
 #define _XM_NO_INTRINSICS_
 #include <DirectXMath.h>
@@ -29,6 +31,21 @@
 /* *INDENT-OFF* */
 using namespace DirectX;
 /* *INDENT-ON* */
+
+#ifndef GST_DISABLE_GST_DEBUG
+#define GST_CAT_DEFAULT ensure_debug_category()
+static GstDebugCategory *
+ensure_debug_category (void)
+{
+  static GstDebugCategory *cat = nullptr;
+
+  GST_D3D12_CALL_ONCE_BEGIN {
+    cat = _gst_debug_category_new ("d3d12pluginutils", 0, "d3d12pluginutils");
+  } GST_D3D12_CALL_ONCE_END;
+
+  return cat;
+}
+#endif /* GST_DISABLE_GST_DEBUG */
 
 GType
 gst_d3d12_sampling_method_get_type (void)

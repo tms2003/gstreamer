@@ -55,8 +55,7 @@
 #include <memory>
 #include <future>
 #include <wrl.h>
-#include "PSMain_sample.h"
-#include "VSMain_coord.h"
+#include <gst/d3dshader/gstd3dshader.h>
 
 #define _XM_NO_INTRINSICS_
 #include <DirectXMath.h>
@@ -75,15 +74,6 @@ static GList *g_dupl_list = nullptr;
 /* Below implementation were taken from Microsoft sample
  * https://github.com/microsoft/Windows-classic-samples/tree/master/Samples/DXGIDesktopDuplication
  */
-
-/* List of expected error cases */
-/* These are the errors we expect from general Dxgi API due to a transition */
-static HRESULT SystemTransitionsExpectedErrors[] = {
-  DXGI_ERROR_DEVICE_REMOVED,
-  DXGI_ERROR_ACCESS_LOST,
-  static_cast<HRESULT>(WAIT_ABANDONED),
-  S_OK
-};
 
 /* These are the errors we expect from IDXGIOutput1::DuplicateOutput
  * due to a transition */
@@ -759,10 +749,7 @@ struct _GstD3D12DxgiCapture
   GstD3D12DxgiCapturePrivate *priv;
 };
 
-static void gst_d3d12_dxgi_capture_dispose (GObject * object);
 static void gst_d3d12_dxgi_capture_finalize (GObject * object);
-static void gst_d3d12_dxgi_capture_set_property (GObject * object,
-    guint prop_id, const GValue * value, GParamSpec * pspec);
 static GstFlowReturn
 gst_d3d12_dxgi_capture_prepare (GstD3D12ScreenCapture * capture);
 static gboolean
@@ -953,12 +940,26 @@ gst_d3d12_dxgi_capture_open (GstD3D12DxgiCapture * self,
   input_desc[1].InputSlotClass = D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA;
   input_desc[1].InstanceDataStepRate = 0;
 
+  GstD3DShaderByteCode vs_code;
+  GstD3DShaderByteCode ps_code;
+  if (!gst_d3d_plugin_shader_get_vs_blob (GST_D3D_PLUGIN_VS_COORD,
+          GST_D3D_SM_5_0, &vs_code)) {
+    GST_ERROR_OBJECT (self, "Couldn't get vs bytecode");
+    return FALSE;
+  }
+
+  if (!gst_d3d_plugin_shader_get_ps_blob (GST_D3D_PLUGIN_PS_SAMPLE,
+          GST_D3D_SM_5_0, &ps_code)) {
+    GST_ERROR_OBJECT (self, "Couldn't get ps bytecode");
+    return FALSE;
+  }
+
   D3D12_GRAPHICS_PIPELINE_STATE_DESC pso_desc = { };
   pso_desc.pRootSignature = priv->rs.Get ();
-  pso_desc.VS.BytecodeLength = sizeof (g_VSMain_coord);
-  pso_desc.VS.pShaderBytecode = g_VSMain_coord;
-  pso_desc.PS.BytecodeLength = sizeof (g_PSMain_sample);
-  pso_desc.PS.pShaderBytecode = g_PSMain_sample;
+  pso_desc.VS.BytecodeLength = vs_code.byte_code_len;
+  pso_desc.VS.pShaderBytecode = vs_code.byte_code;
+  pso_desc.PS.BytecodeLength = ps_code.byte_code_len;
+  pso_desc.PS.pShaderBytecode = ps_code.byte_code;
   pso_desc.BlendState = CD3DX12_BLEND_DESC (D3D12_DEFAULT);
   pso_desc.SampleMask = UINT_MAX;
   pso_desc.RasterizerState = CD3DX12_RASTERIZER_DESC (D3D12_DEFAULT);
@@ -1025,7 +1026,7 @@ gst_d3d12_dxgi_capture_open (GstD3D12DxgiCapture * self,
     return FALSE;
   }
 
-  priv->ca_pool = gst_d3d12_command_allocator_pool_new (self->device,
+  priv->ca_pool = gst_d3d12_command_allocator_pool_new (device,
       D3D12_COMMAND_LIST_TYPE_DIRECT);
 
   priv->device = (GstD3D12Device *) gst_object_ref (self->device);
@@ -1141,7 +1142,7 @@ gst_d3d12_dxgi_capture_prepare_unlocked (GstD3D12DxgiCapture * self)
   rtv_desc.Texture2D.PlaneSlice = 0;
 
   device->CreateRenderTargetView (processed_frame.Get (), &rtv_desc,
-      priv->rtv_heap->GetCPUDescriptorHandleForHeapStart ());
+      GetCPUDescriptorHandleForHeapStart (priv->rtv_heap));
 
   priv->ctx = std::move (ctx);
   priv->processed_frame = processed_frame;
@@ -1204,7 +1205,7 @@ gst_d3d12_dxgi_capture_copy_move_rects (GstD3D12DxgiCapture * self,
   if (!priv->move_frame) {
     D3D12_HEAP_PROPERTIES heap_prop =
         CD3DX12_HEAP_PROPERTIES (D3D12_HEAP_TYPE_DEFAULT);
-    D3D12_RESOURCE_DESC resource_desc = priv->processed_frame->GetDesc ();
+    D3D12_RESOURCE_DESC resource_desc = GetDesc (priv->processed_frame);
     resource_desc.Flags = D3D12_RESOURCE_FLAG_NONE;
     hr = device->CreateCommittedResource (&heap_prop,
         D3D12_HEAP_FLAG_NONE, &resource_desc, D3D12_RESOURCE_STATE_COPY_DEST,
@@ -1296,7 +1297,7 @@ gst_d3d12_dxgi_capture_copy_dirty_rects (GstD3D12DxgiCapture * self,
     srv_desc.Texture2D.MipLevels = 1;
 
     device->CreateShaderResourceView (priv->shared_resource.Get (), &srv_desc,
-        priv->srv_heap->GetCPUDescriptorHandleForHeapStart ());
+        GetCPUDescriptorHandleForHeapStart (priv->srv_heap));
   }
 
   auto desc = priv->ctx->GetDesc ();
@@ -1340,7 +1341,7 @@ gst_d3d12_dxgi_capture_copy_dirty_rects (GstD3D12DxgiCapture * self,
     cl->RSSetViewports (1, &priv->viewport);
     cl->RSSetScissorRects (1, &priv->scissor_rect);
     D3D12_CPU_DESCRIPTOR_HANDLE rtv_heaps[] = {
-      priv->rtv_heap->GetCPUDescriptorHandleForHeapStart ()
+      GetCPUDescriptorHandleForHeapStart (priv->rtv_heap)
     };
 
     cl->OMSetRenderTargets (1, rtv_heaps, FALSE, nullptr);
@@ -1385,7 +1386,7 @@ gst_d3d12_dxgi_capture_copy_dirty_rects (GstD3D12DxgiCapture * self,
     ID3D12DescriptorHeap *heaps[] = { priv->srv_heap.Get () };
     cl->SetDescriptorHeaps (1, heaps);
     cl->SetGraphicsRootDescriptorTable (0,
-        priv->srv_heap->GetGPUDescriptorHandleForHeapStart ());
+        GetGPUDescriptorHandleForHeapStart (priv->srv_heap));
     cl->IASetVertexBuffers (0, 1, &vbv);
     cl->DrawInstanced (vertex.size (), 1, 0, 0);
 
@@ -1410,10 +1411,14 @@ gst_d3d12_dxgi_capture_draw_mouse (GstD3D12DxgiCapture * self,
   if (!info.width_ || !info.height_)
     return TRUE;
 
-  if (info.position_info.Position.x + info.width_ < crop_box->left ||
-      info.position_info.Position.x > crop_box->right ||
-      info.position_info.Position.y + info.height_ < crop_box->top ||
-      info.position_info.Position.y > crop_box->bottom) {
+  if (static_cast < INT > (info.position_info.Position.x + info.width_) <
+      static_cast < INT > (crop_box->left) ||
+      static_cast < INT > (info.position_info.Position.x) >
+      static_cast < INT > (crop_box->right) ||
+      static_cast < INT > (info.position_info.Position.y + info.height_) <
+      static_cast < INT > (crop_box->top) ||
+      static_cast < INT > (info.position_info.Position.y) >
+      static_cast < INT > (crop_box->bottom)) {
     return TRUE;
   }
 
@@ -1455,13 +1460,13 @@ gst_d3d12_dxgi_capture_draw_mouse (GstD3D12DxgiCapture * self,
 
     priv->mouse_buf = gst_buffer_new ();
     auto mem = gst_d3d12_allocator_alloc_wrapped (nullptr, self->device,
-        mouse_texture.Get (), 0);
+        mouse_texture.Get (), 0, nullptr, nullptr);
     gst_buffer_append_memory (priv->mouse_buf, mem);
 
     if (mouse_xor_texture) {
       priv->mouse_xor_buf = gst_buffer_new ();
       auto mem = gst_d3d12_allocator_alloc_wrapped (nullptr, self->device,
-          mouse_xor_texture.Get (), 0);
+          mouse_xor_texture.Get (), 0, nullptr, nullptr);
       gst_buffer_append_memory (priv->mouse_xor_buf, mem);
     }
 
@@ -1500,7 +1505,6 @@ gst_d3d12_dxgi_capture_draw_mouse (GstD3D12DxgiCapture * self,
   auto fence_data = priv->mouse_fence_data;
 
   GstD3D12CommandAllocator *gst_ca = nullptr;
-  ComPtr < ID3D12CommandAllocator > ca;
 
   if (!gst_d3d12_command_allocator_pool_acquire (priv->ca_pool, &gst_ca)) {
     GST_ERROR_OBJECT (self, "Couldn't acquire command allocator");
@@ -1509,7 +1513,7 @@ gst_d3d12_dxgi_capture_draw_mouse (GstD3D12DxgiCapture * self,
 
   gst_d3d12_fence_data_add_notify_mini_object (fence_data, gst_ca);
 
-  gst_d3d12_command_allocator_get_handle (gst_ca, &ca);
+  auto ca = gst_d3d12_command_allocator_get_handle (gst_ca);
   hr = ca->Reset ();
   if (!gst_d3d12_result (hr, self->device)) {
     GST_ERROR_OBJECT (self, "Couldn't reset command allocator");
@@ -1518,9 +1522,9 @@ gst_d3d12_dxgi_capture_draw_mouse (GstD3D12DxgiCapture * self,
 
   if (!priv->mouse_cl) {
     hr = device->CreateCommandList (0, D3D12_COMMAND_LIST_TYPE_DIRECT,
-        ca.Get (), nullptr, IID_PPV_ARGS (&priv->mouse_cl));
+        ca, nullptr, IID_PPV_ARGS (&priv->mouse_cl));
   } else {
-    hr = priv->mouse_cl->Reset (ca.Get (), nullptr);
+    hr = priv->mouse_cl->Reset (ca, nullptr);
   }
 
   if (!gst_d3d12_result (hr, self->device)) {
@@ -1579,7 +1583,7 @@ gst_d3d12_dxgi_capture_do_capture (GstD3D12DxgiCapture * capture,
   ID3D12CommandList *cmd_list[1];
   GstD3D12FenceData *fence_data = nullptr;
   GstD3D12CommandAllocator *gst_ca = nullptr;
-  ComPtr < ID3D12CommandAllocator > ca;
+  ID3D12CommandAllocator *ca = nullptr;
   HRESULT hr;
 
   std::lock_guard < std::mutex > lk (priv->lock);
@@ -1649,7 +1653,7 @@ gst_d3d12_dxgi_capture_do_capture (GstD3D12DxgiCapture * capture,
   gst_d3d12_fence_data_pool_acquire (priv->fence_data_pool, &fence_data);
   gst_d3d12_fence_data_add_notify_mini_object (fence_data, gst_ca);
 
-  gst_d3d12_command_allocator_get_handle (gst_ca, &ca);
+  ca = gst_d3d12_command_allocator_get_handle (gst_ca);
 
   hr = ca->Reset ();
   if (!gst_d3d12_result (hr, self->device)) {
@@ -1659,9 +1663,9 @@ gst_d3d12_dxgi_capture_do_capture (GstD3D12DxgiCapture * capture,
 
   if (!priv->cl) {
     hr = device->CreateCommandList (0, D3D12_COMMAND_LIST_TYPE_DIRECT,
-        ca.Get (), priv->pso.Get (), IID_PPV_ARGS (&priv->cl));
+        ca, priv->pso.Get (), IID_PPV_ARGS (&priv->cl));
   } else {
-    hr = priv->cl->Reset (ca.Get (), priv->pso.Get ());
+    hr = priv->cl->Reset (ca, priv->pso.Get ());
   }
 
   if (!gst_d3d12_result (hr, self->device)) {
