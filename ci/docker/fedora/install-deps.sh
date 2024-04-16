@@ -25,9 +25,7 @@ dnf builddep -y --skip-broken --allowerasing --best \
     gstreamer1-plugins-good-extras \
     gstreamer1-plugins-ugly \
     gstreamer1-plugins-ugly-free \
-    gstreamer1-rtsp-server \
-    gstreamer1-vaapi \
-    python3-gstreamer1
+    gstreamer1-rtsp-server
 
 dnf remove -y \
     'ffmpeg-free*' \
@@ -111,5 +109,4 @@ dnf debuginfo-install -y --best --allowerasing --skip-broken $debug_packages
 echo "Removing DNF cache"
 dnf clean all
 
-rm -R /root/*
 rm -rf /var/cache/dnf /var/log/dnf*

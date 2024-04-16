@@ -110,7 +110,6 @@ svt-hevc-libs
 svt-vp9
 svt-vp9-devel
 svt-vp9-libs
-toolbox-experience
 valgrind
 vulkan-devel
 vulkan-loader
