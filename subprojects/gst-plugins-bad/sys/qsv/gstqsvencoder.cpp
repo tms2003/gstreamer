@@ -406,7 +406,7 @@ gst_qsv_encoder_open_platform_device (GstQsvEncoder * self)
    * make use of shared resource */
   device_handle = gst_d3d11_device_get_device_handle (device);
   hr = device_handle->QueryInterface (IID_PPV_ARGS (&multi_thread));
-  if (!gst_d3d11_result (hr, device)) {
+  if (!gst_d3d11_result_full (hr, self, device)) {
     GST_ERROR_OBJECT (self, "ID3D10Multithread interface is unavailable");
     return FALSE;
   }
