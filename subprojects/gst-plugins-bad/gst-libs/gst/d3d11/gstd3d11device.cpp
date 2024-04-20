@@ -1502,6 +1502,25 @@ gst_d3d11_device_get_format (GstD3D11Device * device, GstVideoFormat format,
   return TRUE;
 }
 
+/**
+ * gst_d3d11_device_get_device_removed_reason:
+ * @device: a #GstD3D11Device
+ *
+ * Gets ID3D11Device::GetDeviceRemovedReason() error code if device removed
+ * status was detected. Otherwise S_OK will be returned
+ *
+ * Returns: HRESULT code
+ *
+ * Since: 1.26
+ */
+HRESULT
+gst_d3d11_device_get_device_removed_reason (GstD3D11Device * device)
+{
+  g_return_val_if_fail (GST_IS_D3D11_DEVICE (device), S_OK);
+
+  return device->priv->removed_reason;
+}
+
 GST_DEFINE_MINI_OBJECT_TYPE (GstD3D11Fence, gst_d3d11_fence);
 
 struct _GstD3D11FencePrivate

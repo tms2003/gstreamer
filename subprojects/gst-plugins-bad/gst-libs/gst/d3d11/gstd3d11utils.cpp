@@ -600,6 +600,82 @@ _gst_d3d11_result (HRESULT hr, GstD3D11Device * device, GstDebugCategory * cat,
 }
 
 /**
+ * _gst_d3d11_result_full:
+ * @result: HRESULT D3D12 API return code
+ * @element: (nullable): a #GstElement
+ * @device: (nullable): Associated #GstD3D11Device
+ * @cat: a #GstDebugCategory
+ * @file: the file that checking the result code
+ * @function: the function that checking the result code
+ * @line: the line that checking the result code
+ *
+ * Prints debug message if @result code indicates the operation was failed.
+ *
+ * Returns: %TRUE if D3D12 API call result is SUCCESS
+ *
+ * Since: 1.26
+ */
+gboolean
+_gst_d3d11_result_full (HRESULT hr, GstElement * element,
+    GstD3D11Device * device, GstDebugCategory * cat, const gchar * file,
+    const gchar * function, gint line)
+{
+  if (_gst_d3d11_result (hr, device, cat, file, function, line))
+    return TRUE;
+
+  if (device && element) {
+    auto reason = gst_d3d11_device_get_device_removed_reason (device);
+    if (FAILED (reason)) {
+      auto error_text = g_strdup ("GPU device lost was detected");
+      auto debug_text = g_win32_error_message ((guint) reason);
+      gst_element_message_full (element, GST_MESSAGE_ERROR, GST_RESOURCE_ERROR,
+          GST_RESOURCE_ERROR_DEVICE_LOST, error_text, debug_text, file,
+          function, line);
+    }
+  }
+
+  return FALSE;
+}
+
+/**
+ * _gst_d3d11_post_error_if_device_removed:
+ * @element: a #GstElement
+ * @device: a #GstD3D11Device
+ * @file: the file that checking the device removed status
+ * @function: the function that checking the device removed status
+ * @line: the line that checking the device removed status
+ *
+ * Posts device lost error message if device removed status is detected
+ *
+ * Returns: %TRUE if device lost message was posted
+ *
+ * Since: 1.26
+ */
+gboolean
+_gst_d3d11_post_error_if_device_removed (GstElement * element,
+    GstD3D11Device * device, const gchar * file, const gchar * function,
+    gint line)
+{
+  if (!element || !device)
+    return FALSE;
+
+  g_return_val_if_fail (GST_IS_ELEMENT (element), FALSE);
+  g_return_val_if_fail (GST_IS_D3D11_DEVICE (device), FALSE);
+
+  auto reason = gst_d3d11_device_get_device_removed_reason (device);
+  if (FAILED (reason)) {
+    auto error_text = g_strdup ("GPU device lost was detected");
+    auto debug_text = g_win32_error_message ((guint) reason);
+    gst_element_message_full (element, GST_MESSAGE_ERROR, GST_RESOURCE_ERROR,
+        GST_RESOURCE_ERROR_DEVICE_LOST, error_text, debug_text, file,
+        function, line);
+    return TRUE;
+  }
+
+  return FALSE;
+}
+
+/**
  * gst_d3d11_create_user_token:
  *
  * Creates new user token value
