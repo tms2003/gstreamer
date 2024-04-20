@@ -528,7 +528,7 @@ gst_amf_encoder_open (GstVideoEncoder * encoder)
     dx_ver = AMF_DX11_0;
 
   hr = device_handle->QueryInterface (IID_PPV_ARGS (&multi_thread));
-  if (!gst_d3d11_result (hr, priv->device)) {
+  if (!gst_d3d11_result_full (hr, self, priv->device)) {
     GST_ERROR_OBJECT (self, "ID3D10Multithread interface is unavailable");
     goto error;
   }
@@ -1030,14 +1030,14 @@ gst_amf_encoder_copy_d3d11 (GstAmfEncoder * self, GstBuffer * src_buffer,
 
   if (shared) {
     hr = dst_tex->QueryInterface (IID_PPV_ARGS (&dxgi_resource));
-    if (!gst_d3d11_result (hr, priv->device)) {
+    if (!gst_d3d11_result_full (hr, self, priv->device)) {
       GST_ERROR_OBJECT (self,
           "IDXGIResource interface is not available, hr: 0x%x", (guint) hr);
       goto error;
     }
 
     hr = dxgi_resource->GetSharedHandle (&shared_handle);
-    if (!gst_d3d11_result (hr, priv->device)) {
+    if (!gst_d3d11_result_full (hr, self, priv->device)) {
       GST_ERROR_OBJECT (self, "Failed to get shared handle, hr: 0x%x",
           (guint) hr);
       goto error;
@@ -1046,7 +1046,7 @@ gst_amf_encoder_copy_d3d11 (GstAmfEncoder * self, GstBuffer * src_buffer,
     hr = device_handle->OpenSharedResource (shared_handle,
         IID_PPV_ARGS (&shared_texture));
 
-    if (!gst_d3d11_result (hr, device)) {
+    if (!gst_d3d11_result_full (hr, self, device)) {
       GST_ERROR_OBJECT (self, "Failed to get shared texture, hr: 0x%x",
           (guint) hr);
       goto error;
