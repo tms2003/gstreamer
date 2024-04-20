@@ -1601,3 +1601,22 @@ gst_d3d12_device_check_device_removed (GstD3D12Device * device)
     manager->OnDeviceRemoved (priv->adapter_luid);
   }
 }
+
+/**
+ * gst_d3d12_device_get_device_removed_reason:
+ * @device: a #GstD3D12Device
+ *
+ * Gets ID3D12Device::GetDeviceRemovedReason() error code if device removed
+ * status was detected. Otherwise S_OK will be returned
+ *
+ * Returns: HRESULT code
+ *
+ * Since: 1.26
+ */
+HRESULT
+gst_d3d12_device_get_device_removed_reason (GstD3D12Device * device)
+{
+  g_return_val_if_fail (GST_IS_D3D12_DEVICE (device), S_OK);
+
+  return device->priv->inner->removed_reason;
+}

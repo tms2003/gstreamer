@@ -120,5 +120,8 @@ GST_D3D12_API
 gboolean                gst_d3d12_device_is_equal                 (GstD3D12Device * device1,
                                                                    GstD3D12Device * device2);
 
+GST_D3D12_API
+HRESULT                 gst_d3d12_device_get_device_removed_reason (GstD3D12Device * device);
+
 G_END_DECLS
 

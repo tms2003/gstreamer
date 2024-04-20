@@ -74,6 +74,23 @@ gboolean _gst_d3d12_result (HRESULT hr,
                             gint line,
                             GstDebugLevel level);
 
+GST_D3D12_API
+gboolean _gst_d3d12_result_full (HRESULT hr,
+                                 GstElement * element,
+                                 GstD3D12Device * device,
+                                 GstDebugCategory * cat,
+                                 const gchar * file,
+                                 const gchar * function,
+                                 gint line,
+                                 GstDebugLevel level);
+
+GST_D3D12_API
+gboolean _gst_d3d12_post_error_if_device_removed (GstElement * element,
+                                                  GstD3D12Device * device,
+                                                  const gchar * file,
+                                                  const gchar * function,
+                                                  gint line);
+
 /**
  * gst_d3d12_result:
  * @result: HRESULT D3D12 API return code
@@ -90,6 +107,41 @@ gboolean _gst_d3d12_result (HRESULT hr,
 #define gst_d3d12_result(result,device) \
     _gst_d3d12_result (result, device, NULL, __FILE__, GST_FUNCTION, __LINE__, GST_LEVEL_ERROR)
 #endif
+
+/**
+ * gst_d3d12_result_full:
+ * @result: HRESULT D3D12 API return code
+ * @element: (nullable): a #GstElement
+ * @device: (nullable): Associated #GstD3D12Device
+ *
+ * Checks HRESULT code and posts GST_RESOURCE_ERROR_DEVICE_LOST message
+ * if device removed state is detected
+ *
+ * Returns: %TRUE if D3D12 API call result is SUCCESS
+ *
+ * Since: 1.26
+ */
+#ifndef GST_DISABLE_GST_DEBUG
+#define gst_d3d12_result_full(result,elem,device) \
+    _gst_d3d12_result_full (result, (GstElement *) elem, device, GST_CAT_DEFAULT, __FILE__, GST_FUNCTION, __LINE__, GST_LEVEL_ERROR)
+#else
+#define gst_d3d12_result_full(result,elem,device) \
+    _gst_d3d12_result_full (result, (GstElement *) elem, device, NULL, __FILE__, GST_FUNCTION, __LINE__, GST_LEVEL_ERROR)
+#endif
+
+/**
+ * gst_d3d12_post_error_if_device_removed:
+ * @element: a #GstElement
+ * @device: a #GstD3D12Device
+ *
+ * Posts device lost error if device removed status is detected
+ *
+ * Returns: %TRUE if device lost message was posted
+ *
+ * Since: 1.26
+ */
+#define gst_d3d12_post_error_if_device_removed(elem,device) \
+    _gst_d3d12_post_error_if_device_removed ((GstElement *) elem, device, __FILE__, GST_FUNCTION, __LINE__)
 
 G_END_DECLS
 
