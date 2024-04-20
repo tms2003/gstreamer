@@ -551,26 +551,6 @@ gst_d3d11_luid_to_int64 (const LUID * luid)
   return val.QuadPart;
 }
 
-#ifndef GST_DISABLE_GST_DEBUG
-static void
-gst_d3d11_log_gpu_remove_reason (HRESULT hr, GstD3D11Device * device,
-    GstDebugCategory * cat, const gchar * file, const gchar * function,
-    gint line)
-{
-  gchar *error_text = g_win32_error_message ((guint) hr);
-
-  gst_debug_log (cat, GST_LEVEL_ERROR, file, function, line,
-      NULL, "DeviceRemovedReason: 0x%x, %s", (guint) hr,
-      GST_STR_NULL (error_text));
-  if (hr != DXGI_ERROR_DEVICE_REMOVED)
-    g_critical ("D3D11Device have been removed. Reason (0x%x): %s",
-        (guint) hr, GST_STR_NULL (error_text));
-  g_free (error_text);
-
-  gst_d3d11_device_log_live_objects (device, file, function, line);
-}
-#endif
-
 /**
  * _gst_d3d11_result:
  * @result: HRESULT D3D11 API return code
@@ -591,11 +571,14 @@ _gst_d3d11_result (HRESULT hr, GstD3D11Device * device, GstDebugCategory * cat,
     const gchar * file, const gchar * function, gint line)
 {
 #ifndef GST_DISABLE_GST_DEBUG
-  gboolean ret = TRUE;
-
+#if (HAVE_D3D11SDKLAYERS_H || HAVE_DXGIDEBUG_H)
+  if (device) {
+    gst_d3d11_device_d3d11_debug (device, file, function, line);
+    gst_d3d11_device_dxgi_debug (device, file, function, line);
+  }
+#endif
   if (FAILED (hr)) {
     gchar *error_text = NULL;
-
     error_text = g_win32_error_message ((guint) hr);
     /* g_win32_error_message() doesn't cover all HERESULT return code,
      * so it could be empty string, or null if there was an error
@@ -604,29 +587,92 @@ _gst_d3d11_result (HRESULT hr, GstD3D11Device * device, GstDebugCategory * cat,
         NULL, "D3D11 call failed: 0x%x, %s", (guint) hr,
         GST_STR_NULL (error_text));
     g_free (error_text);
+  }
+#endif
 
-    if (device) {
-      ID3D11Device *device_handle = gst_d3d11_device_get_device_handle (device);
-      hr = device_handle->GetDeviceRemovedReason ();
-      if (hr != S_OK) {
-        gst_d3d11_log_gpu_remove_reason (hr, device, cat, file, function, line);
-        gst_d3d11_device_mark_removed (device, hr);
-      }
+  if (SUCCEEDED (hr))
+    return TRUE;
+
+  if (device)
+    gst_d3d11_device_check_device_removed (device);
+
+  return FALSE;
+}
+
+/**
+ * _gst_d3d11_result_full:
+ * @result: HRESULT D3D12 API return code
+ * @element: (nullable): a #GstElement
+ * @device: (nullable): Associated #GstD3D11Device
+ * @cat: a #GstDebugCategory
+ * @file: the file that checking the result code
+ * @function: the function that checking the result code
+ * @line: the line that checking the result code
+ *
+ * Prints debug message if @result code indicates the operation was failed.
+ *
+ * Returns: %TRUE if D3D12 API call result is SUCCESS
+ *
+ * Since: 1.26
+ */
+gboolean
+_gst_d3d11_result_full (HRESULT hr, GstElement * element,
+    GstD3D11Device * device, GstDebugCategory * cat, const gchar * file,
+    const gchar * function, gint line)
+{
+  if (_gst_d3d11_result (hr, device, cat, file, function, line))
+    return TRUE;
+
+  if (device && element) {
+    auto reason = gst_d3d11_device_get_device_removed_reason (device);
+    if (FAILED (reason)) {
+      auto error_text = g_strdup ("GPU device lost was detected");
+      auto debug_text = g_win32_error_message ((guint) reason);
+      gst_element_message_full (element, GST_MESSAGE_ERROR, GST_RESOURCE_ERROR,
+          GST_RESOURCE_ERROR_DEVICE_LOST, error_text, debug_text, file,
+          function, line);
     }
-
-    ret = FALSE;
   }
-#if (HAVE_D3D11SDKLAYERS_H || HAVE_DXGIDEBUG_H)
-  if (device) {
-    gst_d3d11_device_d3d11_debug (device, file, function, line);
-    gst_d3d11_device_dxgi_debug (device, file, function, line);
-  }
-#endif
 
-  return ret;
-#else
-  return SUCCEEDED (hr);
-#endif
+  return FALSE;
+}
+
+/**
+ * _gst_d3d11_post_error_if_device_removed:
+ * @element: a #GstElement
+ * @device: a #GstD3D11Device
+ * @file: the file that checking the device removed status
+ * @function: the function that checking the device removed status
+ * @line: the line that checking the device removed status
+ *
+ * Posts device lost error message if device removed status is detected
+ *
+ * Returns: %TRUE if device lost message was posted
+ *
+ * Since: 1.26
+ */
+gboolean
+_gst_d3d11_post_error_if_device_removed (GstElement * element,
+    GstD3D11Device * device, const gchar * file, const gchar * function,
+    gint line)
+{
+  if (!element || !device)
+    return FALSE;
+
+  g_return_val_if_fail (GST_IS_ELEMENT (element), FALSE);
+  g_return_val_if_fail (GST_IS_D3D11_DEVICE (device), FALSE);
+
+  auto reason = gst_d3d11_device_get_device_removed_reason (device);
+  if (FAILED (reason)) {
+    auto error_text = g_strdup ("GPU device lost was detected");
+    auto debug_text = g_win32_error_message ((guint) reason);
+    gst_element_message_full (element, GST_MESSAGE_ERROR, GST_RESOURCE_ERROR,
+        GST_RESOURCE_ERROR_DEVICE_LOST, error_text, debug_text, file,
+        function, line);
+    return TRUE;
+  }
+
+  return FALSE;
 }
 
 /**

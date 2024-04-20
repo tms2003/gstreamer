@@ -1753,6 +1753,7 @@ gst_d3d12_convert_set_info (GstD3D12BaseFilter * filter,
   ctx->conv = gst_d3d12_converter_new (filter->device, in_info,
       out_info, nullptr, nullptr, config);
   if (!ctx->conv) {
+    gst_d3d12_post_error_if_device_removed (self, filter->device);
     GST_ERROR_OBJECT (self, "Couldn't create converter");
     return FALSE;
   }
@@ -1976,13 +1977,14 @@ gst_d3d12_convert_transform (GstBaseTransform * trans, GstBuffer * inbuf,
   GstD3D12CommandAllocator *gst_ca;
   if (!gst_d3d12_command_allocator_pool_acquire (priv->ctx->ca_pool, &gst_ca)) {
     GST_ERROR_OBJECT (self, "Couldn't acquire command allocator");
+    gst_d3d12_post_error_if_device_removed (self, priv->ctx->device);
     return GST_FLOW_ERROR;
   }
 
   auto ca = gst_d3d12_command_allocator_get_handle (gst_ca);
 
   auto hr = ca->Reset ();
-  if (!gst_d3d12_result (hr, priv->ctx->device)) {
+  if (!gst_d3d12_result_full (hr, self, priv->ctx->device)) {
     GST_ERROR_OBJECT (self, "Couldn't reset command allocator");
     gst_d3d12_command_allocator_unref (gst_ca);
     return GST_FLOW_ERROR;
@@ -1992,14 +1994,14 @@ gst_d3d12_convert_transform (GstBaseTransform * trans, GstBuffer * inbuf,
     auto device = gst_d3d12_device_get_device_handle (priv->ctx->device);
     hr = device->CreateCommandList (0, D3D12_COMMAND_LIST_TYPE_DIRECT,
         ca, nullptr, IID_PPV_ARGS (&priv->ctx->cl));
-    if (!gst_d3d12_result (hr, priv->ctx->device)) {
+    if (!gst_d3d12_result_full (hr, self, priv->ctx->device)) {
       GST_ERROR_OBJECT (self, "Couldn't create command list");
       gst_d3d12_command_allocator_unref (gst_ca);
       return GST_FLOW_ERROR;
     }
   } else {
     hr = priv->ctx->cl->Reset (ca, nullptr);
-    if (!gst_d3d12_result (hr, priv->ctx->device)) {
+    if (!gst_d3d12_result_full (hr, self, priv->ctx->device)) {
       GST_ERROR_OBJECT (self, "Couldn't reset command list");
       gst_d3d12_command_allocator_unref (gst_ca);
       return GST_FLOW_ERROR;
@@ -2013,12 +2015,13 @@ gst_d3d12_convert_transform (GstBaseTransform * trans, GstBuffer * inbuf,
   if (!gst_d3d12_converter_convert_buffer (priv->ctx->conv,
           inbuf, outbuf, fence_data, priv->ctx->cl.Get ())) {
     GST_ERROR_OBJECT (self, "Couldn't build command list");
+    gst_d3d12_post_error_if_device_removed (self, priv->ctx->device);
     gst_d3d12_fence_data_unref (fence_data);
     return GST_FLOW_ERROR;
   }
 
   hr = priv->ctx->cl->Close ();
-  if (!gst_d3d12_result (hr, priv->ctx->device)) {
+  if (!gst_d3d12_result_full (hr, self, priv->ctx->device)) {
     GST_ERROR_OBJECT (self, "Couldn't close command list");
     gst_d3d12_fence_data_unref (fence_data);
     return GST_FLOW_ERROR;
@@ -2029,6 +2032,7 @@ gst_d3d12_convert_transform (GstBaseTransform * trans, GstBuffer * inbuf,
   if (!gst_d3d12_device_execute_command_lists (priv->ctx->device,
           D3D12_COMMAND_LIST_TYPE_DIRECT, 1, cmd_list, &priv->ctx->fence_val)) {
     GST_ERROR_OBJECT (self, "Couldn't execute command list");
+    gst_d3d12_post_error_if_device_removed (self, priv->ctx->device);
     gst_d3d12_fence_data_unref (fence_data);
     return GST_FLOW_ERROR;
   }

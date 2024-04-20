@@ -295,7 +295,7 @@ gst_d3d12_encoder_open (GstVideoEncoder * encoder)
 
   auto device = gst_d3d12_device_get_device_handle (self->device);
   hr = device->QueryInterface (IID_PPV_ARGS (&video_device));
-  if (!gst_d3d12_result (hr, self->device)) {
+  if (!gst_d3d12_result_full (hr, self, self->device)) {
     GST_ERROR_OBJECT (self, "ID3D12VideoDevice3 interface is unavailable");
     return FALSE;
   }
@@ -614,7 +614,7 @@ gst_d3d12_encoder_set_format (GstVideoEncoder * encoder,
   auto hr = video_device->CheckFeatureSupport
       (D3D12_FEATURE_VIDEO_ENCODER_RESOURCE_REQUIREMENTS,
       &resource_req, sizeof (resource_req));
-  if (!gst_d3d12_result (hr, self->device)) {
+  if (!gst_d3d12_result_full (hr, self, self->device)) {
     GST_ERROR_OBJECT (self, "Couldn't query resource requirement");
     return FALSE;
   }
@@ -631,7 +631,7 @@ gst_d3d12_encoder_set_format (GstVideoEncoder * encoder,
   priv->format_info.Format = DXGI_FORMAT_NV12;
   hr = device->CheckFeatureSupport (D3D12_FEATURE_FORMAT_INFO,
       &priv->format_info, sizeof (priv->format_info));
-  if (!gst_d3d12_result (hr, self->device)) {
+  if (!gst_d3d12_result_full (hr, self, self->device)) {
     GST_ERROR_OBJECT (self, "Couldn't query format info");
     return FALSE;
   }
@@ -649,7 +649,7 @@ gst_d3d12_encoder_set_format (GstVideoEncoder * encoder,
 
   hr = video_device->CreateVideoEncoder (&desc,
       IID_PPV_ARGS (&session->encoder));
-  if (!gst_d3d12_result (hr, self->device)) {
+  if (!gst_d3d12_result_full (hr, self, self->device)) {
     GST_ERROR_OBJECT (self, "Couldn't create encoder");
     return FALSE;
   }
@@ -663,7 +663,7 @@ gst_d3d12_encoder_set_format (GstVideoEncoder * encoder,
   heap_desc.pResolutionList = &config.resolution;
   hr = video_device->CreateVideoEncoderHeap (&heap_desc,
       IID_PPV_ARGS (&session->heap));
-  if (!gst_d3d12_result (hr, self->device)) {
+  if (!gst_d3d12_result_full (hr, self, self->device)) {
     GST_ERROR_OBJECT (self, "Couldn't create encoder heap");
     return FALSE;
   }
@@ -1007,7 +1007,7 @@ gst_d3d12_encoder_resolve_bitstream (GstD3D12Encoder * self,
   CD3DX12_RANGE zero_range (0, 0);
 
   hr = resolved_metadata->Map (0, nullptr, (void **) &map_data);
-  if (!gst_d3d12_result (hr, self->device)) {
+  if (!gst_d3d12_result_full (hr, self, self->device)) {
     GST_ERROR_OBJECT (self, "Couldn't map metadata");
     return FALSE;
   }
@@ -1099,7 +1099,7 @@ gst_d3d12_encoder_resolve_bitstream (GstD3D12Encoder * self,
   resolved_metadata->Unmap (0, &zero_range);
 
   hr = bitstream->Map (0, nullptr, (void **) &map_data);
-  if (!gst_d3d12_result (hr, self->device)) {
+  if (!gst_d3d12_result_full (hr, self, self->device)) {
     GST_ERROR_OBJECT (self, "Couldn't map bitstream");
     return FALSE;
   }
@@ -1256,7 +1256,7 @@ gst_d3d12_encoder_handle_frame (GstVideoEncoder * encoder,
 
   auto ca = gst_d3d12_command_allocator_get_handle (gst_ca);
   auto hr = ca->Reset ();
-  if (!gst_d3d12_result (hr, self->device)) {
+  if (!gst_d3d12_result_full (hr, self, self->device)) {
     GST_ERROR_OBJECT (self, "Couldn't reset command allocator");
     gst_d3d12_fence_data_unref (fence_data);
     gst_video_encoder_finish_frame (encoder, frame);
@@ -1271,7 +1271,7 @@ gst_d3d12_encoder_handle_frame (GstVideoEncoder * encoder,
     hr = priv->cmd->cl->Reset (ca);
   }
 
-  if (!gst_d3d12_result (hr, self->device)) {
+  if (!gst_d3d12_result_full (hr, self, self->device)) {
     GST_ERROR_OBJECT (self, "Couldn't reset command list");
     gst_d3d12_fence_data_unref (fence_data);
     gst_video_encoder_finish_frame (encoder, frame);
@@ -1313,7 +1313,7 @@ gst_d3d12_encoder_handle_frame (GstVideoEncoder * encoder,
 
     hr = video_device->CreateVideoEncoder (&desc,
         IID_PPV_ARGS (&priv->session->encoder));
-    if (!gst_d3d12_result (hr, self->device)) {
+    if (!gst_d3d12_result_full (hr, self, self->device)) {
       GST_ERROR_OBJECT (self, "Couldn't create encoder");
       gst_d3d12_fence_data_unref (fence_data);
       gst_video_encoder_finish_frame (encoder, frame);
@@ -1328,7 +1328,7 @@ gst_d3d12_encoder_handle_frame (GstVideoEncoder * encoder,
     heap_desc.pResolutionList = &config.resolution;
     hr = video_device->CreateVideoEncoderHeap (&heap_desc,
         IID_PPV_ARGS (&priv->session->heap));
-    if (!gst_d3d12_result (hr, self->device)) {
+    if (!gst_d3d12_result_full (hr, self, self->device)) {
       GST_ERROR_OBJECT (self, "Couldn't create encoder heap");
       gst_d3d12_fence_data_unref (fence_data);
       gst_video_encoder_finish_frame (encoder, frame);
@@ -1416,7 +1416,7 @@ gst_d3d12_encoder_handle_frame (GstVideoEncoder * encoder,
 
   klass->end_frame (self);
 
-  if (!gst_d3d12_result (hr, self->device)) {
+  if (!gst_d3d12_result_full (hr, self, self->device)) {
     GST_ERROR_OBJECT (self, "Couldn't close command list");
     gst_d3d12_fence_data_unref (fence_data);
     gst_clear_buffer (&frame->output_buffer);
@@ -1437,7 +1437,7 @@ gst_d3d12_encoder_handle_frame (GstVideoEncoder * encoder,
   ID3D12CommandList *cmd_list[] = { cl.Get () };
   hr = gst_d3d12_command_queue_execute_command_lists (priv->cmd->queue,
       1, cmd_list, &priv->cmd->fence_val);
-  if (!gst_d3d12_result (hr, self->device)) {
+  if (!gst_d3d12_result_full (hr, self, self->device)) {
     GST_ERROR_OBJECT (self, "Couldn't execute command list");
     gst_d3d12_fence_data_unref (fence_data);
     gst_clear_buffer (&frame->output_buffer);

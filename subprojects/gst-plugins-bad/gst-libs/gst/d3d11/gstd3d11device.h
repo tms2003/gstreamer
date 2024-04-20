@@ -119,6 +119,9 @@ gboolean              gst_d3d11_device_get_format         (GstD3D11Device * devi
                                                            GstVideoFormat format,
                                                            GstD3D11Format * device_format);
 
+GST_D3D11_API
+HRESULT               gst_d3d11_device_get_device_removed_reason (GstD3D11Device * device);
+
 /**
  * GstD3D11Fence:
  *

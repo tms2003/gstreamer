@@ -411,7 +411,7 @@ gst_nv_encoder_open_d3d11_device (GstNvEncoder * self)
 
   device_handle = gst_d3d11_device_get_device_handle (priv->device);
   hr = device_handle->QueryInterface (IID_PPV_ARGS (&multi_thread));
-  if (!gst_d3d11_result (hr, priv->device)) {
+  if (!gst_d3d11_result_full (hr, self, priv->device)) {
     GST_ERROR_OBJECT (self, "ID3D10Multithread interface is unavailable");
     gst_clear_object (&priv->device);
 
@@ -1642,14 +1642,14 @@ gst_nv_encoder_copy_d3d11 (GstNvEncoder * self,
 
   if (shared) {
     hr = dst_tex->QueryInterface (IID_PPV_ARGS (&dxgi_resource));
-    if (!gst_d3d11_result (hr, priv->device)) {
+    if (!gst_d3d11_result_full (hr, self, priv->device)) {
       GST_ERROR_OBJECT (self,
           "IDXGIResource interface is not available, hr: 0x%x", (guint) hr);
       goto error;
     }
 
     hr = dxgi_resource->GetSharedHandle (&shared_handle);
-    if (!gst_d3d11_result (hr, priv->device)) {
+    if (!gst_d3d11_result_full (hr, self, priv->device)) {
       GST_ERROR_OBJECT (self, "Failed to get shared handle, hr: 0x%x",
           (guint) hr);
       goto error;
@@ -1658,7 +1658,7 @@ gst_nv_encoder_copy_d3d11 (GstNvEncoder * self,
     hr = device_handle->OpenSharedResource (shared_handle,
         IID_PPV_ARGS (&shared_texture));
 
-    if (!gst_d3d11_result (hr, device)) {
+    if (!gst_d3d11_result_full (hr, self, device)) {
       GST_ERROR_OBJECT (self, "Failed to get shared texture, hr: 0x%x",
           (guint) hr);
       goto error;

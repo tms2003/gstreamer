@@ -1534,13 +1534,14 @@ gst_d3d12_h264_enc_update_slice (GstD3D12H264Enc * self,
     hr = video_device->CheckFeatureSupport
         (D3D12_FEATURE_VIDEO_ENCODER_FRAME_SUBREGION_LAYOUT_MODE,
         &feature_layout, sizeof (feature_layout));
-    if (!gst_d3d12_result (hr, encoder->device) || !feature_layout.IsSupported) {
+    if (!gst_d3d12_result_full (hr, self, encoder->device)
+        || !feature_layout.IsSupported) {
       GST_WARNING_OBJECT (self, "Requested slice mode is not supported");
     } else {
       support.SubregionFrameEncoding = priv->slice_mode;
       hr = video_device->CheckFeatureSupport
           (D3D12_FEATURE_VIDEO_ENCODER_SUPPORT, &support, sizeof (support));
-      if (gst_d3d12_result (hr, encoder->device)
+      if (gst_d3d12_result_full (hr, self, encoder->device)
           && CHECK_SUPPORT_FLAG (support.SupportFlags, GENERAL_SUPPORT_OK)
           && support.ValidationFlags == D3D12_VIDEO_ENCODER_VALIDATION_FLAG_NONE
           && limits.MaxSubregionsNumber > 1
@@ -1693,7 +1694,7 @@ gst_d3d12_h264_enc_reconfigure (GstD3D12H264Enc * self,
 
   /* This is our minimum/simplest configuration
    * TODO: negotiate again depending on validation flags */
-  if (!gst_d3d12_result (hr, encoder->device) ||
+  if (!gst_d3d12_result_full (hr, self, encoder->device) ||
       !CHECK_SUPPORT_FLAG (support.SupportFlags, GENERAL_SUPPORT_OK) ||
       (support.ValidationFlags != D3D12_VIDEO_ENCODER_VALIDATION_FLAG_NONE)) {
     GST_ERROR_OBJECT (self, "Couldn't query encoder support");
@@ -1888,7 +1889,8 @@ gst_d3d12_h264_enc_new_sequence (GstD3D12Encoder * encoder,
   auto hr = video_device->CheckFeatureSupport
       (D3D12_FEATURE_VIDEO_ENCODER_CODEC_PICTURE_CONTROL_SUPPORT,
       &feature_pic_ctrl, sizeof (feature_pic_ctrl));
-  if (!gst_d3d12_result (hr, encoder->device) || !feature_pic_ctrl.IsSupported) {
+  if (!gst_d3d12_result_full (hr, self, encoder->device)
+      || !feature_pic_ctrl.IsSupported) {
     GST_ERROR_OBJECT (self, "Couldn't query picture control support");
     return FALSE;
   }

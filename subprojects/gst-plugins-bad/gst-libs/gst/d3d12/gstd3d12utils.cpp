@@ -649,6 +649,7 @@ gst_d3d12_buffer_copy_into (GstBuffer * dest, GstBuffer * src,
  * @file: the file that checking the result code
  * @function: the function that checking the result code
  * @line: the line that checking the result code
+ * @level: #GstDebugLevel
  *
  * Prints debug message if @result code indicates the operation was failed.
  *
@@ -661,14 +662,11 @@ _gst_d3d12_result (HRESULT hr, GstD3D12Device * device, GstDebugCategory * cat,
     const gchar * file, const gchar * function, gint line, GstDebugLevel level)
 {
 #ifndef GST_DISABLE_GST_DEBUG
-  gboolean ret = TRUE;
-
   if (device)
     gst_d3d12_device_d3d12_debug (device, file, function, line);
 
   if (FAILED (hr)) {
     gchar *error_text = nullptr;
-
     error_text = g_win32_error_message ((guint) hr);
     /* g_win32_error_message() doesn't cover all HERESULT return code,
      * so it could be empty string, or nullptr if there was an error
@@ -677,12 +675,93 @@ _gst_d3d12_result (HRESULT hr, GstD3D12Device * device, GstDebugCategory * cat,
         nullptr, "D3D12 call failed: 0x%x, %s", (guint) hr,
         GST_STR_NULL (error_text));
     g_free (error_text);
+  }
+#endif
 
-    ret = FALSE;
+  if (SUCCEEDED (hr))
+    return TRUE;
+
+  if (device)
+    gst_d3d12_device_check_device_removed (device);
+
+  return FALSE;
+}
+
+/**
+ * _gst_d3d12_result_full:
+ * @result: HRESULT D3D12 API return code
+ * @element: (nullable): a #GstElement
+ * @device: (nullable): Associated #GstD3D12Device
+ * @cat: a #GstDebugCategory
+ * @file: the file that checking the result code
+ * @function: the function that checking the result code
+ * @line: the line that checking the result code
+ * @level: #GstDebugLevel
+ *
+ * Prints debug message if @result code indicates the operation was failed.
+ * And if device removed status is detected, device lost error message will
+ * be posted
+ *
+ * Returns: %TRUE if D3D12 API call result is SUCCESS
+ *
+ * Since: 1.26
+ */
+gboolean
+_gst_d3d12_result_full (HRESULT hr, GstElement * element,
+    GstD3D12Device * device, GstDebugCategory * cat, const gchar * file,
+    const gchar * function, gint line, GstDebugLevel level)
+{
+  if (_gst_d3d12_result (hr, device, cat, file, function, line, level))
+    return TRUE;
+
+  if (device && element) {
+    auto reason = gst_d3d12_device_get_device_removed_reason (device);
+    if (FAILED (reason)) {
+      auto error_text = g_strdup ("GPU device lost was detected");
+      auto debug_text = g_win32_error_message ((guint) reason);
+      gst_element_message_full (element, GST_MESSAGE_ERROR, GST_RESOURCE_ERROR,
+          GST_RESOURCE_ERROR_DEVICE_LOST, error_text, debug_text, file,
+          function, line);
+    }
   }
 
-  return ret;
-#else
-  return SUCCEEDED (hr);
-#endif
+  return FALSE;
+}
+
+/**
+ * _gst_d3d12_post_error_if_device_removed:
+ * @element: a #GstElement
+ * @device: a #GstD3D12Device
+ * @file: the file that checking the device removed status
+ * @function: the function that checking the device removed status
+ * @line: the line that checking the device removed status
+ *
+ * Posts device lost error message if device removed status is detected
+ *
+ * Returns: %TRUE if device lost message was posted
+ *
+ * Since: 1.26
+ */
+gboolean
+_gst_d3d12_post_error_if_device_removed (GstElement * element,
+    GstD3D12Device * device, const gchar * file, const gchar * function,
+    gint line)
+{
+  if (!element || !device)
+    return FALSE;
+
+  g_return_val_if_fail (GST_IS_ELEMENT (element), FALSE);
+  g_return_val_if_fail (GST_IS_D3D12_DEVICE (device), FALSE);
+
+  auto reason = gst_d3d12_device_get_device_removed_reason (device);
+  if (FAILED (reason)) {
+    auto error_text = g_strdup ("GPU device lost was detected");
+    auto debug_text = g_win32_error_message ((guint) reason);
+    gst_element_message_full (element, GST_MESSAGE_ERROR, GST_RESOURCE_ERROR,
+        GST_RESOURCE_ERROR_DEVICE_LOST, error_text, debug_text, file,
+        function, line);
+    return TRUE;
+  }
+
+  return FALSE;
 }

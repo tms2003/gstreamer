@@ -873,20 +873,20 @@ gst_d3d11_screen_capture_prepare_shader (GstD3D11ScreenCaptureSrc * self)
   device_handle = gst_d3d11_device_get_device_handle (self->device);
 
   hr = gst_d3d11_get_vertex_shader_coord (self->device, &vs, &layout);
-  if (!gst_d3d11_result (hr, self->device)) {
+  if (!gst_d3d11_result_full (hr, self, self->device)) {
     GST_ERROR_OBJECT (self, "Failed to create vertex shader");
     return FALSE;
   }
 
   hr = gst_d3d11_get_pixel_shader_sample (self->device, &ps);
-  if (!gst_d3d11_result (hr, self->device)) {
+  if (!gst_d3d11_result_full (hr, self, self->device)) {
     GST_ERROR_OBJECT (self, "Failed to create pixel shader");
     return FALSE;
   }
 
   hr = gst_d3d11_device_get_sampler (self->device,
       D3D11_FILTER_MIN_MAG_MIP_LINEAR, &sampler);
-  if (!gst_d3d11_result (hr, self->device)) {
+  if (!gst_d3d11_result_full (hr, self, self->device)) {
     GST_ERROR_OBJECT (self,
         "Failed to create sampler state, hr 0x%x", (guint) hr);
     return FALSE;
@@ -905,14 +905,14 @@ gst_d3d11_screen_capture_prepare_shader (GstD3D11ScreenCaptureSrc * self)
       D3D11_COLOR_WRITE_ENABLE_ALL;
 
   hr = device_handle->CreateBlendState (&blend_desc, &blend);
-  if (!gst_d3d11_result (hr, self->device)) {
+  if (!gst_d3d11_result_full (hr, self, self->device)) {
     GST_ERROR_OBJECT (self,
         "Failed to create blend state, hr 0x%x", (guint) hr);
     return FALSE;
   }
 
   hr = gst_d3d11_device_get_rasterizer (self->device, &rs);
-  if (!gst_d3d11_result (hr, self->device)) {
+  if (!gst_d3d11_result_full (hr, self, self->device)) {
     GST_ERROR_OBJECT (self, "Couldn't get rasterizer state");
     return FALSE;
   }

@@ -318,13 +318,13 @@ setup_snow_render (GstD3D11TestSrc * self, GstD3D11TestSrcRender * render,
   memset (&subresource, 0, sizeof (subresource));
 
   hr = gst_d3d11_get_vertex_shader_coord (self->device, &vs, &layout);
-  if (!gst_d3d11_result (hr, self->device)) {
+  if (!gst_d3d11_result_full (hr, self, self->device)) {
     GST_ERROR_OBJECT (self, "Failed to compile vertext shader");
     return FALSE;
   }
 
   hr = gst_d3d11_get_pixel_shader_snow (self->device, &ps);
-  if (!gst_d3d11_result (hr, self->device)) {
+  if (!gst_d3d11_result_full (hr, self, self->device)) {
     GST_ERROR_OBJECT (self, "Failed to compile pixel shader");
     return FALSE;
   }
@@ -408,7 +408,7 @@ setup_snow_render (GstD3D11TestSrc * self, GstD3D11TestSrcRender * render,
   subresource.SysMemPitch = sizeof (UvVertexData) * 4;
 
   hr = device_handle->CreateBuffer (&buffer_desc, &subresource, &vertex_buffer);
-  if (!gst_d3d11_result (hr, self->device)) {
+  if (!gst_d3d11_result_full (hr, self, self->device)) {
     GST_ERROR_OBJECT (self, "Failed to create vertex buffer");
     return FALSE;
   }
@@ -422,7 +422,7 @@ setup_snow_render (GstD3D11TestSrc * self, GstD3D11TestSrcRender * render,
   subresource.SysMemPitch = sizeof (WORD) * 6;
 
   hr = device_handle->CreateBuffer (&buffer_desc, &subresource, &index_buffer);
-  if (!gst_d3d11_result (hr, self->device)) {
+  if (!gst_d3d11_result_full (hr, self, self->device)) {
     GST_ERROR_OBJECT (self, "Failed to create index buffer");
     return FALSE;
   }
@@ -432,7 +432,7 @@ setup_snow_render (GstD3D11TestSrc * self, GstD3D11TestSrcRender * render,
   buffer_desc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
   buffer_desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
   hr = device_handle->CreateBuffer (&buffer_desc, nullptr, &const_buffer);
-  if (!gst_d3d11_result (hr, self->device)) {
+  if (!gst_d3d11_result_full (hr, self, self->device)) {
     GST_ERROR_OBJECT (self, "Failed to create constant buffer");
     return FALSE;
   }
@@ -478,13 +478,13 @@ setup_smpte_render (GstD3D11TestSrc * self, GstD3D11TestSrcRender * render)
   memset (&subresource, 0, sizeof (subresource));
 
   hr = gst_d3d11_get_vertex_shader_color (self->device, &vs, &layout);
-  if (!gst_d3d11_result (hr, self->device)) {
+  if (!gst_d3d11_result_full (hr, self, self->device)) {
     GST_ERROR_OBJECT (self, "Failed to compile vertext shader");
     return FALSE;
   }
 
   hr = gst_d3d11_get_pixel_shader_color (self->device, &ps);
-  if (!gst_d3d11_result (hr, self->device)) {
+  if (!gst_d3d11_result_full (hr, self, self->device)) {
     GST_ERROR_OBJECT (self, "Failed to compile pixel shader");
     return FALSE;
   }
@@ -735,7 +735,7 @@ setup_smpte_render (GstD3D11TestSrc * self, GstD3D11TestSrcRender * render)
   subresource.SysMemPitch = sizeof (ColorVertexData) * 4 * 20;
 
   hr = device_handle->CreateBuffer (&buffer_desc, &subresource, &vertex_buffer);
-  if (!gst_d3d11_result (hr, self->device)) {
+  if (!gst_d3d11_result_full (hr, self, self->device)) {
     GST_ERROR_OBJECT (self, "Failed to create vertex buffer");
     return FALSE;
   }
@@ -749,7 +749,7 @@ setup_smpte_render (GstD3D11TestSrc * self, GstD3D11TestSrcRender * render)
   subresource.SysMemPitch = sizeof (WORD) * 6 * 20;
 
   hr = device_handle->CreateBuffer (&buffer_desc, &subresource, &index_buffer);
-  if (!gst_d3d11_result (hr, self->device)) {
+  if (!gst_d3d11_result_full (hr, self, self->device)) {
     GST_ERROR_OBJECT (self, "Failed to create index buffer");
     return FALSE;
   }
@@ -791,13 +791,13 @@ setup_checker_render (GstD3D11TestSrc * self, GstD3D11TestSrcRender * render,
   memset (&subresource, 0, sizeof (subresource));
 
   hr = gst_d3d11_get_vertex_shader_coord (self->device, &vs, &layout);
-  if (!gst_d3d11_result (hr, self->device)) {
+  if (!gst_d3d11_result_full (hr, self, self->device)) {
     GST_ERROR_OBJECT (self, "Failed to compile vertext shader");
     return FALSE;
   }
 
   hr = gst_d3d11_get_pixel_shader_checker (self->device, &ps);
-  if (!gst_d3d11_result (hr, self->device)) {
+  if (!gst_d3d11_result_full (hr, self, self->device)) {
     GST_ERROR_OBJECT (self, "Failed to compile pixel shader");
     return FALSE;
   }
@@ -838,7 +838,7 @@ setup_checker_render (GstD3D11TestSrc * self, GstD3D11TestSrcRender * render,
   subresource.SysMemPitch = sizeof (UvVertexData) * 4;
 
   hr = device_handle->CreateBuffer (&buffer_desc, &subresource, &vertex_buffer);
-  if (!gst_d3d11_result (hr, self->device)) {
+  if (!gst_d3d11_result_full (hr, self, self->device)) {
     GST_ERROR_OBJECT (self, "Failed to create vertex buffer");
     return FALSE;
   }
@@ -852,7 +852,7 @@ setup_checker_render (GstD3D11TestSrc * self, GstD3D11TestSrcRender * render,
   subresource.SysMemPitch = sizeof (WORD) * 6;
 
   hr = device_handle->CreateBuffer (&buffer_desc, &subresource, &index_buffer);
-  if (!gst_d3d11_result (hr, self->device)) {
+  if (!gst_d3d11_result_full (hr, self, self->device)) {
     GST_ERROR_OBJECT (self, "Failed to create index buffer");
     return FALSE;
   }
@@ -862,7 +862,7 @@ setup_checker_render (GstD3D11TestSrc * self, GstD3D11TestSrcRender * render,
   buffer_desc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
   buffer_desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
   hr = device_handle->CreateBuffer (&buffer_desc, nullptr, &const_buffer);
-  if (!gst_d3d11_result (hr, self->device)) {
+  if (!gst_d3d11_result_full (hr, self, self->device)) {
     GST_ERROR_OBJECT (self, "Failed to create constant buffer");
     return FALSE;
   }
@@ -900,7 +900,7 @@ setup_d2d_render (GstD3D11TestSrc * self, GstD3D11TestSrcRender * render)
   hr = D2D1CreateFactory (D2D1_FACTORY_TYPE_MULTI_THREADED,
       IID_PPV_ARGS (&d2d_factory));
 
-  if (!gst_d3d11_result (hr, self->device)) {
+  if (!gst_d3d11_result_full (hr, self, self->device)) {
     GST_ERROR_OBJECT (self, "Couldn't create D2D factory");
     return FALSE;
   }
@@ -1289,7 +1289,7 @@ gst_d3d11_test_src_setup_resource (GstD3D11TestSrc * self, GstCaps * caps)
   render->pattern = self->pattern;
 
   hr = gst_d3d11_device_get_rasterizer (self->device, &render->rs);
-  if (!gst_d3d11_result (hr, self->device)) {
+  if (!gst_d3d11_result_full (hr, self, self->device)) {
     GST_ERROR_OBJECT (self, "Couldn't get rasterizer state");
     goto error;
   }
@@ -1666,14 +1666,14 @@ gst_d3d11_test_src_draw_ball (GstD3D11TestSrc * self,
     texture = (ID3D11Texture2D *) gst_d3d11_memory_get_resource_handle (mem);
 
     hr = texture->QueryInterface (IID_PPV_ARGS (&surface));
-    if (!gst_d3d11_result (hr, self->device)) {
+    if (!gst_d3d11_result_full (hr, self, self->device)) {
       GST_ERROR_OBJECT (self, "Couldn't get DXGI surface");
       return FALSE;
     }
 
     hr = self->d2d_factory->CreateDxgiSurfaceRenderTarget (surface.Get (),
         props, &d2d_target);
-    if (!gst_d3d11_result (hr, self->device)) {
+    if (!gst_d3d11_result_full (hr, self, self->device)) {
       GST_ERROR_OBJECT (self, "Couldn't get D2D render target");
       return FALSE;
     }
@@ -1687,7 +1687,7 @@ gst_d3d11_test_src_draw_ball (GstD3D11TestSrc * self,
 
     hr = d2d_target->CreateGradientStopCollection (stops, 3, D2D1_GAMMA_1_0,
         D2D1_EXTEND_MODE_CLAMP, &collection);
-    if (!gst_d3d11_result (hr, self->device)) {
+    if (!gst_d3d11_result_full (hr, self, self->device)) {
       GST_ERROR_OBJECT (self, "Couldn't create gradient stop collection");
       return FALSE;
     }
@@ -1695,7 +1695,7 @@ gst_d3d11_test_src_draw_ball (GstD3D11TestSrc * self,
     hr = d2d_target->CreateRadialGradientBrush (D2D1::
         RadialGradientBrushProperties (D2D1::Point2F (0, 0), D2D1::Point2F (0,
                 0), 20, 20), collection.Get (), &brush);
-    if (!gst_d3d11_result (hr, self->device)) {
+    if (!gst_d3d11_result_full (hr, self, self->device)) {
       GST_ERROR_OBJECT (self, "Couldn't create brush");
       return FALSE;
     }
@@ -1764,14 +1764,14 @@ gst_d3d11_test_src_draw_circular (GstD3D11TestSrc * self,
     texture = (ID3D11Texture2D *) gst_d3d11_memory_get_resource_handle (mem);
 
     hr = texture->QueryInterface (IID_PPV_ARGS (&surface));
-    if (!gst_d3d11_result (hr, self->device)) {
+    if (!gst_d3d11_result_full (hr, self, self->device)) {
       GST_ERROR_OBJECT (self, "Couldn't get DXGI surface");
       return FALSE;
     }
 
     hr = self->d2d_factory->CreateDxgiSurfaceRenderTarget (surface.Get (),
         props, &d2d_target);
-    if (!gst_d3d11_result (hr, self->device)) {
+    if (!gst_d3d11_result_full (hr, self, self->device)) {
       GST_ERROR_OBJECT (self, "Couldn't get D2D render target");
       return FALSE;
     }
@@ -1790,7 +1790,7 @@ gst_d3d11_test_src_draw_circular (GstD3D11TestSrc * self,
 
     hr = d2d_target->CreateGradientStopCollection (stops, G_N_ELEMENTS (stops),
         &collection);
-    if (!gst_d3d11_result (hr, self->device)) {
+    if (!gst_d3d11_result_full (hr, self, self->device)) {
       GST_ERROR_OBJECT (self, "Couldn't create gradient stop collection");
       return FALSE;
     }
@@ -1798,7 +1798,7 @@ gst_d3d11_test_src_draw_circular (GstD3D11TestSrc * self,
     hr = d2d_target->CreateRadialGradientBrush (D2D1::
         RadialGradientBrushProperties (D2D1::Point2F (x, y), D2D1::Point2F (0,
                 0), rad, rad), collection.Get (), &brush);
-    if (!gst_d3d11_result (hr, self->device)) {
+    if (!gst_d3d11_result_full (hr, self, self->device)) {
       GST_ERROR_OBJECT (self, "Couldn't create brush");
       return FALSE;
     }
@@ -1856,7 +1856,7 @@ gst_d3d11_test_src_draw_pattern (GstD3D11TestSrc * self,
     if (quad->const_buffer) {
       hr = context->Map (quad->const_buffer.Get (),
           0, D3D11_MAP_WRITE_DISCARD, 0, &map);
-      if (!gst_d3d11_result (hr, self->device)) {
+      if (!gst_d3d11_result_full (hr, self, self->device)) {
         GST_ERROR_OBJECT (self, "Failed to map constant buffer");
         return FALSE;
       }

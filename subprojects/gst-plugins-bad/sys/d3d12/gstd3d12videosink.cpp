@@ -838,8 +838,10 @@ gst_d3d12_video_sink_update_window (GstD3D12VideoSink * self)
       return ret;
     }
 
-    GST_ELEMENT_ERROR (self, RESOURCE, FAILED, (nullptr),
-        ("Couldn't setup swapchain"));
+    if (!gst_d3d12_post_error_if_device_removed (self, self->device)) {
+      GST_ELEMENT_ERROR (self, RESOURCE, FAILED, (nullptr),
+          ("Couldn't setup swapchain"));
+    }
     return GST_FLOW_ERROR;
   }
 
@@ -854,8 +856,10 @@ gst_d3d12_video_sink_update_window (GstD3D12VideoSink * self)
   gst_buffer_pool_config_set_params (config, priv->caps, priv->info.size, 0, 0);
   if (!gst_buffer_pool_set_config (priv->pool, config) ||
       !gst_buffer_pool_set_active (priv->pool, TRUE)) {
-    GST_ELEMENT_ERROR (self, RESOURCE, FAILED, (nullptr),
-        ("Couldn't setup buffer pool"));
+    if (!gst_d3d12_post_error_if_device_removed (self, self->device)) {
+      GST_ELEMENT_ERROR (self, RESOURCE, FAILED, (nullptr),
+          ("Couldn't setup buffer pool"));
+    }
     return GST_FLOW_ERROR;
   }
 
@@ -980,6 +984,7 @@ gst_d3d12_video_sink_propose_allocation (GstBaseSink * sink, GstQuery * query)
 
     if (!gst_buffer_pool_set_config (pool, config)) {
       GST_ERROR_OBJECT (pool, "Couldn't set config");
+      gst_d3d12_post_error_if_device_removed (self, self->device);
       gst_object_unref (pool);
 
       return FALSE;
@@ -1134,6 +1139,8 @@ gst_d3d12_video_sink_prepare (GstBaseSink * sink, GstBuffer * buffer)
     GST_ELEMENT_ERROR (self, RESOURCE, NOT_FOUND,
         ("Output window was closed"), (nullptr));
     return GST_FLOW_ERROR;
+  } else if (ret != GST_FLOW_OK) {
+    gst_d3d12_post_error_if_device_removed (self, self->device);
   }
 
   return ret;
@@ -1150,6 +1157,8 @@ gst_d3d12_video_sink_show_frame (GstVideoSink * sink, GstBuffer * buf)
     GST_ELEMENT_ERROR (self, RESOURCE, NOT_FOUND,
         ("Output window was closed"), (nullptr));
     ret = GST_FLOW_ERROR;
+  } else if (ret != GST_FLOW_OK) {
+    gst_d3d12_post_error_if_device_removed (self, self->device);
   }
 
   return ret;
@@ -1161,7 +1170,9 @@ gst_d3d12_video_sink_overlay_expose (GstVideoOverlay * overlay)
   auto self = GST_D3D12_VIDEO_SINK (overlay);
   auto priv = self->priv;
 
-  gst_d3d12_window_set_buffer (priv->window, nullptr);
+  auto ret = gst_d3d12_window_set_buffer (priv->window, nullptr);
+  if (ret != GST_FLOW_OK)
+    gst_d3d12_post_error_if_device_removed (self, self->device);
 }
 
 static void

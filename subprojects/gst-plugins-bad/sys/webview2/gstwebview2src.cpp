@@ -399,11 +399,11 @@ gst_webview2_src_start (GstBaseSrc * src)
   if (priv->device_5 && priv->context4) {
     hr = priv->device_5->CreateFence (0, D3D11_FENCE_FLAG_SHARED,
         IID_PPV_ARGS (&priv->fence11));
-    if (gst_d3d11_result (hr, priv->device)) {
+    if (gst_d3d11_result_full (hr, self, priv->device)) {
       HANDLE fence_handle;
       hr = priv->fence11->CreateSharedHandle (nullptr, GENERIC_ALL, nullptr,
           &fence_handle);
-      if (gst_d3d11_result (hr, priv->device)) {
+      if (gst_d3d11_result_full (hr, self, priv->device)) {
         auto device12 = gst_d3d12_device_get_device_handle (priv->device12);
         hr = device12->OpenSharedHandle (fence_handle,
             IID_PPV_ARGS (&priv->fence12));
@@ -812,7 +812,7 @@ gst_webview2_src_create (GstBaseSrc * src, guint64 offset, guint size,
 
       auto hr = device->CreateTexture2D (&staging_desc,
           nullptr, &priv->staging);
-      if (!gst_d3d11_result (hr, priv->device)) {
+      if (!gst_d3d11_result_full (hr, self, priv->device)) {
         GST_ERROR_OBJECT (self, "Couldn't create staging texture");
         gst_buffer_unref (buffer);
         return GST_FLOW_ERROR;
@@ -852,7 +852,7 @@ gst_webview2_src_create (GstBaseSrc * src, guint64 offset, guint size,
     D3D11_MAPPED_SUBRESOURCE map;
     GstD3D11DeviceLockGuard lk (priv->device);
     auto hr = context->Map (priv->staging.Get (), 0, D3D11_MAP_READ, 0, &map);
-    if (!gst_d3d11_result (hr, priv->device)) {
+    if (!gst_d3d11_result_full (hr, self, priv->device)) {
       GST_ERROR_OBJECT (self, "Couldn't map staging texture");
       gst_buffer_unref (buffer);
       return GST_FLOW_ERROR;

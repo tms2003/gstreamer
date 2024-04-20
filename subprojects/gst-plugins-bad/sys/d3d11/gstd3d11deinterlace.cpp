@@ -1175,13 +1175,13 @@ gst_d3d11_deinterlace_set_caps (GstBaseTransform * trans,
   desc.Usage = D3D11_VIDEO_USAGE_PLAYBACK_NORMAL;
 
   hr = self->video_device->CreateVideoProcessorEnumerator (&desc, &video_enum);
-  if (!gst_d3d11_result (hr, self->device)) {
+  if (!gst_d3d11_result_full (hr, self, self->device)) {
     GST_ERROR_OBJECT (self, "Couldn't create VideoProcessorEnumerator");
     return FALSE;
   }
 
   hr = video_enum->GetVideoProcessorCaps (&proc_caps);
-  if (!gst_d3d11_result (hr, self->device)) {
+  if (!gst_d3d11_result_full (hr, self, self->device)) {
     GST_ERROR_OBJECT (self, "Couldn't query processor caps");
     return FALSE;
   }
@@ -1209,7 +1209,7 @@ gst_d3d11_deinterlace_set_caps (GstBaseTransform * trans,
 
   hr = self->video_device->CreateVideoProcessor (video_enum.Get (),
       i, &video_proc);
-  if (!gst_d3d11_result (hr, self->device)) {
+  if (!gst_d3d11_result_full (hr, self, self->device)) {
     GST_ERROR_OBJECT (self, "Couldn't create processor");
     return FALSE;
   }
@@ -1784,7 +1784,7 @@ gst_d3d11_deinterlace_transform (GstBaseTransform * trans, GstBuffer * inbuf,
   hr = self->video_context->VideoProcessorBlt (self->video_proc, pov, 0,
       1, &proc_stream);
 
-  if (!gst_d3d11_result (hr, self->device)) {
+  if (!gst_d3d11_result_full (hr, self, self->device)) {
     GST_ERROR_OBJECT (self, "Failed to perform deinterlacing");
     return GST_FLOW_ERROR;
   }
