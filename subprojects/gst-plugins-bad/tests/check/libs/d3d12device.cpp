@@ -122,6 +122,132 @@ GST_START_TEST (test_device_removed)
 
 GST_END_TEST;
 
+struct DeviceLostData
+{
+  std::mutex lock;
+  std::condition_variable cond;
+  bool got_device_lost = false;
+  bool got_eos = false;
+};
+
+static GstBusSyncReply
+device_lost_bus_sync_handler (GstBus * bus, GstMessage * msg,
+    DeviceLostData * data)
+{
+  switch (GST_MESSAGE_TYPE (msg)) {
+    case GST_MESSAGE_ERROR:
+    {
+      GError *err;
+      gst_message_parse_error (msg, &err, nullptr);
+      if (err->domain == GST_RESOURCE_ERROR &&
+          err->code == GST_RESOURCE_ERROR_DEVICE_LOST) {
+        std::lock_guard <std::mutex> lk (data->lock);
+        data->got_device_lost = true;
+        data->cond.notify_all ();
+      }
+      break;
+    }
+    case GST_MESSAGE_EOS:
+    {
+      std::lock_guard <std::mutex> lk (data->lock);
+      data->got_eos = true;
+      data->cond.notify_all ();
+      break;
+    }
+    default:
+      break;
+  }
+
+  return GST_BUS_PASS;
+}
+
+GST_START_TEST (test_device_lost)
+{
+  auto device = gst_d3d12_device_new (0);
+  fail_unless (GST_IS_D3D12_DEVICE (device));
+
+  ComPtr<ID3D12Device5> device5;
+  auto handle = gst_d3d12_device_get_device_handle (device);
+  fail_unless (handle != nullptr);
+
+  handle->QueryInterface (IID_PPV_ARGS (&device5));
+  if (!device5) {
+    gst_object_unref (device);
+    return;
+  }
+
+  DeviceLostData data;
+
+  /* Since GstD3D12Device's internal struct is signeton per adapter,
+   * don't need to handle need-context message. Once we make device removed,
+   * pipeline's device will be broken too */
+  auto pipeline = gst_parse_launch (
+      "d3d12testsrc num-buffers=10 ! d3d12videosink sync=false", nullptr);
+  fail_unless (pipeline);
+
+  auto bus = gst_pipeline_get_bus (GST_PIPELINE (pipeline));
+  fail_unless (bus);
+  gst_bus_set_sync_handler (bus,
+      (GstBusSyncHandler) device_lost_bus_sync_handler, &data, nullptr);
+  gst_object_unref (bus);
+
+  auto ret = gst_element_set_state (pipeline, GST_STATE_PAUSED);
+  fail_unless (ret != GST_STATE_CHANGE_FAILURE);
+
+  device5->RemoveDevice ();
+  device5 = nullptr;
+
+  gst_element_set_state (pipeline, GST_STATE_PLAYING);
+
+  {
+    std::unique_lock <std::mutex> lk (data.lock);
+    while (!data.got_device_lost && !data.got_eos)
+      data.cond.wait (lk);
+  }
+
+  fail_unless (data.got_device_lost);
+
+  HRESULT reason = S_OK;
+  g_object_get (device, "device-removed-reason", &reason, nullptr);
+  fail_unless (FAILED (reason));
+
+  /* Release all */
+  gst_element_set_state (pipeline, GST_STATE_NULL);
+  gst_object_unref (pipeline);
+  gst_object_unref (device);
+
+  data.got_device_lost = false;
+  data.got_eos = false;
+
+  /* Create pipeline again, and run nomally */
+  device = gst_d3d12_device_new (0);
+  pipeline = gst_parse_launch (
+      "d3d12testsrc num-buffers=10 ! d3d12videosink sync=false", nullptr);
+  fail_unless (pipeline);
+
+  bus = gst_pipeline_get_bus (GST_PIPELINE (pipeline));
+  fail_unless (bus);
+  gst_bus_set_sync_handler (bus,
+      (GstBusSyncHandler) device_lost_bus_sync_handler, &data, nullptr);
+  gst_object_unref (bus);
+
+  ret = gst_element_set_state (pipeline, GST_STATE_PLAYING);
+  fail_unless (ret != GST_STATE_CHANGE_FAILURE);
+
+  {
+    std::unique_lock <std::mutex> lk (data.lock);
+    while (!data.got_device_lost && !data.got_eos)
+      data.cond.wait (lk);
+  }
+
+  fail_if (data.got_device_lost);
+
+  gst_element_set_state (pipeline, GST_STATE_NULL);
+  gst_object_unref (device);
+}
+
+GST_END_TEST;
+
 static gboolean
 check_d3d12_available (void)
 {
@@ -176,8 +302,10 @@ d3d12device_suite (void)
     return s;
 
   tcase_add_test (tc_basic, test_device_equal);
-  if (check_remove_device_supported ())
+  if (check_remove_device_supported ()) {
     tcase_add_test (tc_basic, test_device_removed);
+    tcase_add_test (tc_basic, test_device_lost);
+  }
 
   return s;
 }
