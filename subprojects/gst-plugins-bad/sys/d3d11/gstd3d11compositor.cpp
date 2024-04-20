@@ -795,7 +795,7 @@ gst_d3d11_compositor_pad_setup_converter (GstVideoAggregatorPad * pad,
     }
 
     hr = device_handle->CreateBlendState (&desc, &blend);
-    if (!gst_d3d11_result (hr, self->device)) {
+    if (!gst_d3d11_result_full (hr, self, self->device)) {
       GST_ERROR_OBJECT (pad, "Couldn't create blend staten, hr: 0x%x",
           (guint) hr);
       return FALSE;
@@ -1847,19 +1847,19 @@ gst_d3d11_compositor_create_checker_quad (GstD3D11Compositor * self,
     hr = gst_d3d11_get_pixel_shader_checker_luma (self->device, &ps);
   }
 
-  if (!gst_d3d11_result (hr, self->device)) {
+  if (!gst_d3d11_result_full (hr, self, self->device)) {
     GST_ERROR_OBJECT (self, "Couldn't setup pixel shader");
     return nullptr;
   }
 
   hr = gst_d3d11_get_vertex_shader_pos (self->device, &vs, &layout);
-  if (!gst_d3d11_result (hr, self->device)) {
+  if (!gst_d3d11_result_full (hr, self, self->device)) {
     GST_ERROR_OBJECT (self, "Couldn't setup vertex shader");
     return nullptr;
   }
 
   hr = gst_d3d11_device_get_rasterizer (self->device, &rs);
-  if (!gst_d3d11_result (hr, self->device)) {
+  if (!gst_d3d11_result_full (hr, self, self->device)) {
     GST_ERROR_OBJECT (self, "Couldn't setup rasterizer state");
     return nullptr;
   }
@@ -1904,7 +1904,7 @@ gst_d3d11_compositor_create_checker_quad (GstD3D11Compositor * self,
   subresource.SysMemPitch = sizeof (VertexData) * 4;
 
   hr = device_handle->CreateBuffer (&buffer_desc, &subresource, &vertex_buffer);
-  if (!gst_d3d11_result (hr, self->device)) {
+  if (!gst_d3d11_result_full (hr, self, self->device)) {
     GST_ERROR_OBJECT (self,
         "Couldn't create vertex buffer, hr: 0x%x", (guint) hr);
     return nullptr;
@@ -1919,7 +1919,7 @@ gst_d3d11_compositor_create_checker_quad (GstD3D11Compositor * self,
   subresource.SysMemPitch = sizeof (WORD) * 6;
 
   hr = device_handle->CreateBuffer (&buffer_desc, &subresource, &index_buffer);
-  if (!gst_d3d11_result (hr, self->device)) {
+  if (!gst_d3d11_result_full (hr, self, self->device)) {
     GST_ERROR_OBJECT (self,
         "Couldn't create index buffer, hr: 0x%x", (guint) hr);
     return nullptr;

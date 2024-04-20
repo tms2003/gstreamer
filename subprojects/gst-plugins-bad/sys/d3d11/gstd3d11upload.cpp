@@ -334,7 +334,7 @@ gst_d3d11_upload_decide_allocation (GstBaseTransform * trans, GstQuery * query)
 
   device_handle = gst_d3d11_device_get_device_handle (filter->device);
   hr = device_handle->CheckFormatSupport (dxgi_format, &supported);
-  if (gst_d3d11_result (hr, filter->device)) {
+  if (gst_d3d11_result_full (hr, filter, filter->device)) {
     if ((supported & D3D11_FORMAT_SUPPORT_SHADER_SAMPLE) ==
         D3D11_FORMAT_SUPPORT_SHADER_SAMPLE) {
       bind_flags |= D3D11_BIND_SHADER_RESOURCE;

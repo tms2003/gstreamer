@@ -1359,7 +1359,7 @@ gst_d3d11_base_convert_propose_allocation (GstBaseTransform * trans,
 
   device_handle = gst_d3d11_device_get_device_handle (filter->device);
   hr = device_handle->CheckFormatSupport (dxgi_format, &supported);
-  if (gst_d3d11_result (hr, filter->device) &&
+  if (gst_d3d11_result_full (hr, self, filter->device) &&
       (supported & D3D11_FORMAT_SUPPORT_RENDER_TARGET) ==
       D3D11_FORMAT_SUPPORT_RENDER_TARGET) {
     bind_flags |= D3D11_BIND_RENDER_TARGET;
@@ -1477,7 +1477,7 @@ gst_d3d11_base_convert_decide_allocation (GstBaseTransform * trans,
 
   device_handle = gst_d3d11_device_get_device_handle (filter->device);
   hr = device_handle->CheckFormatSupport (dxgi_format, &supported);
-  if (!gst_d3d11_result (hr, filter->device)) {
+  if (!gst_d3d11_result_full (hr, self, filter->device)) {
     GST_ERROR_OBJECT (self, "CheckFormatSupport failed");
     return FALSE;
   }
@@ -1636,7 +1636,7 @@ gst_d3d11_base_convert_setup_msaa_texture (GstD3D11BaseConvert * self,
   while (sample_count > 1) {
     hr = device_handle->CheckMultisampleQualityLevels (dxgi_format,
         sample_count, &quality_levels);
-    if (gst_d3d11_result (hr, device) && quality_levels > 0)
+    if (gst_d3d11_result_full (hr, self, device) && quality_levels > 0)
       break;
 
     sample_count = sample_count / 2;
@@ -1662,12 +1662,14 @@ gst_d3d11_base_convert_setup_msaa_texture (GstD3D11BaseConvert * self,
   gst_buffer_pool_config_set_params (config, caps, info->size, 0, 0);
   if (!gst_buffer_pool_set_config (self->msaa_pool, config)) {
     GST_ERROR_OBJECT (self, "Couldn't set pool config");
+    gst_d3d11_post_error_if_device_removed (self, device);
     gst_clear_object (&self->msaa_pool);
     return;
   }
 
   if (!gst_buffer_pool_set_active (self->msaa_pool, TRUE)) {
     GST_ERROR_OBJECT (self, "Pool active failed");
+    gst_d3d11_post_error_if_device_removed (self, device);
     gst_clear_object (&self->msaa_pool);
     return;
   }
@@ -1675,6 +1677,7 @@ gst_d3d11_base_convert_setup_msaa_texture (GstD3D11BaseConvert * self,
   gst_buffer_pool_acquire_buffer (self->msaa_pool, &self->msaa_buf, nullptr);
   if (!self->msaa_buf) {
     GST_ERROR_OBJECT (self, "Couldn't acquire MSAA buffer");
+    gst_d3d11_post_error_if_device_removed (self, device);
     gst_buffer_pool_set_active (self->msaa_pool, FALSE);
     gst_clear_object (&self->msaa_pool);
     return;
@@ -1819,6 +1822,7 @@ gst_d3d11_base_convert_set_info (GstD3D11BaseFilter * filter,
       config);
   if (!self->converter) {
     GST_ERROR_OBJECT (self, "Couldn't create converter");
+    gst_d3d11_post_error_if_device_removed (self, filter->device);
     return FALSE;
   }
 

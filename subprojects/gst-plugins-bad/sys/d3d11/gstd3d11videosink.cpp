@@ -1114,10 +1114,12 @@ gst_d3d11_video_sink_update_window (GstD3D11VideoSink * self, GstCaps * caps)
     }
 
     GST_ERROR_OBJECT (self, "cannot create swapchain");
-    error_msg = gst_message_new_error (GST_OBJECT_CAST (self),
-        error, "Failed to prepare d3d11window");
+    if (!gst_d3d11_post_error_if_device_removed (self, self->device)) {
+      error_msg = gst_message_new_error (GST_OBJECT_CAST (self),
+          error, "Failed to prepare d3d11window");
+      gst_element_post_message (GST_ELEMENT (self), error_msg);
+    }
     g_clear_error (&error);
-    gst_element_post_message (GST_ELEMENT (self), error_msg);
     gst_object_unref (window);
 
     return GST_FLOW_ERROR;
@@ -1151,8 +1153,10 @@ gst_d3d11_video_sink_update_window (GstD3D11VideoSink * self, GstCaps * caps)
     GST_ERROR_OBJECT (self, "Couldn't setup buffer pool");
     gst_clear_object (&self->pool);
 
-    GST_ELEMENT_ERROR (self, RESOURCE, FAILED, (nullptr),
-        ("Couldn't setup buffer pool"));
+    if (!gst_d3d11_post_error_if_device_removed (self, self->device)) {
+      GST_ELEMENT_ERROR (self, RESOURCE, FAILED, (nullptr),
+          ("Couldn't setup buffer pool"));
+    }
     return GST_FLOW_ERROR;
   }
 
@@ -1425,6 +1429,7 @@ gst_d3d11_video_sink_propose_allocation (GstBaseSink * sink, GstQuery * query)
 
     if (!gst_buffer_pool_set_config (pool, config)) {
       GST_ERROR_OBJECT (pool, "Couldn't set config");
+      gst_d3d11_post_error_if_device_removed (self, self->device);
       gst_object_unref (pool);
 
       return FALSE;
@@ -1744,6 +1749,8 @@ gst_d3d11_video_sink_show_frame (GstVideoSink * sink, GstBuffer * buf)
         ("Output window was closed"), (NULL));
 
     ret = GST_FLOW_ERROR;
+  } else if (ret != GST_FLOW_OK) {
+    gst_d3d11_post_error_if_device_removed (self, self->device);
   }
 
   return ret;
