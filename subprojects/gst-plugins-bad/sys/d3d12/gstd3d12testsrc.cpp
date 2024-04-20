@@ -398,7 +398,7 @@ setup_snow_render (GstD3D12TestSrc * self, RenderContext * ctx,
   ComPtr < ID3DBlob > error_blob;
   hr = D3DX12SerializeVersionedRootSignature (&rs_desc,
       D3D_ROOT_SIGNATURE_VERSION_1_1, &rs_blob, &error_blob);
-  if (!gst_d3d12_result (hr, self->device)) {
+  if (!gst_d3d12_result_full (hr, self, self->device)) {
     const gchar *error_msg = nullptr;
     if (error_blob)
       error_msg = (const gchar *) error_blob->GetBufferPointer ();
@@ -412,7 +412,7 @@ setup_snow_render (GstD3D12TestSrc * self, RenderContext * ctx,
   ComPtr < ID3D12RootSignature > rs;
   hr = device->CreateRootSignature (0, rs_blob->GetBufferPointer (),
       rs_blob->GetBufferSize (), IID_PPV_ARGS (&rs));
-  if (!gst_d3d12_result (hr, self->device)) {
+  if (!gst_d3d12_result_full (hr, self, self->device)) {
     GST_ERROR_OBJECT (self, "Couldn't create root signature");
     return FALSE;
   }
@@ -469,7 +469,7 @@ setup_snow_render (GstD3D12TestSrc * self, RenderContext * ctx,
 
   ComPtr < ID3D12PipelineState > pso;
   hr = device->CreateGraphicsPipelineState (&pso_desc, IID_PPV_ARGS (&pso));
-  if (!gst_d3d12_result (hr, self->device)) {
+  if (!gst_d3d12_result_full (hr, self, self->device)) {
     GST_ERROR_OBJECT (self, "Couldn't create pso");
     return FALSE;
   }
@@ -554,7 +554,7 @@ setup_snow_render (GstD3D12TestSrc * self, RenderContext * ctx,
       D3D12_HEAP_FLAG_CREATE_NOT_ZEROED,
       &buffer_desc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
       IID_PPV_ARGS (&vertex_index_upload));
-  if (!gst_d3d12_result (hr, self->device)) {
+  if (!gst_d3d12_result_full (hr, self, self->device)) {
     GST_ERROR_OBJECT (self, "Couldn't create index buffer");
     return FALSE;
   }
@@ -562,7 +562,7 @@ setup_snow_render (GstD3D12TestSrc * self, RenderContext * ctx,
   guint8 *data;
   CD3DX12_RANGE range (0, 0);
   hr = vertex_index_upload->Map (0, &range, (void **) &data);
-  if (!gst_d3d12_result (hr, self->device)) {
+  if (!gst_d3d12_result_full (hr, self, self->device)) {
     GST_ERROR_OBJECT (self, "Couldn't map index buffer");
     return FALSE;
   }
@@ -577,7 +577,7 @@ setup_snow_render (GstD3D12TestSrc * self, RenderContext * ctx,
       D3D12_HEAP_FLAG_CREATE_NOT_ZEROED,
       &buffer_desc, D3D12_RESOURCE_STATE_COMMON, nullptr,
       IID_PPV_ARGS (&vertex_index_buf));
-  if (!gst_d3d12_result (hr, self->device)) {
+  if (!gst_d3d12_result_full (hr, self, self->device)) {
     GST_ERROR_OBJECT (self, "Couldn't create index buffer");
     return FALSE;
   }
@@ -622,7 +622,7 @@ setup_smpte_render (GstD3D12TestSrc * self, RenderContext * ctx)
   ComPtr < ID3DBlob > error_blob;
   hr = D3DX12SerializeVersionedRootSignature (&rs_desc,
       D3D_ROOT_SIGNATURE_VERSION_1_1, &rs_blob, &error_blob);
-  if (!gst_d3d12_result (hr, self->device)) {
+  if (!gst_d3d12_result_full (hr, self, self->device)) {
     const gchar *error_msg = nullptr;
     if (error_blob)
       error_msg = (const gchar *) error_blob->GetBufferPointer ();
@@ -636,7 +636,7 @@ setup_smpte_render (GstD3D12TestSrc * self, RenderContext * ctx)
   ComPtr < ID3D12RootSignature > rs;
   hr = device->CreateRootSignature (0, rs_blob->GetBufferPointer (),
       rs_blob->GetBufferSize (), IID_PPV_ARGS (&rs));
-  if (!gst_d3d12_result (hr, self->device)) {
+  if (!gst_d3d12_result_full (hr, self, self->device)) {
     GST_ERROR_OBJECT (self, "Couldn't create root signature");
     return FALSE;
   }
@@ -693,7 +693,7 @@ setup_smpte_render (GstD3D12TestSrc * self, RenderContext * ctx)
 
   ComPtr < ID3D12PipelineState > pso;
   hr = device->CreateGraphicsPipelineState (&pso_desc, IID_PPV_ARGS (&pso));
-  if (!gst_d3d12_result (hr, self->device)) {
+  if (!gst_d3d12_result_full (hr, self, self->device)) {
     GST_ERROR_OBJECT (self, "Couldn't create pso");
     return FALSE;
   }
@@ -945,7 +945,7 @@ setup_smpte_render (GstD3D12TestSrc * self, RenderContext * ctx)
       D3D12_HEAP_FLAG_CREATE_NOT_ZEROED,
       &buffer_desc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
       IID_PPV_ARGS (&vertex_index_upload));
-  if (!gst_d3d12_result (hr, self->device)) {
+  if (!gst_d3d12_result_full (hr, self, self->device)) {
     GST_ERROR_OBJECT (self, "Couldn't create index buffer");
     return FALSE;
   }
@@ -953,7 +953,7 @@ setup_smpte_render (GstD3D12TestSrc * self, RenderContext * ctx)
   guint8 *data;
   CD3DX12_RANGE range (0, 0);
   hr = vertex_index_upload->Map (0, &range, (void **) &data);
-  if (!gst_d3d12_result (hr, self->device)) {
+  if (!gst_d3d12_result_full (hr, self, self->device)) {
     GST_ERROR_OBJECT (self, "Couldn't map index buffer");
     return FALSE;
   }
@@ -969,7 +969,7 @@ setup_smpte_render (GstD3D12TestSrc * self, RenderContext * ctx)
       D3D12_HEAP_FLAG_CREATE_NOT_ZEROED,
       &buffer_desc, D3D12_RESOURCE_STATE_COMMON, nullptr,
       IID_PPV_ARGS (&vertex_index_buf));
-  if (!gst_d3d12_result (hr, self->device)) {
+  if (!gst_d3d12_result_full (hr, self, self->device)) {
     GST_ERROR_OBJECT (self, "Couldn't create index buffer");
     return FALSE;
   }
@@ -1013,7 +1013,7 @@ setup_checker_render (GstD3D12TestSrc * self, RenderContext * ctx,
   ComPtr < ID3DBlob > error_blob;
   hr = D3DX12SerializeVersionedRootSignature (&rs_desc,
       D3D_ROOT_SIGNATURE_VERSION_1_1, &rs_blob, &error_blob);
-  if (!gst_d3d12_result (hr, self->device)) {
+  if (!gst_d3d12_result_full (hr, self, self->device)) {
     const gchar *error_msg = nullptr;
     if (error_blob)
       error_msg = (const gchar *) error_blob->GetBufferPointer ();
@@ -1027,7 +1027,7 @@ setup_checker_render (GstD3D12TestSrc * self, RenderContext * ctx,
   ComPtr < ID3D12RootSignature > rs;
   hr = device->CreateRootSignature (0, rs_blob->GetBufferPointer (),
       rs_blob->GetBufferSize (), IID_PPV_ARGS (&rs));
-  if (!gst_d3d12_result (hr, self->device)) {
+  if (!gst_d3d12_result_full (hr, self, self->device)) {
     GST_ERROR_OBJECT (self, "Couldn't create root signature");
     return FALSE;
   }
@@ -1084,7 +1084,7 @@ setup_checker_render (GstD3D12TestSrc * self, RenderContext * ctx,
 
   ComPtr < ID3D12PipelineState > pso;
   hr = device->CreateGraphicsPipelineState (&pso_desc, IID_PPV_ARGS (&pso));
-  if (!gst_d3d12_result (hr, self->device)) {
+  if (!gst_d3d12_result_full (hr, self, self->device)) {
     GST_ERROR_OBJECT (self, "Couldn't create pso");
     return FALSE;
   }
@@ -1126,7 +1126,7 @@ setup_checker_render (GstD3D12TestSrc * self, RenderContext * ctx,
       D3D12_HEAP_FLAG_CREATE_NOT_ZEROED,
       &buffer_desc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
       IID_PPV_ARGS (&vertex_index_upload));
-  if (!gst_d3d12_result (hr, self->device)) {
+  if (!gst_d3d12_result_full (hr, self, self->device)) {
     GST_ERROR_OBJECT (self, "Couldn't create index buffer");
     return FALSE;
   }
@@ -1134,7 +1134,7 @@ setup_checker_render (GstD3D12TestSrc * self, RenderContext * ctx,
   guint8 *data;
   CD3DX12_RANGE range (0, 0);
   hr = vertex_index_upload->Map (0, &range, (void **) &data);
-  if (!gst_d3d12_result (hr, self->device)) {
+  if (!gst_d3d12_result_full (hr, self, self->device)) {
     GST_ERROR_OBJECT (self, "Couldn't map index buffer");
     return FALSE;
   }
@@ -1149,7 +1149,7 @@ setup_checker_render (GstD3D12TestSrc * self, RenderContext * ctx,
       D3D12_HEAP_FLAG_CREATE_NOT_ZEROED,
       &buffer_desc, D3D12_RESOURCE_STATE_COMMON, nullptr,
       IID_PPV_ARGS (&vertex_index_buf));
-  if (!gst_d3d12_result (hr, self->device)) {
+  if (!gst_d3d12_result_full (hr, self, self->device)) {
     GST_ERROR_OBJECT (self, "Couldn't create index buffer");
     return FALSE;
   }
@@ -1196,7 +1196,7 @@ setup_d2d_render (GstD3D12TestSrc * self, RenderContext * ctx)
     hr = D2D1CreateFactory (D2D1_FACTORY_TYPE_MULTI_THREADED,
         IID_PPV_ARGS (&d2d_factory));
 
-    if (!gst_d3d12_result (hr, self->device)) {
+    if (!gst_d3d12_result_full (hr, self, self->device)) {
       GST_ERROR_OBJECT (self, "Couldn't create D2D factory");
       return FALSE;
     }
@@ -1224,14 +1224,14 @@ setup_d2d_render (GstD3D12TestSrc * self, RenderContext * ctx)
       D3D12_RESOURCE_STATE_RENDER_TARGET,
       D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
       IID_PPV_ARGS (&ctx->wrapped_texture));
-  if (!gst_d3d12_result (hr, self->device)) {
+  if (!gst_d3d12_result_full (hr, self, self->device)) {
     GST_ERROR_OBJECT (self, "Couldn't create wrapped resource");
     return FALSE;
   }
 
   ComPtr < IDXGISurface > surface;
   hr = ctx->wrapped_texture.As (&surface);
-  if (!gst_d3d12_result (hr, self->device)) {
+  if (!gst_d3d12_result_full (hr, self, self->device)) {
     GST_ERROR_OBJECT (self, "Couldn't get DXGI surface");
     return FALSE;
   }
@@ -1247,7 +1247,7 @@ setup_d2d_render (GstD3D12TestSrc * self, RenderContext * ctx)
 
   hr = priv->d2d_factory->CreateDxgiSurfaceRenderTarget (surface.Get (),
       &props, &ctx->d2d_target);
-  if (!gst_d3d12_result (hr, self->device)) {
+  if (!gst_d3d12_result_full (hr, self, self->device)) {
     GST_ERROR_OBJECT (self, "Couldn't create d2d render target");
     return FALSE;
   }
@@ -1267,7 +1267,7 @@ setup_d2d_render (GstD3D12TestSrc * self, RenderContext * ctx)
       hr = ctx->d2d_target->CreateGradientStopCollection (stops,
           G_N_ELEMENTS (stops), D2D1_GAMMA_1_0, D2D1_EXTEND_MODE_CLAMP,
           &collection);
-      if (!gst_d3d12_result (hr, self->device)) {
+      if (!gst_d3d12_result_full (hr, self, self->device)) {
         GST_ERROR_OBJECT (self, "Couldn't create stop collection");
         return FALSE;
       }
@@ -1276,7 +1276,7 @@ setup_d2d_render (GstD3D12TestSrc * self, RenderContext * ctx)
           d2d_target->CreateRadialGradientBrush (D2D1::
           RadialGradientBrushProperties (D2D1::Point2F (0, 0), D2D1::Point2F (0,
                   0), 20, 20), collection.Get (), &ctx->brush);
-      if (!gst_d3d12_result (hr, self->device)) {
+      if (!gst_d3d12_result_full (hr, self, self->device)) {
         GST_ERROR_OBJECT (self, "Couldn't create brush");
         return FALSE;
       }
@@ -1303,7 +1303,7 @@ setup_d2d_render (GstD3D12TestSrc * self, RenderContext * ctx)
       hr = ctx->d2d_target->CreateGradientStopCollection (stops,
           G_N_ELEMENTS (stops), D2D1_GAMMA_1_0, D2D1_EXTEND_MODE_CLAMP,
           &collection);
-      if (!gst_d3d12_result (hr, self->device)) {
+      if (!gst_d3d12_result_full (hr, self, self->device)) {
         GST_ERROR_OBJECT (self, "Couldn't create stop collection");
         return FALSE;
       }
@@ -1317,7 +1317,7 @@ setup_d2d_render (GstD3D12TestSrc * self, RenderContext * ctx)
           RadialGradientBrushProperties (D2D1::Point2F (ctx->x, ctx->y),
               D2D1::Point2F (0, 0), ctx->rad, ctx->rad), collection.Get (),
           &ctx->brush);
-      if (!gst_d3d12_result (hr, self->device)) {
+      if (!gst_d3d12_result_full (hr, self, self->device)) {
         GST_ERROR_OBJECT (self, "Couldn't create brush");
         return FALSE;
       }
@@ -1581,6 +1581,7 @@ gst_d3d12_test_src_setup_context (GstD3D12TestSrc * self, GstCaps * caps)
       &draw_info, &priv->info, nullptr, nullptr, config);
 
   if (!ctx->conv) {
+    gst_d3d12_post_error_if_device_removed (self, self->device);
     GST_ERROR_OBJECT (self, "Failed to create converter");
     return FALSE;
   }
@@ -1629,7 +1630,7 @@ gst_d3d12_test_src_setup_context (GstD3D12TestSrc * self, GstCaps * caps)
   hr = device->CreateCommittedResource (&heap_prop, heap_flags,
       &resource_desc, D3D12_RESOURCE_STATE_COMMON, &clear_value,
       IID_PPV_ARGS (&ctx->texture));
-  if (!gst_d3d12_result (hr, self->device)) {
+  if (!gst_d3d12_result_full (hr, self, self->device)) {
     GST_ERROR_OBJECT (self, "Couldn't create texture");
     return FALSE;
   }
@@ -1637,6 +1638,7 @@ gst_d3d12_test_src_setup_context (GstD3D12TestSrc * self, GstCaps * caps)
   auto mem = gst_d3d12_allocator_alloc_wrapped (nullptr, self->device,
       ctx->texture.Get (), 0, nullptr, nullptr);
   if (!mem) {
+    gst_d3d12_post_error_if_device_removed (self, self->device);
     GST_ERROR_OBJECT (self, "Couldn't wrap texture");
     return FALSE;
   }
@@ -1645,6 +1647,7 @@ gst_d3d12_test_src_setup_context (GstD3D12TestSrc * self, GstCaps * caps)
       gst_d3d12_memory_get_render_target_view_heap ((GstD3D12Memory *) mem);
   if (!ctx->rtv_heap) {
     GST_ERROR_OBJECT (self, "Couldn't get rtv heap");
+    gst_d3d12_post_error_if_device_removed (self, self->device);
     gst_memory_unref (mem);
     return FALSE;
   }
@@ -1665,11 +1668,13 @@ gst_d3d12_test_src_setup_context (GstD3D12TestSrc * self, GstCaps * caps)
 
     if (!gst_buffer_pool_set_config (ctx->convert_pool, config)) {
       GST_ERROR_OBJECT (self, "Couldn't set pool config");
+      gst_d3d12_post_error_if_device_removed (self, self->device);
       return FALSE;
     }
 
     if (!gst_buffer_pool_set_active (ctx->convert_pool, TRUE)) {
       GST_ERROR_OBJECT (self, "Couldn't configure buffer pool");
+      gst_d3d12_post_error_if_device_removed (self, self->device);
       return FALSE;
     }
   }
@@ -2160,6 +2165,7 @@ gst_d3d12_test_src_create (GstBaseSrc * bsrc, guint64 offset,
   GstD3D12CommandAllocator *gst_ca;
   if (!gst_d3d12_command_allocator_pool_acquire (priv->ctx->ca_pool, &gst_ca)) {
     GST_ERROR_OBJECT (self, "Couldn't acquire command allocator");
+    gst_d3d12_post_error_if_device_removed (self, self->device);
     gst_clear_buffer (&convert_buffer);
     return GST_FLOW_ERROR;
   }
@@ -2167,7 +2173,7 @@ gst_d3d12_test_src_create (GstBaseSrc * bsrc, guint64 offset,
   auto ca = gst_d3d12_command_allocator_get_handle (gst_ca);
 
   auto hr = ca->Reset ();
-  if (!gst_d3d12_result (hr, self->device)) {
+  if (!gst_d3d12_result_full (hr, self, self->device)) {
     GST_ERROR_OBJECT (self, "Couldn't reset command allocator");
     gst_d3d12_command_allocator_unref (gst_ca);
     gst_clear_buffer (&convert_buffer);
@@ -2178,7 +2184,7 @@ gst_d3d12_test_src_create (GstBaseSrc * bsrc, guint64 offset,
     auto device = gst_d3d12_device_get_device_handle (self->device);
     hr = device->CreateCommandList (0, D3D12_COMMAND_LIST_TYPE_DIRECT,
         ca, nullptr, IID_PPV_ARGS (&priv->ctx->cl));
-    if (!gst_d3d12_result (hr, self->device)) {
+    if (!gst_d3d12_result_full (hr, self, self->device)) {
       GST_ERROR_OBJECT (self, "Couldn't reset command list");
       gst_d3d12_command_allocator_unref (gst_ca);
       gst_clear_buffer (&convert_buffer);
@@ -2186,7 +2192,7 @@ gst_d3d12_test_src_create (GstBaseSrc * bsrc, guint64 offset,
     }
   } else {
     hr = priv->ctx->cl->Reset (ca, nullptr);
-    if (!gst_d3d12_result (hr, self->device)) {
+    if (!gst_d3d12_result_full (hr, self, self->device)) {
       GST_ERROR_OBJECT (self, "Couldn't reset command list");
       gst_d3d12_command_allocator_unref (gst_ca);
       gst_clear_buffer (&convert_buffer);
@@ -2205,6 +2211,7 @@ gst_d3d12_test_src_create (GstBaseSrc * bsrc, guint64 offset,
   if (!gst_d3d12_converter_convert_buffer (priv->ctx->conv,
           priv->ctx->render_buffer, convert_buffer, fence_data, cl.Get ())) {
     GST_ERROR_OBJECT (self, "Couldn't build convert command");
+    gst_d3d12_post_error_if_device_removed (self, self->device);
     gst_clear_buffer (&convert_buffer);
     gst_d3d12_fence_data_unref (fence_data);
     return GST_FLOW_ERROR;
@@ -2212,7 +2219,7 @@ gst_d3d12_test_src_create (GstBaseSrc * bsrc, guint64 offset,
 
   hr = cl->Close ();
 
-  if (!gst_d3d12_result (hr, self->device)) {
+  if (!gst_d3d12_result_full (hr, self, self->device)) {
     GST_ERROR_OBJECT (self, "Couldn't close command list");
     gst_clear_buffer (&convert_buffer);
     gst_d3d12_fence_data_unref (fence_data);
@@ -2224,6 +2231,7 @@ gst_d3d12_test_src_create (GstBaseSrc * bsrc, guint64 offset,
   if (!gst_d3d12_device_execute_command_lists (self->device,
           D3D12_COMMAND_LIST_TYPE_DIRECT, 1, cmd_list, &priv->ctx->fence_val)) {
     GST_ERROR_OBJECT (self, "Couldn't execute command list");
+    gst_d3d12_post_error_if_device_removed (self, self->device);
     gst_d3d12_fence_data_unref (fence_data);
     return GST_FLOW_ERROR;
   }

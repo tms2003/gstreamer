@@ -1031,6 +1031,7 @@ gst_d3d12_compositor_pad_setup_converter (GstVideoAggregatorPad * pad,
     ctx->conv = gst_d3d12_converter_new (self->device, &pad->info, info,
         &priv->blend_desc, priv->blend_factor, nullptr);
     if (!ctx->conv) {
+      gst_d3d12_post_error_if_device_removed (self, self->device);
       GST_ERROR_OBJECT (pad, "Couldn't create converter");
       return FALSE;
     }
@@ -1122,6 +1123,7 @@ gst_d3d12_compositor_preprare_func (GstVideoAggregatorPad * pad,
   GstD3D12CommandAllocator *gst_ca;
   if (!gst_d3d12_command_allocator_pool_acquire (priv->ctx->ca_pool, &gst_ca)) {
     GST_ERROR_OBJECT (cpad, "Couldn't acquire command allocator");
+    gst_d3d12_post_error_if_device_removed (self, self->device);
     return FALSE;
   }
 
@@ -1132,7 +1134,7 @@ gst_d3d12_compositor_preprare_func (GstVideoAggregatorPad * pad,
   auto ca = gst_d3d12_command_allocator_get_handle (gst_ca);
 
   auto hr = ca->Reset ();
-  if (!gst_d3d12_result (hr, priv->ctx->device)) {
+  if (!gst_d3d12_result_full (hr, self, priv->ctx->device)) {
     GST_ERROR_OBJECT (cpad, "Couldn't reset command allocator");
     gst_d3d12_fence_data_unref (fence_data);
     return FALSE;
@@ -1142,14 +1144,14 @@ gst_d3d12_compositor_preprare_func (GstVideoAggregatorPad * pad,
     auto device = gst_d3d12_device_get_device_handle (priv->ctx->device);
     hr = device->CreateCommandList (0, D3D12_COMMAND_LIST_TYPE_DIRECT,
         ca, nullptr, IID_PPV_ARGS (&priv->ctx->cl));
-    if (!gst_d3d12_result (hr, priv->ctx->device)) {
+    if (!gst_d3d12_result_full (hr, self, priv->ctx->device)) {
       GST_ERROR_OBJECT (cpad, "Couldn't create command list");
       gst_d3d12_fence_data_unref (fence_data);
       return FALSE;
     }
   } else {
     hr = priv->ctx->cl->Reset (ca, nullptr);
-    if (!gst_d3d12_result (hr, priv->ctx->device)) {
+    if (!gst_d3d12_result_full (hr, self, priv->ctx->device)) {
       GST_ERROR_OBJECT (self, "Couldn't reset command list");
       gst_d3d12_fence_data_unref (fence_data);
       return FALSE;
@@ -1160,12 +1162,13 @@ gst_d3d12_compositor_preprare_func (GstVideoAggregatorPad * pad,
           buffer, self->priv->generated_output_buf, fence_data,
           priv->ctx->cl.Get ())) {
     GST_ERROR_OBJECT (self, "Couldn't build command list");
+    gst_d3d12_post_error_if_device_removed (self, self->device);
     gst_d3d12_fence_data_unref (fence_data);
     return FALSE;
   }
 
   hr = priv->ctx->cl->Close ();
-  if (!gst_d3d12_result (hr, priv->ctx->device)) {
+  if (!gst_d3d12_result_full (hr, self, priv->ctx->device)) {
     GST_ERROR_OBJECT (self, "Couldn't close command list");
     gst_d3d12_fence_data_unref (fence_data);
     return FALSE;
@@ -1987,12 +1990,14 @@ gst_d3d12_compositor_negotiated_src_caps (GstAggregator * agg, GstCaps * caps)
 
     if (!gst_buffer_pool_set_config (pool, config)) {
       GST_ERROR_OBJECT (self, "Couldn't set pool config");
+      gst_d3d12_post_error_if_device_removed (self, self->device);
       gst_object_unref (pool);
       return FALSE;
     }
 
     if (!gst_buffer_pool_set_active (pool, TRUE)) {
       GST_ERROR_OBJECT (self, "Failed to set active");
+      gst_d3d12_post_error_if_device_removed (self, self->device);
       gst_object_unref (pool);
       return FALSE;
     }
@@ -2003,6 +2008,7 @@ gst_d3d12_compositor_negotiated_src_caps (GstAggregator * agg, GstCaps * caps)
 
     if (!priv->fallback_buf) {
       GST_ERROR_OBJECT (self, "Couldn't acquire fallback buf");
+      gst_d3d12_post_error_if_device_removed (self, self->device);
       return FALSE;
     }
   }
@@ -2069,6 +2075,7 @@ gst_d3d12_compositor_propose_allocation (GstAggregator * agg,
 
     if (!gst_buffer_pool_set_config (pool, config)) {
       GST_ERROR_OBJECT (pool, "Couldn't set config");
+      gst_d3d12_post_error_if_device_removed (self, self->device);
       gst_object_unref (pool);
 
       return FALSE;
@@ -2225,6 +2232,7 @@ gst_d3d12_compositor_draw_background (GstD3D12Compositor * self)
   GstD3D12CommandAllocator *gst_ca;
   if (!gst_d3d12_command_allocator_pool_acquire (bg_render->ca_pool, &gst_ca)) {
     GST_ERROR_OBJECT (self, "Couldn't acquire command allocator");
+    gst_d3d12_post_error_if_device_removed (self, self->device);
     return FALSE;
   }
 
@@ -2235,7 +2243,7 @@ gst_d3d12_compositor_draw_background (GstD3D12Compositor * self)
   auto ca = gst_d3d12_command_allocator_get_handle (gst_ca);
 
   auto hr = ca->Reset ();
-  if (!gst_d3d12_result (hr, self->device)) {
+  if (!gst_d3d12_result_full (hr, self, self->device)) {
     GST_ERROR_OBJECT (self, "Couldn't reset command allocator");
     gst_d3d12_fence_data_unref (fence_data);
     return FALSE;
@@ -2245,14 +2253,14 @@ gst_d3d12_compositor_draw_background (GstD3D12Compositor * self)
     auto device = gst_d3d12_device_get_device_handle (self->device);
     hr = device->CreateCommandList (0, D3D12_COMMAND_LIST_TYPE_DIRECT,
         ca, bg_render->pso.Get (), IID_PPV_ARGS (&bg_render->cl));
-    if (!gst_d3d12_result (hr, self->device)) {
+    if (!gst_d3d12_result_full (hr, self, self->device)) {
       GST_ERROR_OBJECT (self, "Couldn't create command list");
       gst_d3d12_fence_data_unref (fence_data);
       return FALSE;
     }
   } else {
     hr = bg_render->cl->Reset (ca, bg_render->pso.Get ());
-    if (!gst_d3d12_result (hr, self->device)) {
+    if (!gst_d3d12_result_full (hr, self, self->device)) {
       GST_ERROR_OBJECT (self, "Couldn't reset command list");
       gst_d3d12_fence_data_unref (fence_data);
       return FALSE;
@@ -2310,7 +2318,7 @@ gst_d3d12_compositor_draw_background (GstD3D12Compositor * self)
   }
 
   hr = cl->Close ();
-  if (!gst_d3d12_result (hr, self->device)) {
+  if (!gst_d3d12_result_full (hr, self, self->device)) {
     GST_ERROR_OBJECT (self, "Couldn't close command list");
     gst_d3d12_fence_data_unref (fence_data);
     return FALSE;
@@ -2413,6 +2421,7 @@ gst_d3d12_compositor_aggregate_frames (GstVideoAggregator * vagg,
             D3D12_COMMAND_LIST_TYPE_DIRECT, 1, cmd_list,
             &pad_priv->ctx->fence_val)) {
       GST_ERROR_OBJECT (self, "Couldn't execute command list");
+      gst_d3d12_post_error_if_device_removed (self, self->device);
       ret = GST_FLOW_ERROR;
       break;
     }

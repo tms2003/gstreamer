@@ -447,7 +447,7 @@ gst_d3d12_decoder_open (GstD3D12Decoder * decoder, GstElement * element)
   cmd->device = gst_d3d12_device_get_device_handle (decoder->device);
 
   hr = cmd->device.As (&cmd->video_device);
-  if (!gst_d3d12_result (hr, decoder->device)) {
+  if (!gst_d3d12_result_full (hr, element, decoder->device)) {
     GST_ERROR_OBJECT (element, "ID3D12VideoDevice interface is unavailable");
     return FALSE;
   }
@@ -681,7 +681,7 @@ gst_d3d12_decoder_configure (GstD3D12Decoder * decoder,
     desc.Configuration = support.Configuration;
     hr = priv->cmd->video_device->CreateVideoDecoder (&desc,
         IID_PPV_ARGS (&session->decoder));
-    if (!gst_d3d12_result (hr, decoder->device)) {
+    if (!gst_d3d12_result_full (hr, videodec, decoder->device)) {
       GST_ERROR_OBJECT (decoder, "Couldn't create decoder object");
       return GST_FLOW_ERROR;
     }
@@ -700,7 +700,7 @@ gst_d3d12_decoder_configure (GstD3D12Decoder * decoder,
   heap_desc.MaxDecodePictureBufferCount = session->dpb_size;
   hr = priv->cmd->video_device->CreateVideoDecoderHeap (&heap_desc,
       IID_PPV_ARGS (&session->heap));
-  if (!gst_d3d12_result (hr, decoder->device)) {
+  if (!gst_d3d12_result_full (hr, videodec, decoder->device)) {
     GST_ERROR_OBJECT (decoder, "Couldn't create decoder heap");
     return GST_FLOW_ERROR;
   }
@@ -1519,7 +1519,7 @@ gst_d3d12_decoder_process_output (GstD3D12Decoder * self,
       GstVideoFrame vframe;
 
       hr = priv->session->staging->Map (0, nullptr, (void **) &map_data);
-      if (!gst_d3d12_result (hr, self->device)) {
+      if (!gst_d3d12_result_full (hr, videodec, self->device)) {
         ret = GST_FLOW_ERROR;
         goto error;
       }
