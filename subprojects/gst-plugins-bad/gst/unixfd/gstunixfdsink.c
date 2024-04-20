@@ -79,6 +79,7 @@ struct _GstUnixFdSink
 
   gchar *socket_path;
   GUnixSocketAddressType socket_type;
+  gboolean allow_copy;
   GSocket *socket;
   GSource *source;
 
@@ -94,12 +95,14 @@ GST_ELEMENT_REGISTER_DEFINE (unixfdsink, "unixfdsink", GST_RANK_NONE,
     GST_TYPE_UNIX_FD_SINK);
 
 #define DEFAULT_SOCKET_TYPE G_UNIX_SOCKET_ADDRESS_PATH
+#define DEFAULT_ALLOW_COPY FALSE
 
 enum
 {
   PROP_0,
   PROP_SOCKET_PATH,
   PROP_SOCKET_TYPE,
+  PROP_ALLOW_COPY,
 };
 
 
@@ -163,6 +166,9 @@ gst_unix_fd_sink_set_property (GObject * object, guint prop_id,
       }
       self->socket_type = g_value_get_enum (value);
       break;
+    case PROP_ALLOW_COPY:
+      self->allow_copy = g_value_get_boolean (value);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -185,6 +191,9 @@ gst_unix_fd_sink_get_property (GObject * object, guint prop_id,
       break;
     case PROP_SOCKET_TYPE:
       g_value_set_enum (value, self->socket_type);
+      break;
+    case PROP_ALLOW_COPY:
+      g_value_set_boolean (value, self->allow_copy);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -459,6 +468,33 @@ serialize_metas (GstBuffer * buffer, GByteArray * payload)
   return n_meta;
 }
 
+static GstMemory *
+gst_unix_fd_mem_copy_to_fd (GstMemory * mem)
+{
+  GstAllocator *allocator = gst_shm_allocator_get ();
+  GstMemory *fd_mem;
+  GstMapInfo src_map, dst_map;
+
+  fd_mem = gst_allocator_alloc (allocator,
+      gst_memory_get_sizes (mem, NULL, NULL), NULL);
+  gst_object_unref (allocator);
+
+  if (!gst_memory_map (mem, &src_map, GST_MAP_READ))
+    return NULL;
+
+  if (!gst_memory_map (fd_mem, &dst_map, GST_MAP_WRITE)) {
+    gst_memory_unmap (mem, &src_map);
+    return NULL;
+  }
+
+  memcpy (dst_map.data, src_map.data, src_map.size);
+
+  gst_memory_unmap (mem, &src_map);
+  gst_memory_unmap (fd_mem, &dst_map);
+
+  return fd_mem;
+}
+
 static GstFlowReturn
 gst_unix_fd_sink_render (GstBaseSink * bsink, GstBuffer * buffer)
 {
@@ -498,14 +534,45 @@ gst_unix_fd_sink_render (GstBaseSink * bsink, GstBuffer * buffer)
   new_buffer->n_memory = n_memory;
   new_buffer->n_meta = n_meta;
 
-  gboolean dmabuf_count = 0;
+  gint dmabuf_count = 0;
+  gboolean need_copy = FALSE;
   GUnixFDList *fds = g_unix_fd_list_new ();
+
+  if (self->allow_copy) {
+    for (int i = 0; i < n_memory; i++) {
+      GstMemory *mem = gst_buffer_peek_memory (buffer, i);
+      if (!gst_is_fd_memory (mem))
+        need_copy = TRUE;
+    }
+  }
+
+  GstBuffer *dst_buffer;
+  if (need_copy) {
+    dst_buffer = gst_buffer_new ();
+    gst_buffer_add_parent_buffer_meta (dst_buffer, buffer);
+    gst_buffer_copy_into (dst_buffer, buffer, GST_BUFFER_COPY_METADATA, 0, -1);
+    new_buffer->id = (guint64) dst_buffer;
+  } else {
+    dst_buffer = gst_buffer_ref (buffer);
+  }
+
   for (int i = 0; i < n_memory; i++) {
     GstMemory *mem = gst_buffer_peek_memory (buffer, i);
+
     if (!gst_is_fd_memory (mem)) {
-      GST_ERROR_OBJECT (self, "Expecting buffers with FD memories");
-      ret = GST_FLOW_ERROR;
-      goto out;
+      if (need_copy) {
+        mem = gst_unix_fd_mem_copy_to_fd (mem);
+        if (mem)
+          gst_buffer_append_memory (dst_buffer, mem);
+      } else {
+        mem = NULL;
+      }
+
+      if (!mem) {
+        GST_ERROR_OBJECT (self, "Expecting buffers with FD memories");
+        ret = GST_FLOW_ERROR;
+        goto out;
+      }
     }
 
     if (gst_is_dmabuf_memory (mem))
@@ -533,10 +600,11 @@ gst_unix_fd_sink_render (GstBaseSink * bsink, GstBuffer * buffer)
 
   GST_OBJECT_LOCK (self);
   send_command_to_all (self, COMMAND_TYPE_NEW_BUFFER, fds,
-      self->payload->data, self->payload->len, buffer);
+      self->payload->data, self->payload->len, dst_buffer);
   GST_OBJECT_UNLOCK (self);
 
 out:
+  gst_clear_buffer (&dst_buffer);
   g_clear_object (&fds);
   g_clear_error (&error);
   return ret;
@@ -647,4 +715,11 @@ gst_unix_fd_sink_class_init (GstUnixFdSinkClass * klass)
           G_TYPE_UNIX_SOCKET_ADDRESS_TYPE, DEFAULT_SOCKET_TYPE,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | G_PARAM_CONSTRUCT |
           GST_PARAM_MUTABLE_READY));
+  g_object_class_install_property (gobject_class, PROP_ALLOW_COPY,
+      g_param_spec_boolean ("allow-copy", "Allow Copy",
+          "Enable copying non-fd memory into memfds.",
+          DEFAULT_ALLOW_COPY,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | G_PARAM_CONSTRUCT |
+          GST_PARAM_MUTABLE_READY));
+
 }
