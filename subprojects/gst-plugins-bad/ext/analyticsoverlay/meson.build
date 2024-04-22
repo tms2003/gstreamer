@@ -1,6 +1,7 @@
 analyticsoverlay_sources = [
   'gstanalyticsoverlay.c',
   'gstobjectdetectionoverlay.c',
+  'gstsegmentationoverlay.c'
 ]
 
 gstanalyticsoverlay_ext_dep = dependency('pangocairo', version : '>=1.22.0',
