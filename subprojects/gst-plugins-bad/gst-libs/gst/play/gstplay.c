@@ -1453,11 +1453,11 @@ state_changed_cb (G_GNUC_UNUSED GstBus * bus, GstMessage * msg,
         }
       }
 
-      /* Try to query seek information again for live stream */
       if (self->is_live) {
         gboolean seekable = FALSE;
         gboolean updated = FALSE;
 
+        /* Try to query seek information again for live stream */
         GstQuery *query = gst_query_new_seeking (GST_FORMAT_TIME);
         if (gst_element_query (self->playbin, query))
           gst_query_parse_seeking (query, NULL, &seekable, NULL, NULL);
@@ -1473,6 +1473,30 @@ state_changed_cb (G_GNUC_UNUSED GstBus * bus, GstMessage * msg,
         if (updated) {
           on_media_info_updated (self);
         }
+
+        /* Handle seek operation for live stream */
+        g_mutex_lock (&self->lock);
+        if (self->seek_pending) {
+          self->seek_pending = FALSE;
+          if (!self->media_info->seekable) {
+            GST_DEBUG_OBJECT (self, "Media is not seekable");
+            remove_seek_source (self);
+            self->seek_position = GST_CLOCK_TIME_NONE;
+            self->last_seek_time = GST_CLOCK_TIME_NONE;
+          } else if (self->seek_source) {
+            GST_DEBUG_OBJECT (self, "Seek finished but new seek is pending");
+            gst_play_seek_internal_locked (self);
+          } else {
+            GST_DEBUG_OBJECT (self, "Seek finished");
+            on_seek_done (self);
+          }
+        }
+
+        if (self->seek_position != GST_CLOCK_TIME_NONE) {
+          GST_DEBUG_OBJECT (self, "Seeking now that we reached PALYING state");
+          gst_play_seek_internal_locked (self);
+        }
+        g_mutex_unlock (&self->lock);
       }
       /* api_bus_post_message (self, GST_PLAY_MESSAGE_POSITION_UPDATED, */
       /*     GST_PLAY_MESSAGE_DATA_POSITION, GST_TYPE_CLOCK_TIME, 0, NULL); */
@@ -3048,20 +3072,27 @@ gst_play_seek_internal_locked (GstPlay * self)
 
   remove_seek_source (self);
 
-  /* Only seek in PAUSED */
-  if (self->current_state < GST_STATE_PAUSED) {
-    return;
-  } else if (self->current_state != GST_STATE_PAUSED) {
-    g_mutex_unlock (&self->lock);
-    state_ret = gst_element_set_state (self->playbin, GST_STATE_PAUSED);
-    if (state_ret == GST_STATE_CHANGE_FAILURE) {
-      on_error (self, g_error_new (GST_PLAY_ERROR, GST_PLAY_ERROR_FAILED,
-              "Failed to seek"), NULL);
+  if (!self->is_live) {
+    /* Only seek in PAUSED for non live stream */
+    if (self->current_state < GST_STATE_PAUSED) {
+      return;
+    } else if (self->current_state != GST_STATE_PAUSED) {
+      g_mutex_unlock (&self->lock);
+      state_ret = gst_element_set_state (self->playbin, GST_STATE_PAUSED);
+      if (state_ret == GST_STATE_CHANGE_FAILURE) {
+        on_error (self, g_error_new (GST_PLAY_ERROR, GST_PLAY_ERROR_FAILED,
+                "Failed to seek"), NULL);
+        g_mutex_lock (&self->lock);
+        return;
+      }
       g_mutex_lock (&self->lock);
       return;
     }
-    g_mutex_lock (&self->lock);
-    return;
+  } else {
+    /* Only seek in PAYING for live stream */
+    if (self->current_state < GST_STATE_PLAYING) {
+      return;
+    }
   }
 
   self->last_seek_time = gst_util_get_timestamp ();
