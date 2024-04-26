@@ -175,7 +175,8 @@ static GstPlay *
 play_new (gchar ** uris, const gchar * audio_sink, const gchar * video_sink,
     gboolean gapless, gboolean instant_uri, gdouble initial_volume,
     gboolean verbose, const gchar * flags_string, gboolean use_playbin3,
-    gdouble start_position, gboolean no_position, gboolean accurate_seeks)
+    gdouble start_position, gboolean no_position, gboolean accurate_seeks,
+    gboolean paused)
 {
   GstElement *sink, *playbin;
   GstPlay *play;
@@ -259,7 +260,7 @@ play_new (gchar ** uris, const gchar * audio_sink, const gchar * video_sink,
   play->buffering = FALSE;
   play->is_live = FALSE;
 
-  play->desired_state = GST_STATE_PLAYING;
+  play->desired_state = paused ? GST_STATE_PAUSED : GST_STATE_PLAYING;
 
   play->gapless = gapless;
   if (gapless) {
@@ -1612,6 +1613,7 @@ real_main (int argc, char **argv)
   gboolean use_playbin3 = TRUE;
   gboolean use_playbin2 = FALSE;
   gboolean no_position = FALSE;
+  gboolean paused = FALSE;
 #ifdef HAVE_WINMM
   guint winmm_timer_resolution = 0;
 #endif
@@ -1663,6 +1665,9 @@ real_main (int argc, char **argv)
         NULL},
     {"no-position", 0, 0, G_OPTION_ARG_NONE, &no_position,
           N_("Do not print current position of pipeline"),
+        NULL},
+    {"start-as-paused", 0, 0, G_OPTION_ARG_NONE, &paused,
+          N_("Start in paused state. Need keyboard input to start playback"),
         NULL},
     {G_OPTION_REMAINING, 0, 0, G_OPTION_ARG_FILENAME_ARRAY, &filenames, NULL},
     {NULL}
@@ -1788,7 +1793,7 @@ real_main (int argc, char **argv)
   play =
       play_new (uris, audio_sink, video_sink, gapless, instant_uri, volume,
       verbose, flags, use_playbin3, start_position, no_position,
-      accurate_seeks);
+      accurate_seeks, paused);
 
   if (play == NULL) {
     gst_printerr
