@@ -4001,6 +4001,31 @@ GST_START_TEST (test_serialize_deserialize_sample)
 
 GST_END_TEST;
 
+GST_START_TEST (test_serialize_deserialize_gbytes)
+{
+  GValue v = { 0, };
+  const char *string = { "test", };
+  gchar *serialized;
+  GBytes *res, *bytes = g_bytes_new (string, strlen(string));
+
+  g_value_init (&v, G_TYPE_BYTES);
+  g_value_take_boxed (&v, bytes);
+  serialized = gst_value_serialize (&v);
+  fail_unless_equals_string (serialized, "dGVzdA==");
+  g_value_reset (&v);
+
+  gst_value_deserialize (&v, serialized);
+  res = g_value_get_boxed (&v);
+  fail_unless_equals_string (g_bytes_get_data (res, NULL), string);
+
+  g_value_reset (&v);
+  g_free (serialized);
+
+  g_value_reset (&v);
+}
+
+GST_END_TEST;
+
 static Suite *
 gst_value_suite (void)
 {
@@ -4019,6 +4044,7 @@ gst_value_suite (void)
   tcase_add_test (tc_chain, test_deserialize_guchar);
   tcase_add_test (tc_chain, test_deserialize_gstfraction);
   tcase_add_test (tc_chain, test_deserialize_gtype);
+  tcase_add_test (tc_chain, test_serialize_deserialize_gbytes);
   tcase_add_test (tc_chain, test_deserialize_gtype_failures);
   tcase_add_test (tc_chain, test_deserialize_bitmask);
   tcase_add_test (tc_chain, test_deserialize_array);

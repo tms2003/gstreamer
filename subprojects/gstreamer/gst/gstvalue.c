@@ -8043,6 +8043,52 @@ gst_value_compare_allocation_params (const GValue * value1,
   return GST_VALUE_UNORDERED;
 }
 
+/**********
+ * GBytes *
+ **********/
+static gint
+gst_value_compare_gbytes (const GValue * value1, const GValue * value2)
+{
+  GBytes *b1 = g_value_get_boxed (value1);
+  GBytes *b2 = g_value_get_boxed (value2);
+
+  if (b1 == b2)
+    return GST_VALUE_EQUAL;
+
+  if (!b1 && b2)
+    return GST_VALUE_LESS_THAN;
+
+  if (b1 && !b2)
+    return GST_VALUE_GREATER_THAN;
+
+  return g_bytes_compare (b1, b2);
+}
+
+static gchar *
+gst_value_serialize_gbytes (const GValue * value)
+{
+  gsize size;
+  GBytes *gbytes = g_value_get_boxed (value);
+  gconstpointer data;
+
+  if (!gbytes)
+    return g_strdup ("");
+
+  data = g_bytes_get_data (gbytes, &size);
+
+  return g_base64_encode ((const guchar *) data, size);
+}
+
+static gboolean
+gst_value_deserialize_gbytes (GValue * dest, const gchar * s)
+{
+  gsize size;
+  guchar *data = g_base64_decode (s, &size);
+
+  g_value_take_boxed (dest, g_bytes_new_take (data, size));
+
+  return TRUE;
+}
 
 /************
  * GObject *
@@ -8341,6 +8387,7 @@ _priv_gst_value_initialize (void)
   REGISTER_SERIALIZATION_CONST (G_TYPE_UCHAR, uchar);
 
   REGISTER_SERIALIZATION (G_TYPE_GTYPE, gtype);
+  REGISTER_SERIALIZATION (G_TYPE_BYTES, gbytes);
 
   REGISTER_SERIALIZATION_WITH_PSPEC (gst_value_list_get_type (), value_list);
   REGISTER_SERIALIZATION_WITH_PSPEC (gst_value_array_get_type (), value_array);
