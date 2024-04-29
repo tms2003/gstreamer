@@ -620,6 +620,10 @@ check_output_group_id (GstURIDecodeBin3 * dec)
   guint common_group_id = GST_GROUP_ID_INVALID;
   gboolean notify_current = FALSE;
 
+  /* Shutting down, no switching needed */
+  if (g_atomic_int_get (&dec->shutdown))
+    return;
+
   PLAY_ITEMS_LOCK (dec);
 
   for (iter = dec->output_pads; iter; iter = iter->next) {
