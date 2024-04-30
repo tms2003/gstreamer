@@ -25,6 +25,7 @@
 #include <gst/gl/gl.h>
 #include <gst/gl/gstglfuncs.h>
 #if GST_GL_HAVE_PLATFORM_EGL && GST_GL_HAVE_DMABUF
+#include <gstgldmabufbufferpool.h>
 #include <gst/gl/egl/gsteglimage.h>
 #include <gst/allocators/gstdmabuf.h>
 #endif
@@ -899,6 +900,8 @@ gst_gl_download_element_stop (GstBaseTransform * bt)
     dl->dmabuf_allocator = NULL;
   }
 
+  gst_clear_object (&dl->foreign_dmabuf_pool);
+
   return TRUE;
 }
 
@@ -1292,6 +1295,16 @@ gst_gl_download_element_prepare_output_buffer (GstBaseTransform * bt,
   }
 #endif
 #if GST_GL_HAVE_PLATFORM_EGL && GST_GL_HAVE_DMABUF
+  if (gst_is_gl_dmabuf_buffer (inbuf)) {
+    GstBuffer *wrapped_dmabuf = gst_gl_dmabuf_buffer_unwrap (inbuf);
+
+    if (wrapped_dmabuf) {
+      *outbuf = wrapped_dmabuf;
+
+      return GST_FLOW_OK;
+    }
+  }
+
   if (dl->mode == GST_GL_DOWNLOAD_MODE_DMABUF_EXPORTS) {
     GstBuffer *buffer = _try_export_dmabuf (dl, inbuf);
 
@@ -1374,6 +1387,38 @@ gst_gl_download_element_decide_allocation (GstBaseTransform * trans,
     download->add_videometa = FALSE;
   }
 
+#if GST_GL_HAVE_PLATFORM_EGL && GST_GL_HAVE_DMABUF
+  {
+    GstCaps *caps;
+    const GstCapsFeatures *features;
+
+    gst_clear_object (&download->foreign_dmabuf_pool);
+
+    gst_query_parse_allocation (query, &caps, NULL);
+    features = gst_caps_get_features (caps, 0);
+
+    if (gst_caps_features_contains (features, GST_CAPS_FEATURE_MEMORY_DMABUF) &&
+        gst_query_get_n_allocation_pools (query) > 0) {
+      gboolean use_pool = TRUE;
+
+      if (gst_video_is_dma_drm_caps (caps)) {
+        GstVideoInfoDmaDrm drm_info;
+
+        /* We only support linear modifier */
+        use_pool = gst_video_info_dma_drm_from_caps (&drm_info, caps) &&
+            (drm_info.drm_modifier == 0x0);
+      }
+
+      if (use_pool) {
+        gst_query_parse_nth_allocation_pool (query, 0,
+            &download->foreign_dmabuf_pool, NULL, NULL, NULL);
+
+        gst_query_remove_nth_allocation_pool (query, 0);
+      }
+    }
+  }
+#endif
+
   return GST_BASE_TRANSFORM_CLASS (parent_class)->decide_allocation (trans,
       query);
 }
@@ -1446,6 +1491,16 @@ gst_gl_download_element_propose_allocation (GstBaseTransform * bt,
     }
   }
 #endif
+
+#if GST_GL_HAVE_PLATFORM_EGL && GST_GL_HAVE_DMABUF
+  if (!pool && GST_GL_DOWNLOAD_ELEMENT (bt)->foreign_dmabuf_pool) {
+    pool = gst_gl_dmabuf_buffer_pool_new (context,
+        GST_GL_DOWNLOAD_ELEMENT (bt)->foreign_dmabuf_pool);
+
+    GST_LOG_OBJECT (bt, "offering dma-buf-backed GL buffer pool");
+  }
+#endif
+
   if (!pool) {
     pool = gst_gl_buffer_pool_new (context);
   }
