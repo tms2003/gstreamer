@@ -653,7 +653,7 @@ update_values (NleObject * object)
 static gboolean
 nle_object_commit_func (NleObject * object, gboolean recurse)
 {
-  GST_DEBUG_OBJECT (object, "Commiting object changed");
+  GST_DEBUG_OBJECT (object, "Committing object changed");
 
   if (object->commit_needed == FALSE) {
     GST_INFO_OBJECT (object, "No changes to commit");
@@ -841,7 +841,7 @@ nle_object_commit (NleObject * object, gboolean recurse)
 {
   gboolean ret;
 
-  GST_DEBUG_OBJECT (object, "Commiting object state");
+  GST_DEBUG_OBJECT (object, "Committing object state");
 
   object->commiting = TRUE;
   ret = NLE_OBJECT_GET_CLASS (object)->commit (object, recurse);
