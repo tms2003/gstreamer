@@ -452,7 +452,7 @@ gst_rtsp_client_sink_child_proxy_init (gpointer g_iface, gpointer iface_data)
 {
   GstChildProxyInterface *iface = g_iface;
 
-  GST_INFO ("intializing child proxy interface");
+  GST_INFO ("initializing child proxy interface");
   iface->get_child_by_index =
       gst_rtsp_client_sink_child_proxy_get_child_by_index;
   iface->get_children_count =
