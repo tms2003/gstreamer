@@ -44,7 +44,7 @@ typedef struct {
 #define STATES_MAX_NB 128
 
 /*
- * Gives informations about the sound.
+ * Gives information about the sound.
  */
 struct _SOUND_INFO {
 
@@ -139,7 +139,7 @@ struct _PLUGIN_INFO {
 	int sintable[0x10000];
 
 	/* INTERNALS */
-	
+
 	/* goom_update internals.
 	 * I took all static variables from goom_update and put them here.. for the moment.
 	 */
@@ -161,18 +161,18 @@ struct _PLUGIN_INFO {
 		int stateSelectionRnd;
 		int stateSelectionBlocker;
 		int previousZoomSpeed;
-		ZoomFilterData zoomFilterData;                
+		ZoomFilterData zoomFilterData;
 	} update;
 
 	struct {
 		void (*draw_line) (Pixel *data, int x1, int y1, int x2, int y2, int col, int screenx, int screeny);
 		void (*zoom_filter) (int sizeX, int sizeY, Pixel *src, Pixel *dest, int *brutS, int *brutD, int buffratio, int precalCoef[16][16]);
 	} methods;
-	
+
 	GoomRandom *gRandom;
 };
 
-void plugin_info_init(PluginInfo *p, int nbVisual); 
+void plugin_info_init(PluginInfo *p, int nbVisual);
 void plugin_info_free(PluginInfo *p);
 
 /* i = [0..p->nbVisual-1] */
