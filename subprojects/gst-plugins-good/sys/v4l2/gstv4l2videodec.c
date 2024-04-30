@@ -280,7 +280,7 @@ gst_v4l2_video_dec_set_format (GstVideoDecoder * decoder,
 
     /* The renegotiation flow don't blend with the base class flow. To properly
      * stop the capture pool, if the buffers can't be orphaned, we need to
-     * reclaim our buffers, which will happend through the allocation query.
+     * reclaim our buffers, which will happened through the allocation query.
      * The allocation query is triggered by gst_video_decoder_negotiate() which
      * requires the output caps to be set, but we can't know this information
      * as we rely on the decoder, which requires the capture queue to be

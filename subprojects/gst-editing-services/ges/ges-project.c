@@ -630,7 +630,7 @@ ges_project_class_init (GESProjectClass * klass)
 
   /**
    * GESProject::error-loading-asset:
-   * @project: the #GESProject on which a problem happend when creted a #GESAsset
+   * @project: the #GESProject on which a problem happened when creted a #GESAsset
    * @error: The #GError defining the error that occurred, might be %NULL
    * @id: The @id of the asset that failed loading
    * @extractable_type: The @extractable_type of the asset that
@@ -648,7 +648,7 @@ ges_project_class_init (GESProjectClass * klass)
 
   /**
    * GESProject::error-loading:
-   * @project: the #GESProject on which a problem happend when creted a #GESAsset
+   * @project: the #GESProject on which a problem happened when creating a #GESAsset
    * @timeline: The timeline that failed loading
    * @error: The #GError defining the error that occurred
    *

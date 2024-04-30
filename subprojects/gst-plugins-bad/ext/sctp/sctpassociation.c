@@ -792,7 +792,7 @@ receive_cb (struct socket *sock, union sctp_sockstore addr, void *data,
   GstSctpAssociation *self = GST_SCTP_ASSOCIATION (ulp_info);
 
   if (!data) {
-    /* Not sure if this can happend. */
+    /* Not sure if this can happened. */
     GST_WARNING_OBJECT (self, "Received empty data buffer");
   } else {
     if (flags & MSG_NOTIFICATION) {

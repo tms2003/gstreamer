@@ -1460,7 +1460,7 @@ gst_rtp_h263_pay_mode_B_fragment (GstRtpH263Pay * rtph263pay,
   if (gst_rtp_h263_pay_move_window_right (rtph263pay, context, 32, boundry.ebit,
           &boundry.end, &gob->end) != 0) {
     GST_ERROR_OBJECT (rtph263pay,
-        "The rest of the bits should be 0, exiting, because something bad happend");
+        "The rest of the bits should be 0, exiting, because something bad happened");
     goto decode_error;
   }
   //The first GOB of a frame "has no" actual header - PICTURE header is his header

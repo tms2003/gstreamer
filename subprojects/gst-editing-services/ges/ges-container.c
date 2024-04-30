@@ -860,7 +860,7 @@ ges_container_remove (GESContainer * container, GESTimelineElement * child)
 
     GST_INFO_OBJECT (container,
         "Not emitting 'child-removed' signal as child"
-        " removal happend during 'child-added' signal emission");
+        " removal happened during 'child-added' signal emission");
   }
 
   _update_start_duration (container, child);
