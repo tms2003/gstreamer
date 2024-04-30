@@ -1,4 +1,4 @@
-/* 
+/*
  * Copyright (C) 2012 Collabora Ltd.
  *     Author: Sebastian Dröge <sebastian.droege@collabora.co.uk>
  * Copyright (C) 2013 Sebastian Dröge <slomo@circular-chaos.org>
@@ -1583,7 +1583,7 @@ gst_openjpeg_dec_decode_frame_single (GstVideoDecoder * decoder,
   gst_openjpeg_dec_decode_stripe (GST_ELEMENT (decoder), message);
   if (message->last_error != OPENJPEG_ERROR_NONE) {
     GST_WARNING_OBJECT
-        (self, "An error occured %d during the JPEG decoding",
+        (self, "An error occurred %d during the JPEG decoding",
         message->last_error);
     self->last_error = message->last_error;
     ret = GST_FLOW_ERROR;

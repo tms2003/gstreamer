@@ -1732,7 +1732,7 @@ write_header_extension (GstRTPHeaderExtension * ext, gpointer user_data)
     /* wrote too much! */
     g_error ("Overflow detected writing rtp header extensions. One of the "
         "instances likely did not report a large enough maximum size. "
-        "Memory corruption has occured. Aborting");
+        "Memory corruption has occurred. Aborting");
     goto error;
   }
 
