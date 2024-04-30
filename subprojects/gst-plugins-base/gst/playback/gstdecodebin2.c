@@ -908,7 +908,7 @@ gst_decode_bin_class_init (GstDecodeBinClass * klass)
    */
   g_object_class_install_property (gobject_klass, PROP_FORCE_SW_DECODERS,
       g_param_spec_boolean ("force-sw-decoders", "Software Docoders Only",
-          "Use only sofware decoders to process streams",
+          "Use only software decoders to process streams",
           DEFAULT_FORCE_SW_DECODERS,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
