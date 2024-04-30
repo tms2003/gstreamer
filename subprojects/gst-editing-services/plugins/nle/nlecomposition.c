@@ -515,7 +515,7 @@ _stop_task (NleComposition * comp)
   gboolean res = TRUE;
   GstTask *task;
 
-  GST_INFO_OBJECT (comp, "Stoping children management task");
+  GST_INFO_OBJECT (comp, "Stopping children management task");
 
   ACTIONS_LOCK (comp);
   comp->priv->running = FALSE;
