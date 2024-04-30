@@ -3149,7 +3149,7 @@ ges_timeline_get_element (GESTimeline * timeline, const gchar * name)
     GST_INFO_OBJECT (timeline, "Does not contain element %s", name);
 
     for (tmp = element_names; tmp; tmp = tmp->next) {
-      GST_DEBUG_OBJECT (timeline, "Containes: %s", (gchar *) tmp->data);
+      GST_DEBUG_OBJECT (timeline, "Contains: %s", (gchar *) tmp->data);
     }
     g_list_free (element_names);
   }
