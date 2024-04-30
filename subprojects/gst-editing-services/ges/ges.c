@@ -314,7 +314,7 @@ ges_init_get_option_group (void)
         NULL},
     {"ges-sample-paths", 0, 0, G_OPTION_ARG_CALLBACK,
           (gpointer) parse_goption_arg,
-        "List of pathes to look assets in if they were moved"},
+        "List of paths to look assets in if they were moved"},
     {"ges-sample-path-recurse", 0, 0, G_OPTION_ARG_CALLBACK,
           (gpointer) parse_goption_arg,
         "Same as above, but recursing into the folder"},
