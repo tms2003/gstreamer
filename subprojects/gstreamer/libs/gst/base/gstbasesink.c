@@ -5378,7 +5378,7 @@ wrong_state:
 no_segment:
   {
     GST_DEBUG_OBJECT (basesink,
-        "haven't received a segment yet, can't anwser position, return -1");
+        "haven't received a segment yet, can't answer position, return -1");
     res = FALSE;
     *cur = -1;
     GST_OBJECT_UNLOCK (basesink);
