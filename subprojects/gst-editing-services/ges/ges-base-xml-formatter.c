@@ -890,7 +890,7 @@ ges_base_xml_formatter_add_clip (GESBaseXmlFormatter * self,
   asset = ges_asset_request (type, asset_id, NULL);
   if (!asset) {
     g_set_error (error, GES_ERROR, GES_ERROR_FORMATTER_MALFORMED_INPUT_FILE,
-        "Clip references asset %s of type %s which was not present in the list of ressource,"
+        "Clip references asset %s of type %s which was not present in the list of resource,"
         " the file seems to be malformed.", asset_id, g_type_name (type));
     return;
   }
