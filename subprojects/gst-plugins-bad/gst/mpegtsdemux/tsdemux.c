@@ -3733,7 +3733,7 @@ gst_ts_demux_handle_packet (GstTSDemux * demux, TSDemuxStream * stream,
     res = gst_ts_demux_push_pending_data (demux, stream, NULL);
     if (res != GST_FLOW_REWINDING) {
       /* Tell the data collecting to expect this header. We don't do this when
-       * rewinding since the states will have been resetted accordingly */
+       * rewinding since the states will have been reset accordingly */
       stream->state = PENDING_PACKET_HEADER;
     }
   }

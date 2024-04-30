@@ -1296,7 +1296,7 @@ gst_hls_demux_check_variant_playlist_loaded (GstHLSDemux * demux)
       demux->pending_variant ? demux->pending_variant : demux->current_variant;
   GstHLSDemuxStream *stream = demux->main_stream;
 
-  /* The demuxer has been resetted in the meantime */
+  /* The demuxer has been reset in the meantime */
   if (target_variant == NULL)
     return GST_FLOW_FLUSHING;
 

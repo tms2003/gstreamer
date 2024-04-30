@@ -1454,7 +1454,7 @@ nle_composition_reset (NleComposition * comp)
 
   _empty_bin (GST_BIN_CAST (priv->current_bin));
 
-  GST_DEBUG_OBJECT (comp, "Composition now resetted");
+  GST_DEBUG_OBJECT (comp, "Composition now reset");
 }
 
 static GstPadProbeReturn
