@@ -3476,7 +3476,7 @@ ges_clip_split_full (GESClip * clip, guint64 position, GError ** error)
     return NULL;
   }
 
-  GST_DEBUG_OBJECT (clip, "Spliting at %" GST_TIME_FORMAT,
+  GST_DEBUG_OBJECT (clip, "Splitting at %" GST_TIME_FORMAT,
       GST_TIME_ARGS (position));
 
   /* Create the new Clip */
