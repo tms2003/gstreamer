@@ -2678,7 +2678,7 @@ _commit_func (NleComposition * comp, UpdateCompositionData * ucompo)
   _post_start_composition_update (comp, ucompo->seqnum, ucompo->reason);
 
   /* Get current so that it represent the duration it was
-   * before commiting children */
+   * before committing children */
   curpos = query_ancestors_position (comp);
 
   if (!_commit_all_values (comp, ucompo->reason)) {
@@ -3619,7 +3619,7 @@ _nle_composition_add_object (NleComposition * comp, NleObject * object)
         "inpoint", (GstClockTime) 0,
         "duration", (GstClockTimeDiff) NLE_OBJECT_STOP (comp), NULL);
 
-    GST_INFO_OBJECT (object, "Used as expandable, commiting now");
+    GST_INFO_OBJECT (object, "Used as expandable, committing now");
     nle_object_commit (NLE_OBJECT (object), FALSE);
   }
 

@@ -2822,7 +2822,7 @@ ges_timeline_commit_unlocked (GESTimeline * timeline)
     return res;
   }
 
-  GST_DEBUG_OBJECT (timeline, "commiting changes");
+  GST_DEBUG_OBJECT (timeline, "committing changes");
 
   timeline_tree_create_transitions (timeline->priv->tree,
       ges_timeline_find_auto_transition);
@@ -2943,7 +2943,7 @@ ges_timeline_commit_sync (GESTimeline * timeline)
   gst_element_get_state (GST_ELEMENT (timeline), NULL, NULL,
       GST_CLOCK_TIME_NONE);
 
-  /* Let's make sure no track gets added between now and the actual commiting */
+  /* Let's make sure no track gets added between now and the actual committing */
   LOCK_DYN (timeline);
   wait_for_signal = g_list_length (timeline->priv->priv_tracks) > 0
       && GST_STATE (timeline) >= GST_STATE_PAUSED;

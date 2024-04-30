@@ -663,7 +663,7 @@ nle_object_commit_func (NleObject * object, gboolean recurse)
 
   update_values (object);
 
-  GST_DEBUG_OBJECT (object, "Done commiting");
+  GST_DEBUG_OBJECT (object, "Done committing");
 
   return TRUE;
 }
@@ -781,7 +781,7 @@ nle_object_change_state (GstElement * element, GstStateChange transition)
         if (g_strcmp0 (GST_ELEMENT_NAME (GST_ELEMENT (parent)), "current-bin")
             && !NLE_OBJECT_IS_COMPOSITION (NLE_OBJECT (element))) {
           GST_INFO ("Adding nleobject to something that is not a composition,"
-              " commiting ourself");
+              " committing ourself");
           nle_object_commit (NLE_OBJECT (element), FALSE);
         }
 
@@ -827,7 +827,7 @@ nle_object_set_commit_needed (NleObject * object)
 {
   if (G_UNLIKELY (object->commiting)) {
     GST_WARNING_OBJECT (object,
-        "Trying to set 'commit-needed' while commiting");
+        "Trying to set 'commit-needed' while committing");
 
     return;
   }
