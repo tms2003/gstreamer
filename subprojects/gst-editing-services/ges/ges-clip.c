@@ -2729,7 +2729,7 @@ ges_clip_create_track_elements (GESClip * clip, GESTrackType type)
   klass = GES_CLIP_GET_CLASS (clip);
 
   if (!(klass->create_track_elements)) {
-    GST_WARNING ("no GESClip::create_track_elements implentation");
+    GST_WARNING ("no GESClip::create_track_elements implementation");
     return NULL;
   }
 
