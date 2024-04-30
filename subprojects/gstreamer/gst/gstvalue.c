@@ -2938,7 +2938,7 @@ gst_value_deserialize_segment_internal (GValue * dest, const gchar * s,
     len = strlen (s);
     if (G_UNLIKELY (*s != '"' || len < 2 || s[len - 1] != '"')) {
       /* "\"" is not an accepted string, so len must be at least 2 */
-      GST_ERROR ("Failed deserializing segement: expected string to start and "
+      GST_ERROR ("Failed deserializing segment: expected string to start and "
           "end with '\"'");
       return FALSE;
     }
