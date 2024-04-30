@@ -307,7 +307,7 @@ static void _deactivate_stack (NleComposition * comp,
     NleUpdateStackReason reason);
 static void _set_real_eos_seqnum_from_seek (NleComposition * comp,
     GstEvent * event);
-static void _emit_commited_signal_func (NleComposition * comp, gpointer udata);
+static void _emit_committed_signal_func (NleComposition * comp, gpointer udata);
 static void _restart_task (NleComposition * comp);
 static void
 _add_action (NleComposition * comp, GCallback func, gpointer data,
@@ -718,18 +718,19 @@ static inline gboolean
 _commit_values (NleComposition * comp)
 {
   GList *tmp;
-  gboolean commited = FALSE;
+  gboolean committed = FALSE;
   NleCompositionPrivate *priv = comp->priv;
 
   for (tmp = priv->objects_start; tmp; tmp = tmp->next) {
     if (nle_object_commit (tmp->data, TRUE))
-      commited = TRUE;
+      committed = TRUE;
   }
 
   GST_DEBUG_OBJECT (comp, "Linking up commit vmethod");
-  commited |= NLE_OBJECT_CLASS (parent_class)->commit (NLE_OBJECT (comp), TRUE);
+  committed |=
+      NLE_OBJECT_CLASS (parent_class)->commit (NLE_OBJECT (comp), TRUE);
 
-  return commited;
+  return committed;
 }
 
 static gboolean
@@ -1253,7 +1254,7 @@ nle_composition_class_init (NleCompositionClass * klass)
   GST_DEBUG_REGISTER_FUNCPTR (_add_object_func);
   GST_DEBUG_REGISTER_FUNCPTR (_update_pipeline_func);
   GST_DEBUG_REGISTER_FUNCPTR (_commit_func);
-  GST_DEBUG_REGISTER_FUNCPTR (_emit_commited_signal_func);
+  GST_DEBUG_REGISTER_FUNCPTR (_emit_committed_signal_func);
   GST_DEBUG_REGISTER_FUNCPTR (_initialize_stack_func);
 
   /* Just be useless, so the compiler does not warn us
@@ -2602,9 +2603,9 @@ _set_current_bin_to_ready (NleComposition * comp, NleUpdateStackReason reason)
 }
 
 static void
-_emit_commited_signal_func (NleComposition * comp, gpointer udata)
+_emit_committed_signal_func (NleComposition * comp, gpointer udata)
 {
-  GST_INFO_OBJECT (comp, "Emitting COMMITED now that the stack " "is ready");
+  GST_INFO_OBJECT (comp, "Emitting COMMITTED now that the stack " "is ready");
 
   g_signal_emit (comp, _signals[COMMITED_SIGNAL], 0, TRUE);
 }
@@ -2616,7 +2617,7 @@ _restart_task (NleComposition * comp)
       UPDATE_PIPELINE_REASONS[comp->priv->updating_reason]);
 
   if (comp->priv->updating_reason == COMP_UPDATE_STACK_ON_COMMIT)
-    _add_action (comp, G_CALLBACK (_emit_commited_signal_func), comp,
+    _add_action (comp, G_CALLBACK (_emit_committed_signal_func), comp,
         G_PRIORITY_HIGH);
 
   comp->priv->seqnum_to_restart_task = 0;
@@ -3651,7 +3652,7 @@ _nle_composition_add_object (NleComposition * comp, NleObject * object)
   priv->objects_stop = g_list_insert_sorted
       (priv->objects_stop, object, (GCompareFunc) objects_stop_compare);
 
-  /* Now the object is ready to be commited and then used */
+  /* Now the object is ready to be committed and then used */
 
 beach:
   return ret;

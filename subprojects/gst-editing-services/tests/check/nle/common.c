@@ -366,7 +366,7 @@ copy_segment_list (GList * list)
 static GMutex lock;
 static GCond cond;
 static void
-commited_cb (GstElement * comp, gboolean changed)
+committed_cb (GstElement * comp, gboolean changed)
 {
   g_mutex_lock (&lock);
   g_cond_signal (&cond);
@@ -377,7 +377,7 @@ void
 commit_and_wait (GstElement * comp, gboolean * ret)
 {
   gulong handler_id =
-      g_signal_connect (comp, "commited", (GCallback) commited_cb, NULL);
+      g_signal_connect (comp, "commited", (GCallback) committed_cb, NULL);
   g_mutex_lock (&lock);
   *ret = nle_object_commit (comp, TRUE);
   g_cond_wait (&cond, &lock);

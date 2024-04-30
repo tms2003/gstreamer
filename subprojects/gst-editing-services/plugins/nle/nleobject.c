@@ -325,8 +325,8 @@ nle_object_class_init (NleObjectClass * klass)
    * Action signal to commit all the pending changes of the composition and
    * its children timing properties
    *
-   * Returns: %TRUE if changes have been commited, %FALSE if nothing had to
-   * be commited
+   * Returns: %TRUE if changes have been committed, %FALSE if nothing had to
+   * be committed
    */
   _signals[COMMIT_SIGNAL] = g_signal_new ("commit", G_TYPE_FROM_CLASS (klass),
       G_SIGNAL_RUN_LAST | G_SIGNAL_ACTION,
@@ -776,7 +776,7 @@ nle_object_change_state (GstElement * element, GstStateChange transition)
       GstObject *parent = gst_object_get_parent (GST_OBJECT (element));
 
       /* Going to READY and if we are not in a composition, we need to make
-       * sure that the object positioning state is properly commited  */
+       * sure that the object positioning state is properly committed  */
       if (parent) {
         if (g_strcmp0 (GST_ELEMENT_NAME (GST_ELEMENT (parent)), "current-bin")
             && !NLE_OBJECT_IS_COMPOSITION (NLE_OBJECT (element))) {

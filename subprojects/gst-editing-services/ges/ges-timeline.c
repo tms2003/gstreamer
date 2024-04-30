@@ -224,11 +224,11 @@ struct _GESTimelinePrivate
   /* With GST_OBJECT_LOCK */
   guint expected_async_done;
   /* With GST_OBJECT_LOCK */
-  guint expected_commited;
+  guint expected_committed;
 
   /* For ges_timeline_commit_sync */
-  GMutex commited_lock;
-  GCond commited_cond;
+  GMutex committed_lock;
+  GCond committed_cond;
   gboolean commit_frozen;
   gboolean commit_delayed;
 
@@ -912,7 +912,7 @@ ges_timeline_init (GESTimeline * self)
   self->priv->auto_transition = FALSE;
   priv->snapping_distance = 0;
   priv->expected_async_done = 0;
-  priv->expected_commited = 0;
+  priv->expected_committed = 0;
 
   self->priv->last_snap_ts = GST_CLOCK_TIME_NONE;
 
@@ -928,7 +928,7 @@ ges_timeline_init (GESTimeline * self)
       G_CALLBACK (select_tracks_for_object_default), NULL);
 
   g_rec_mutex_init (&priv->dyn_mutex);
-  g_mutex_init (&priv->commited_lock);
+  g_mutex_init (&priv->committed_lock);
   priv->valid_thread = g_thread_self ();
 }
 
@@ -2794,17 +2794,17 @@ ges_timeline_get_layers (GESTimeline * timeline)
 }
 
 static void
-track_commited_cb (GESTrack * track, GESTimeline * timeline)
+track_committed_cb (GESTrack * track, GESTimeline * timeline)
 {
-  gboolean emit_commited = FALSE;
+  gboolean emit_committed = FALSE;
   GST_OBJECT_LOCK (timeline);
-  timeline->priv->expected_commited -= 1;
-  if (timeline->priv->expected_commited == 0)
-    emit_commited = TRUE;
-  g_signal_handlers_disconnect_by_func (track, track_commited_cb, timeline);
+  timeline->priv->expected_committed -= 1;
+  if (timeline->priv->expected_committed == 0)
+    emit_committed = TRUE;
+  g_signal_handlers_disconnect_by_func (track, track_committed_cb, timeline);
   GST_OBJECT_UNLOCK (timeline);
 
-  if (emit_commited) {
+  if (emit_committed) {
     g_signal_emit (timeline, ges_timeline_signals[COMMITED], 0);
   }
 }
@@ -2833,10 +2833,10 @@ ges_timeline_commit_unlocked (GESTimeline * timeline)
     ges_layer_resync_priorities (layer);
   }
 
-  timeline->priv->expected_commited =
+  timeline->priv->expected_committed =
       g_list_length (timeline->priv->priv_tracks);
 
-  if (timeline->priv->expected_commited == 0) {
+  if (timeline->priv->expected_committed == 0) {
     g_signal_emit (timeline, ges_timeline_signals[COMMITED], 0);
   } else {
     GstStreamCollection *collection = gst_stream_collection_new (NULL);
@@ -2850,7 +2850,7 @@ ges_timeline_commit_unlocked (GESTimeline * timeline)
       update_stream_object (tr_priv);
       gst_stream_collection_add_stream (collection,
           gst_object_ref (tr_priv->stream));
-      g_signal_connect (tmp->data, "commited", G_CALLBACK (track_commited_cb),
+      g_signal_connect (tmp->data, "commited", G_CALLBACK (track_committed_cb),
           timeline);
       if (!ges_track_commit (GES_TRACK (tmp->data)))
         res = FALSE;
@@ -2912,11 +2912,11 @@ ges_timeline_commit (GESTimeline * timeline)
 }
 
 static void
-commited_cb (GESTimeline * timeline)
+committed_cb (GESTimeline * timeline)
 {
-  g_mutex_lock (&timeline->priv->commited_lock);
-  g_cond_signal (&timeline->priv->commited_cond);
-  g_mutex_unlock (&timeline->priv->commited_lock);
+  g_mutex_lock (&timeline->priv->committed_lock);
+  g_cond_signal (&timeline->priv->committed_cond);
+  g_mutex_unlock (&timeline->priv->committed_lock);
 }
 
 /**
@@ -2952,14 +2952,14 @@ ges_timeline_commit_sync (GESTimeline * timeline)
     ret = ges_timeline_commit_unlocked (timeline);
   } else {
     gulong handler_id =
-        g_signal_connect (timeline, "commited", (GCallback) commited_cb, NULL);
+        g_signal_connect (timeline, "commited", (GCallback) committed_cb, NULL);
 
-    g_mutex_lock (&timeline->priv->commited_lock);
+    g_mutex_lock (&timeline->priv->committed_lock);
 
     ret = ges_timeline_commit_unlocked (timeline);
-    g_cond_wait (&timeline->priv->commited_cond,
-        &timeline->priv->commited_lock);
-    g_mutex_unlock (&timeline->priv->commited_lock);
+    g_cond_wait (&timeline->priv->committed_cond,
+        &timeline->priv->committed_lock);
+    g_mutex_unlock (&timeline->priv->committed_lock);
     g_signal_handler_disconnect (timeline, handler_id);
   }
 
@@ -3426,7 +3426,7 @@ ges_timeline_get_frame_at (GESTimeline * self, GstClockTime timestamp)
  * WARNING: When using that mode, GES won't guarantee the coherence of the
  * timeline. You need to ensure that the rules described in the [Overlaps and
  * auto transitions](#overlaps-and-autotransitions) section are respected any time
- * the timeline is [commited](ges_timeline_commit) (otherwise playback will most
+ * the timeline is [committed](ges_timeline_commit) (otherwise playback will most
  * probably fail in different ways).
  *
  * When disabling editing APIs, GES won't be able to enforce the rules that
