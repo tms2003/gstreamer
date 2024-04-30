@@ -167,7 +167,7 @@ struct _NleCompositionPrivate
   GstSegment *segment;
 
   /* Segment representing the last seek. Simply initialized
-   * segment if no seek occured. */
+   * segment if no seek occurred. */
   GstSegment *seek_segment;
   guint64 next_base_time;
 

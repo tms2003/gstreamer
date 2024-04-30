@@ -2066,7 +2066,7 @@ timeline_tree_ripple (GNode * root, GESTimelineElement * element,
     goto error;
 
   /* emit snapping now. Edits should only fail if a programming error
-   * occured */
+   * occurred */
   if (snap)
     ges_timeline_emit_snapping (root->data, snap->element, snap->snapped_to,
         snap->snapped);
@@ -2148,7 +2148,7 @@ timeline_tree_trim (GNode * root, GESTimelineElement * element,
   }
 
   /* emit snapping now. Edits should only fail if a programming error
-   * occured */
+   * occurred */
   if (snap)
     ges_timeline_emit_snapping (root->data, snap->element, snap->snapped_to,
         snap->snapped);
@@ -2231,7 +2231,7 @@ timeline_tree_move (GNode * root, GESTimelineElement * element,
   }
 
   /* emit snapping now. Edits should only fail if a programming error
-   * occured */
+   * occurred */
   if (snap)
     ges_timeline_emit_snapping (root->data, snap->element, snap->snapped_to,
         snap->snapped);
@@ -2414,7 +2414,7 @@ timeline_tree_roll (GNode * root, GESTimelineElement * element,
   }
 
   /* emit snapping now. Edits should only fail if a programming error
-   * occured */
+   * occurred */
   if (snap)
     ges_timeline_emit_snapping (root->data, snap->element, snap->snapped_to,
         snap->snapped);

@@ -2340,7 +2340,7 @@ gst_rtsp_client_sink_loop_rx (GstRTSPClientSink * sink)
         continue;
         break;
       case GST_RTSP_ENET:
-        GST_DEBUG_OBJECT (sink, "An ethernet problem occured.");
+        GST_DEBUG_OBJECT (sink, "An ethernet problem occurred.");
       default:
         GST_ELEMENT_WARNING (sink, RESOURCE, READ, (NULL),
             ("Unhandled return value %d.", res));

@@ -217,7 +217,7 @@ updateStar (Star * s)
  * Ajoute de nouvelles particules au moment d'un evenement sonore.
  */
 static void
-fs_sound_event_occured (VisualFX * _this, PluginInfo * info)
+fs_sound_event_occurred (VisualFX * _this, PluginInfo * info)
 {
 
   FSData *data = (FSData *) _this->fx_data;
@@ -303,7 +303,7 @@ fs_apply (VisualFX * _this, Pixel * src, Pixel * dest, PluginInfo * info)
 
   /* look for events */
   if (info->sound.timeSinceLastGoom < 1) {
-    fs_sound_event_occured (_this, info);
+    fs_sound_event_occurred (_this, info);
     if (goom_irand (info->gRandom, 20) == 1) {
       IVAL (data->fx_mode_p) = goom_irand (info->gRandom, (LAST_FX * 3));
       data->fx_mode_p.change_listener (&data->fx_mode_p);
