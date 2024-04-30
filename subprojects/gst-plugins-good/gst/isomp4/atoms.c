@@ -5449,8 +5449,8 @@ build_jp2h_extension (gint width, gint height, const gchar * colorspace,
       pcol = (value >> 16) & 0xFF;
 
       if (mtyp == 1)
-        GST_WARNING ("MTYP of cmap atom signals Pallete Mapping, but we don't "
-            "handle Pallete mapping atoms yet");
+        GST_WARNING ("MTYP of cmap atom signals Palette Mapping, but we don't "
+            "handle Palette mapping atoms yet");
 
       gst_byte_writer_put_uint16_be_unchecked (&writer, cmp);
       gst_byte_writer_put_uint8_unchecked (&writer, mtyp);
