@@ -7728,7 +7728,7 @@ as defined in #ges_find_formatter_for_uri</doc>
             <type name="Timeline"/>
           </parameter>
           <parameter name="error" transfer-ownership="none">
-            <doc xml:space="preserve" filename="../subprojects/gst-editing-services/ges/ges-project.c">The #GError defining the error that occured</doc>
+            <doc xml:space="preserve" filename="../subprojects/gst-editing-services/ges/ges-project.c">The #GError defining the error that occurred</doc>
             <type name="GLib.Error"/>
           </parameter>
         </parameters>
@@ -7742,7 +7742,7 @@ missing GStreamer plugins, the error will be set to #GST_CORE_ERROR
         </return-value>
         <parameters>
           <parameter name="error" transfer-ownership="none">
-            <doc xml:space="preserve" filename="../subprojects/gst-editing-services/ges/ges-project.c">The #GError defining the error that occured, might be %NULL</doc>
+            <doc xml:space="preserve" filename="../subprojects/gst-editing-services/ges/ges-project.c">The #GError defining the error that occurred, might be %NULL</doc>
             <type name="GLib.Error"/>
           </parameter>
           <parameter name="id" transfer-ownership="none">
@@ -9383,7 +9383,7 @@ needed to be committed.</doc>
         <doc xml:space="preserve" filename="../subprojects/gst-editing-services/ges/ges-timeline.c">WARNING: When using that mode, GES won't guarantee the coherence of the
 timeline. You need to ensure that the rules described in the [Overlaps and
 auto transitions](#overlaps-and-autotransitions) section are respected any time
-the timeline is [commited](ges_timeline_commit) (otherwise playback will most
+the timeline is [committed](ges_timeline_commit) (otherwise playback will most
 probably fail in different ways).
 
 When disabling editing APIs, GES won't be able to enforce the rules that
