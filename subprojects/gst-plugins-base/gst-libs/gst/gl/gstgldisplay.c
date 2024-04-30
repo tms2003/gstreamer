@@ -1027,7 +1027,7 @@ gst_gl_display_remove_context (GstGLDisplay * display, GstGLContext * needle)
  * Ensures that the display has a valid GL context for the current thread. If
  * @context already contains a valid context, this does nothing.
  *
- * Returns: wether @context contains a valid context.
+ * Returns: whether @context contains a valid context.
  *
  * Since: 1.24
  */

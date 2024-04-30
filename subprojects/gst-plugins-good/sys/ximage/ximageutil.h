@@ -66,7 +66,7 @@ typedef struct _GstMetaXImage GstMetaXImage;
  * @par_d: the pixel aspect ratio denumerator calculated from @width, @widthmm
  * and @height,
  * @heightmm ratio
- * @use_xshm: used to known wether of not XShm extension is usable or not even
+ * @use_xshm: used to known whether of not XShm extension is usable or not even
  * if the Extension is present
  * @caps: the #GstCaps that Display @disp can accept
  *
@@ -124,7 +124,7 @@ struct _GstXWindow {
 
 gboolean ximageutil_check_xshm_calls (GstXContext * xcontext);
 
-GstXContext *ximageutil_xcontext_get (GstElement *parent, 
+GstXContext *ximageutil_xcontext_get (GstElement *parent,
     const gchar *display_name);
 void ximageutil_xcontext_clear (GstXContext *xcontext);
 void ximageutil_calculate_pixel_aspect_ratio (GstXContext * xcontext);
@@ -170,12 +170,12 @@ const GstMetaInfo * gst_meta_ximage_get_info (void);
 GstBuffer *gst_ximageutil_ximage_new (GstXContext *xcontext,
   GstElement *parent, int width, int height, BufferReturnFunc return_func);
 
-void gst_ximageutil_ximage_destroy (GstXContext *xcontext, 
+void gst_ximageutil_ximage_destroy (GstXContext *xcontext,
   GstBuffer * ximage);
-  
+
 /* Call to manually release a buffer */
 void gst_ximage_buffer_free (GstBuffer *ximage);
 
-G_END_DECLS 
+G_END_DECLS
 
 #endif /* __GST_XIMAGEUTIL_H__ */
