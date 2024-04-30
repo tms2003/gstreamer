@@ -2604,7 +2604,7 @@ _set_current_bin_to_ready (NleComposition * comp, NleUpdateStackReason reason)
 static void
 _emit_commited_signal_func (NleComposition * comp, gpointer udata)
 {
-  GST_INFO_OBJECT (comp, "Emiting COMMITED now that the stack " "is ready");
+  GST_INFO_OBJECT (comp, "Emitting COMMITED now that the stack " "is ready");
 
   g_signal_emit (comp, _signals[COMMITED_SIGNAL], 0, TRUE);
 }
