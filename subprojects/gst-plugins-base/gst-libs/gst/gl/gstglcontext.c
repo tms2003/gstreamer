@@ -2037,7 +2037,7 @@ gst_gl_wrapped_context_get_config (GstGLContext * context)
   } else {
     GST_FIXME_OBJECT (context, "wrapped context could not retrieve config. "
         "The application may be missing a call to gst_gl_context_fill_info() "
-        "or the specific platform implemention is not implemented for "
+        "or the specific platform implementation is not implemented for "
         "retrieving the config from a wrapped OpenGL context.");
     return NULL;
   }
