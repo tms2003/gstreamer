@@ -1640,7 +1640,7 @@ ghost_event_probe_handler (GstPad * ghostpad G_GNUC_UNUSED,
       if (g_atomic_int_compare_and_exchange (&comp->priv->real_eos_seqnum,
               seqnum, 1)) {
 
-        GST_INFO_OBJECT (comp, "Got EOS for real, seq ID is %i, fowarding it",
+        GST_INFO_OBJECT (comp, "Got EOS for real, seq ID is %i, forwarding it",
             seqnum);
 
         if (comp->priv->seek_seqnum)
