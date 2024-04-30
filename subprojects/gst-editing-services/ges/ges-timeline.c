@@ -278,7 +278,7 @@ enum
   SNAPING_STARTED,
   SNAPING_ENDED,
   SELECT_TRACKS_FOR_OBJECT,
-  COMMITED,
+  COMMITTED,
   SELECT_ELEMENT_TRACK,
   LAST_SIGNAL
 };
@@ -892,7 +892,7 @@ ges_timeline_class_init (GESTimelineClass * klass)
    * ges_timeline_commit_sync() if you do not want to have to connect
    * to this signal.
    */
-  ges_timeline_signals[COMMITED] =
+  ges_timeline_signals[COMMITTED] =
       g_signal_new ("commited", G_TYPE_FROM_CLASS (klass),
       G_SIGNAL_RUN_LAST, 0, NULL, NULL, NULL, G_TYPE_NONE, 0);
 }
@@ -2805,7 +2805,7 @@ track_committed_cb (GESTrack * track, GESTimeline * timeline)
   GST_OBJECT_UNLOCK (timeline);
 
   if (emit_committed) {
-    g_signal_emit (timeline, ges_timeline_signals[COMMITED], 0);
+    g_signal_emit (timeline, ges_timeline_signals[COMMITTED], 0);
   }
 }
 
@@ -2837,7 +2837,7 @@ ges_timeline_commit_unlocked (GESTimeline * timeline)
       g_list_length (timeline->priv->priv_tracks);
 
   if (timeline->priv->expected_committed == 0) {
-    g_signal_emit (timeline, ges_timeline_signals[COMMITED], 0);
+    g_signal_emit (timeline, ges_timeline_signals[COMMITTED], 0);
   } else {
     GstStreamCollection *collection = gst_stream_collection_new (NULL);
 

@@ -114,7 +114,7 @@ enum
   ARG_LAST,
   TRACK_ELEMENT_ADDED,
   TRACK_ELEMENT_REMOVED,
-  COMMITED,
+  COMMITTED,
   LAST_SIGNAL
 };
 
@@ -365,7 +365,7 @@ static void
 composition_committed_cb (GstElement * composition, gboolean changed,
     GESTrack * self)
 {
-  g_signal_emit (self, ges_track_signals[COMMITED], 0);
+  g_signal_emit (self, ges_track_signals[COMMITTED], 0);
 }
 
 /* Internal */
@@ -851,7 +851,7 @@ ges_track_class_init (GESTrackClass * klass)
    * this will be emitted whenever the underlying #nlecomposition has been
    * committed (see #nlecomposition::commited).
    */
-  ges_track_signals[COMMITED] =
+  ges_track_signals[COMMITTED] =
       g_signal_new ("commited", G_TYPE_FROM_CLASS (klass),
       G_SIGNAL_RUN_LAST, 0, NULL, NULL, NULL, G_TYPE_NONE, 0);
 
