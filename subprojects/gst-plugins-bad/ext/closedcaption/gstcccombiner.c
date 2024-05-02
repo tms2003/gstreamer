@@ -97,6 +97,8 @@ gst_cc_combiner_finalize (GObject * object)
 {
   GstCCCombiner *self = GST_CCCOMBINER (object);
 
+  gst_clear_object (&self->caption_pad);
+
   g_array_unref (self->current_frame_captions);
   self->current_frame_captions = NULL;
 
@@ -284,21 +286,16 @@ schedule_caption (GstCCCombiner * self, GstBuffer * caption_buf,
 
   if (self->current_scheduled + 1 >= self->max_scheduled) {
     GstClockTime stream_time, running_time;
-    GstAggregatorPad *caption_pad;
-
-    caption_pad =
-        GST_AGGREGATOR_PAD_CAST (gst_element_get_static_pad (GST_ELEMENT_CAST
-            (self), "caption"));
 
     GST_WARNING_OBJECT (self,
         "scheduled queue runs too long, discarding stored");
 
     running_time =
-        gst_segment_to_running_time (&caption_pad->segment, GST_FORMAT_TIME,
-        pts);
+        gst_segment_to_running_time (&self->caption_pad->segment,
+        GST_FORMAT_TIME, pts);
     stream_time =
-        gst_segment_to_stream_time (&caption_pad->segment, GST_FORMAT_TIME,
-        pts);
+        gst_segment_to_stream_time (&self->caption_pad->segment,
+        GST_FORMAT_TIME, pts);
 
     gst_element_post_message (GST_ELEMENT_CAST (self),
         gst_message_new_qos (GST_OBJECT_CAST (self), FALSE,
@@ -306,8 +303,6 @@ schedule_caption (GstCCCombiner * self, GstBuffer * caption_buf,
 
     cc_buffer_discard (self->cc_buffer);
     self->current_scheduled = 0;
-
-    gst_clear_object (&caption_pad);
   }
 
   gst_buffer_map (caption_buf, &map, GST_MAP_READ);
@@ -462,9 +457,11 @@ gst_cc_combiner_collect_captions (GstCCCombiner * self, gboolean timeout)
 
   g_assert (self->current_video_buffer != NULL);
 
-  caption_pad =
-      GST_AGGREGATOR_PAD_CAST (gst_element_get_static_pad (GST_ELEMENT_CAST
-          (self), "caption"));
+  /* Need to lock here, as the caption pad could suddenly appear */
+  GST_OBJECT_LOCK (self);
+  caption_pad = self->caption_pad;
+  GST_OBJECT_UNLOCK (self);
+
   /* No caption pad, forward buffer directly */
   if (!caption_pad) {
     GST_LOG_OBJECT (self, "No caption pad, passing through video");
@@ -497,7 +494,6 @@ gst_cc_combiner_collect_captions (GstCCCombiner * self, gboolean timeout)
         break;
       } else if (!timeout) {
         GST_DEBUG_OBJECT (self, "Need more caption data");
-        gst_object_unref (caption_pad);
         return GST_FLOW_NEED_DATA;
       } else {
         GST_DEBUG_OBJECT (self, "No caption data on timeout");
@@ -510,7 +506,6 @@ gst_cc_combiner_collect_captions (GstCCCombiner * self, gboolean timeout)
       GST_ERROR_OBJECT (self, "Caption buffer without PTS");
 
       gst_buffer_unref (caption_buf);
-      gst_object_unref (caption_pad);
 
       return GST_FLOW_ERROR;
     }
@@ -538,7 +533,6 @@ gst_cc_combiner_collect_captions (GstCCCombiner * self, gboolean timeout)
         GST_ERROR_OBJECT (self, "GAP buffer without a duration");
 
         gst_buffer_unref (caption_buf);
-        gst_object_unref (caption_pad);
 
         return GST_FLOW_ERROR;
       }
@@ -636,13 +630,34 @@ gst_cc_combiner_collect_captions (GstCCCombiner * self, gboolean timeout)
     self->current_video_buffer = NULL;
   }
 
-  gst_object_unref (caption_pad);
-
 done:
   src_pad->segment.position =
       GST_BUFFER_PTS (video_buf) + GST_BUFFER_DURATION (video_buf);
 
   return gst_aggregator_finish_buffer (GST_AGGREGATOR_CAST (self), video_buf);
+}
+
+static GstClockTime
+gst_cc_combiner_get_next_time (GstAggregator * aggregator)
+{
+  GstCCCombiner *self = GST_CCCOMBINER (aggregator);
+
+  GST_OBJECT_LOCK (self);
+  /* No point timing out if we can't combine captions */
+  if (!self->caption_pad)
+    goto wait_for_data;
+
+  /* We need a video buffer */
+  if (!self->current_video_buffer &&
+      !gst_aggregator_pad_has_buffer (self->video_pad))
+    goto wait_for_data;
+  GST_OBJECT_UNLOCK (self);
+
+  return gst_aggregator_simple_get_next_time (aggregator);
+
+wait_for_data:
+  GST_OBJECT_UNLOCK (self);
+  return GST_CLOCK_TIME_NONE;
 }
 
 static GstFlowReturn
@@ -660,9 +675,7 @@ gst_cc_combiner_aggregate (GstAggregator * aggregator, gboolean timeout)
     GstClockTime video_start;
     GstBuffer *video_buf;
 
-    video_pad =
-        GST_AGGREGATOR_PAD_CAST (gst_element_get_static_pad (GST_ELEMENT_CAST
-            (aggregator), "sink"));
+    video_pad = self->video_pad;
     video_buf = gst_aggregator_pad_peek_buffer (video_pad);
     if (!video_buf) {
       if (gst_aggregator_pad_is_eos (video_pad)) {
@@ -686,14 +699,12 @@ gst_cc_combiner_aggregate (GstAggregator * aggregator, gboolean timeout)
         flow_ret = GST_FLOW_OK;
       }
 
-      gst_object_unref (video_pad);
       return flow_ret;
     }
 
     video_start = GST_BUFFER_PTS (video_buf);
     if (!GST_CLOCK_TIME_IS_VALID (video_start)) {
       gst_buffer_unref (video_buf);
-      gst_object_unref (video_pad);
 
       GST_ERROR_OBJECT (aggregator, "Video buffer without PTS");
 
@@ -707,7 +718,6 @@ gst_cc_combiner_aggregate (GstAggregator * aggregator, gboolean timeout)
       GST_DEBUG_OBJECT (aggregator, "Buffer outside segment, dropping");
       gst_aggregator_pad_drop_buffer (video_pad);
       gst_buffer_unref (video_buf);
-      gst_object_unref (video_pad);
       return GST_FLOW_OK;
     }
 
@@ -756,8 +766,6 @@ gst_cc_combiner_aggregate (GstAggregator * aggregator, gboolean timeout)
           GST_TIME_ARGS (self->current_video_running_time),
           GST_TIME_ARGS (self->current_video_running_time_end));
     }
-
-    gst_object_unref (video_pad);
   }
 
   /* At this point we have a video buffer queued and can start collecting
@@ -930,16 +938,30 @@ gst_cc_combiner_create_new_pad (GstAggregator * aggregator,
   agg_pad = g_object_new (GST_TYPE_AGGREGATOR_PAD,
       "name", "caption", "direction", GST_PAD_SINK, "template", templ, NULL);
   self->caption_type = GST_VIDEO_CAPTION_TYPE_UNKNOWN;
+  self->caption_pad = gst_object_ref (agg_pad);
   GST_OBJECT_UNLOCK (self);
 
   return agg_pad;
 }
 
+static void
+gst_cc_combiner_release_pad (GstElement * element, GstPad * pad)
+{
+  GstCCCombiner *self = GST_CCCOMBINER (element);
+
+  /* Remove it from the parent first, as that takes the SRC_LOCK, meaning most
+   * of our functions don't need to handle the caption_pad disappearing */
+  GST_ELEMENT_CLASS (parent_class)->release_pad (element, pad);
+
+  if (pad == GST_PAD_CAST (self->caption_pad)) {
+    gst_clear_object (&self->caption_pad);
+  }
+}
+
 static gboolean
 gst_cc_combiner_src_query (GstAggregator * aggregator, GstQuery * query)
 {
-  GstPad *video_sinkpad =
-      gst_element_get_static_pad (GST_ELEMENT_CAST (aggregator), "sink");
+  GstCCCombiner *self = GST_CCCOMBINER (aggregator);
   gboolean ret;
 
   switch (GST_QUERY_TYPE (query)) {
@@ -948,7 +970,7 @@ gst_cc_combiner_src_query (GstAggregator * aggregator, GstQuery * query)
     case GST_QUERY_URI:
     case GST_QUERY_CAPS:
     case GST_QUERY_ALLOCATION:
-      ret = gst_pad_peer_query (video_sinkpad, query);
+      ret = gst_pad_peer_query (GST_PAD_CAST (self->video_pad), query);
       break;
     case GST_QUERY_ACCEPT_CAPS:{
       GstCaps *caps;
@@ -966,8 +988,6 @@ gst_cc_combiner_src_query (GstAggregator * aggregator, GstQuery * query)
       break;
   }
 
-  gst_object_unref (video_sinkpad);
-
   return ret;
 }
 
@@ -975,8 +995,7 @@ static gboolean
 gst_cc_combiner_sink_query (GstAggregator * aggregator,
     GstAggregatorPad * aggpad, GstQuery * query)
 {
-  GstPad *video_sinkpad =
-      gst_element_get_static_pad (GST_ELEMENT_CAST (aggregator), "sink");
+  GstCCCombiner *self = GST_CCCOMBINER (aggregator);
   GstPad *srcpad = GST_AGGREGATOR_SRC_PAD (aggregator);
 
   gboolean ret;
@@ -986,7 +1005,7 @@ gst_cc_combiner_sink_query (GstAggregator * aggregator,
     case GST_QUERY_DURATION:
     case GST_QUERY_URI:
     case GST_QUERY_ALLOCATION:
-      if (GST_PAD_CAST (aggpad) == video_sinkpad) {
+      if (aggpad == self->video_pad) {
         ret = gst_pad_peer_query (srcpad, query);
       } else {
         ret =
@@ -995,7 +1014,7 @@ gst_cc_combiner_sink_query (GstAggregator * aggregator,
       }
       break;
     case GST_QUERY_CAPS:
-      if (GST_PAD_CAST (aggpad) == video_sinkpad) {
+      if (aggpad == self->video_pad) {
         ret = gst_pad_peer_query (srcpad, query);
       } else {
         GstCaps *filter;
@@ -1016,7 +1035,7 @@ gst_cc_combiner_sink_query (GstAggregator * aggregator,
       }
       break;
     case GST_QUERY_ACCEPT_CAPS:
-      if (GST_PAD_CAST (aggpad) == video_sinkpad) {
+      if (aggpad == self->video_pad) {
         ret = gst_pad_peer_query (srcpad, query);
       } else {
         GstCaps *caps;
@@ -1035,8 +1054,6 @@ gst_cc_combiner_sink_query (GstAggregator * aggregator,
       break;
   }
 
-  gst_object_unref (video_sinkpad);
-
   return ret;
 }
 
@@ -1044,18 +1061,10 @@ static GstSample *
 gst_cc_combiner_peek_next_sample (GstAggregator * agg,
     GstAggregatorPad * aggpad)
 {
-  GstAggregatorPad *caption_pad, *video_pad;
   GstCCCombiner *self = GST_CCCOMBINER (agg);
   GstSample *res = NULL;
 
-  caption_pad =
-      GST_AGGREGATOR_PAD_CAST (gst_element_get_static_pad (GST_ELEMENT_CAST
-          (self), "caption"));
-  video_pad =
-      GST_AGGREGATOR_PAD_CAST (gst_element_get_static_pad (GST_ELEMENT_CAST
-          (self), "sink"));
-
-  if (aggpad == caption_pad) {
+  if (aggpad == self->video_pad) {
     if (self->current_frame_captions->len > 0) {
       GstCaps *caps = gst_pad_get_current_caps (GST_PAD (aggpad));
       GstBufferList *buflist = gst_buffer_list_new ();
@@ -1073,7 +1082,7 @@ gst_cc_combiner_peek_next_sample (GstAggregator * agg,
       gst_sample_set_buffer_list (res, buflist);
       gst_buffer_list_unref (buflist);
     }
-  } else if (aggpad == video_pad) {
+  } else if (aggpad == self->caption_pad) {
     if (self->current_video_buffer) {
       GstCaps *caps = gst_pad_get_current_caps (GST_PAD (aggpad));
       res = gst_sample_new (self->current_video_buffer,
@@ -1081,12 +1090,6 @@ gst_cc_combiner_peek_next_sample (GstAggregator * agg,
       gst_caps_unref (caps);
     }
   }
-
-  if (caption_pad)
-    gst_object_unref (caption_pad);
-
-  if (video_pad)
-    gst_object_unref (video_pad);
 
   return res;
 }
@@ -1303,6 +1306,8 @@ gst_cc_combiner_class_init (GstCCCombinerClass * klass)
 
   gstelement_class->change_state =
       GST_DEBUG_FUNCPTR (gst_cc_combiner_change_state);
+  gstelement_class->release_pad =
+      GST_DEBUG_FUNCPTR (gst_cc_combiner_release_pad);
 
   aggregator_class->aggregate = gst_cc_combiner_aggregate;
   aggregator_class->stop = gst_cc_combiner_stop;
@@ -1310,7 +1315,7 @@ gst_cc_combiner_class_init (GstCCCombinerClass * klass)
   aggregator_class->create_new_pad = gst_cc_combiner_create_new_pad;
   aggregator_class->sink_event = gst_cc_combiner_sink_event;
   aggregator_class->negotiate = NULL;
-  aggregator_class->get_next_time = gst_aggregator_simple_get_next_time;
+  aggregator_class->get_next_time = gst_cc_combiner_get_next_time;
   aggregator_class->src_query = gst_cc_combiner_src_query;
   aggregator_class->sink_query = gst_cc_combiner_sink_query;
   aggregator_class->peek_next_sample = gst_cc_combiner_peek_next_sample;
@@ -1326,7 +1331,7 @@ gst_cc_combiner_init (GstCCCombiner * self)
   GstAggregatorPad *agg_pad;
 
   templ = gst_static_pad_template_get (&sinktemplate);
-  agg_pad = g_object_new (GST_TYPE_AGGREGATOR_PAD,
+  agg_pad = self->video_pad = g_object_new (GST_TYPE_AGGREGATOR_PAD,
       "name", "sink", "direction", GST_PAD_SINK, "template", templ, NULL);
   gst_object_unref (templ);
   gst_element_add_pad (GST_ELEMENT_CAST (self), GST_PAD_CAST (agg_pad));
