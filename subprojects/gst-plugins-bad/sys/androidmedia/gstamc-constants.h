@@ -93,6 +93,7 @@ enum
   COLOR_Format18BitBGR666 = 41,
   COLOR_Format24BitARGB6666 = 42,
   COLOR_Format24BitABGR6666 = 43,
+  COLOR_FormatYUVP010 = 54,
   COLOR_FormatAndroidOpaque = 0x7F000789,
   COLOR_TI_FormatYUV420PackedSemiPlanar = 0x7f000100,
   COLOR_INTEL_FormatYUV420PackedSemiPlanar = 0x7fa00e00,
