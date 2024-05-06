@@ -124,7 +124,7 @@ struct _GstAppSinkPrivate
   GCond cond;
   GMutex mutex;
   GstQueueArray *queue;
-  GstBuffer *preroll_buffer;
+  GstMiniObject *preroll_object;
   GstCaps *preroll_caps;
   GstCaps *last_caps;
   GstSegment preroll_segment;
@@ -209,8 +209,8 @@ static gboolean gst_app_sink_start (GstBaseSink * psink);
 static gboolean gst_app_sink_stop (GstBaseSink * psink);
 static gboolean gst_app_sink_event (GstBaseSink * sink, GstEvent * event);
 static gboolean gst_app_sink_query (GstBaseSink * bsink, GstQuery * query);
-static GstFlowReturn gst_app_sink_preroll (GstBaseSink * psink,
-    GstBuffer * buffer);
+static GstFlowReturn gst_app_sink_preroll_object (GstBaseSink * psink,
+    GstMiniObject * object);
 static GstFlowReturn gst_app_sink_render_common (GstBaseSink * psink,
     GstMiniObject * data, gboolean is_list);
 static GstFlowReturn gst_app_sink_render (GstBaseSink * psink,
@@ -591,7 +591,7 @@ gst_app_sink_class_init (GstAppSinkClass * klass)
   basesink_class->start = gst_app_sink_start;
   basesink_class->stop = gst_app_sink_stop;
   basesink_class->event = gst_app_sink_event;
-  basesink_class->preroll = gst_app_sink_preroll;
+  basesink_class->preroll_object = gst_app_sink_preroll_object;
   basesink_class->render = gst_app_sink_render;
   basesink_class->render_list = gst_app_sink_render_list;
   basesink_class->get_caps = gst_app_sink_getcaps;
@@ -648,7 +648,7 @@ gst_app_sink_dispose (GObject * obj)
     callbacks = g_steal_pointer (&priv->callbacks);
   while ((queue_obj = gst_queue_array_pop_head (priv->queue)))
     gst_mini_object_unref (queue_obj);
-  gst_buffer_replace (&priv->preroll_buffer, NULL);
+  gst_clear_mini_object (&priv->preroll_object);
   gst_caps_replace (&priv->preroll_caps, NULL);
   gst_caps_replace (&priv->last_caps, NULL);
   if (priv->sample) {
@@ -799,7 +799,7 @@ gst_app_sink_flush_unlocked (GstAppSink * appsink)
 
   GST_DEBUG_OBJECT (appsink, "flush stop appsink");
   priv->is_eos = FALSE;
-  gst_buffer_replace (&priv->preroll_buffer, NULL);
+  gst_clear_mini_object (&priv->preroll_object);
   while ((obj = gst_queue_array_pop_head (priv->queue)))
     gst_mini_object_unref (obj);
 
@@ -844,7 +844,7 @@ gst_app_sink_stop (GstBaseSink * psink)
   priv->started = FALSE;
   priv->wait_status = NOONE_WAITING;
   gst_app_sink_flush_unlocked (appsink);
-  gst_buffer_replace (&priv->preroll_buffer, NULL);
+  gst_clear_mini_object (&priv->preroll_object);
   gst_caps_replace (&priv->preroll_caps, NULL);
   gst_caps_replace (&priv->last_caps, NULL);
   gst_segment_init (&priv->preroll_segment, GST_FORMAT_UNDEFINED);
@@ -871,7 +871,7 @@ gst_app_sink_setcaps (GstBaseSink * sink, GstCaps * caps)
   gst_queue_array_push_tail (priv->queue, gst_event_new_caps (caps));
   gst_queue_status_info_push_event (&priv->queue_status_info);
 
-  if (!priv->preroll_buffer)
+  if (!priv->preroll_object)
     gst_caps_replace (&priv->preroll_caps, caps);
   g_mutex_unlock (&priv->mutex);
 
@@ -890,7 +890,7 @@ gst_app_sink_event (GstBaseSink * sink, GstEvent * event)
     case GST_EVENT_SEGMENT:
       g_mutex_lock (&priv->mutex);
       GST_DEBUG_OBJECT (appsink, "receiving SEGMENT");
-      if (!priv->preroll_buffer)
+      if (!priv->preroll_object)
         gst_event_copy_segment (event, &priv->preroll_segment);
       g_mutex_unlock (&priv->mutex);
       break;
@@ -1004,7 +1004,7 @@ gst_app_sink_event (GstBaseSink * sink, GstEvent * event)
 }
 
 static GstFlowReturn
-gst_app_sink_preroll (GstBaseSink * psink, GstBuffer * buffer)
+gst_app_sink_preroll_object (GstBaseSink * psink, GstMiniObject * object)
 {
   GstFlowReturn res;
   GstAppSink *appsink = GST_APP_SINK_CAST (psink);
@@ -1016,8 +1016,8 @@ gst_app_sink_preroll (GstBaseSink * psink, GstBuffer * buffer)
   if (priv->flushing)
     goto flushing;
 
-  GST_DEBUG_OBJECT (appsink, "setting preroll buffer %p", buffer);
-  gst_buffer_replace (&priv->preroll_buffer, buffer);
+  GST_DEBUG_OBJECT (appsink, "setting preroll object %" GST_PTR_FORMAT, object);
+  gst_mini_object_replace (&priv->preroll_object, object);
 
   if ((priv->wait_status & APP_WAITING))
     g_cond_signal (&priv->cond);
@@ -1284,7 +1284,7 @@ gst_app_sink_query (GstBaseSink * bsink, GstQuery * query)
     {
       g_mutex_lock (&priv->mutex);
       GST_DEBUG_OBJECT (appsink, "waiting buffers to be consumed");
-      while (priv->queue_status_info.queued_buffers > 0 || priv->preroll_buffer) {
+      while (priv->queue_status_info.queued_buffers > 0 || priv->preroll_object) {
         if (priv->unlock) {
           /* we are asked to unlock, call the wait_preroll method */
           g_mutex_unlock (&priv->mutex);
@@ -1804,7 +1804,15 @@ gst_app_sink_get_wait_on_eos (GstAppSink * appsink)
  * This function blocks until a preroll sample or EOS is received or the appsink
  * element is set to the READY/NULL state.
  *
- * Returns: (transfer full) (nullable): a #GstSample or NULL when the appsink is stopped or EOS.
+ * As of 1.24, gst_app_sink_pull_preroll() will be unblocked if the appsink
+ * is prerolled via GAP event, then this function will return %NULL.
+ * And if #GstBufferList support was enabled via
+ * gst_app_sink_set_buffer_list_support(), returned #GstSample will contain
+ * #GstBufferList instead of #GstBuffer when the preroll object is
+ * #GstBufferList
+ *
+ * Returns: (transfer full) (nullable): a #GstSample or NULL when the appsink is
+ *          stopped, EOS, or preroll object is GAP event.
  *          Call gst_sample_unref() after usage.
  */
 GstSample *
@@ -1898,7 +1906,15 @@ gst_app_sink_pull_object (GstAppSink * appsink)
  * This function blocks until a preroll sample or EOS is received, the appsink
  * element is set to the READY/NULL state, or the timeout expires.
  *
- * Returns: (transfer full) (nullable): a #GstSample or NULL when the appsink is stopped or EOS or the timeout expires.
+ * As of 1.24, gst_app_sink_try_pull_preroll() will be unblocked if the appsink
+ * is prerolled via GAP event, then this function will return %NULL.
+ * And if #GstBufferList support was enabled via
+ * gst_app_sink_set_buffer_list_support(), returned #GstSample will contain
+ * #GstBufferList instead of #GstBuffer when the preroll object is
+ * #GstBufferList
+ *
+ * Returns: (transfer full) (nullable): a #GstSample or NULL when the appsink is
+ *          stopped, EOS, or preroll object is GAP event or the timeout expires.
  *          Call gst_sample_unref() after usage.
  *
  * Since: 1.10
@@ -1928,7 +1944,7 @@ gst_app_sink_try_pull_preroll (GstAppSink * appsink, GstClockTime timeout)
     if (!priv->started)
       goto not_started;
 
-    if (priv->preroll_buffer != NULL)
+    if (priv->preroll_object != NULL)
       break;
 
     if (priv->is_eos)
@@ -1945,11 +1961,31 @@ gst_app_sink_try_pull_preroll (GstAppSink * appsink, GstClockTime timeout)
     }
     priv->wait_status &= ~APP_WAITING;
   }
-  sample =
-      gst_sample_new (priv->preroll_buffer, priv->preroll_caps,
-      &priv->preroll_segment, NULL);
-  gst_buffer_replace (&priv->preroll_buffer, NULL);
-  GST_DEBUG_OBJECT (appsink, "we have the preroll sample %p", sample);
+
+  if (GST_IS_BUFFER (priv->preroll_object)) {
+    sample =
+        gst_sample_new (GST_BUFFER_CAST (priv->preroll_object),
+        priv->preroll_caps, &priv->preroll_segment, NULL);
+  } else if (GST_IS_BUFFER_LIST (priv->preroll_object)) {
+    GstBufferList *buffer_list = GST_BUFFER_LIST_CAST (priv->preroll_object);
+
+    sample = gst_sample_new (NULL, priv->preroll_caps, &priv->preroll_segment,
+        NULL);
+
+    if (appsink->priv->buffer_lists_supported) {
+      gst_sample_set_buffer_list (sample, buffer_list);
+    } else {
+      gst_sample_set_buffer (sample, gst_buffer_list_get (buffer_list, 0));
+    }
+  }
+
+  if (sample) {
+    GST_DEBUG_OBJECT (appsink, "we have the preroll sample %p", sample);
+  } else {
+    GST_DEBUG_OBJECT (appsink, "preroll object is not buffer or buffer list");
+  }
+
+  gst_clear_mini_object (&priv->preroll_object);
   g_mutex_unlock (&priv->mutex);
 
   return sample;
@@ -2066,7 +2102,7 @@ gst_app_sink_try_pull_object (GstAppSink * appsink, GstClockTime timeout)
   priv = appsink->priv;
 
   g_mutex_lock (&priv->mutex);
-  gst_buffer_replace (&priv->preroll_buffer, NULL);
+  gst_clear_mini_object (&priv->preroll_object);
 
   while (TRUE) {
     GST_DEBUG_OBJECT (appsink, "trying to grab an object");

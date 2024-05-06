@@ -223,8 +223,22 @@ struct _GstBaseSinkClass {
   /* Render a BufferList */
   GstFlowReturn (*render_list)  (GstBaseSink *sink, GstBufferList *buffer_list);
 
+  /**
+   * GstBaseSinkClass::preroll_object:
+   * @sink: a #GstBaseSink
+   * @object: (transfer none): a #GstMiniObject
+   *
+   * Optional. Called to notify subclass of preroll object which can be
+   * #GstBuffer, #GstBufferList, or #GstEvent (EOS or GAP).
+   * This method will be called additionally after the
+   * #GstBaseSinkClass::preroll
+   *
+   * Since: 1.24
+   */
+  GstFlowReturn (*preroll_object) (GstBaseSink *sink, GstMiniObject * object);
+
   /*< private >*/
-  gpointer       _gst_reserved[GST_PADDING_LARGE];
+  gpointer       _gst_reserved[GST_PADDING_LARGE - 1];
 };
 
 GST_BASE_API

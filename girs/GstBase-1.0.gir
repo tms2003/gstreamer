@@ -4141,6 +4141,26 @@ with non-synchronized streams or sparse streams.</doc>
           </parameter>
         </parameters>
       </virtual-method>
+      <virtual-method name="preroll_object" version="1.24">
+        <doc xml:space="preserve" filename="../subprojects/gstreamer/libs/gst/base/gstbasesink.h">Optional. Called to notify subclass of preroll object which can be
+#GstBuffer, #GstBufferList, or #GstEvent (EOS or GAP).
+This method will be called additionally after the
+#GstBaseSinkClass::preroll</doc>
+        <source-position filename="../subprojects/gstreamer/libs/gst/base/gstbasesink.h"/>
+        <return-value transfer-ownership="none">
+          <type name="Gst.FlowReturn" c:type="GstFlowReturn"/>
+        </return-value>
+        <parameters>
+          <instance-parameter name="sink" transfer-ownership="none">
+            <doc xml:space="preserve" filename="../subprojects/gstreamer/libs/gst/base/gstbasesink.h">a #GstBaseSink</doc>
+            <type name="BaseSink" c:type="GstBaseSink*"/>
+          </instance-parameter>
+          <parameter name="object" transfer-ownership="none">
+            <doc xml:space="preserve" filename="../subprojects/gstreamer/libs/gst/base/gstbasesink.h">a #GstMiniObject</doc>
+            <type name="Gst.MiniObject" c:type="GstMiniObject*"/>
+          </parameter>
+        </parameters>
+      </virtual-method>
       <virtual-method name="propose_allocation">
         <source-position filename="../subprojects/gstreamer/libs/gst/base/gstbasesink.h"/>
         <return-value transfer-ownership="none">
@@ -5333,8 +5353,26 @@ output/present buffers.</doc>
           </parameters>
         </callback>
       </field>
+      <field name="preroll_object">
+        <callback name="preroll_object">
+          <source-position filename="../subprojects/gstreamer/libs/gst/base/gstbasesink.h"/>
+          <return-value transfer-ownership="none">
+            <type name="Gst.FlowReturn" c:type="GstFlowReturn"/>
+          </return-value>
+          <parameters>
+            <parameter name="sink" transfer-ownership="none">
+              <doc xml:space="preserve" filename="../subprojects/gstreamer/libs/gst/base/gstbasesink.h">a #GstBaseSink</doc>
+              <type name="BaseSink" c:type="GstBaseSink*"/>
+            </parameter>
+            <parameter name="object" transfer-ownership="none">
+              <doc xml:space="preserve" filename="../subprojects/gstreamer/libs/gst/base/gstbasesink.h">a #GstMiniObject</doc>
+              <type name="Gst.MiniObject" c:type="GstMiniObject*"/>
+            </parameter>
+          </parameters>
+        </callback>
+      </field>
       <field name="_gst_reserved" readable="0" private="1">
-        <array zero-terminated="0" fixed-size="20">
+        <array zero-terminated="0" fixed-size="19">
           <type name="gpointer" c:type="gpointer"/>
         </array>
       </field>

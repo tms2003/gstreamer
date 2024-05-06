@@ -2146,7 +2146,14 @@ again:
     }
   } else {
     /* else do buffer sync code */
-    GstBuffer *buffer = GST_BUFFER_CAST (obj);
+    GstBuffer *buffer;
+
+    /* empty buffer list must be handled already at
+     * gst_base_sink_chain_unlocked() */
+    if (GST_IS_BUFFER_LIST (obj))
+      buffer = gst_buffer_list_get (GST_BUFFER_LIST_CAST (obj), 0);
+    else
+      buffer = GST_BUFFER_CAST (obj);
 
     /* just get the times to see if we need syncing, if the retuned start is -1
      * we don't sync. */
@@ -2487,7 +2494,7 @@ gst_base_sink_do_preroll (GstBaseSink * sink, GstMiniObject * obj)
 
     /* if it's a buffer, we need to call the preroll method */
     if (sink->priv->call_preroll) {
-      GstBaseSinkClass *bclass;
+      GstBaseSinkClass *bclass = GST_BASE_SINK_GET_CLASS (sink);
       GstBuffer *buf;
 
       if (GST_IS_BUFFER_LIST (obj)) {
@@ -2508,8 +2515,6 @@ gst_base_sink_do_preroll (GstBaseSink * sink, GstMiniObject * obj)
         GST_DEBUG_OBJECT (sink, "preroll buffer %" GST_TIME_FORMAT,
             GST_TIME_ARGS (GST_BUFFER_TIMESTAMP (buf)));
 
-        bclass = GST_BASE_SINK_GET_CLASS (sink);
-
         if (bclass->prepare)
           if ((ret = bclass->prepare (sink, buf)) != GST_FLOW_OK)
             goto prepare_canceled;
@@ -2517,6 +2522,15 @@ gst_base_sink_do_preroll (GstBaseSink * sink, GstMiniObject * obj)
         if (bclass->preroll)
           if ((ret = bclass->preroll (sink, buf)) != GST_FLOW_OK)
             goto preroll_canceled;
+
+        sink->priv->call_preroll = FALSE;
+      }
+
+      if (bclass->preroll_object) {
+        if ((ret = bclass->preroll_object (sink, obj)) != GST_FLOW_OK) {
+          sink->priv->call_preroll = TRUE;
+          goto preroll_canceled;
+        }
 
         sink->priv->call_preroll = FALSE;
       }
@@ -3115,8 +3129,8 @@ gst_base_sink_is_too_late (GstBaseSink * basesink, GstMiniObject * obj,
   if (max_lateness == -1)
     goto no_drop;
 
-  /* only check for buffers */
-  if (G_UNLIKELY (!GST_IS_BUFFER (obj)))
+  /* only check for buffers or buffer lists */
+  if (G_UNLIKELY (!GST_IS_BUFFER (obj) && !GST_IS_BUFFER_LIST (obj)))
     goto not_buffer;
 
   /* can't do check if we don't have a timestamp */
@@ -3923,8 +3937,7 @@ again:
 
   /* synchronize this object, non syncable objects return OK
    * immediately. */
-  ret = gst_base_sink_do_sync (basesink, GST_MINI_OBJECT_CAST (sync_buf),
-      &late, &step_end);
+  ret = gst_base_sink_do_sync (basesink, obj, &late, &step_end);
   if (G_UNLIKELY (ret != GST_FLOW_OK))
     goto sync_failed;
 
