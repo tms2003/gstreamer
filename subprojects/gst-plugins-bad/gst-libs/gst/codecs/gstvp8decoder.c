@@ -43,6 +43,7 @@ struct _GstVp8DecoderPrivate
   gboolean had_sequence;
   GstVp8Parser parser;
   gboolean wait_keyframe;
+  gboolean keyframe_requested;
   guint preferred_output_delay;
   /* for delayed output */
   GstQueueArray *output_queue;
@@ -115,6 +116,7 @@ gst_vp8_decoder_start (GstVideoDecoder * decoder)
 
   gst_vp8_parser_init (&priv->parser);
   priv->wait_keyframe = TRUE;
+  priv->keyframe_requested = FALSE;
 
   priv->output_queue =
       gst_queue_array_new_for_struct (sizeof (GstVp8DecoderOutputFrame), 1);
@@ -134,6 +136,7 @@ gst_vp8_decoder_reset (GstVp8Decoder * self)
   gst_clear_vp8_picture (&self->alt_ref_picture);
 
   priv->wait_keyframe = TRUE;
+  priv->keyframe_requested = FALSE;
   gst_queue_array_clear (priv->output_queue);
 }
 
@@ -404,6 +407,12 @@ gst_vp8_decoder_handle_frame (GstVideoDecoder * decoder,
           GST_PTR_FORMAT, in_buf);
 
       gst_buffer_unmap (in_buf, &map);
+
+      if (!priv->keyframe_requested) {
+        gst_video_decoder_request_sync_point (decoder, frame, 0);
+        priv->keyframe_requested = TRUE;
+      }
+
       gst_video_decoder_release_frame (decoder, frame);
 
       return GST_FLOW_OK;
@@ -411,6 +420,7 @@ gst_vp8_decoder_handle_frame (GstVideoDecoder * decoder,
   }
 
   priv->wait_keyframe = FALSE;
+  priv->keyframe_requested = FALSE;
 
   if (frame_hdr.key_frame) {
     ret = gst_vp8_decoder_check_codec_change (self, &frame_hdr);

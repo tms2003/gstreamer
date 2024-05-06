@@ -138,6 +138,13 @@ struct _GstH265DecoderPrivate
   gboolean input_state_changed;
 
   GstFlowReturn last_flow;
+
+  gboolean have_idr;
+  guint32 missing_idr_count;
+  guint32 max_corrupted_count;
+  gboolean keyframe_requested;
+  gboolean recovery_point;
+  gboolean inter_predicted;
 };
 
 typedef struct
@@ -528,6 +535,17 @@ gst_h265_decoder_get_max_dpb_size_from_sps (GstH265Decoder * self,
   return max_dpb_size;
 }
 
+static void
+gst_h265_decoder_reset_idr_state (GstH265Decoder * self)
+{
+  GstH265DecoderPrivate *priv = self->priv;
+
+  priv->have_idr = FALSE;
+  priv->max_corrupted_count = 0;
+  priv->missing_idr_count = 0;
+  priv->keyframe_requested = FALSE;
+}
+
 static GstFlowReturn
 gst_h265_decoder_process_sps (GstH265Decoder * self, GstH265SPS * sps)
 {
@@ -555,6 +573,8 @@ gst_h265_decoder_process_sps (GstH265Decoder * self, GstH265SPS * sps)
       priv->interlaced_source_flag != interlaced_source_flag ||
       gst_h265_decoder_is_crop_rect_changed (self, sps)) {
     GstH265DecoderClass *klass = GST_H265_DECODER_GET_CLASS (self);
+    guint32 MaxPicOrderCntLsb =
+        1 << (sps->log2_max_pic_order_cnt_lsb_minus4 + 4);
 
     GST_DEBUG_OBJECT (self,
         "SPS updated, resolution: %dx%d -> %dx%d, dpb size: %d -> %d, "
@@ -581,6 +601,15 @@ gst_h265_decoder_process_sps (GstH265Decoder * self, GstH265SPS * sps)
     } else {
       priv->preferred_output_delay = 0;
     }
+
+    gst_h265_decoder_reset_idr_state (self);
+
+    /* Gussing GOP size to decide max corrupted frame count, with hardcoded
+     * upper bound 64 frames */
+    priv->max_corrupted_count = MIN (64, MaxPicOrderCntLsb);
+    GST_DEBUG_OBJECT (self,
+        "Configured max-corrupted-frame-count: %u, MaxPicOrderCntLsb: %u",
+        priv->max_corrupted_count, MaxPicOrderCntLsb);
 
     g_assert (klass->new_sequence);
     ret = klass->new_sequence (self,
@@ -622,19 +651,11 @@ static GstH265ParserResult
 gst_h265_decoder_parse_sei (GstH265Decoder * self, GstH265NalUnit * nalu)
 {
   GstH265DecoderPrivate *priv = self->priv;
-  GstH265ParserResult pres;
   GArray *messages = NULL;
   guint i;
 
-  pres = gst_h265_parser_parse_sei (priv->parser, nalu, &messages);
-  if (pres != GST_H265_PARSER_OK) {
-    GST_WARNING_OBJECT (self, "Failed to parse SEI, result %d", pres);
-
-    /* XXX: Ignore error from SEI parsing, it might be malformed bitstream,
-     * or our fault. But shouldn't be critical  */
-    g_clear_pointer (&messages, g_array_unref);
-    return GST_H265_PARSER_OK;
-  }
+  /* Ignore error, it should not be critical from decoder point of view */
+  gst_h265_parser_parse_sei (priv->parser, nalu, &messages);
 
   for (i = 0; i < messages->len; i++) {
     GstH265SEIMessage *sei = &g_array_index (messages, GstH265SEIMessage, i);
@@ -649,6 +670,10 @@ gst_h265_decoder_parse_sei (GstH265Decoder * self, GstH265NalUnit * nalu)
             "Picture Timing SEI, pic_struct: %d, source_scan_type: %d, "
             "duplicate_flag: %d", priv->cur_pic_struct,
             priv->cur_source_scan_type, priv->cur_duplicate_flag);
+        break;
+      case GST_H265_SEI_RECOVERY_POINT:
+        GST_DEBUG_OBJECT (self, "Found recovery point");
+        priv->recovery_point = TRUE;
         break;
       default:
         break;
@@ -862,6 +887,19 @@ gst_h265_decoder_process_slice (GstH265Decoder * self, GstH265Slice * slice)
   if (ret != GST_FLOW_OK) {
     GST_WARNING_OBJECT (self, "Failed to process sps");
     return ret;
+  }
+
+  if (!priv->have_idr) {
+    if (GST_H265_IS_NAL_TYPE_IRAP (slice->nalu.type)) {
+      GST_DEBUG_OBJECT (self, "Found IRAP picture");
+      priv->have_idr = TRUE;
+    } else if (priv->recovery_point) {
+      GST_DEBUG_OBJECT (self, "Found recovery point SEI");
+      priv->have_idr = TRUE;
+    } else if (!GST_H265_IS_I_SLICE (&slice->header)) {
+      GST_DEBUG_OBJECT (self, "Current picture requires reference frames");
+      priv->inter_predicted = TRUE;
+    }
   }
 
   priv->active_pps = priv->current_slice.header.pps;
@@ -1987,6 +2025,25 @@ gst_h265_decoder_finish_current_picture (GstH265Decoder * self,
   if (!priv->current_picture)
     return;
 
+  if (!priv->have_idr && priv->inter_predicted) {
+    GST_DEBUG_OBJECT (self,
+        "IDR frame has not been observed yet, marking corrupted");
+    GST_CODEC_PICTURE (priv->current_picture)->corrupted = TRUE;
+    if (!priv->keyframe_requested) {
+      /* Don't spam keyframe request */
+      priv->keyframe_requested = TRUE;
+      gst_video_decoder_request_sync_point (GST_VIDEO_DECODER (self),
+          priv->current_frame, 0);
+    }
+
+    priv->missing_idr_count++;
+    if (priv->missing_idr_count > priv->max_corrupted_count) {
+      GST_DEBUG_OBJECT (self, "Missing IDR count %u > threshold %u",
+          priv->missing_idr_count, priv->max_corrupted_count);
+      priv->have_idr = TRUE;
+    }
+  }
+
   klass = GST_H265_DECODER_GET_CLASS (self);
 
   if (klass->end_picture) {
@@ -1997,6 +2054,14 @@ gst_h265_decoder_finish_current_picture (GstH265Decoder * self,
       /* continue to empty dpb */
       UPDATE_FLOW_RETURN (ret, flow_ret);
     }
+  }
+
+  if (flow_ret == GST_FLOW_OK &&
+      GST_CODEC_PICTURE (priv->current_picture)->corrupted) {
+    /* If subclass didn't revert the corrupted flag, set codec frame flag
+     * accordingly */
+    GST_VIDEO_CODEC_FRAME_FLAG_SET (priv->current_frame,
+        GST_VIDEO_CODEC_FRAME_FLAG_CORRUPTED);
   }
 
   /* finish picture takes ownership of the picture */
@@ -2017,6 +2082,8 @@ gst_h265_decoder_reset_frame_state (GstH265Decoder * self)
   priv->cur_duplicate_flag = 0;
   priv->no_output_of_prior_pics_flag = FALSE;
   priv->current_frame = NULL;
+  priv->recovery_point = FALSE;
+  priv->inter_predicted = FALSE;
   g_array_set_size (priv->nalu, 0);
 }
 
@@ -2100,7 +2167,6 @@ gst_h265_decoder_handle_frame (GstVideoDecoder * decoder,
   }
 
   gst_buffer_unmap (in_buf, &map);
-  gst_h265_decoder_reset_frame_state (self);
 
   if (decode_ret != GST_FLOW_OK) {
     if (decode_ret == GST_FLOW_ERROR) {
