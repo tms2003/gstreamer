@@ -25,20 +25,9 @@
 #include "gstd3d12-private.h"
 #include <string.h>
 
-#ifndef GST_DISABLE_GST_DEBUG
-#define GST_CAT_DEFAULT ensure_debug_category()
-static GstDebugCategory *
-ensure_debug_category (void)
-{
-  static GstDebugCategory *cat = nullptr;
-
-  GST_D3D12_CALL_ONCE_BEGIN {
-    cat = _gst_debug_category_new ("d3d12format", 0, "d3d12format");
-  } GST_D3D12_CALL_ONCE_END;
-
-  return cat;
-}
-#endif
+GST_DEBUG_CATEGORY_DEFINE_STATIC (d3d12_format_dbg,
+    "d3d12format", 0, "d3d12format");
+#define GST_CAT_DEFAULT GST_DEBUG_CATEGORY_LAZY_INIT (d3d12_format_dbg)
 
 GstVideoFormat
 gst_d3d12_dxgi_format_to_gst (DXGI_FORMAT format)

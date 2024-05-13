@@ -38,26 +38,8 @@ default_map (GstVideoMeta * meta, guint plane, GstMapInfo * info,
 static gboolean
 default_unmap (GstVideoMeta * meta, guint plane, GstMapInfo * info);
 
-#ifndef GST_DISABLE_GST_DEBUG
-#define GST_CAT_DEFAULT ensure_debug_category()
-static GstDebugCategory *
-ensure_debug_category (void)
-{
-  static gsize cat_gonce = 0;
-
-  if (g_once_init_enter (&cat_gonce)) {
-    gsize cat_done;
-
-    cat_done = (gsize) _gst_debug_category_new ("videometa", 0, "videometa");
-
-    g_once_init_leave (&cat_gonce, cat_done);
-  }
-
-  return (GstDebugCategory *) cat_gonce;
-}
-#else
-#define ensure_debug_category() /* NOOP */
-#endif /* GST_DISABLE_GST_DEBUG */
+GST_DEBUG_CATEGORY_DEFINE_STATIC (videometa_dbg, "videometa", 0, "videometa");
+#define GST_CAT_DEFAULT GST_DEBUG_CATEGORY_LAZY_INIT (videometa_dbg)
 
 static gboolean
 gst_video_meta_init (GstMeta * meta, gpointer params, GstBuffer * buffer)

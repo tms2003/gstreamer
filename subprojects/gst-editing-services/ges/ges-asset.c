@@ -129,24 +129,10 @@
 
 #include <gst/gst.h>
 
+GST_DEBUG_CATEGORY_DEFINE_STATIC (ges_asset_dbg, "ges-asset",
+    GST_DEBUG_FG_BLUE | GST_DEBUG_BOLD, "GES Asset");
 #undef GST_CAT_DEFAULT
-
-#ifndef GST_DISABLE_GST_DEBUG
-#define GST_CAT_DEFAULT ensure_debug_category()
-static GstDebugCategory *
-ensure_debug_category (void)
-{
-  static gsize cat_gonce = 0;
-
-  if (g_once_init_enter (&cat_gonce)) {
-    gsize cat_done = (gsize) _gst_debug_category_new ("ges-asset",
-        GST_DEBUG_FG_BLUE | GST_DEBUG_BOLD, "GES Asset");
-    g_once_init_leave (&cat_gonce, cat_done);
-  }
-
-  return (GstDebugCategory *) cat_gonce;
-}
-#endif /* GST_DISABLE_GST_DEBUG */
+#define GST_CAT_DEFAULT GST_DEBUG_CATEGORY_LAZY_INIT (ges_asset_dbg)
 
 enum
 {

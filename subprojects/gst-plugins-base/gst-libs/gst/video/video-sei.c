@@ -37,27 +37,9 @@
  * Since: 1.22
  */
 
-#ifndef GST_DISABLE_GST_DEBUG
-#define GST_CAT_DEFAULT ensure_debug_category()
-static GstDebugCategory *
-ensure_debug_category (void)
-{
-  static gsize cat_gonce = 0;
-
-  if (g_once_init_enter (&cat_gonce)) {
-    gsize cat_done;
-
-    cat_done = (gsize) _gst_debug_category_new ("video-sei", 0,
-        "H.264 / H.265 SEI messages utilities");
-
-    g_once_init_leave (&cat_gonce, cat_done);
-  }
-
-  return (GstDebugCategory *) cat_gonce;
-}
-#else
-#define ensure_debug_category() /* NOOP */
-#endif /* GST_DISABLE_GST_DEBUG */
+GST_DEBUG_CATEGORY_DEFINE_STATIC (video_sei_dbg, "video-sei", 0,
+    "H.264 / H.265 SEI messages utilities");
+#define GST_CAT_DEFAULT GST_DEBUG_CATEGORY_LAZY_INIT (video_sei_dbg)
 
 /* SEI User Data Unregistered implementation */
 

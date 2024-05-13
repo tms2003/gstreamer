@@ -31,27 +31,8 @@
 
 static gboolean id3v2_frames_to_tag_list (ID3TagsWorking * work, guint size);
 
-#ifndef GST_DISABLE_GST_DEBUG
-
-#define GST_CAT_DEFAULT id3v2_ensure_debug_category()
-
-GstDebugCategory *
-id3v2_ensure_debug_category (void)
-{
-  static gsize cat_gonce = 0;
-
-  if (g_once_init_enter (&cat_gonce)) {
-    gsize cat;
-
-    cat = (gsize) _gst_debug_category_new ("id3v2", 0, "ID3v2 tag parsing");
-
-    g_once_init_leave (&cat_gonce, cat);
-  }
-
-  return (GstDebugCategory *) cat_gonce;
-}
-
-#endif /* GST_DISABLE_GST_DEBUG */
+GST_DEBUG_CATEGORY_DEFINE (id3v2_dbg, "id3v2", 0, "ID3v2 tag parsing");
+#define GST_CAT_DEFAULT GST_DEBUG_CATEGORY_LAZY_INIT (id3v2_dbg)
 
 /* Synch safe uints have 28 bits (256MB max) available. */
 guint

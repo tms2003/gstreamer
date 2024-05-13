@@ -35,31 +35,9 @@
 #include <gst/base/gstbytereader.h>
 #include "gstjpegparser.h"
 
-#ifndef GST_DISABLE_GST_DEBUG
-
-#define GST_CAT_DEFAULT ensure_debug_category()
-
-static GstDebugCategory *
-ensure_debug_category (void)
-{
-  static gsize cat_gonce = 0;
-
-  if (g_once_init_enter (&cat_gonce)) {
-    gsize cat_done;
-
-    cat_done = (gsize) _gst_debug_category_new ("codecparsers_jpeg", 0,
-        "GstJpegCodecParser");
-
-    g_once_init_leave (&cat_gonce, cat_done);
-  }
-
-  return (GstDebugCategory *) cat_gonce;
-}
-#else
-
-#define ensure_debug_category() /* NOOP */
-
-#endif /* GST_DISABLE_GST_DEBUG */
+GST_DEBUG_CATEGORY_DEFINE_STATIC (codecparsers_jpeg_dbg, "codecparsers_jpeg", 0,
+    "GstJpegCodecParser");
+#define GST_CAT_DEFAULT GST_DEBUG_CATEGORY_LAZY_INIT (codecparsers_jpeg_dbg)
 
 #define DEBUG_PRINT_COMMENT 0
 

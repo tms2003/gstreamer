@@ -31,21 +31,8 @@ static std::recursive_mutex context_lock_;
 /* *INDENT-ON* */
 
 GST_DEBUG_CATEGORY_STATIC (GST_CAT_CONTEXT);
-
-#ifndef GST_DISABLE_GST_DEBUG
-#define GST_CAT_DEFAULT ensure_debug_category()
-static GstDebugCategory *
-ensure_debug_category (void)
-{
-  static GstDebugCategory *cat = nullptr;
-
-  GST_D3D12_CALL_ONCE_BEGIN {
-    cat = _gst_debug_category_new ("d3d12allocator", 0, "d3d12allocator");
-  } GST_D3D12_CALL_ONCE_END;
-
-  return cat;
-}
-#endif
+GST_DEBUG_CATEGORY_EXTERN (d3d12_allocator_dbg);
+#define GST_CAT_DEFAULT GST_DEBUG_CATEGORY_LAZY_INIT (d3d12_allocator_dbg)
 
 static void
 init_context_debug (void)

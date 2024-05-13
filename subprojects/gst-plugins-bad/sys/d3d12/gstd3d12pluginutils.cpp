@@ -32,20 +32,9 @@
 using namespace DirectX;
 /* *INDENT-ON* */
 
-#ifndef GST_DISABLE_GST_DEBUG
-#define GST_CAT_DEFAULT ensure_debug_category()
-static GstDebugCategory *
-ensure_debug_category (void)
-{
-  static GstDebugCategory *cat = nullptr;
-
-  GST_D3D12_CALL_ONCE_BEGIN {
-    cat = _gst_debug_category_new ("d3d12pluginutils", 0, "d3d12pluginutils");
-  } GST_D3D12_CALL_ONCE_END;
-
-  return cat;
-}
-#endif /* GST_DISABLE_GST_DEBUG */
+GST_DEBUG_CATEGORY_DEFINE_STATIC (d3d12_plugin_utils_dbg,
+    "d3d12pluginutils", 0, "d3d12pluginutils");
+#define GST_CAT_DEFAULT GST_DEBUG_CATEGORY_LAZY_INIT (d3d12_plugin_utils_dbg)
 
 GType
 gst_d3d12_sampling_method_get_type (void)
