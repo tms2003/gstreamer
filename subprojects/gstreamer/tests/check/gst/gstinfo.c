@@ -558,6 +558,68 @@ GST_START_TEST (info_set_and_reset_string)
 
 GST_END_TEST;
 
+static void
+test_log_once (void)
+{
+  GST_ERROR_ONCE ("test message");
+}
+
+static void
+test_log_once_id (const gchar * id)
+{
+  GST_ERROR_ID_ONCE (id, "test message");
+}
+
+static void
+test_log_object_once (GObject * object)
+{
+  GST_ERROR_OBJECT_ONCE (object, "test message");
+}
+
+GST_START_TEST (info_debug_once)
+{
+  gst_debug_remove_log_function (gst_debug_log_default);
+  gst_debug_add_log_function (printf_extension_log_func, NULL, NULL);
+
+  save_messages = TRUE;
+
+  fail_unless (messages == NULL);
+  gst_debug_set_threshold_from_string ("ERROR", TRUE);
+
+  test_log_once ();
+  assert_equals_int (g_list_length (messages), 1);
+  test_log_once ();
+
+  assert_equals_int (g_list_length (messages), 1);
+  test_log_once_id ("testid");
+  assert_equals_int (g_list_length (messages), 2);
+  test_log_once_id ("testid");
+  assert_equals_int (g_list_length (messages), 2);
+  test_log_once_id ("testid2");
+  assert_equals_int (g_list_length (messages), 3);
+
+  GObject *e = G_OBJECT (gst_pipeline_new ("pipeline"));
+  test_log_object_once (e);
+  assert_equals_int (g_list_length (messages), 4);
+  test_log_object_once (e);
+  assert_equals_int (g_list_length (messages), 4);
+  gst_object_unref (e);
+
+  e = G_OBJECT (gst_pipeline_new ("pipeline"));
+  test_log_object_once (e);
+  assert_equals_int (g_list_length (messages), 5);
+  test_log_object_once (e);
+  assert_equals_int (g_list_length (messages), 5);
+  gst_object_unref (e);
+
+  /* clean up */
+  gst_debug_set_default_threshold (GST_LEVEL_NONE);
+  gst_debug_add_log_function (gst_debug_log_default, NULL, NULL);
+  gst_debug_remove_log_function (printf_extension_log_func);
+}
+
+GST_END_TEST;
+
 static Suite *
 gst_info_suite (void)
 {
@@ -581,6 +643,7 @@ gst_info_suite (void)
   tcase_add_test (tc_chain, info_set_and_unset_multiple);
   tcase_add_test (tc_chain, info_post_gst_init_category_registration);
   tcase_add_test (tc_chain, info_set_and_reset_string);
+  tcase_add_test (tc_chain, info_debug_once);
 #endif
 
   return s;

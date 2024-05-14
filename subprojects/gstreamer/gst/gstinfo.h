@@ -410,6 +410,58 @@ void            gst_debug_log_id_literal (GstDebugCategory * category,
                                           const gchar      * id,
                                           const gchar      * message_string) G_GNUC_NO_INSTRUMENT;
 
+
+GST_API
+void gst_debug_log_once                 (GstDebugCategory *category,
+                                         GstDebugLevel level,
+                                         const gchar *file,
+                                         const gchar *function,
+                                         gint line,
+                                         GObject *object,
+                                         const gchar *format, ...) G_GNUC_PRINTF (7, 8) G_GNUC_NO_INSTRUMENT;
+GST_API
+void gst_debug_log_valist_once          (GstDebugCategory *category,
+                                         GstDebugLevel level,
+                                         const gchar *file,
+                                         const gchar *function,
+                                         gint line,
+                                         GObject *object,
+                                         const gchar *format,
+                                         va_list args) G_GNUC_NO_INSTRUMENT;
+GST_API
+void gst_debug_log_literal_once         (GstDebugCategory *category,
+                                         GstDebugLevel level,
+                                         const gchar *file,
+                                         const gchar *function,
+                                         gint line,
+                                         GObject *object,
+                                         const gchar *message_string) G_GNUC_NO_INSTRUMENT;
+GST_API
+void gst_debug_log_id_once              (GstDebugCategory *category,
+                                         GstDebugLevel level,
+                                         const gchar *file,
+                                         const gchar *function,
+                                         gint line,
+                                         const gchar *id,
+                                         const gchar *format, ...) G_GNUC_PRINTF (7, 8) G_GNUC_NO_INSTRUMENT;
+GST_API
+void gst_debug_log_id_valist_once       (GstDebugCategory *category,
+                                         GstDebugLevel level,
+                                         const gchar *file,
+                                         const gchar *function,
+                                         gint line,
+                                         const gchar *id,
+                                         const gchar *format,
+                                         va_list args) G_GNUC_NO_INSTRUMENT;
+GST_API
+void gst_debug_log_id_literal_once (GstDebugCategory *category,
+                                    GstDebugLevel level,
+                                    const gchar *file,
+                                    const gchar *function,
+                                    gint line,
+                                    const gchar *id,
+                                    const gchar *message_string) G_GNUC_NO_INSTRUMENT;
+
 /* do not use this function, use the GST_DEBUG_CATEGORY_INIT macro */
 
 GST_API
@@ -720,10 +772,32 @@ GST_API GstDebugLevel            _gst_debug_min;
  * There is no need to finish the end of the debug message with a newline
  * character, a newline character will be added automatically.
  */
+/**
+ * GST_CAT_LEVEL_LOG_ONCE:
+ * @cat: category to use
+ * @level: the severity of the message
+ * @object: (allow-none): the #GObject the message belongs to or %NULL if none
+ * @...: A printf-style message to output
+ *
+ * Outputs a debugging message once. This is the most general macro for outputting
+ * debugging messages. You will probably want to use one of the ones described
+ * below,
+ *
+ * There is no need to finish the end of the debug message with a newline
+ * character, a newline character will be added automatically.
+ *
+ * Since: 1.26
+ */
 #ifdef G_HAVE_ISO_VARARGS
 #define GST_CAT_LEVEL_LOG(cat,level,object,...) G_STMT_START{		\
   if (G_UNLIKELY ((level) <= GST_LEVEL_MAX && (level) <= _gst_debug_min)) {						\
     gst_debug_log ((cat), (level), __FILE__, GST_FUNCTION, __LINE__,	\
+        (GObject *) (object), __VA_ARGS__);				\
+  }									\
+}G_STMT_END
+#define GST_CAT_LEVEL_LOG_ONCE(cat,level,object,...) G_STMT_START{		\
+  if (G_UNLIKELY ((level) <= GST_LEVEL_MAX && (level) <= _gst_debug_min)) {						\
+    gst_debug_log_once ((cat), (level), __FILE__, GST_FUNCTION, __LINE__,	\
         (GObject *) (object), __VA_ARGS__);				\
   }									\
 }G_STMT_END
@@ -732,6 +806,12 @@ GST_API GstDebugLevel            _gst_debug_min;
 #define GST_CAT_LEVEL_LOG(cat,level,object,args...) G_STMT_START{	\
   if (G_UNLIKELY ((level) <= GST_LEVEL_MAX && (level) <= _gst_debug_min)) {						\
     gst_debug_log ((cat), (level), __FILE__, GST_FUNCTION, __LINE__,	\
+        (GObject *) (object), ##args );					\
+  }									\
+}G_STMT_END
+#define GST_CAT_LEVEL_LOG_ONCE(cat,level,object,args...) G_STMT_START{	\
+  if (G_UNLIKELY ((level) <= GST_LEVEL_MAX && (level) <= _gst_debug_min)) {						\
+    gst_debug_log_once ((cat), (level), __FILE__, GST_FUNCTION, __LINE__,	\
         (GObject *) (object), ##args );					\
   }									\
 }G_STMT_END
@@ -756,6 +836,27 @@ GST_CAT_LEVEL_LOG (GstDebugCategory * cat, GstDebugLevel level,
   GST_CAT_LEVEL_LOG_valist (cat, level, object, format, varargs);
   va_end (varargs);
 }
+
+static inline void
+GST_CAT_LEVEL_LOG_valist_once (GstDebugCategory * cat,
+    GstDebugLevel level, gpointer object, const char *format, va_list varargs)
+{
+  if (G_UNLIKELY ((level) <= GST_LEVEL_MAX && (level) <= _gst_debug_min)) {
+    gst_debug_log_valist_once (cat, level, "", "", 0, (GObject *) object, format,
+        varargs);
+  }
+}
+
+static inline void
+GST_CAT_LEVEL_LOG (GstDebugCategory * cat, GstDebugLevel level,
+    gpointer object, const char *format, ...)
+{
+  va_list varargs;
+
+  va_start (varargs, format);
+  GST_CAT_LEVEL_LOG_valist_once (cat, level, object, format, varargs);
+  va_end (varargs);
+}
 #endif
 #endif /* G_HAVE_ISO_VARARGS */
 
@@ -776,10 +877,34 @@ GST_CAT_LEVEL_LOG (GstDebugCategory * cat, GstDebugLevel level,
  *
  * Since: 1.22
  */
+/**
+ * GST_CAT_LEVEL_LOG_ID_ONCE:
+ * @cat: category to use
+ * @level: the severity of the message
+ * @id: (transfer none) (allow-none): the identifier of the object this message
+ *     relates to, or %NULL if none
+ * @...: A printf-style message to output
+ *
+ * Outputs a debugging message, only once per ID for a given line.
+ * This is the most general macro for outputting
+ * debugging messages. You will probably want to use one of the ones described
+ * below.
+ *
+ * There is no need to finish the end of the debug message with a newline
+ * character, a newline character will be added automatically.
+ *
+ * Since: 1.26
+ */
 #ifdef G_HAVE_ISO_VARARGS
 #define GST_CAT_LEVEL_LOG_ID(cat,level,id,...) G_STMT_START{		\
   if (G_UNLIKELY ((level) <= GST_LEVEL_MAX && (level) <= _gst_debug_min)) {						\
     gst_debug_log_id ((cat), (level), __FILE__, GST_FUNCTION, __LINE__,	\
+		      (id), __VA_ARGS__);				\
+  }									\
+}G_STMT_END
+#define GST_CAT_LEVEL_LOG_ID_ONCE(cat,level,id,...) G_STMT_START{		\
+  if (G_UNLIKELY ((level) <= GST_LEVEL_MAX && (level) <= _gst_debug_min)) {						\
+    gst_debug_log_id_once ((cat), (level), __FILE__, GST_FUNCTION, __LINE__,	\
 		      (id), __VA_ARGS__);				\
   }									\
 }G_STMT_END
@@ -788,6 +913,12 @@ GST_CAT_LEVEL_LOG (GstDebugCategory * cat, GstDebugLevel level,
 #define GST_CAT_LEVEL_LOG_ID(cat,level,id,args...) G_STMT_START{	\
   if (G_UNLIKELY ((level) <= GST_LEVEL_MAX && (level) <= _gst_debug_min)) {						\
     gst_debug_log_id ((cat), (level), __FILE__, GST_FUNCTION, __LINE__,	\
+		      (id), ##args );					\
+  }									\
+}G_STMT_END
+#define GST_CAT_LEVEL_LOG_ID_ONCE(cat,level,id,args...) G_STMT_START{	\
+  if (G_UNLIKELY ((level) <= GST_LEVEL_MAX && (level) <= _gst_debug_min)) {						\
+    gst_debug_log_id_once ((cat), (level), __FILE__, GST_FUNCTION, __LINE__,	\
 		      (id), ##args );					\
   }									\
 }G_STMT_END
@@ -810,6 +941,26 @@ GST_CAT_LEVEL_LOG_ID (GstDebugCategory * cat, GstDebugLevel level,
 
   va_start (varargs, format);
   GST_CAT_LEVEL_LOG_ID_valist (cat, level, id, format, varargs);
+  va_end (varargs);
+}
+static inline void
+GST_CAT_LEVEL_LOG_ID_valist_once (GstDebugCategory * cat,
+    GstDebugLevel level, const gchar *id, const char *format, va_list varargs)
+{
+  if (G_UNLIKELY ((level) <= GST_LEVEL_MAX && (level) <= _gst_debug_min)) {
+    gst_debug_log_id_valist_once (cat, level, "", "", 0, id, format,
+        varargs);
+  }
+}
+
+static inline void
+GST_CAT_LEVEL_LOG_ID_ONCE (GstDebugCategory * cat, GstDebugLevel level,
+    const gchar *id, const char *format, ...)
+{
+  va_list varargs;
+
+  va_start (varargs, format);
+  GST_CAT_LEVEL_LOG_ID_valist_once (cat, level, id, format, varargs);
   va_end (varargs);
 }
 #endif
@@ -1357,6 +1508,46 @@ GST_CAT_LEVEL_LOG_ID (GstDebugCategory * cat, GstDebugLevel level,
 #define GST_FIXME(...)			GST_CAT_LEVEL_LOG (GST_CAT_DEFAULT, GST_LEVEL_FIXME,   NULL, __VA_ARGS__)
 #define GST_TRACE(...)		GST_CAT_LEVEL_LOG (GST_CAT_DEFAULT, GST_LEVEL_TRACE,   NULL, __VA_ARGS__)
 
+#define GST_CAT_ERROR_OBJECT_ONCE(cat,obj,...)	GST_CAT_LEVEL_LOG_ONCE (cat, GST_LEVEL_ERROR,   obj,  __VA_ARGS__)
+#define GST_CAT_WARNING_OBJECT_ONCE(cat,obj,...)	GST_CAT_LEVEL_LOG_ONCE (cat, GST_LEVEL_WARNING, obj,  __VA_ARGS__)
+#define GST_CAT_INFO_OBJECT_ONCE(cat,obj,...)	GST_CAT_LEVEL_LOG_ONCE (cat, GST_LEVEL_INFO,    obj,  __VA_ARGS__)
+#define GST_CAT_DEBUG_OBJECT_ONCE(cat,obj,...)	GST_CAT_LEVEL_LOG_ONCE (cat, GST_LEVEL_DEBUG,   obj,  __VA_ARGS__)
+#define GST_CAT_LOG_OBJECT_ONCE(cat,obj,...)		GST_CAT_LEVEL_LOG_ONCE (cat, GST_LEVEL_LOG,     obj,  __VA_ARGS__)
+#define GST_CAT_FIXME_OBJECT_ONCE(cat,obj,...)	GST_CAT_LEVEL_LOG_ONCE (cat, GST_LEVEL_FIXME,   obj,  __VA_ARGS__)
+#define GST_CAT_TRACE_OBJECT_ONCE(cat,obj,...)	GST_CAT_LEVEL_LOG_ONCE (cat, GST_LEVEL_TRACE,   obj,  __VA_ARGS__)
+
+#define GST_CAT_ERROR_ONCE(cat,...)			GST_CAT_LEVEL_LOG_ONCE (cat, GST_LEVEL_ERROR,   NULL, __VA_ARGS__)
+#define GST_CAT_WARNING_ONCE(cat,...)		GST_CAT_LEVEL_LOG_ONCE (cat, GST_LEVEL_WARNING, NULL, __VA_ARGS__)
+#define GST_CAT_INFO_ONCE(cat,...)			GST_CAT_LEVEL_LOG_ONCE (cat, GST_LEVEL_INFO,    NULL, __VA_ARGS__)
+#define GST_CAT_DEBUG_ONCE(cat,...)			GST_CAT_LEVEL_LOG_ONCE (cat, GST_LEVEL_DEBUG,   NULL, __VA_ARGS__)
+#define GST_CAT_LOG_ONCE(cat,...)			GST_CAT_LEVEL_LOG_ONCE (cat, GST_LEVEL_LOG,     NULL, __VA_ARGS__)
+#define GST_CAT_FIXME_ONCE(cat,...)			GST_CAT_LEVEL_LOG_ONCE (cat, GST_LEVEL_FIXME,   NULL, __VA_ARGS__)
+#define GST_CAT_TRACE_ONCE(cat,...)		GST_CAT_LEVEL_LOG_ONCE (cat, GST_LEVEL_TRACE,   NULL, __VA_ARGS__)
+
+#define GST_ERROR_OBJECT_ONCE(obj,...)	GST_CAT_LEVEL_LOG_ONCE (GST_CAT_DEFAULT, GST_LEVEL_ERROR,   obj,  __VA_ARGS__)
+#define GST_WARNING_OBJECT_ONCE(obj,...)	GST_CAT_LEVEL_LOG_ONCE (GST_CAT_DEFAULT, GST_LEVEL_WARNING, obj,  __VA_ARGS__)
+#define GST_INFO_OBJECT_ONCE(obj,...)	GST_CAT_LEVEL_LOG _ONCE(GST_CAT_DEFAULT, GST_LEVEL_INFO,    obj,  __VA_ARGS__)
+#define GST_DEBUG_OBJECT_ONCE(obj,...)	GST_CAT_LEVEL_LOG_ONCE (GST_CAT_DEFAULT, GST_LEVEL_DEBUG,   obj,  __VA_ARGS__)
+#define GST_LOG_OBJECT_ONCE(obj,...)		GST_CAT_LEVEL_LOG_ONCE (GST_CAT_DEFAULT, GST_LEVEL_LOG,     obj,  __VA_ARGS__)
+#define GST_FIXME_OBJECT_ONCE(obj,...)	GST_CAT_LEVEL_LOG_ONCE (GST_CAT_DEFAULT, GST_LEVEL_FIXME,   obj,  __VA_ARGS__)
+#define GST_TRACE_OBJECT_ONCE(obj,...)	GST_CAT_LEVEL_LOG_ONCE (GST_CAT_DEFAULT, GST_LEVEL_TRACE,   obj,  __VA_ARGS__)
+
+#define GST_ERROR_ID_ONCE(id,...)	GST_CAT_LEVEL_LOG_ID_ONCE (GST_CAT_DEFAULT, GST_LEVEL_ERROR,   id,  __VA_ARGS__)
+#define GST_WARNING_ID_ONCE(id,...)	GST_CAT_LEVEL_LOG_ID_ONCE (GST_CAT_DEFAULT, GST_LEVEL_WARNING, id,  __VA_ARGS__)
+#define GST_INFO_ID_ONCE(id,...)	GST_CAT_LEVEL_LOG_ID_ONCE (GST_CAT_DEFAULT, GST_LEVEL_INFO,    id,  __VA_ARGS__)
+#define GST_DEBUG_ID_ONCE(id,...)	GST_CAT_LEVEL_LOG_ID_ONCE (GST_CAT_DEFAULT, GST_LEVEL_DEBUG,   id,  __VA_ARGS__)
+#define GST_LOG_ID_ONCE(id,...)	GST_CAT_LEVEL_LOG_ID_ONCE (GST_CAT_DEFAULT, GST_LEVEL_LOG,     id,  __VA_ARGS__)
+#define GST_FIXME_ID_ONCE(id,...)	GST_CAT_LEVEL_LOG_ID_ONCE (GST_CAT_DEFAULT, GST_LEVEL_FIXME,   id,  __VA_ARGS__)
+#define GST_TRACE_ID_ONCE(id,...)	GST_CAT_LEVEL_LOG_ID_ONCE (GST_CAT_DEFAULT, GST_LEVEL_TRACE,   id,  __VA_ARGS__)
+
+#define GST_ERROR_ONCE(...)			GST_CAT_LEVEL_LOG_ONCE (GST_CAT_DEFAULT, GST_LEVEL_ERROR,   NULL, __VA_ARGS__)
+#define GST_WARNING_ONCE(...)		GST_CAT_LEVEL_LOG_ONCE (GST_CAT_DEFAULT, GST_LEVEL_WARNING, NULL, __VA_ARGS__)
+#define GST_INFO_ONCE(...)			GST_CAT_LEVEL_LOG_ONCE (GST_CAT_DEFAULT, GST_LEVEL_INFO,    NULL, __VA_ARGS__)
+#define GST_DEBUG_ONCE(...)			GST_CAT_LEVEL_LOG_ONCE (GST_CAT_DEFAULT, GST_LEVEL_DEBUG,   NULL, __VA_ARGS__)
+#define GST_LOG_ONCE(...)			GST_CAT_LEVEL_LOG_ONCE (GST_CAT_DEFAULT, GST_LEVEL_LOG,     NULL, __VA_ARGS__)
+#define GST_FIXME_ONCE(...)			GST_CAT_LEVEL_LOG_ONCE (GST_CAT_DEFAULT, GST_LEVEL_FIXME,   NULL, __VA_ARGS__)
+#define GST_TRACE_ONCE(...)		GST_CAT_LEVEL_LOG_ONCE (GST_CAT_DEFAULT, GST_LEVEL_TRACE,   NULL, __VA_ARGS__)
+
 #else
 #ifdef G_HAVE_GNUC_VARARGS
 
@@ -1399,6 +1590,47 @@ GST_CAT_LEVEL_LOG_ID (GstDebugCategory * cat, GstDebugLevel level,
 #define GST_LOG(args...)		GST_CAT_LEVEL_LOG (GST_CAT_DEFAULT, GST_LEVEL_LOG,     NULL, ##args )
 #define GST_FIXME(args...)		GST_CAT_LEVEL_LOG (GST_CAT_DEFAULT, GST_LEVEL_FIXME,   NULL, ##args )
 #define GST_TRACE(args...)		GST_CAT_LEVEL_LOG (GST_CAT_DEFAULT, GST_LEVEL_TRACE,   NULL, ##args )
+
+
+#define GST_CAT_ERROR_OBJECT_ONCE(cat,obj,args...)	GST_CAT_LEVEL_LOG_ONCE (cat, GST_LEVEL_ERROR,   obj,  ##args )
+#define GST_CAT_WARNING_OBJECT_ONCE(cat,obj,args...)	GST_CAT_LEVEL_LOG_ONCE (cat, GST_LEVEL_WARNING, obj,  ##args )
+#define GST_CAT_INFO_OBJECT_ONCE(cat,obj,args...)	GST_CAT_LEVEL_LOG_ONCE (cat, GST_LEVEL_INFO,    obj,  ##args )
+#define GST_CAT_DEBUG_OBJECT_ONCE(cat,obj,args...)	GST_CAT_LEVEL_LOG_ONCE (cat, GST_LEVEL_DEBUG,   obj,  ##args )
+#define GST_CAT_LOG_OBJECT_ONCE(cat,obj,args...)	GST_CAT_LEVEL_LOG_ONCE (cat, GST_LEVEL_LOG,     obj,  ##args )
+#define GST_CAT_FIXME_OBJECT_ONCE(cat,obj,args...)	GST_CAT_LEVEL_LOG_ONCE (cat, GST_LEVEL_FIXME,   obj,  ##args )
+#define GST_CAT_TRACE_OBJECT_ONCE(cat,obj,args...)	GST_CAT_LEVEL_LOG_ONCE (cat, GST_LEVEL_TRACE,   obj,  ##args )
+
+#define GST_CAT_ERROR_ONCE(cat,args...)		GST_CAT_LEVEL_LOG_ONCE (cat, GST_LEVEL_ERROR,   NULL, ##args )
+#define GST_CAT_WARNING_ONCE(cat,args...)		GST_CAT_LEVEL_LOG_ONCE (cat, GST_LEVEL_WARNING, NULL, ##args )
+#define GST_CAT_INFO_ONCE(cat,args...)		GST_CAT_LEVEL_LOG_ONCE (cat, GST_LEVEL_INFO,    NULL, ##args )
+#define GST_CAT_DEBUG_ONCE(cat,args...)		GST_CAT_LEVEL_LOG_ONCE (cat, GST_LEVEL_DEBUG,   NULL, ##args )
+#define GST_CAT_LOG_ONCE(cat,args...)		GST_CAT_LEVEL_LOG_ONCE (cat, GST_LEVEL_LOG,     NULL, ##args )
+#define GST_CAT_FIXME_ONCE(cat,args...)		GST_CAT_LEVEL_LOG_ONCE (cat, GST_LEVEL_FIXME,   NULL, ##args )
+#define GST_CAT_TRACE_ONCE(cat,args...)		GST_CAT_LEVEL_LOG_ONCE (cat, GST_LEVEL_TRACE,   NULL, ##args )
+
+#define GST_ERROR_OBJECT_ONCE(obj,args...)	GST_CAT_LEVEL_LOG_ONCE (GST_CAT_DEFAULT, GST_LEVEL_ERROR,   obj,  ##args )
+#define GST_WARNING_OBJECT_ONCE(obj,args...)	GST_CAT_LEVEL_LOG_ONCE (GST_CAT_DEFAULT, GST_LEVEL_WARNING, obj,  ##args )
+#define GST_INFO_OBJECT_ONCE(obj,args...)	GST_CAT_LEVEL_LOG_ONCE (GST_CAT_DEFAULT, GST_LEVEL_INFO,    obj,  ##args )
+#define GST_DEBUG_OBJECT_ONCE(obj,args...)	GST_CAT_LEVEL_LOG_ONCE (GST_CAT_DEFAULT, GST_LEVEL_DEBUG,   obj,  ##args )
+#define GST_LOG_OBJECT_ONCE(obj,args...)	GST_CAT_LEVEL_LOG_ONCE (GST_CAT_DEFAULT, GST_LEVEL_LOG,     obj,  ##args )
+#define GST_FIXME_OBJECT_ONCE(obj,args...)	GST_CAT_LEVEL_LOG_ONCE (GST_CAT_DEFAULT, GST_LEVEL_FIXME,   obj,  ##args )
+#define GST_TRACE_OBJECT_ONCE(obj,args...)	GST_CAT_LEVEL_LOG_ONCE (GST_CAT_DEFAULT, GST_LEVEL_TRACE,   obj,  ##args )
+
+#define GST_ERROR_ID_ONCE(id,args...)	GST_CAT_LEVEL_LOG_ONCE (GST_CAT_DEFAULT, GST_LEVEL_ERROR,   id,  ##args )
+#define GST_WARNING_ID_ONCE(id,args...) GST_CAT_LEVEL_LOG_ONCE (GST_CAT_DEFAULT, GST_LEVEL_WARNING, id,  ##args )
+#define GST_INFO_ID_ONCE(id,args...)	GST_CAT_LEVEL_LOG_ONCE (GST_CAT_DEFAULT, GST_LEVEL_INFO,    id,  ##args )
+#define GST_DEBUG_ID_ONCE(id,args...)	GST_CAT_LEVEL_LOG_ONCE (GST_CAT_DEFAULT, GST_LEVEL_DEBUG,   id,  ##args )
+#define GST_LOG_ID_ONCE(id,args...)	GST_CAT_LEVEL_LOG_ONCE (GST_CAT_DEFAULT, GST_LEVEL_LOG,     id,  ##args )
+#define GST_FIXME_ID_ONCE(id,args...)	GST_CAT_LEVEL_LOG_ONCE (GST_CAT_DEFAULT, GST_LEVEL_FIXME,   id,  ##args )
+#define GST_TRACE_ID_ONCE(id,args...)	GST_CAT_LEVEL_LOG_ONCE (GST_CAT_DEFAULT, GST_LEVEL_TRACE,   id,  ##args )
+
+#define GST_ERROR_ONCE(args...)		GST_CAT_LEVEL_LOG_ONCE (GST_CAT_DEFAULT, GST_LEVEL_ERROR,   NULL, ##args )
+#define GST_WARNING_ONCE(args...)		GST_CAT_LEVEL_LOG_ONCE (GST_CAT_DEFAULT, GST_LEVEL_WARNING, NULL, ##args )
+#define GST_INFO_ONCE(args...)		GST_CAT_LEVEL_LOG_ONCE (GST_CAT_DEFAULT, GST_LEVEL_INFO,    NULL, ##args )
+#define GST_DEBUG_ONCE(args...)		GST_CAT_LEVEL_LOG_ONCE (GST_CAT_DEFAULT, GST_LEVEL_DEBUG,   NULL, ##args )
+#define GST_LOG_ONCE(args...)		GST_CAT_LEVEL_LOG_ONCE (GST_CAT_DEFAULT, GST_LEVEL_LOG,     NULL, ##args )
+#define GST_FIXME_ONCE(args...)		GST_CAT_LEVEL_LOG_ONCE (GST_CAT_DEFAULT, GST_LEVEL_FIXME,   NULL, ##args )
+#define GST_TRACE_ONCE(args...)		GST_CAT_LEVEL_LOG_ONCE (GST_CAT_DEFAULT, GST_LEVEL_TRACE,   NULL, ##args )
 
 #else
 /* no variadic macros, use inline */
@@ -1779,6 +2011,384 @@ GST_TRACE (const char *format, ...)
       varargs);
   va_end (varargs);
 }
+
+static inline void
+GST_CAT_ERROR_OBJECT_ONCE (GstDebugCategory * cat, gpointer obj, const char *format,
+    ...)
+{
+  va_list varargs;
+
+  va_start (varargs, format);
+  GST_CAT_LEVEL_LOG_valist_once (cat, GST_LEVEL_ERROR, obj, format, varargs);
+  va_end (varargs);
+}
+
+static inline void
+GST_CAT_WARNING_OBJECT_ONCE (GstDebugCategory * cat, gpointer obj,
+    const char *format, ...)
+{
+  va_list varargs;
+
+  va_start (varargs, format);
+  GST_CAT_LEVEL_LOG_valist_once (cat, GST_LEVEL_WARNING, obj, format, varargs);
+  va_end (varargs);
+}
+
+static inline void
+GST_CAT_INFO_OBJECT_ONCE (GstDebugCategory * cat, gpointer obj, const char *format,
+    ...)
+{
+  va_list varargs;
+
+  va_start (varargs, format);
+  GST_CAT_LEVEL_LOG_valist_once (cat, GST_LEVEL_INFO, obj, format, varargs);
+  va_end (varargs);
+}
+
+static inline void
+GST_CAT_DEBUG_OBJECT_ONCE (GstDebugCategory * cat, gpointer obj, const char *format,
+    ...)
+{
+  va_list varargs;
+
+  va_start (varargs, format);
+  GST_CAT_LEVEL_LOG_valist_once (cat, GST_LEVEL_DEBUG, obj, format, varargs);
+  va_end (varargs);
+}
+
+static inline void
+GST_CAT_LOG_OBJECT_ONCE (GstDebugCategory * cat, gpointer obj, const char *format,
+    ...)
+{
+  va_list varargs;
+
+  va_start (varargs, format);
+  GST_CAT_LEVEL_LOG_valist_once (cat, GST_LEVEL_LOG, obj, format, varargs);
+  va_end (varargs);
+}
+
+static inline void
+GST_CAT_FIXME_OBJECT_ONCE (GstDebugCategory * cat, gpointer obj, const char *format,
+    ...)
+{
+  va_list varargs;
+
+  va_start (varargs, format);
+  GST_CAT_LEVEL_LOG_valist_once (cat, GST_LEVEL_FIXME, obj, format, varargs);
+  va_end (varargs);
+}
+
+static inline void
+GST_CAT_TRACE_OBJECT_ONCE (GstDebugCategory * cat, gpointer obj, const char *format,
+    ...)
+{
+  va_list varargs;
+
+  va_start (varargs, format);
+  GST_CAT_LEVEL_LOG_valist_once (cat, GST_LEVEL_TRACE, obj, format, varargs);
+  va_end (varargs);
+}
+
+static inline void
+GST_CAT_ERROR_ONCE (GstDebugCategory * cat, const char *format, ...)
+{
+  va_list varargs;
+
+  va_start (varargs, format);
+  GST_CAT_LEVEL_LOG_valist_once (cat, GST_LEVEL_ERROR, NULL, format, varargs);
+  va_end (varargs);
+}
+
+static inline void
+GST_CAT_WARNING_ONCE (GstDebugCategory * cat, const char *format, ...)
+{
+  va_list varargs;
+
+  va_start (varargs, format);
+  GST_CAT_LEVEL_LOG_valist_once (cat, GST_LEVEL_WARNING, NULL, format, varargs);
+  va_end (varargs);
+}
+
+static inline void
+GST_CAT_INFO_ONCE (GstDebugCategory * cat, const char *format, ...)
+{
+  va_list varargs;
+
+  va_start (varargs, format);
+  GST_CAT_LEVEL_LOG_valist_once (cat, GST_LEVEL_INFO, NULL, format, varargs);
+  va_end (varargs);
+}
+
+static inline void
+GST_CAT_DEBUG_ONCE (GstDebugCategory * cat, const char *format, ...)
+{
+  va_list varargs;
+
+  va_start (varargs, format);
+  GST_CAT_LEVEL_LOG_valist_once (cat, GST_LEVEL_DEBUG, NULL, format, varargs);
+  va_end (varargs);
+}
+
+static inline void
+GST_CAT_LOG_ONCE (GstDebugCategory * cat, const char *format, ...)
+{
+  va_list varargs;
+
+  va_start (varargs, format);
+  GST_CAT_LEVEL_LOG_valist_once (cat, GST_LEVEL_LOG, NULL, format, varargs);
+  va_end (varargs);
+}
+
+static inline void
+GST_CAT_FIXME_ONCE (GstDebugCategory * cat, const char *format, ...)
+{
+  va_list varargs;
+
+  va_start (varargs, format);
+  GST_CAT_LEVEL_LOG_valist_once (cat, GST_LEVEL_FIXME, NULL, format, varargs);
+  va_end (varargs);
+}
+
+static inline void
+GST_CAT_TRACE_ONCE (GstDebugCategory * cat, const char *format, ...)
+{
+  va_list varargs;
+
+  va_start (varargs, format);
+  GST_CAT_LEVEL_LOG_valist_once (cat, GST_LEVEL_TRACE, NULL, format, varargs);
+  va_end (varargs);
+}
+
+static inline void
+GST_ERROR_OBJECT_ONCE (gpointer obj, const char *format, ...)
+{
+  va_list varargs;
+
+  va_start (varargs, format);
+  GST_CAT_LEVEL_LOG_valist_once (GST_CAT_DEFAULT, GST_LEVEL_ERROR, obj, format,
+      varargs);
+  va_end (varargs);
+}
+
+static inline void
+GST_WARNING_OBJECT_ONCE (gpointer obj, const char *format, ...)
+{
+  va_list varargs;
+
+  va_start (varargs, format);
+  GST_CAT_LEVEL_LOG_valist_once (GST_CAT_DEFAULT, GST_LEVEL_WARNING, obj, format,
+      varargs);
+  va_end (varargs);
+}
+
+static inline void
+GST_INFO_OBJECT_ONCE (gpointer obj, const char *format, ...)
+{
+  va_list varargs;
+
+  va_start (varargs, format);
+  GST_CAT_LEVEL_LOG_valist_once (GST_CAT_DEFAULT, GST_LEVEL_INFO, obj, format,
+      varargs);
+  va_end (varargs);
+}
+
+static inline void
+GST_DEBUG_OBJECT_ONCE (gpointer obj, const char *format, ...)
+{
+  va_list varargs;
+
+  va_start (varargs, format);
+  GST_CAT_LEVEL_LOG_valist_once (GST_CAT_DEFAULT, GST_LEVEL_DEBUG, obj, format,
+      varargs);
+  va_end (varargs);
+}
+
+static inline void
+GST_LOG_OBJECT_ONCE (gpointer obj, const char *format, ...)
+{
+  va_list varargs;
+
+  va_start (varargs, format);
+  GST_CAT_LEVEL_LOG_valist_once (GST_CAT_DEFAULT, GST_LEVEL_LOG, obj, format,
+      varargs);
+  va_end (varargs);
+}
+
+static inline void
+GST_FIXME_OBJECT_ONCE (gpointer obj, const char *format, ...)
+{
+  va_list varargs;
+
+  va_start (varargs, format);
+  GST_CAT_LEVEL_LOG_valist_once (GST_CAT_DEFAULT, GST_LEVEL_FIXME, obj, format,
+      varargs);
+  va_end (varargs);
+}
+
+static inline void
+GST_TRACE_OBJECT_ONCE (gpointer obj, const char *format, ...)
+{
+  va_list varargs;
+
+  va_start (varargs, format);
+  GST_CAT_LEVEL_LOG_valist_once (GST_CAT_DEFAULT, GST_LEVEL_TRACE, obj, format,
+      varargs);
+  va_end (varargs);
+}
+
+static inline void
+GST_ERROR_ID_ONCE (const gchar *id, const char *format, ...)
+{
+  va_list varargs;
+
+  va_start (varargs, format);
+  GST_CAT_LEVEL_LOG_ID_valist_once (GST_CAT_DEFAULT, GST_LEVEL_ERROR, id, format,
+      varargs);
+  va_end (varargs);
+}
+
+static inline void
+GST_WARNING_ID_ONCE (const gchar *id, const char *format, ...)
+{
+  va_list varargs;
+
+  va_start (varargs, format);
+  GST_CAT_LEVEL_LOG_ID_valist_once (GST_CAT_DEFAULT, GST_LEVEL_WARNING, id, format,
+      varargs);
+  va_end (varargs);
+}
+
+static inline void
+GST_INFO_ID_ONCE (const gchar *id, const char *format, ...)
+{
+  va_list varargs;
+
+  va_start (varargs, format);
+  GST_CAT_LEVEL_LOG_ID_valist_once (GST_CAT_DEFAULT, GST_LEVEL_INFO, id, format,
+      varargs);
+  va_end (varargs);
+}
+
+static inline void
+GST_DEBUG_ID_ONCE (const gchar *id, const char *format, ...)
+{
+  va_list varargs;
+
+  va_start (varargs, format);
+  GST_CAT_LEVEL_LOG_ID_valist_once (GST_CAT_DEFAULT, GST_LEVEL_DEBUG, id, format,
+      varargs);
+  va_end (varargs);
+}
+
+static inline void
+GST_LOG_ID_ONCE (const gchar *id, const char *format, ...)
+{
+  va_list varargs;
+
+  va_start (varargs, format);
+  GST_CAT_LEVEL_LOG_ID_valist_once (GST_CAT_DEFAULT, GST_LEVEL_LOG, id, format,
+      varargs);
+  va_end (varargs);
+}
+
+static inline void
+GST_FIXME_ID_ONCE (const gchar *id, const char *format, ...)
+{
+  va_list varargs;
+
+  va_start (varargs, format);
+  GST_CAT_LEVEL_LOG_ID_valist_once (GST_CAT_DEFAULT, GST_LEVEL_FIXME, id, format,
+      varargs);
+  va_end (varargs);
+}
+
+static inline void
+GST_TRACE_ID_ONCE (const gchar *id, const char *format, ...)
+{
+  va_list varargs;
+
+  va_start (varargs, format);
+  GST_CAT_LEVEL_LOG_ID_valist_once (GST_CAT_DEFAULT, GST_LEVEL_TRACE, id, format,
+      varargs);
+  va_end (varargs);
+}
+
+static inline void
+GST_ERROR_ONCE (const char *format, ...)
+{
+  va_list varargs;
+
+  va_start (varargs, format);
+  GST_CAT_LEVEL_LOG_valist_once (GST_CAT_DEFAULT, GST_LEVEL_ERROR, NULL, format,
+      varargs);
+  va_end (varargs);
+}
+
+static inline void
+GST_WARNING_ONCE (const char *format, ...)
+{
+  va_list varargs;
+
+  va_start (varargs, format);
+  GST_CAT_LEVEL_LOG_valist_once (GST_CAT_DEFAULT, GST_LEVEL_WARNING, NULL, format,
+      varargs);
+  va_end (varargs);
+}
+
+static inline void
+GST_INFO_ONCE (const char *format, ...)
+{
+  va_list varargs;
+
+  va_start (varargs, format);
+  GST_CAT_LEVEL_LOG_valist_once (GST_CAT_DEFAULT, GST_LEVEL_INFO, NULL, format,
+      varargs);
+  va_end (varargs);
+}
+
+static inline void
+GST_DEBUG_ONCE (const char *format, ...)
+{
+  va_list varargs;
+
+  va_start (varargs, format);
+  GST_CAT_LEVEL_LOG_valist_once (GST_CAT_DEFAULT, GST_LEVEL_DEBUG, NULL, format,
+      varargs);
+  va_end (varargs);
+}
+
+static inline void
+GST_LOG_ONCE (const char *format, ...)
+{
+  va_list varargs;
+
+  va_start (varargs, format);
+  GST_CAT_LEVEL_LOG_valist_once (GST_CAT_DEFAULT, GST_LEVEL_LOG, NULL,
+      format, varargs);
+  va_end (varargs);
+}
+
+static inline void
+GST_FIXME_ONCE (const char *format, ...)
+{
+  va_list varargs;
+
+  va_start (varargs, format);
+  GST_CAT_LEVEL_LOG_valist_once (GST_CAT_DEFAULT, GST_LEVEL_FIXME, NULL, format,
+      varargs);
+  va_end (varargs);
+}
+
+static inline void
+GST_TRACE_ONCE (const char *format, ...)
+{
+  va_list varargs;
+
+  va_start (varargs, format);
+  GST_CAT_LEVEL_LOG_valist_once (GST_CAT_DEFAULT, GST_LEVEL_TRACE, NULL, format,
+      varargs);
+  va_end (varargs);
+}
 #endif
 #endif
 
@@ -1845,6 +2455,7 @@ GST_TRACE (const char *format, ...)
 #define gst_debug_level_get_name(level)				("NONE")
 #define gst_debug_message_get(message)  			("")
 #define gst_debug_message_get_id(message)  			(NULL)
+#define gst_debug_message_get_once(message)  			(FALSE)
 #define gst_debug_add_log_function(func,data,notify)    G_STMT_START{ }G_STMT_END
 #define gst_debug_set_active(active)			G_STMT_START{ }G_STMT_END
 #define gst_debug_is_active()				(FALSE)
@@ -1884,6 +2495,7 @@ GST_TRACE (const char *format, ...)
 #ifdef G_HAVE_ISO_VARARGS
 
 #define GST_CAT_LEVEL_LOG(cat,level,...)		G_STMT_START{ }G_STMT_END
+#define GST_CAT_LEVEL_LOG_ONCE(cat,level,...)		G_STMT_START{ }G_STMT_END
 
 #define GST_CAT_ERROR_OBJECT(...)			G_STMT_START{ }G_STMT_END
 #define GST_CAT_WARNING_OBJECT(...)			G_STMT_START{ }G_STMT_END
@@ -1929,6 +2541,7 @@ GST_TRACE (const char *format, ...)
 #ifdef G_HAVE_GNUC_VARARGS
 
 #define GST_CAT_LEVEL_LOG(cat,level,args...)		G_STMT_START{ }G_STMT_END
+#define GST_CAT_LEVEL_LOG_ONCE(cat,level,args...)		G_STMT_START{ }G_STMT_END
 
 #define GST_CAT_ERROR_OBJECT(args...)			G_STMT_START{ }G_STMT_END
 #define GST_CAT_WARNING_OBJECT(args...)			G_STMT_START{ }G_STMT_END
