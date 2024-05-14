@@ -682,8 +682,15 @@ gst_nv_enc_register (GstPlugin * plugin, GUID codec_id, const gchar * codec,
 
     if ((status = NvEncOpenEncodeSessionEx (&params, &enc)) != NV_ENC_SUCCESS) {
       CuCtxPopCurrent (NULL);
-      GST_ERROR ("NvEncOpenEncodeSessionEx failed: " ERROR_DETAILS, codec,
-          device_index, status);
+      if (status == NV_ENC_ERR_OUT_OF_MEMORY) {
+        GST_ERROR ("NvEncOpenEncodeSessionEx for device-index %d failed with "
+            "\"NV_ENC_ERR_OUT_OF_MEMORY\", may imply that encoding sessions "
+            "are occupied by other application, and the number of concurrent "
+            "encoding session exceeds allowed ones.");
+      } else {
+        GST_ERROR ("NvEncOpenEncodeSessionEx failed: " ERROR_DETAILS, codec,
+            device_index, status);
+      }
       goto done;
     }
 
