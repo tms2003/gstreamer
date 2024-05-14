@@ -73,6 +73,7 @@ gst_va_base_enc_reset_state_default (GstVaBaseEnc * base)
   base->profile = VAProfileNone;
   base->rt_format = 0;
   base->codedbuf_size = 0;
+  base->add_header = FALSE;
   g_atomic_int_set (&base->reconf, FALSE);
 }
 

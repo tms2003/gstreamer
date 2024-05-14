@@ -278,6 +278,8 @@ struct _GstVaH264EncFrame
   gint unused_for_reference_pic_num;
 
   gboolean last_frame;
+  /* Add SPS/PPS */
+  gboolean add_header;
 };
 
 /**
@@ -380,6 +382,7 @@ gst_va_enc_frame_new (void)
   frame->unused_for_reference_pic_num = -1;
   frame->picture = NULL;
   frame->last_frame = FALSE;
+  frame->add_header = FALSE;
 
   return frame;
 }
@@ -1658,6 +1661,8 @@ gst_va_h264_enc_reconfig (GstVaBaseEnc * base)
   /* Add some tags */
   gst_va_base_enc_add_codec_tag (base, "H264");
 
+  base->add_header = TRUE;
+
   out_caps = gst_va_profile_caps (base->profile, klass->entrypoint);
   g_assert (out_caps);
   out_caps = gst_caps_fixate (out_caps);
@@ -1725,6 +1730,7 @@ _push_one_frame (GstVaBaseEnc * base, GstVideoCodecFrame * gst_frame,
       frame->pyramid_level = self->gop.frame_types[0].pyramid_level;
       frame->left_ref_poc_diff = self->gop.frame_types[0].left_ref_poc_diff;
       frame->right_ref_poc_diff = self->gop.frame_types[0].right_ref_poc_diff;
+      frame->add_header = TRUE;
 
       /* The previous key frame should be already be poped out. */
       g_assert (self->gop.last_keyframe == NULL);
@@ -2994,8 +3000,11 @@ _encode_one_frame (GstVaH264Enc * self, GstVideoCodecFrame * gst_frame)
     if (!_add_sequence_parameter (self, frame->picture, &sequence))
       return FALSE;
 
-    if ((self->packed_headers & VA_ENC_PACKED_HEADER_SEQUENCE)
-        && !_add_sequence_header (self, frame))
+  }
+
+  if (self->packed_headers & VA_ENC_PACKED_HEADER_SEQUENCE && frame->add_header) {
+    g_assert (frame->poc == 0);
+    if (!_add_sequence_header (self, frame))
       return FALSE;
   }
 
@@ -3053,8 +3062,7 @@ _encode_one_frame (GstVaH264Enc * self, GstVideoCodecFrame * gst_frame)
   _fill_pps (&pic_param, &self->sequence_hdr, &pps);
 
   if ((self->packed_headers & VA_ENC_PACKED_HEADER_PICTURE)
-      && frame->type == GST_H264_I_SLICE
-      && !_add_picture_header (self, frame, &pps))
+      && frame->add_header && !_add_picture_header (self, frame, &pps))
     return FALSE;
 
   if (self->cc) {
@@ -3283,6 +3291,11 @@ gst_va_h264_enc_new_frame (GstVaBaseEnc * base, GstVideoCodecFrame * frame)
   gst_video_codec_frame_set_user_data (frame, frame_in, gst_va_enc_frame_free);
 
   gst_va_base_enc_push_dts (base, frame, self->gop.num_reorder_frames);
+
+  if (base->add_header) {
+    frame_in->add_header = TRUE;
+    base->add_header = FALSE;
+  }
 
   return TRUE;
 }

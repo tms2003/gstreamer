@@ -47,6 +47,7 @@ struct _GstVaBaseEnc
   GstVaEncoder *encoder;
 
   gboolean reconf;
+  gboolean add_header;
 
   VAProfile profile;
   gint width;
