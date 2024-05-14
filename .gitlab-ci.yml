@@ -345,6 +345,8 @@ build clang fedora x86_64:
       when: manual
     - changes:
         *modules_changes
+  before_script:
+    - pip3 install --upgrade certifi
   script:
     - ci/scripts/handle-subprojects-cache.py subprojects/
     # For some reason, options are separated by newline instead of space, so we
