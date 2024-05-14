@@ -75,6 +75,7 @@ typedef struct
   gboolean flushing;            /* set after flush-start and before flush-stop */
   gboolean seen_data;
   gboolean send_gap_event;
+  gboolean seen_stream_start;
   GstClockTime gap_duration;
 
   GstStreamFlags flags;
@@ -435,13 +436,14 @@ gst_stream_synchronizer_sink_event (GstPad * pad, GstObject * parent,
         GST_DEBUG_OBJECT (pad, "Stream %d changed", stream->stream_number);
 
         stream->wait = TRUE;
+        stream->seen_stream_start = TRUE;
 
         for (l = self->streams; l; l = l->next) {
           GstSyncStream *ostream = l->data;
 
           all_wait = all_wait && ((ostream->flags & GST_STREAM_FLAG_SPARSE)
-              || (ostream->wait && (!have_group_id
-                      || ostream->group_id == group_id)));
+              || ((ostream->wait || ostream->seen_stream_start)
+                  && (!have_group_id || ostream->group_id == group_id)));
           if (!all_wait)
             break;
         }
@@ -1129,6 +1131,7 @@ gst_stream_synchronizer_change_state (GstElement * element,
         gst_segment_init (&stream->segment, GST_FORMAT_UNDEFINED);
         stream->gap_duration = GST_CLOCK_TIME_NONE;
         stream->wait = FALSE;
+        stream->seen_stream_start = FALSE;
         stream->is_eos = FALSE;
         stream->eos_sent = FALSE;
         stream->flushing = FALSE;
