@@ -513,6 +513,7 @@ gst_nv_h264_enc_set_encoder_config (GstNvBaseEnc * nvenc,
     h264_config->chromaFormatIDC = 3;
   }
 
+  h264_config->repeatSPSPPS = 1;
   h264_config->idrPeriod = config->gopLength;
   h264_config->outputAUD = h264enc->aud;
 
