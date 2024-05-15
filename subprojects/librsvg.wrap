@@ -1,0 +1,8 @@
+[wrap-git]
+# need to use main until https://gitlab.gnome.org/GNOME/librsvg/-/merge_requests/978 is released
+url=https://gitlab.gnome.org/GNOME/librsvg.git
+revision=52d10cdffaba9edb15e347e6830f43e463fb1dde
+depth=1
+
+[provide]
+dependency_names = librsvg-2.0
