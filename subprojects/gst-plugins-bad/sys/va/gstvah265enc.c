@@ -351,6 +351,8 @@ struct _GstVaH265EncFrame
 
   gint poc;
   gboolean last_frame;
+  /* Add VPS/SPS/PPS */
+  gboolean add_header;
 };
 
 /**
@@ -452,6 +454,7 @@ gst_va_h265_enc_frame_new (void)
   frame = g_new (GstVaH265EncFrame, 1);
   frame->last_frame = FALSE;
   frame->picture = NULL;
+  frame->add_header = FALSE;
 
   return frame;
 }
@@ -1902,19 +1905,21 @@ _h265_encode_one_frame (GstVaH265Enc * self, GstVideoCodecFrame * gst_frame)
     if (!_h265_add_sequence_parameter (self, frame, &sequence))
       return FALSE;
 
-    if (self->packed_headers & VA_ENC_PACKED_HEADER_SEQUENCE) {
-      if (!_h265_fill_vps (self, &sequence))
-        return FALSE;
+    if (!_h265_fill_vps (self, &sequence))
+      return FALSE;
 
-      if (!_h265_fill_sps (self, &sequence))
-        return FALSE;
+    if (!_h265_fill_sps (self, &sequence))
+      return FALSE;
+  }
 
-      if (!_h265_add_vps_header (self, frame))
-        return FALSE;
+  if (self->packed_headers & VA_ENC_PACKED_HEADER_SEQUENCE && frame->add_header) {
+    g_assert (frame->poc == 0);
 
-      if (!_h265_add_sps_header (self, frame))
-        return FALSE;
-    }
+    if (!_h265_add_vps_header (self, frame))
+      return FALSE;
+
+    if (!_h265_add_sps_header (self, frame))
+      return FALSE;
   }
 
   /* Non I frame, construct reference list. */
@@ -2004,8 +2009,7 @@ _h265_encode_one_frame (GstVaH265Enc * self, GstVideoCodecFrame * gst_frame)
   _h265_fill_pps (self, &pic_param, &self->sps_hdr, &pps);
 
   if ((self->packed_headers & VA_ENC_PACKED_HEADER_PICTURE)
-      && frame->type == GST_H265_I_SLICE
-      && !_h265_add_pps_header (self, frame, &pps))
+      && frame->add_header && !_h265_add_pps_header (self, frame, &pps))
     return FALSE;
 
   if (!_h265_add_slices (self, frame, &pps,
@@ -2049,6 +2053,7 @@ _h265_push_one_frame (GstVaBaseEnc * base, GstVideoCodecFrame * gst_frame,
       frame->pyramid_level = self->gop.frame_types[0].pyramid_level;
       frame->left_ref_poc_diff = self->gop.frame_types[0].left_ref_poc_diff;
       frame->right_ref_poc_diff = self->gop.frame_types[0].right_ref_poc_diff;
+      frame->add_header = TRUE;
 
       /* The previous key frame should be already be poped out. */
       g_assert (self->gop.last_keyframe == NULL);
@@ -4647,6 +4652,8 @@ gst_va_h265_enc_reconfig (GstVaBaseEnc * base)
   /* Add some tags */
   gst_va_base_enc_add_codec_tag (base, "H265");
 
+  base->add_header = TRUE;
+
   out_caps = gst_va_profile_caps (base->profile, klass->entrypoint);
   g_assert (out_caps);
   out_caps = gst_caps_fixate (out_caps);
@@ -4721,6 +4728,11 @@ gst_va_h265_enc_new_frame (GstVaBaseEnc * base, GstVideoCodecFrame * frame)
       gst_va_h265_enc_frame_free);
 
   gst_va_base_enc_push_dts (base, frame, self->gop.num_reorder_frames);
+
+  if (base->add_header) {
+    frame_in->add_header = TRUE;
+    base->add_header = FALSE;
+  }
 
   return TRUE;
 }
