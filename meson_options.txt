@@ -16,6 +16,7 @@ option('sharp', type : 'feature', value : 'disabled')
 # External subprojects
 option('tls', type : 'feature', value : 'auto', description : 'TLS support using glib-networking as a subproject')
 option('libnice', type : 'feature', value : 'auto', description: 'ICE support using libnice as a subproject')
+option('libnice-gstreamer-only', type: 'boolean', value: false, description: 'Build only the libnice gstreamer plugin and pick up libnice from the system')
 
 # Build for fuzzing
 option('oss_fuzz', type : 'feature', value : 'disabled',

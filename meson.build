@@ -98,6 +98,10 @@ endif
 libnice_options = []
 if get_option('webrtc').enabled()
   libnice_options += ['gstreamer=enabled']
+  if get_option('libnice-gstreamer-only')
+    # Will pick up libnice from the system for breaking the circular dependency
+    libnice_options += ['gstreamer-plugin-only=enabled']
+  endif
 endif
 
 # Disable gst-python if we've disabled introspection
