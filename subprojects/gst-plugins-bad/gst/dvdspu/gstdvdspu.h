@@ -19,7 +19,10 @@
 #ifndef __GST_DVD_SPU_H__
 #define __GST_DVD_SPU_H__
 
+#define GST_USE_UNSTABLE_API
+
 #include <gst/gst.h>
+#include <gst/video/gstsuboverlay.h>
 
 #include "gstspu-common.h"
 #include "gstspu-vobsub.h"
@@ -38,8 +41,8 @@ G_BEGIN_DECLS
 #define GST_IS_DVD_SPU_CLASS(klass) \
   (G_TYPE_CHECK_CLASS_TYPE((klass),GST_TYPE_DVD_SPU))
 
-#define DVD_SPU_LOCK(s) g_mutex_lock (&(s)->spu_lock);
-#define DVD_SPU_UNLOCK(s) g_mutex_unlock (&(s)->spu_lock);
+#define DVD_SPU_LOCK(s) GST_SUB_OVERLAY_STREAM_LOCK(s);
+#define DVD_SPU_UNLOCK(s) GST_SUB_OVERLAY_STREAM_UNLOCK(s);
 
 typedef struct _GstDVDSpuClass GstDVDSpuClass;
 
@@ -85,18 +88,7 @@ struct SpuPacket {
 };
 
 struct _GstDVDSpu {
-  GstElement element;
-
-  GstPad *videosinkpad;
-  GstPad *subpic_sinkpad;
-  GstPad *srcpad;
-
-  /* Mutex to protect state we access from different chain funcs */
-  GMutex spu_lock;
-
-  gboolean video_flushing;
-  GstSegment video_seg;
-  GstSegment subp_seg;
+  GstSubOverlay suboverlay;
 
   SpuState spu_state;
   SpuInputType spu_input_type;
@@ -106,21 +98,10 @@ struct _GstDVDSpu {
 
   /* Accumulator for collecting partial SPU buffers until they're complete */
   GstBuffer *partial_spu;
-
-  /* Store either a reference or a copy of the last video frame for duplication
-   * during still-frame conditions */
-  GstBuffer *ref_frame;
-
-  /* Buffer to push after handling a DVD event, if any */
-  GstBuffer *pending_frame;
-
-  /* Overlay composition */
-  gboolean attach_compo_to_buffer;
-  GstVideoOverlayComposition *composition;
 };
 
 struct _GstDVDSpuClass {
-  GstElementClass parent_class;
+  GstSubOverlayClass parent_class;
 };
 
 GType gst_dvd_spu_get_type (void);

@@ -25,9 +25,12 @@
 #ifndef __GST_BASE_TEXT_OVERLAY_H__
 #define __GST_BASE_TEXT_OVERLAY_H__
 
+#define GST_USE_UNSTABLE_API
+
 #include <gst/gst.h>
 #include <gst/video/video.h>
 #include <gst/video/video-overlay-composition.h>
+#include <gst/video/gstsuboverlay.h>
 #include <pango/pangocairo.h>
 
 G_BEGIN_DECLS
@@ -138,30 +141,11 @@ typedef enum {
  * Opaque textoverlay object structure
  */
 struct _GstBaseTextOverlay {
-    GstElement               element;
-
-    GstPad                  *video_sinkpad;
-    GstPad                  *text_sinkpad;
-    GstPad                  *srcpad;
+    GstSubOverlay           suboverlay;
 
     PangoContext            *pango_context;
 
-    GstSegment               segment;
-    GstSegment               text_segment;
-    GstBuffer               *text_buffer;
-    GstClockTime             text_buffer_running_time;
-    GstClockTime             text_buffer_running_time_end;
-    gboolean                 text_linked;
-    gboolean                 video_flushing;
-    gboolean                 video_eos;
-    gboolean                 text_flushing;
-    gboolean                 text_eos;
-
     GMutex                   lock;
-    GCond                    cond;  /* to signal removal of a queued text
-                                     * buffer, arrival of a text buffer,
-                                     * a text segment update, or a change
-                                     * in status (e.g. shutdown, flushing) */
 
     /* stream metrics */
     GstVideoInfo             info;
@@ -178,8 +162,6 @@ struct _GstBaseTextOverlay {
     gdouble                  ypos;
     gchar                   *default_text;
     gboolean                 want_shading;
-    gboolean                 silent;
-    gboolean                 wait_text;
     guint                    color, outline_color;
     PangoLayout             *layout;
     gboolean                 auto_adjust_size;
@@ -200,6 +182,7 @@ struct _GstBaseTextOverlay {
 
     /* rendering state */
     gboolean                 need_render;
+    gboolean                 pushed_fixed;
     GstBuffer               *text_image;
 
     /* dimension relative to witch the render is done, this is the stream size
@@ -227,14 +210,10 @@ struct _GstBaseTextOverlay {
 
     PangoRectangle           ink_rect;
     PangoRectangle           logical_rect;
-
-    gboolean                    attach_compo_to_buffer;
-    GstVideoOverlayComposition *composition;
-    GstVideoOverlayComposition *upstream_composition;
 };
 
 struct _GstBaseTextOverlayClass {
-    GstElementClass parent_class;
+    GstSubOverlayClass parent_class;
 
     gchar *     (*get_text) (GstBaseTextOverlay *overlay, GstBuffer *video_frame);
 };

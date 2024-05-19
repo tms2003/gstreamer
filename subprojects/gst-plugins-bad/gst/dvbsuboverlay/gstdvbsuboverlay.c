@@ -41,8 +41,6 @@
 #include <gst/glib-compat-private.h>
 #include "gstdvbsuboverlay.h"
 
-#include <gst/video/gstvideometa.h>
-
 #include <string.h>
 
 GST_DEBUG_CATEGORY_STATIC (gst_dvbsub_overlay_debug);
@@ -66,28 +64,6 @@ enum
 #define DEFAULT_MAX_PAGE_TIMEOUT (0)
 #define DEFAULT_FORCE_END (FALSE)
 
-#define VIDEO_FORMATS GST_VIDEO_OVERLAY_COMPOSITION_BLEND_FORMATS
-
-#define DVBSUB_OVERLAY_CAPS GST_VIDEO_CAPS_MAKE(VIDEO_FORMATS)
-
-#define DVBSUB_OVERLAY_ALL_CAPS DVBSUB_OVERLAY_CAPS ";" \
-    GST_VIDEO_CAPS_MAKE_WITH_FEATURES ("ANY", GST_VIDEO_FORMATS_ANY)
-
-static GstStaticCaps sw_template_caps = GST_STATIC_CAPS (DVBSUB_OVERLAY_CAPS);
-
-static GstStaticPadTemplate src_factory = GST_STATIC_PAD_TEMPLATE ("src",
-    GST_PAD_SRC,
-    GST_PAD_ALWAYS,
-    GST_STATIC_CAPS (DVBSUB_OVERLAY_ALL_CAPS)
-    );
-
-static GstStaticPadTemplate video_sink_factory =
-GST_STATIC_PAD_TEMPLATE ("video_sink",
-    GST_PAD_SINK,
-    GST_PAD_ALWAYS,
-    GST_STATIC_CAPS (DVBSUB_OVERLAY_ALL_CAPS)
-    );
-
 static GstStaticPadTemplate text_sink_factory =
 GST_STATIC_PAD_TEMPLATE ("text_sink",
     GST_PAD_SINK,
@@ -102,41 +78,25 @@ static void gst_dvbsub_overlay_get_property (GObject * object, guint prop_id,
 
 static void gst_dvbsub_overlay_finalize (GObject * object);
 
-static GstStateChangeReturn gst_dvbsub_overlay_change_state (GstElement *
-    element, GstStateChange transition);
+static gboolean gst_dvbsub_overlay_flush (GstSubOverlay * overlay);
+static void gst_dvbsub_overlay_render (GstSubOverlay * sub_overlay,
+    GstBuffer * buf);
+static GstFlowReturn gst_dvbsub_overlay_handle_buffer (GstSubOverlay *
+    sub_overlay, GstBuffer * buffer);
+static void gst_dvbsub_overlay_advance (GstSubOverlay * sub_overlay,
+    GstBuffer * buffer, GstClockTime run_ts, GstClockTime run_ts_end);
+
 
 #define gst_dvbsub_overlay_parent_class parent_class
-G_DEFINE_TYPE (GstDVBSubOverlay, gst_dvbsub_overlay, GST_TYPE_ELEMENT);
+G_DEFINE_TYPE (GstDVBSubOverlay, gst_dvbsub_overlay, GST_TYPE_SUB_OVERLAY);
 GST_ELEMENT_REGISTER_DEFINE_WITH_CODE (dvbsuboverlay, "dvbsuboverlay",
     GST_RANK_PRIMARY, GST_TYPE_DVBSUB_OVERLAY,
     GST_DEBUG_CATEGORY_INIT (gst_dvbsub_overlay_debug, "dvbsuboverlay", 0,
         "DVB subtitle overlay");
     );
 
-static GstCaps *gst_dvbsub_overlay_get_videosink_caps (GstDVBSubOverlay *
-    render, GstPad * pad, GstCaps * filter);
-static GstCaps *gst_dvbsub_overlay_get_src_caps (GstDVBSubOverlay * render,
-    GstPad * pad, GstCaps * filter);
-
-static GstFlowReturn gst_dvbsub_overlay_chain_video (GstPad * pad,
-    GstObject * parent, GstBuffer * buf);
-static GstFlowReturn gst_dvbsub_overlay_chain_text (GstPad * pad,
-    GstObject * parent, GstBuffer * buf);
-
-static gboolean gst_dvbsub_overlay_event_video (GstPad * pad,
-    GstObject * parent, GstEvent * event);
-static gboolean gst_dvbsub_overlay_event_text (GstPad * pad, GstObject * parent,
-    GstEvent * event);
-static gboolean gst_dvbsub_overlay_event_src (GstPad * pad, GstObject * parent,
-    GstEvent * event);
-
 static void new_dvb_subtitles_cb (DvbSub * dvb_sub, DVBSubtitles * subs,
     gpointer user_data);
-
-static gboolean gst_dvbsub_overlay_query_video (GstPad * pad,
-    GstObject * parent, GstQuery * query);
-static gboolean gst_dvbsub_overlay_query_src (GstPad * pad, GstObject * parent,
-    GstQuery * query);
 
 /* initialize the plugin's class */
 static void
@@ -144,10 +104,23 @@ gst_dvbsub_overlay_class_init (GstDVBSubOverlayClass * klass)
 {
   GObjectClass *gobject_class = (GObjectClass *) klass;
   GstElementClass *gstelement_class = (GstElementClass *) klass;
+  GstSubOverlayClass *gstsuboverlay_class = (GstSubOverlayClass *) klass;
 
   gobject_class->set_property = gst_dvbsub_overlay_set_property;
   gobject_class->get_property = gst_dvbsub_overlay_get_property;
   gobject_class->finalize = gst_dvbsub_overlay_finalize;
+
+  gst_sub_overlay_class_add_pad_templates (gstsuboverlay_class, "video_sink",
+      NULL, NULL, NULL);
+  gst_element_class_add_static_pad_template (gstelement_class,
+      &text_sink_factory);
+
+  gstsuboverlay_class->handle_buffer = gst_dvbsub_overlay_handle_buffer;
+  gstsuboverlay_class->advance = gst_dvbsub_overlay_advance;
+  gstsuboverlay_class->render = gst_dvbsub_overlay_render;
+  gstsuboverlay_class->flush = gst_dvbsub_overlay_flush;
+  /* indeed, they act similary */
+  gstsuboverlay_class->stop = gst_dvbsub_overlay_flush;
 
   g_object_class_install_property (gobject_class, PROP_ENABLE, g_param_spec_boolean ("enable", "Enable",        /* FIXME: "enable" vs "silent"? */
           "Enable rendering of subtitles", DEFAULT_ENABLE,
@@ -164,15 +137,6 @@ gst_dvbsub_overlay_class_init (GstDVBSubOverlayClass * klass)
           "Assume PES-aligned subtitles and force end-of-display",
           DEFAULT_FORCE_END, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
-  gstelement_class->change_state =
-      GST_DEBUG_FUNCPTR (gst_dvbsub_overlay_change_state);
-
-  gst_element_class_add_static_pad_template (gstelement_class, &src_factory);
-  gst_element_class_add_static_pad_template (gstelement_class,
-      &video_sink_factory);
-  gst_element_class_add_static_pad_template (gstelement_class,
-      &text_sink_factory);
-
   gst_element_class_set_static_metadata (gstelement_class,
       "DVB Subtitles Overlay",
       "Mixer/Video/Overlay/Subtitle",
@@ -180,11 +144,10 @@ gst_dvbsub_overlay_class_init (GstDVBSubOverlayClass * klass)
 }
 
 static void
-gst_dvbsub_overlay_flush_subtitles (GstDVBSubOverlay * render)
+gst_dvbsub_overlay_reset (GstDVBSubOverlay * render, gboolean alloc)
 {
   DVBSubtitles *subs;
 
-  g_mutex_lock (&render->dvbsub_mutex);
   while ((subs = g_queue_pop_head (render->pending_subtitles))) {
     dvb_subtitles_free (subs);
   }
@@ -193,61 +156,30 @@ gst_dvbsub_overlay_flush_subtitles (GstDVBSubOverlay * render)
     dvb_subtitles_free (render->current_subtitle);
   render->current_subtitle = NULL;
 
-  if (render->current_comp)
-    gst_video_overlay_composition_unref (render->current_comp);
-  render->current_comp = NULL;
-
   if (render->dvb_sub)
     dvb_sub_free (render->dvb_sub);
+  render->dvb_sub = NULL;
 
-  render->dvb_sub = dvb_sub_new ();
-
-  {
+  if (alloc) {
+    render->dvb_sub = dvb_sub_new ();
     DvbSubCallbacks dvbsub_callbacks = { &new_dvb_subtitles_cb, };
     dvb_sub_set_callbacks (render->dvb_sub, &dvbsub_callbacks, render);
   }
 
   render->last_text_pts = GST_CLOCK_TIME_NONE;
   render->pending_sub = FALSE;
+}
 
-  g_mutex_unlock (&render->dvbsub_mutex);
+static void
+gst_dvbsub_overlay_flush_subtitles (GstDVBSubOverlay * render)
+{
+  gst_dvbsub_overlay_reset (render, TRUE);
 }
 
 static void
 gst_dvbsub_overlay_init (GstDVBSubOverlay * render)
 {
   GST_DEBUG_OBJECT (render, "init");
-
-  render->srcpad = gst_pad_new_from_static_template (&src_factory, "src");
-  render->video_sinkpad =
-      gst_pad_new_from_static_template (&video_sink_factory, "video_sink");
-  render->text_sinkpad =
-      gst_pad_new_from_static_template (&text_sink_factory, "text_sink");
-
-  gst_pad_set_chain_function (render->video_sinkpad,
-      GST_DEBUG_FUNCPTR (gst_dvbsub_overlay_chain_video));
-  gst_pad_set_chain_function (render->text_sinkpad,
-      GST_DEBUG_FUNCPTR (gst_dvbsub_overlay_chain_text));
-
-  gst_pad_set_event_function (render->video_sinkpad,
-      GST_DEBUG_FUNCPTR (gst_dvbsub_overlay_event_video));
-  gst_pad_set_event_function (render->text_sinkpad,
-      GST_DEBUG_FUNCPTR (gst_dvbsub_overlay_event_text));
-  gst_pad_set_event_function (render->srcpad,
-      GST_DEBUG_FUNCPTR (gst_dvbsub_overlay_event_src));
-
-  gst_pad_set_query_function (render->video_sinkpad,
-      GST_DEBUG_FUNCPTR (gst_dvbsub_overlay_query_video));
-  gst_pad_set_query_function (render->srcpad,
-      GST_DEBUG_FUNCPTR (gst_dvbsub_overlay_query_src));
-
-  GST_PAD_SET_PROXY_ALLOCATION (render->video_sinkpad);
-
-  gst_element_add_pad (GST_ELEMENT (render), render->srcpad);
-  gst_element_add_pad (GST_ELEMENT (render), render->video_sinkpad);
-  gst_element_add_pad (GST_ELEMENT (render), render->text_sinkpad);
-
-  gst_video_info_init (&render->info);
 
   render->current_subtitle = NULL;
   render->pending_subtitles = g_queue_new ();
@@ -256,11 +188,7 @@ gst_dvbsub_overlay_init (GstDVBSubOverlay * render)
   render->max_page_timeout = DEFAULT_MAX_PAGE_TIMEOUT;
   render->force_end = DEFAULT_FORCE_END;
 
-  g_mutex_init (&render->dvbsub_mutex);
   gst_dvbsub_overlay_flush_subtitles (render);
-
-  gst_segment_init (&render->video_segment, GST_FORMAT_TIME);
-  gst_segment_init (&render->subtitle_segment, GST_FORMAT_TIME);
 
   GST_DEBUG_OBJECT (render, "init complete");
 }
@@ -269,25 +197,10 @@ static void
 gst_dvbsub_overlay_finalize (GObject * object)
 {
   GstDVBSubOverlay *overlay = GST_DVBSUB_OVERLAY (object);
-  DVBSubtitles *subs;
 
-  while ((subs = g_queue_pop_head (overlay->pending_subtitles))) {
-    dvb_subtitles_free (subs);
-  }
+  gst_dvbsub_overlay_reset (overlay, FALSE);
+
   g_queue_free (overlay->pending_subtitles);
-
-  if (overlay->current_subtitle)
-    dvb_subtitles_free (overlay->current_subtitle);
-  overlay->current_subtitle = NULL;
-
-  if (overlay->current_comp)
-    gst_video_overlay_composition_unref (overlay->current_comp);
-  overlay->current_comp = NULL;
-
-  if (overlay->dvb_sub)
-    dvb_sub_free (overlay->dvb_sub);
-
-  g_mutex_clear (&overlay->dvbsub_mutex);
 
   G_OBJECT_CLASS (parent_class)->finalize (object);
 }
@@ -336,437 +249,14 @@ gst_dvbsub_overlay_get_property (GObject * object, guint prop_id,
   }
 }
 
-static GstStateChangeReturn
-gst_dvbsub_overlay_change_state (GstElement * element,
-    GstStateChange transition)
-{
-  GstDVBSubOverlay *render = GST_DVBSUB_OVERLAY (element);
-  GstStateChangeReturn ret;
-
-  switch (transition) {
-    case GST_STATE_CHANGE_READY_TO_PAUSED:
-      gst_segment_init (&render->video_segment, GST_FORMAT_TIME);
-      gst_segment_init (&render->subtitle_segment, GST_FORMAT_TIME);
-      break;
-    case GST_STATE_CHANGE_NULL_TO_READY:
-    case GST_STATE_CHANGE_PAUSED_TO_PLAYING:
-    default:
-      break;
-  }
-
-  ret = GST_ELEMENT_CLASS (parent_class)->change_state (element, transition);
-
-  switch (transition) {
-    case GST_STATE_CHANGE_PAUSED_TO_READY:
-      gst_dvbsub_overlay_flush_subtitles (render);
-      gst_segment_init (&render->video_segment, GST_FORMAT_TIME);
-      gst_segment_init (&render->subtitle_segment, GST_FORMAT_TIME);
-      gst_video_info_init (&render->info);
-      break;
-    case GST_STATE_CHANGE_PLAYING_TO_PAUSED:
-    case GST_STATE_CHANGE_READY_TO_NULL:
-    default:
-      break;
-  }
-
-
-  return ret;
-}
-
 static gboolean
-gst_dvbsub_overlay_query_src (GstPad * pad, GstObject * parent,
-    GstQuery * query)
+gst_dvbsub_overlay_flush (GstSubOverlay * overlay)
 {
-  GstDVBSubOverlay *render = GST_DVBSUB_OVERLAY (parent);
-  gboolean ret;
+  GstDVBSubOverlay *render = GST_DVBSUB_OVERLAY (overlay);
 
-  switch (GST_QUERY_TYPE (query)) {
-    case GST_QUERY_CAPS:
-    {
-      GstCaps *filter, *caps;
+  gst_dvbsub_overlay_flush_subtitles (render);
 
-      gst_query_parse_caps (query, &filter);
-      caps = gst_dvbsub_overlay_get_src_caps (render, pad, filter);
-      gst_query_set_caps_result (query, caps);
-      gst_caps_unref (caps);
-      ret = TRUE;
-      break;
-    }
-    default:
-      ret = gst_pad_query_default (pad, parent, query);
-      break;
-  }
-
-  return ret;
-}
-
-static gboolean
-gst_dvbsub_overlay_event_src (GstPad * pad, GstObject * parent,
-    GstEvent * event)
-{
-  GstDVBSubOverlay *render = GST_DVBSUB_OVERLAY (parent);
-  gboolean ret = FALSE;
-
-  gst_event_ref (event);
-  ret = gst_pad_push_event (render->video_sinkpad, event);
-  gst_pad_push_event (render->text_sinkpad, event);
-
-  return ret;
-}
-
-/**
- * gst_dvbsub_overlay_add_feature_and_intersect:
- *
- * Creates a new #GstCaps containing the (given caps +
- * given caps feature) + (given caps intersected by the
- * given filter).
- *
- * Returns: the new #GstCaps
- */
-static GstCaps *
-gst_dvbsub_overlay_add_feature_and_intersect (GstCaps * caps,
-    const gchar * feature, GstCaps * filter)
-{
-  int i, caps_size;
-  GstCaps *new_caps;
-
-  new_caps = gst_caps_copy (caps);
-
-  caps_size = gst_caps_get_size (new_caps);
-  for (i = 0; i < caps_size; i++) {
-    GstCapsFeatures *features = gst_caps_get_features (new_caps, i);
-    if (!gst_caps_features_is_any (features)) {
-      gst_caps_features_add (features, feature);
-    }
-  }
-
-  gst_caps_append (new_caps, gst_caps_intersect_full (caps,
-          filter, GST_CAPS_INTERSECT_FIRST));
-
-  return new_caps;
-}
-
-/**
- * gst_dvbsub_overlay_intersect_by_feature:
- *
- * Creates a new #GstCaps based on the following filtering rule.
- *
- * For each individual caps contained in given caps, if the
- * caps uses the given caps feature, keep a version of the caps
- * with the feature and an another one without. Otherwise, intersect
- * the caps with the given filter.
- *
- * Returns: the new #GstCaps
- */
-static GstCaps *
-gst_dvbsub_overlay_intersect_by_feature (GstCaps * caps,
-    const gchar * feature, GstCaps * filter)
-{
-  int i, caps_size;
-  GstCaps *new_caps;
-
-  new_caps = gst_caps_new_empty ();
-
-  caps_size = gst_caps_get_size (caps);
-  for (i = 0; i < caps_size; i++) {
-    GstStructure *caps_structure = gst_caps_get_structure (caps, i);
-    GstCapsFeatures *caps_features =
-        gst_caps_features_copy (gst_caps_get_features (caps, i));
-    GstCaps *filtered_caps;
-    GstCaps *simple_caps =
-        gst_caps_new_full (gst_structure_copy (caps_structure), NULL);
-    gst_caps_set_features (simple_caps, 0, caps_features);
-
-    if (gst_caps_features_contains (caps_features, feature)) {
-      gst_caps_append (new_caps, gst_caps_copy (simple_caps));
-
-      gst_caps_features_remove (caps_features, feature);
-      filtered_caps = gst_caps_ref (simple_caps);
-    } else {
-      filtered_caps = gst_caps_intersect_full (simple_caps, filter,
-          GST_CAPS_INTERSECT_FIRST);
-    }
-
-    gst_caps_unref (simple_caps);
-    gst_caps_append (new_caps, filtered_caps);
-  }
-
-  return new_caps;
-}
-
-static GstCaps *
-gst_dvbsub_overlay_get_videosink_caps (GstDVBSubOverlay * render, GstPad * pad,
-    GstCaps * filter)
-{
-  GstPad *srcpad = render->srcpad;
-  GstCaps *peer_caps = NULL, *caps = NULL, *dvdsub_overlay_filter = NULL;
-
-  if (filter) {
-    /* filter caps + composition feature + filter caps
-     * filtered by the software caps. */
-    GstCaps *sw_caps = gst_static_caps_get (&sw_template_caps);
-    dvdsub_overlay_filter =
-        gst_dvbsub_overlay_add_feature_and_intersect (filter,
-        GST_CAPS_FEATURE_META_GST_VIDEO_OVERLAY_COMPOSITION, sw_caps);
-    gst_caps_unref (sw_caps);
-
-    GST_DEBUG_OBJECT (render, "dvdsub_overlay filter %" GST_PTR_FORMAT,
-        dvdsub_overlay_filter);
-  }
-
-  peer_caps = gst_pad_peer_query_caps (srcpad, dvdsub_overlay_filter);
-
-  if (dvdsub_overlay_filter)
-    gst_caps_unref (dvdsub_overlay_filter);
-
-  if (peer_caps) {
-
-    GST_DEBUG_OBJECT (pad, "peer caps  %" GST_PTR_FORMAT, peer_caps);
-
-    if (gst_caps_is_any (peer_caps)) {
-
-      /* if peer returns ANY caps, return filtered src pad template caps */
-      caps = gst_pad_get_pad_template_caps (srcpad);
-
-    } else {
-
-      /* duplicate caps which contains the composition into one version with
-       * the meta and one without. Filter the other caps by the software caps */
-      GstCaps *sw_caps = gst_static_caps_get (&sw_template_caps);
-      caps = gst_dvbsub_overlay_intersect_by_feature (peer_caps,
-          GST_CAPS_FEATURE_META_GST_VIDEO_OVERLAY_COMPOSITION, sw_caps);
-      gst_caps_unref (sw_caps);
-    }
-
-    gst_caps_unref (peer_caps);
-
-  } else {
-    /* no peer, our padtemplate is enough then */
-    caps = gst_pad_get_pad_template_caps (pad);
-  }
-
-  if (filter) {
-    GstCaps *intersection;
-
-    intersection =
-        gst_caps_intersect_full (filter, caps, GST_CAPS_INTERSECT_FIRST);
-    gst_caps_unref (caps);
-    caps = intersection;
-  }
-
-  GST_DEBUG_OBJECT (render, "returning  %" GST_PTR_FORMAT, caps);
-
-  return caps;
-}
-
-static GstCaps *
-gst_dvbsub_overlay_get_src_caps (GstDVBSubOverlay * render, GstPad * pad,
-    GstCaps * filter)
-{
-  GstPad *sinkpad = render->video_sinkpad;
-  GstCaps *peer_caps = NULL, *caps = NULL, *dvdsub_overlay_filter = NULL;
-
-  if (filter) {
-    /* duplicate filter caps which contains the composition into one version
-     * with the meta and one without. Filter the other caps by the software
-     * caps */
-    GstCaps *sw_caps = gst_static_caps_get (&sw_template_caps);
-    dvdsub_overlay_filter =
-        gst_dvbsub_overlay_intersect_by_feature (filter,
-        GST_CAPS_FEATURE_META_GST_VIDEO_OVERLAY_COMPOSITION, sw_caps);
-    gst_caps_unref (sw_caps);
-  }
-
-  peer_caps = gst_pad_peer_query_caps (sinkpad, dvdsub_overlay_filter);
-
-  if (dvdsub_overlay_filter)
-    gst_caps_unref (dvdsub_overlay_filter);
-
-  if (peer_caps) {
-
-    GST_DEBUG_OBJECT (pad, "peer caps  %" GST_PTR_FORMAT, peer_caps);
-
-    if (gst_caps_is_any (peer_caps)) {
-
-      /* if peer returns ANY caps, return filtered sink pad template caps */
-      caps = gst_pad_get_pad_template_caps (sinkpad);
-    } else {
-
-      /* return upstream caps + composition feature + upstream caps
-       * filtered by the software caps. */
-      GstCaps *sw_caps = gst_static_caps_get (&sw_template_caps);
-      caps = gst_dvbsub_overlay_add_feature_and_intersect (peer_caps,
-          GST_CAPS_FEATURE_META_GST_VIDEO_OVERLAY_COMPOSITION, sw_caps);
-      gst_caps_unref (sw_caps);
-    }
-
-    gst_caps_unref (peer_caps);
-
-  } else {
-    /* no peer, our padtemplate is enough then */
-    caps = gst_pad_get_pad_template_caps (pad);
-  }
-
-  if (filter) {
-    GstCaps *intersection = gst_caps_intersect_full (filter, caps,
-        GST_CAPS_INTERSECT_FIRST);
-    gst_caps_unref (caps);
-    caps = intersection;
-  }
-
-  GST_DEBUG_OBJECT (render, "returning  %" GST_PTR_FORMAT, caps);
-
-  return caps;
-}
-
-static gboolean
-gst_dvbsub_overlay_can_handle_caps (GstCaps * incaps)
-{
-  gboolean ret;
-  GstCaps *caps;
-  static GstStaticCaps static_caps = GST_STATIC_CAPS (DVBSUB_OVERLAY_CAPS);
-
-  caps = gst_static_caps_get (&static_caps);
-  ret = gst_caps_is_subset (incaps, caps);
-  gst_caps_unref (caps);
-
-  return ret;
-}
-
-/* only negotiate/query video overlay composition support for now */
-static gboolean
-gst_dvbsub_overlay_negotiate (GstDVBSubOverlay * overlay, GstCaps * caps)
-{
-  gboolean ret;
-  gboolean attach = FALSE;
-  gboolean caps_has_meta = TRUE;
-  GstCapsFeatures *f;
-
-  GST_DEBUG_OBJECT (overlay, "performing negotiation");
-
-  if (!caps) {
-    caps = gst_pad_get_current_caps (overlay->srcpad);
-  } else {
-    gst_caps_ref (caps);
-  }
-
-  if (!caps || gst_caps_is_empty (caps))
-    goto no_format;
-
-  /* Try to use the overlay meta if possible */
-  f = gst_caps_get_features (caps, 0);
-
-  /* if the caps doesn't have the overlay meta, we query if downstream
-   * accepts it before trying the version without the meta
-   * If upstream already is using the meta then we can only use it */
-  if (!f
-      || !gst_caps_features_contains (f,
-          GST_CAPS_FEATURE_META_GST_VIDEO_OVERLAY_COMPOSITION)) {
-    GstCaps *overlay_caps;
-    GstCaps *peercaps;
-
-    /* In this case we added the meta, but we can work without it
-     * so preserve the original caps so we can use it as a fallback */
-    overlay_caps = gst_caps_copy (caps);
-
-    f = gst_caps_get_features (overlay_caps, 0);
-    gst_caps_features_add (f,
-        GST_CAPS_FEATURE_META_GST_VIDEO_OVERLAY_COMPOSITION);
-
-    /* FIXME: We should probably check if downstream *prefers* the
-     * overlay meta, and only enforce usage of it if we can't handle
-     * the format ourselves and thus would have to drop the overlays.
-     * Otherwise we should prefer what downstream wants here.
-     */
-    peercaps = gst_pad_peer_query_caps (overlay->srcpad, NULL);
-    caps_has_meta = gst_caps_can_intersect (peercaps, overlay_caps);
-    gst_caps_unref (peercaps);
-
-    GST_DEBUG_OBJECT (overlay, "Downstream accepts the overlay meta: %d",
-        caps_has_meta);
-    if (caps_has_meta) {
-      gst_caps_unref (caps);
-      caps = overlay_caps;
-
-    } else {
-      /* fallback to the original */
-      gst_caps_unref (overlay_caps);
-      caps_has_meta = FALSE;
-    }
-
-  }
-  GST_DEBUG_OBJECT (overlay, "Using caps %" GST_PTR_FORMAT, caps);
-  ret = gst_pad_set_caps (overlay->srcpad, caps);
-
-  if (ret) {
-    GstQuery *query;
-
-    /* find supported meta */
-    query = gst_query_new_allocation (caps, FALSE);
-
-    if (!gst_pad_peer_query (overlay->srcpad, query)) {
-      /* no problem, we use the query defaults */
-      GST_DEBUG_OBJECT (overlay, "ALLOCATION query failed");
-    }
-
-    if (caps_has_meta && gst_query_find_allocation_meta (query,
-            GST_VIDEO_OVERLAY_COMPOSITION_META_API_TYPE, NULL))
-      attach = TRUE;
-
-    overlay->attach_compo_to_buffer = attach;
-
-    gst_query_unref (query);
-  }
-  gst_caps_unref (caps);
-
-  return ret;
-
-no_format:
-  {
-    if (caps)
-      gst_caps_unref (caps);
-    return FALSE;
-  }
-}
-
-static gboolean
-gst_dvbsub_overlay_setcaps_video (GstPad * pad, GstCaps * caps)
-{
-  GstDVBSubOverlay *render = GST_DVBSUB_OVERLAY (gst_pad_get_parent (pad));
-  gboolean ret = FALSE;
-  GstVideoInfo info;
-
-  if (!gst_video_info_from_caps (&info, caps))
-    goto invalid_caps;
-
-  render->info = info;
-
-  ret = gst_dvbsub_overlay_negotiate (render, caps);
-
-  if (!render->attach_compo_to_buffer &&
-      !gst_dvbsub_overlay_can_handle_caps (caps))
-    goto unsupported_caps;
-
-  GST_DEBUG_OBJECT (render, "dvbsub overlay renderer setup complete");
-
-out:
-  gst_object_unref (render);
-
-  return ret;
-
-  /* ERRORS */
-invalid_caps:
-  {
-    GST_ERROR_OBJECT (render, "Can't parse caps: %" GST_PTR_FORMAT, caps);
-    ret = FALSE;
-    goto out;
-  }
-unsupported_caps:
-  {
-    GST_ERROR_OBJECT (render, "Unsupported caps: %" GST_PTR_FORMAT, caps);
-    ret = FALSE;
-    goto out;
-  }
+  return TRUE;
 }
 
 static void
@@ -784,10 +274,8 @@ gst_dvbsub_overlay_process_text (GstDVBSubOverlay * overlay, GstBuffer * buffer,
   GST_DEBUG_OBJECT (overlay, "Feeding %" G_GSIZE_FORMAT " bytes to libdvbsub",
       map.size);
 
-  g_mutex_lock (&overlay->dvbsub_mutex);
   overlay->pending_sub = TRUE;
   dvb_sub_feed_with_pts (overlay->dvb_sub, pts, map.data, map.size);
-  g_mutex_unlock (&overlay->dvbsub_mutex);
 
   gst_buffer_unmap (buffer, &map);
   gst_buffer_unref (buffer);
@@ -803,8 +291,10 @@ static void
 new_dvb_subtitles_cb (DvbSub * dvb_sub, DVBSubtitles * subs, gpointer user_data)
 {
   GstDVBSubOverlay *overlay = GST_DVBSUB_OVERLAY (user_data);
+  GstSegment *subtitle_segment = &GST_SUB_OVERLAY_SUB_SEGMENT (dvb_sub);
   int max_page_timeout;
   guint64 start, stop;
+
 
   max_page_timeout = g_atomic_int_get (&overlay->max_page_timeout);
   if (max_page_timeout > 0)
@@ -827,14 +317,13 @@ new_dvb_subtitles_cb (DvbSub * dvb_sub, DVBSubtitles * subs, gpointer user_data)
   start = subs->pts;
   stop = subs->pts + subs->page_time_out;
 
-  if (!(gst_segment_clip (&overlay->subtitle_segment, GST_FORMAT_TIME,
+  if (!(gst_segment_clip (subtitle_segment, GST_FORMAT_TIME,
               start, stop, &start, &stop)))
     goto out_of_segment;
 
   subs->page_time_out = stop - start;
 
-  gst_segment_to_running_time (&overlay->subtitle_segment, GST_FORMAT_TIME,
-      start);
+  gst_segment_to_running_time (subtitle_segment, GST_FORMAT_TIME, start);
   g_assert (GST_CLOCK_TIME_IS_VALID (start));
   subs->pts = start;
 
@@ -854,20 +343,14 @@ out_of_segment:
 }
 
 static GstFlowReturn
-gst_dvbsub_overlay_chain_text (GstPad * pad, GstObject * parent,
+gst_dvbsub_overlay_handle_buffer (GstSubOverlay * sub_overlay,
     GstBuffer * buffer)
 {
-  GstDVBSubOverlay *overlay = GST_DVBSUB_OVERLAY (parent);
+  GstDVBSubOverlay *overlay = GST_DVBSUB_OVERLAY (sub_overlay);
 
   GST_INFO_OBJECT (overlay,
       "subpicture/x-dvb buffer with size %" G_GSIZE_FORMAT,
       gst_buffer_get_size (buffer));
-
-  GST_LOG_OBJECT (overlay,
-      "Video segment: %" GST_SEGMENT_FORMAT " --- Subtitle segment: %"
-      GST_SEGMENT_FORMAT " --- BUFFER: ts=%" GST_TIME_FORMAT,
-      &overlay->video_segment, &overlay->subtitle_segment,
-      GST_TIME_ARGS (GST_BUFFER_TIMESTAMP (buffer)));
 
   /* DVB subtitle packets are required to carry the PTS */
   if (G_UNLIKELY (!GST_BUFFER_TIMESTAMP_IS_VALID (buffer))) {
@@ -895,10 +378,15 @@ gst_dvbsub_overlay_chain_text (GstPad * pad, GstObject * parent,
    * FIXME: does our waiting + render code work when there are more than one packets before
    * FIXME: rendering callback will get called? */
 
-  overlay->subtitle_segment.position = GST_BUFFER_TIMESTAMP (buffer);
+  GST_SUB_OVERLAY_STREAM_LOCK (overlay);
+
+  gst_sub_overlay_update_sub_position (sub_overlay,
+      GST_BUFFER_TIMESTAMP (buffer));
 
   gst_dvbsub_overlay_process_text (overlay, buffer,
       GST_BUFFER_TIMESTAMP (buffer));
+
+  GST_SUB_OVERLAY_STREAM_UNLOCK (overlay);
 
   return GST_FLOW_OK;
 }
@@ -911,11 +399,15 @@ gst_dvbsub_overlay_subs_to_comp (GstDVBSubOverlay * overlay,
   GstVideoOverlayRectangle *rect;
   gint width, height, dw, dh, wx, wy;
   gint i;
+  GstVideoInfo *info;
 
   g_return_val_if_fail (subs != NULL && subs->num_rects > 0, NULL);
 
-  width = GST_VIDEO_INFO_WIDTH (&overlay->info);
-  height = GST_VIDEO_INFO_HEIGHT (&overlay->info);
+  gst_sub_overlay_get_output_format (GST_SUB_OVERLAY (overlay), &info, NULL,
+      NULL);
+
+  width = GST_VIDEO_INFO_WIDTH (info);
+  height = GST_VIDEO_INFO_HEIGHT (info);
 
   dw = subs->display_def.display_width;
   dh = subs->display_def.display_height;
@@ -998,68 +490,33 @@ gst_dvbsub_overlay_subs_to_comp (GstDVBSubOverlay * overlay,
   return comp;
 }
 
-static GstFlowReturn
-gst_dvbsub_overlay_chain_video (GstPad * pad, GstObject * parent,
-    GstBuffer * buffer)
+static void
+gst_dvbsub_overlay_render (GstSubOverlay * sub_overlay, GstBuffer * buf)
 {
-  GstDVBSubOverlay *overlay = GST_DVBSUB_OVERLAY (parent);
-  GstFlowReturn ret = GST_FLOW_OK;
-  gint64 start, stop;
-  guint64 cstart, cstop;
-  gboolean in_seg;
+  GstDVBSubOverlay *overlay = (GstDVBSubOverlay *) sub_overlay;
+
+  if (overlay->current_subtitle)
+    gst_sub_overlay_set_composition (sub_overlay,
+        gst_dvbsub_overlay_subs_to_comp (overlay, overlay->current_subtitle));
+}
+
+static void
+gst_dvbsub_overlay_advance (GstSubOverlay * sub_overlay,
+    GstBuffer * buffer, GstClockTime run_ts, GstClockTime run_ts_end)
+{
+  GstDVBSubOverlay *overlay = GST_DVBSUB_OVERLAY (sub_overlay);
+  GstSegment *subtitle_segment = &GST_SUB_OVERLAY_SUB_SEGMENT (sub_overlay);
   GstClockTime vid_running_time, vid_running_time_end;
 
-  if (GST_VIDEO_INFO_FORMAT (&overlay->info) == GST_VIDEO_FORMAT_UNKNOWN)
-    return GST_FLOW_NOT_NEGOTIATED;
+  vid_running_time = run_ts;
+  vid_running_time_end = run_ts_end;
 
-  if (!GST_BUFFER_TIMESTAMP_IS_VALID (buffer))
+  if (!GST_CLOCK_TIME_IS_VALID (run_ts))
     goto missing_timestamp;
 
-  start = GST_BUFFER_TIMESTAMP (buffer);
-
-  GST_LOG_OBJECT (overlay,
-      "Video segment: %" GST_SEGMENT_FORMAT " --- Subtitle position: %"
-      GST_TIME_FORMAT " --- BUFFER: ts=%" GST_TIME_FORMAT,
-      &overlay->video_segment,
-      GST_TIME_ARGS (overlay->subtitle_segment.position),
-      GST_TIME_ARGS (start));
-
-  /* ignore buffers that are outside of the current segment */
-  if (!GST_BUFFER_DURATION_IS_VALID (buffer)) {
-    stop = GST_CLOCK_TIME_NONE;
-  } else {
-    stop = start + GST_BUFFER_DURATION (buffer);
-  }
-
-  in_seg = gst_segment_clip (&overlay->video_segment, GST_FORMAT_TIME,
-      start, stop, &cstart, &cstop);
-  if (!in_seg) {
-    GST_DEBUG_OBJECT (overlay, "Buffer outside configured segment -- dropping");
-    gst_buffer_unref (buffer);
-    return GST_FLOW_OK;
-  }
-
-  buffer = gst_buffer_make_writable (buffer);
-  GST_BUFFER_TIMESTAMP (buffer) = cstart;
-  if (GST_BUFFER_DURATION_IS_VALID (buffer))
-    GST_BUFFER_DURATION (buffer) = cstop - cstart;
-
-  vid_running_time =
-      gst_segment_to_running_time (&overlay->video_segment, GST_FORMAT_TIME,
-      cstart);
-  if (GST_BUFFER_DURATION_IS_VALID (buffer))
-    vid_running_time_end =
-        gst_segment_to_running_time (&overlay->video_segment, GST_FORMAT_TIME,
-        cstop);
-  else
+  if (!GST_CLOCK_TIME_IS_VALID (vid_running_time_end))
     vid_running_time_end = vid_running_time;
 
-  GST_DEBUG_OBJECT (overlay, "Video running time: %" GST_TIME_FORMAT,
-      GST_TIME_ARGS (vid_running_time));
-
-  overlay->video_segment.position = GST_BUFFER_TIMESTAMP (buffer);
-
-  g_mutex_lock (&overlay->dvbsub_mutex);
   if (!g_queue_is_empty (overlay->pending_subtitles)) {
     DVBSubtitles *tmp, *candidate = NULL;
 
@@ -1080,8 +537,10 @@ gst_dvbsub_overlay_chain_video (GstPad * pad, GstObject * parent,
         g_queue_pop_head (overlay->pending_subtitles);
         dvb_subtitles_free (tmp);
         tmp = NULL;
+        /* clear overlay */
+        gst_sub_overlay_set_composition (sub_overlay, NULL);
       } else if (tmp->pts + tmp->page_time_out * GST_SECOND *
-          ABS (overlay->subtitle_segment.rate) >= vid_running_time) {
+          ABS (subtitle_segment->rate) >= vid_running_time) {
         if (candidate)
           dvb_subtitles_free (candidate);
         candidate = tmp;
@@ -1102,10 +561,8 @@ gst_dvbsub_overlay_chain_video (GstPad * pad, GstObject * parent,
           candidate->num_rects);
       dvb_subtitles_free (overlay->current_subtitle);
       overlay->current_subtitle = candidate;
-      if (overlay->current_comp)
-        gst_video_overlay_composition_unref (overlay->current_comp);
-      overlay->current_comp =
-          gst_dvbsub_overlay_subs_to_comp (overlay, overlay->current_subtitle);
+      /* trigger render */
+      gst_sub_overlay_set_composition (sub_overlay, NULL);
     }
   }
 
@@ -1114,7 +571,7 @@ gst_dvbsub_overlay_chain_video (GstPad * pad, GstObject * parent,
       && vid_running_time >
       (overlay->current_subtitle->pts +
           overlay->current_subtitle->page_time_out * GST_SECOND *
-          ABS (overlay->subtitle_segment.rate))) {
+          ABS (subtitle_segment->rate))) {
     GST_INFO_OBJECT (overlay,
         "Subtitle page not redefined before fallback page_time_out of %u seconds (missed data?) - deleting current page",
         overlay->current_subtitle->page_time_out);
@@ -1122,187 +579,13 @@ gst_dvbsub_overlay_chain_video (GstPad * pad, GstObject * parent,
     overlay->current_subtitle = NULL;
   }
 
-  /* Now render it */
-  if (g_atomic_int_get (&overlay->enable) && overlay->current_subtitle) {
-    GstVideoFrame frame;
-
-    g_assert (overlay->current_comp);
-    if (overlay->attach_compo_to_buffer) {
-      GST_DEBUG_OBJECT (overlay, "Attaching overlay image to video buffer");
-      gst_buffer_add_video_overlay_composition_meta (buffer,
-          overlay->current_comp);
-    } else {
-      GST_DEBUG_OBJECT (overlay, "Blending overlay image to video buffer");
-      gst_video_frame_map (&frame, &overlay->info, buffer, GST_MAP_READWRITE);
-      gst_video_overlay_composition_blend (overlay->current_comp, &frame);
-      gst_video_frame_unmap (&frame);
-    }
-  }
-  g_mutex_unlock (&overlay->dvbsub_mutex);
-
-  ret = gst_pad_push (overlay->srcpad, buffer);
-
-  return ret;
+  return;
 
 missing_timestamp:
   {
-    GST_WARNING_OBJECT (overlay, "video buffer without timestamp, discarding");
-    gst_buffer_unref (buffer);
-    return GST_FLOW_OK;
+    GST_WARNING_OBJECT (overlay, "missing timestamp, not advancing");
+    return;
   }
-}
-
-static gboolean
-gst_dvbsub_overlay_query_video (GstPad * pad, GstObject * parent,
-    GstQuery * query)
-{
-  GstDVBSubOverlay *render = (GstDVBSubOverlay *) parent;
-  gboolean ret;
-
-  switch (GST_QUERY_TYPE (query)) {
-    case GST_QUERY_CAPS:
-    {
-      GstCaps *filter, *caps;
-
-      gst_query_parse_caps (query, &filter);
-      caps = gst_dvbsub_overlay_get_videosink_caps (render, pad, filter);
-      gst_query_set_caps_result (query, caps);
-      gst_caps_unref (caps);
-      ret = TRUE;
-      break;
-    }
-    default:
-      ret = gst_pad_query_default (pad, parent, query);
-      break;
-  }
-
-  return ret;
-}
-
-static gboolean
-gst_dvbsub_overlay_event_video (GstPad * pad, GstObject * parent,
-    GstEvent * event)
-{
-  gboolean ret = FALSE;
-  GstDVBSubOverlay *render = GST_DVBSUB_OVERLAY (parent);
-
-  GST_DEBUG_OBJECT (pad, "received video event %s",
-      GST_EVENT_TYPE_NAME (event));
-
-  switch (GST_EVENT_TYPE (event)) {
-    case GST_EVENT_CAPS:
-    {
-      GstCaps *caps;
-
-      gst_event_parse_caps (event, &caps);
-      ret = gst_dvbsub_overlay_setcaps_video (pad, caps);
-      gst_event_unref (event);
-      break;
-    }
-    case GST_EVENT_SEGMENT:
-    {
-      GstSegment seg;
-
-      GST_DEBUG_OBJECT (render, "received new segment");
-
-      gst_event_copy_segment (event, &seg);
-
-      if (seg.format == GST_FORMAT_TIME) {
-        GST_DEBUG_OBJECT (render, "VIDEO SEGMENT now: %" GST_SEGMENT_FORMAT,
-            &render->video_segment);
-
-        render->video_segment = seg;
-
-        GST_DEBUG_OBJECT (render, "VIDEO SEGMENT after: %" GST_SEGMENT_FORMAT,
-            &render->video_segment);
-        ret = gst_pad_push_event (render->srcpad, event);
-      } else {
-        GST_ELEMENT_WARNING (render, STREAM, MUX, (NULL),
-            ("received non-TIME newsegment event on video input"));
-        ret = FALSE;
-        gst_event_unref (event);
-      }
-      break;
-    }
-    case GST_EVENT_FLUSH_STOP:
-      gst_segment_init (&render->video_segment, GST_FORMAT_TIME);
-    default:
-      ret = gst_pad_push_event (render->srcpad, event);
-      break;
-  }
-
-  return ret;
-}
-
-static gboolean
-gst_dvbsub_overlay_event_text (GstPad * pad, GstObject * parent,
-    GstEvent * event)
-{
-  gboolean ret = FALSE;
-  GstDVBSubOverlay *render = GST_DVBSUB_OVERLAY (parent);
-
-  GST_DEBUG_OBJECT (pad, "received text event %s", GST_EVENT_TYPE_NAME (event));
-
-  switch (GST_EVENT_TYPE (event)) {
-    case GST_EVENT_SEGMENT:
-    {
-      GstSegment seg;
-
-      GST_DEBUG_OBJECT (render, "received new segment");
-
-      gst_event_copy_segment (event, &seg);
-
-      if (seg.format == GST_FORMAT_TIME) {
-        GST_DEBUG_OBJECT (render, "SUBTITLE SEGMENT now: %" GST_SEGMENT_FORMAT,
-            &render->subtitle_segment);
-
-        render->subtitle_segment = seg;
-
-        GST_DEBUG_OBJECT (render,
-            "SUBTITLE SEGMENT after: %" GST_SEGMENT_FORMAT,
-            &render->subtitle_segment);
-        ret = TRUE;
-        gst_event_unref (event);
-      } else {
-        GST_ELEMENT_WARNING (render, STREAM, MUX, (NULL),
-            ("received non-TIME newsegment event on subtitle sinkpad"));
-        ret = FALSE;
-        gst_event_unref (event);
-      }
-      break;
-    }
-    case GST_EVENT_FLUSH_STOP:
-      GST_DEBUG_OBJECT (render, "stop flushing");
-      gst_dvbsub_overlay_flush_subtitles (render);
-      gst_segment_init (&render->subtitle_segment, GST_FORMAT_TIME);
-      gst_event_unref (event);
-      ret = TRUE;
-      break;
-    case GST_EVENT_FLUSH_START:
-      GST_DEBUG_OBJECT (render, "begin flushing");
-      gst_event_unref (event);
-      ret = TRUE;
-      break;
-    case GST_EVENT_EOS:
-      GST_INFO_OBJECT (render, "text EOS");
-      gst_event_unref (event);
-      ret = TRUE;
-      break;
-    case GST_EVENT_GAP:
-      gst_event_unref (event);
-      ret = TRUE;
-      break;
-    case GST_EVENT_CAPS:
-      /* don't want to forward the subtitle caps */
-      gst_event_unref (event);
-      ret = TRUE;
-      break;
-    default:
-      ret = gst_pad_push_event (render->srcpad, event);
-      break;
-  }
-
-  return ret;
 }
 
 static gboolean

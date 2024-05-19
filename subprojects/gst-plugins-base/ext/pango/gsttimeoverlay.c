@@ -178,7 +178,7 @@ gst_time_overlay_get_text (GstBaseTextOverlay * overlay,
     GST_DEBUG ("buffer with timecode %s", time_str);
   } else {
     GstClockTime ts, ts_buffer;
-    GstSegment *segment = &overlay->segment;
+    GstSegment *segment = &GST_SUB_OVERLAY_VIDEO_SEGMENT (overlay);
 
     ts = ts_buffer = GST_BUFFER_TIMESTAMP (video_frame);
 

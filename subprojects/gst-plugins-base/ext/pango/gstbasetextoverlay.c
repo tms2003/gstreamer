@@ -30,10 +30,6 @@
 #include <gst/video/gstvideometa.h>
 
 #include "gstbasetextoverlay.h"
-#include "gsttextoverlay.h"
-#include "gsttimeoverlay.h"
-#include "gstclockoverlay.h"
-#include "gsttextrender.h"
 #include <string.h>
 #include <math.h>
 
@@ -114,30 +110,6 @@ enum
 
 GST_DEBUG_CATEGORY_STATIC (base_text_overlay_debug);
 #define GST_CAT_DEFAULT base_text_overlay_debug
-
-#define VIDEO_FORMATS GST_VIDEO_OVERLAY_COMPOSITION_BLEND_FORMATS
-
-#define BASE_TEXT_OVERLAY_CAPS GST_VIDEO_CAPS_MAKE (VIDEO_FORMATS)
-
-#define BASE_TEXT_OVERLAY_ALL_CAPS BASE_TEXT_OVERLAY_CAPS ";" \
-    GST_VIDEO_CAPS_MAKE_WITH_FEATURES ("ANY", GST_VIDEO_FORMATS_ALL)
-
-static GstStaticCaps sw_template_caps =
-GST_STATIC_CAPS (BASE_TEXT_OVERLAY_CAPS);
-
-static GstStaticPadTemplate src_template_factory =
-GST_STATIC_PAD_TEMPLATE ("src",
-    GST_PAD_SRC,
-    GST_PAD_ALWAYS,
-    GST_STATIC_CAPS (BASE_TEXT_OVERLAY_ALL_CAPS)
-    );
-
-static GstStaticPadTemplate video_sink_template_factory =
-GST_STATIC_PAD_TEMPLATE ("video_sink",
-    GST_PAD_SINK,
-    GST_PAD_ALWAYS,
-    GST_STATIC_CAPS (BASE_TEXT_OVERLAY_ALL_CAPS)
-    );
 
 #define GST_TYPE_BASE_TEXT_OVERLAY_VALIGN (gst_base_text_overlay_valign_get_type())
 static GType
@@ -250,50 +222,8 @@ gst_base_text_overlay_scale_mode_get_type (void)
 }
 
 #define GST_BASE_TEXT_OVERLAY_GET_LOCK(ov) (&GST_BASE_TEXT_OVERLAY (ov)->lock)
-#define GST_BASE_TEXT_OVERLAY_GET_COND(ov) (&GST_BASE_TEXT_OVERLAY (ov)->cond)
 #define GST_BASE_TEXT_OVERLAY_LOCK(ov)     (g_mutex_lock (GST_BASE_TEXT_OVERLAY_GET_LOCK (ov)))
 #define GST_BASE_TEXT_OVERLAY_UNLOCK(ov)   (g_mutex_unlock (GST_BASE_TEXT_OVERLAY_GET_LOCK (ov)))
-#define GST_BASE_TEXT_OVERLAY_WAIT(ov)     (g_cond_wait (GST_BASE_TEXT_OVERLAY_GET_COND (ov), GST_BASE_TEXT_OVERLAY_GET_LOCK (ov)))
-#define GST_BASE_TEXT_OVERLAY_SIGNAL(ov)   (g_cond_signal (GST_BASE_TEXT_OVERLAY_GET_COND (ov)))
-#define GST_BASE_TEXT_OVERLAY_BROADCAST(ov)(g_cond_broadcast (GST_BASE_TEXT_OVERLAY_GET_COND (ov)))
-
-static GstElementClass *parent_class = NULL;
-static void gst_base_text_overlay_class_init (GstBaseTextOverlayClass * klass);
-static void gst_base_text_overlay_init (GstBaseTextOverlay * overlay,
-    GstBaseTextOverlayClass * klass);
-
-static GstStateChangeReturn gst_base_text_overlay_change_state (GstElement *
-    element, GstStateChange transition);
-
-static GstCaps *gst_base_text_overlay_get_videosink_caps (GstPad * pad,
-    GstBaseTextOverlay * overlay, GstCaps * filter);
-static GstCaps *gst_base_text_overlay_get_src_caps (GstPad * pad,
-    GstBaseTextOverlay * overlay, GstCaps * filter);
-static gboolean gst_base_text_overlay_setcaps (GstBaseTextOverlay * overlay,
-    GstCaps * caps);
-static gboolean gst_base_text_overlay_setcaps_txt (GstBaseTextOverlay * overlay,
-    GstCaps * caps);
-static gboolean gst_base_text_overlay_src_event (GstPad * pad,
-    GstObject * parent, GstEvent * event);
-static gboolean gst_base_text_overlay_src_query (GstPad * pad,
-    GstObject * parent, GstQuery * query);
-
-static gboolean gst_base_text_overlay_video_event (GstPad * pad,
-    GstObject * parent, GstEvent * event);
-static gboolean gst_base_text_overlay_video_query (GstPad * pad,
-    GstObject * parent, GstQuery * query);
-static GstFlowReturn gst_base_text_overlay_video_chain (GstPad * pad,
-    GstObject * parent, GstBuffer * buffer);
-
-static gboolean gst_base_text_overlay_text_event (GstPad * pad,
-    GstObject * parent, GstEvent * event);
-static GstFlowReturn gst_base_text_overlay_text_chain (GstPad * pad,
-    GstObject * parent, GstBuffer * buffer);
-static GstPadLinkReturn gst_base_text_overlay_text_pad_link (GstPad * pad,
-    GstObject * parent, GstPad * peer);
-static void gst_base_text_overlay_text_pad_unlink (GstPad * pad,
-    GstObject * parent);
-static void gst_base_text_overlay_pop_text (GstBaseTextOverlay * overlay);
 
 static void gst_base_text_overlay_finalize (GObject * object);
 static void gst_base_text_overlay_set_property (GObject * object, guint prop_id,
@@ -301,39 +231,30 @@ static void gst_base_text_overlay_set_property (GObject * object, guint prop_id,
 static void gst_base_text_overlay_get_property (GObject * object, guint prop_id,
     GValue * value, GParamSpec * pspec);
 
+static gboolean gst_base_text_overlay_set_format (GstSubOverlay * suboverlay,
+    GstCaps * caps);
+static gboolean gst_base_text_overlay_set_format_video (GstSubOverlay *
+    suboverlay, GstCaps * caps, GstVideoInfo * info, gint window_width,
+    gint window_height);
+static GstFlowReturn gst_base_text_overlay_handle_buffer (GstSubOverlay *
+    sub_overlay, GstBuffer * buf);
+static void gst_base_text_overlay_advance (GstSubOverlay * sub_overlay,
+    GstBuffer * buffer, GstClockTime run_ts, GstClockTime run_ts_end);
+static void gst_base_text_overlay_render (GstSubOverlay * sub_overlay,
+    GstBuffer * buf);
+static gboolean gst_base_text_overlay_pre_apply (GstSubOverlay * overlay,
+    GstBuffer * video_frame, GstVideoOverlayComposition * comp,
+    GstVideoOverlayComposition * merged, gboolean attach);
+
 static void
 gst_base_text_overlay_adjust_values_with_fontdesc (GstBaseTextOverlay * overlay,
     PangoFontDescription * desc);
-static gboolean gst_base_text_overlay_can_handle_caps (GstCaps * incaps);
 
-static void
+static gboolean
 gst_base_text_overlay_update_render_size (GstBaseTextOverlay * overlay);
 
-GType
-gst_base_text_overlay_get_type (void)
-{
-  static GType type = 0;
-
-  if (g_once_init_enter ((gsize *) & type)) {
-    static const GTypeInfo info = {
-      sizeof (GstBaseTextOverlayClass),
-      (GBaseInitFunc) NULL,
-      NULL,
-      (GClassInitFunc) gst_base_text_overlay_class_init,
-      NULL,
-      NULL,
-      sizeof (GstBaseTextOverlay),
-      0,
-      (GInstanceInitFunc) gst_base_text_overlay_init,
-    };
-
-    g_once_init_leave ((gsize *) & type,
-        g_type_register_static (GST_TYPE_ELEMENT, "GstBaseTextOverlay", &info,
-            0));
-  }
-
-  return type;
-}
+#define gst_base_text_overlay_parent_class parent_class
+G_DEFINE_TYPE (GstBaseTextOverlay, gst_base_text_overlay, GST_TYPE_SUB_OVERLAY);
 
 static gchar *
 gst_base_text_overlay_get_text (GstBaseTextOverlay * overlay,
@@ -346,29 +267,30 @@ static void
 gst_base_text_overlay_class_init (GstBaseTextOverlayClass * klass)
 {
   GObjectClass *gobject_class;
-  GstElementClass *gstelement_class;
+  GstSubOverlayClass *gstsuboverlay_class;
 
   GST_DEBUG_CATEGORY_INIT (base_text_overlay_debug, "basetextoverlay", 0,
       "Base Text Overlay");
 
   gobject_class = (GObjectClass *) klass;
-  gstelement_class = (GstElementClass *) klass;
-
-  parent_class = g_type_class_peek_parent (klass);
+  gstsuboverlay_class = (GstSubOverlayClass *) klass;
 
   gobject_class->finalize = gst_base_text_overlay_finalize;
   gobject_class->set_property = gst_base_text_overlay_set_property;
   gobject_class->get_property = gst_base_text_overlay_get_property;
 
-  gst_element_class_add_static_pad_template (gstelement_class,
-      &src_template_factory);
-  gst_element_class_add_static_pad_template (gstelement_class,
-      &video_sink_template_factory);
-
-  gstelement_class->change_state =
-      GST_DEBUG_FUNCPTR (gst_base_text_overlay_change_state);
-
   klass->get_text = gst_base_text_overlay_get_text;
+
+  gst_sub_overlay_class_add_pad_templates (gstsuboverlay_class, "video_sink",
+      NULL, NULL, NULL);
+
+  gstsuboverlay_class->set_format = gst_base_text_overlay_set_format;
+  gstsuboverlay_class->set_format_video =
+      gst_base_text_overlay_set_format_video;
+  gstsuboverlay_class->handle_buffer = gst_base_text_overlay_handle_buffer;
+  gstsuboverlay_class->advance = gst_base_text_overlay_advance;
+  gstsuboverlay_class->render = gst_base_text_overlay_render;
+  gstsuboverlay_class->pre_apply = gst_base_text_overlay_pre_apply;
 
   g_object_class_install_property (G_OBJECT_CLASS (klass), PROP_TEXT,
       g_param_spec_string ("text", "text",
@@ -652,11 +574,6 @@ gst_base_text_overlay_finalize (GObject * object)
 
   g_free (overlay->default_text);
 
-  if (overlay->composition) {
-    gst_video_overlay_composition_unref (overlay->composition);
-    overlay->composition = NULL;
-  }
-
   if (overlay->text_image) {
     gst_buffer_unref (overlay->text_image);
     overlay->text_image = NULL;
@@ -667,27 +584,19 @@ gst_base_text_overlay_finalize (GObject * object)
     overlay->layout = NULL;
   }
 
-  if (overlay->text_buffer) {
-    gst_buffer_unref (overlay->text_buffer);
-    overlay->text_buffer = NULL;
-  }
-
   if (overlay->pango_context) {
     g_object_unref (overlay->pango_context);
     overlay->pango_context = NULL;
   }
 
   g_mutex_clear (&overlay->lock);
-  g_cond_clear (&overlay->cond);
 
   G_OBJECT_CLASS (parent_class)->finalize (object);
 }
 
 static void
-gst_base_text_overlay_init (GstBaseTextOverlay * overlay,
-    GstBaseTextOverlayClass * klass)
+gst_base_text_overlay_init (GstBaseTextOverlay * overlay)
 {
-  GstPadTemplate *template;
   PangoFontDescription *desc;
   PangoFontMap *fontmap;
 
@@ -696,47 +605,6 @@ gst_base_text_overlay_init (GstBaseTextOverlay * overlay,
       pango_font_map_create_context (PANGO_FONT_MAP (fontmap));
   g_object_unref (fontmap);
   pango_context_set_base_gravity (overlay->pango_context, PANGO_GRAVITY_SOUTH);
-
-  /* video sink */
-  template = gst_static_pad_template_get (&video_sink_template_factory);
-  overlay->video_sinkpad = gst_pad_new_from_template (template, "video_sink");
-  gst_object_unref (template);
-  gst_pad_set_event_function (overlay->video_sinkpad,
-      GST_DEBUG_FUNCPTR (gst_base_text_overlay_video_event));
-  gst_pad_set_chain_function (overlay->video_sinkpad,
-      GST_DEBUG_FUNCPTR (gst_base_text_overlay_video_chain));
-  gst_pad_set_query_function (overlay->video_sinkpad,
-      GST_DEBUG_FUNCPTR (gst_base_text_overlay_video_query));
-  GST_PAD_SET_PROXY_ALLOCATION (overlay->video_sinkpad);
-  gst_element_add_pad (GST_ELEMENT (overlay), overlay->video_sinkpad);
-
-  template =
-      gst_element_class_get_pad_template (GST_ELEMENT_CLASS (klass),
-      "text_sink");
-  if (template) {
-    /* text sink */
-    overlay->text_sinkpad = gst_pad_new_from_template (template, "text_sink");
-
-    gst_pad_set_event_function (overlay->text_sinkpad,
-        GST_DEBUG_FUNCPTR (gst_base_text_overlay_text_event));
-    gst_pad_set_chain_function (overlay->text_sinkpad,
-        GST_DEBUG_FUNCPTR (gst_base_text_overlay_text_chain));
-    gst_pad_set_link_function (overlay->text_sinkpad,
-        GST_DEBUG_FUNCPTR (gst_base_text_overlay_text_pad_link));
-    gst_pad_set_unlink_function (overlay->text_sinkpad,
-        GST_DEBUG_FUNCPTR (gst_base_text_overlay_text_pad_unlink));
-    gst_element_add_pad (GST_ELEMENT (overlay), overlay->text_sinkpad);
-  }
-
-  /* (video) source */
-  template = gst_static_pad_template_get (&src_template_factory);
-  overlay->srcpad = gst_pad_new_from_template (template, "src");
-  gst_object_unref (template);
-  gst_pad_set_event_function (overlay->srcpad,
-      GST_DEBUG_FUNCPTR (gst_base_text_overlay_src_event));
-  gst_pad_set_query_function (overlay->srcpad,
-      GST_DEBUG_FUNCPTR (gst_base_text_overlay_src_query));
-  gst_element_add_pad (GST_ELEMENT (overlay), overlay->srcpad);
 
   overlay->layout = pango_layout_new (overlay->pango_context);
   desc = pango_context_get_font_description (overlay->pango_context);
@@ -757,14 +625,11 @@ gst_base_text_overlay_init (GstBaseTextOverlay * overlay,
 
   overlay->want_shading = DEFAULT_PROP_SHADING;
   overlay->shading_value = DEFAULT_PROP_SHADING_VALUE;
-  overlay->silent = DEFAULT_PROP_SILENT;
   overlay->draw_shadow = DEFAULT_PROP_DRAW_SHADOW;
   overlay->draw_outline = DEFAULT_PROP_DRAW_OUTLINE;
-  overlay->wait_text = DEFAULT_PROP_WAIT_TEXT;
   overlay->auto_adjust_size = DEFAULT_PROP_AUTO_ADJUST_SIZE;
 
   overlay->default_text = g_strdup (DEFAULT_PROP_TEXT);
-  overlay->need_render = TRUE;
   overlay->text_image = NULL;
   overlay->use_vertical_render = DEFAULT_PROP_VERTICAL_RENDER;
   overlay->scale_mode = DEFAULT_PROP_SCALE_MODE;
@@ -775,13 +640,9 @@ gst_base_text_overlay_init (GstBaseTextOverlay * overlay,
   pango_layout_set_alignment (overlay->layout,
       (PangoAlignment) overlay->line_align);
 
-  overlay->text_buffer = NULL;
-  overlay->text_buffer_running_time = GST_CLOCK_TIME_NONE;
-  overlay->text_buffer_running_time_end = GST_CLOCK_TIME_NONE;
-  overlay->text_linked = FALSE;
-
-  overlay->composition = NULL;
-  overlay->upstream_composition = NULL;
+  /* alias baseclass properties to ours */
+  gst_sub_overlay_set_visible (GST_SUB_OVERLAY (overlay), !DEFAULT_PROP_SILENT);
+  gst_sub_overlay_set_wait (GST_SUB_OVERLAY (overlay), DEFAULT_PROP_WAIT_TEXT);
 
   overlay->width = 1;
   overlay->height = 1;
@@ -800,8 +661,6 @@ gst_base_text_overlay_init (GstBaseTextOverlay * overlay,
   overlay->render_scale = 1.0l;
 
   g_mutex_init (&overlay->lock);
-  g_cond_init (&overlay->cond);
-  gst_segment_init (&overlay->segment, GST_FORMAT_TIME);
 }
 
 static void
@@ -822,8 +681,9 @@ gst_base_text_overlay_set_wrap_mode (GstBaseTextOverlay * overlay, gint width)
 }
 
 static gboolean
-gst_base_text_overlay_setcaps_txt (GstBaseTextOverlay * overlay, GstCaps * caps)
+gst_base_text_overlay_set_format (GstSubOverlay * suboverlay, GstCaps * caps)
 {
+  GstBaseTextOverlay *overlay = (GstBaseTextOverlay *) suboverlay;
   GstStructure *structure;
   const gchar *format;
 
@@ -834,213 +694,33 @@ gst_base_text_overlay_setcaps_txt (GstBaseTextOverlay * overlay, GstCaps * caps)
   return TRUE;
 }
 
-/* only negotiate/query video overlay composition support for now */
 static gboolean
-gst_base_text_overlay_negotiate (GstBaseTextOverlay * overlay, GstCaps * caps)
+gst_base_text_overlay_set_format_video (GstSubOverlay * suboverlay,
+    GstCaps * caps, GstVideoInfo * info, gint window_width, gint window_height)
 {
-  gboolean upstream_has_meta = FALSE;
-  gboolean caps_has_meta = FALSE;
-  gboolean alloc_has_meta = FALSE;
-  gboolean attach = FALSE;
+  GstBaseTextOverlay *overlay = (GstBaseTextOverlay *) suboverlay;
   gboolean ret = TRUE;
-  guint width, height;
-  GstCapsFeatures *f;
-  GstCaps *overlay_caps;
-  GstQuery *query;
-  guint alloc_index;
-
-  GST_DEBUG_OBJECT (overlay, "performing negotiation");
-
-  /* Clear any pending reconfigure to avoid negotiating twice */
-  gst_pad_check_reconfigure (overlay->srcpad);
-
-  if (!caps)
-    caps = gst_pad_get_current_caps (overlay->video_sinkpad);
-  else
-    gst_caps_ref (caps);
-
-  if (!caps || gst_caps_is_empty (caps))
-    goto no_format;
-
-  /* Check if upstream caps have meta */
-  if ((f = gst_caps_get_features (caps, 0))) {
-    upstream_has_meta = gst_caps_features_contains (f,
-        GST_CAPS_FEATURE_META_GST_VIDEO_OVERLAY_COMPOSITION);
-  }
-
-  /* Initialize dimensions */
-  width = overlay->width;
-  height = overlay->height;
-
-  if (upstream_has_meta) {
-    overlay_caps = gst_caps_ref (caps);
-  } else {
-    GstCaps *peercaps;
-
-    /* BaseTransform requires caps for the allocation query to work */
-    overlay_caps = gst_caps_copy (caps);
-    f = gst_caps_get_features (overlay_caps, 0);
-    gst_caps_features_add (f,
-        GST_CAPS_FEATURE_META_GST_VIDEO_OVERLAY_COMPOSITION);
-
-    /* Then check if downstream accept overlay composition in caps */
-    /* FIXME: We should probably check if downstream *prefers* the
-     * overlay meta, and only enforce usage of it if we can't handle
-     * the format ourselves and thus would have to drop the overlays.
-     * Otherwise we should prefer what downstream wants here.
-     */
-    peercaps = gst_pad_peer_query_caps (overlay->srcpad, overlay_caps);
-    caps_has_meta = !gst_caps_is_empty (peercaps);
-    gst_caps_unref (peercaps);
-
-    GST_DEBUG_OBJECT (overlay, "caps have overlay meta %d", caps_has_meta);
-  }
-
-  if (upstream_has_meta || caps_has_meta) {
-    /* Send caps immediately, it's needed by GstBaseTransform to get a reply
-     * from allocation query */
-    ret = gst_pad_set_caps (overlay->srcpad, overlay_caps);
-
-    /* First check if the allocation meta has compositon */
-    query = gst_query_new_allocation (overlay_caps, FALSE);
-
-    if (!gst_pad_peer_query (overlay->srcpad, query)) {
-      /* no problem, we use the query defaults */
-      GST_DEBUG_OBJECT (overlay, "ALLOCATION query failed");
-
-      /* In case we were flushing, mark reconfigure and fail this method,
-       * will make it retry */
-      if (overlay->video_flushing)
-        ret = FALSE;
-    }
-
-    alloc_has_meta = gst_query_find_allocation_meta (query,
-        GST_VIDEO_OVERLAY_COMPOSITION_META_API_TYPE, &alloc_index);
-
-    GST_DEBUG_OBJECT (overlay, "sink alloc has overlay meta %d",
-        alloc_has_meta);
-
-    if (alloc_has_meta) {
-      const GstStructure *params;
-
-      gst_query_parse_nth_allocation_meta (query, alloc_index, &params);
-      if (params) {
-        if (gst_structure_get (params, "width", G_TYPE_UINT, &width,
-                "height", G_TYPE_UINT, &height, NULL)) {
-          GST_DEBUG_OBJECT (overlay, "received window size: %dx%d", width,
-              height);
-          g_assert (width != 0 && height != 0);
-        }
-      }
-    }
-
-    gst_query_unref (query);
-  }
-
-  /* Update render size if needed */
-  overlay->window_width = width;
-  overlay->window_height = height;
-  gst_base_text_overlay_update_render_size (overlay);
-
-  /* For backward compatibility, we will prefer blitting if downstream
-   * allocation does not support the meta. In other case we will prefer
-   * attaching, and will fail the negotiation in the unlikely case we are
-   * force to blit, but format isn't supported. */
-
-  if (upstream_has_meta) {
-    attach = TRUE;
-  } else if (caps_has_meta) {
-    if (alloc_has_meta) {
-      attach = TRUE;
-    } else {
-      /* Don't attach unless we cannot handle the format */
-      attach = !gst_base_text_overlay_can_handle_caps (caps);
-    }
-  } else {
-    ret = gst_base_text_overlay_can_handle_caps (caps);
-  }
-
-  /* If we attach, then pick the overlay caps */
-  if (attach) {
-    GST_DEBUG_OBJECT (overlay, "Using caps %" GST_PTR_FORMAT, overlay_caps);
-    /* Caps where already sent */
-  } else if (ret) {
-    GST_DEBUG_OBJECT (overlay, "Using caps %" GST_PTR_FORMAT, caps);
-    ret = gst_pad_set_caps (overlay->srcpad, caps);
-  }
-
-  overlay->attach_compo_to_buffer = attach;
-
-  if (!ret) {
-    GST_DEBUG_OBJECT (overlay, "negotiation failed, schedule reconfigure");
-    gst_pad_mark_reconfigure (overlay->srcpad);
-  }
-
-  gst_caps_unref (overlay_caps);
-  gst_caps_unref (caps);
-
-  return ret;
-
-no_format:
-  {
-    if (caps)
-      gst_caps_unref (caps);
-    gst_pad_mark_reconfigure (overlay->srcpad);
-    return FALSE;
-  }
-}
-
-static gboolean
-gst_base_text_overlay_can_handle_caps (GstCaps * incaps)
-{
-  gboolean ret;
-  GstCaps *caps;
-
-  caps = gst_static_caps_get (&sw_template_caps);
-  ret = gst_caps_is_subset (incaps, caps);
-  gst_caps_unref (caps);
-
-  return ret;
-}
-
-static gboolean
-gst_base_text_overlay_setcaps (GstBaseTextOverlay * overlay, GstCaps * caps)
-{
-  GstVideoInfo info;
-  gboolean ret = FALSE;
-
-  if (!gst_video_info_from_caps (&info, caps))
-    goto invalid_caps;
+  gboolean reset = FALSE;
 
   /* Render again if size have changed */
-  if (GST_VIDEO_INFO_WIDTH (&info) != GST_VIDEO_INFO_WIDTH (&overlay->info) ||
-      GST_VIDEO_INFO_HEIGHT (&info) != GST_VIDEO_INFO_HEIGHT (&overlay->info))
-    overlay->need_render = TRUE;
+  if (GST_VIDEO_INFO_WIDTH (info) != GST_VIDEO_INFO_WIDTH (&overlay->info) ||
+      GST_VIDEO_INFO_HEIGHT (info) != GST_VIDEO_INFO_HEIGHT (&overlay->info))
+    reset = TRUE;
 
-  overlay->info = info;
-  overlay->format = GST_VIDEO_INFO_FORMAT (&info);
-  overlay->width = GST_VIDEO_INFO_WIDTH (&info);
-  overlay->height = GST_VIDEO_INFO_HEIGHT (&info);
+  overlay->info = *info;
+  overlay->format = GST_VIDEO_INFO_FORMAT (info);
+  overlay->width = GST_VIDEO_INFO_WIDTH (info);
+  overlay->height = GST_VIDEO_INFO_HEIGHT (info);
+  overlay->window_width = window_width ? window_width : overlay->width;
+  overlay->window_height = window_height ? window_height : overlay->height;
 
-  ret = gst_base_text_overlay_negotiate (overlay, caps);
+  /* avoid evaluation short */
+  reset = gst_base_text_overlay_update_render_size (overlay) || reset;
 
-  GST_BASE_TEXT_OVERLAY_LOCK (overlay);
-
-  if (!overlay->attach_compo_to_buffer &&
-      !gst_base_text_overlay_can_handle_caps (caps)) {
-    GST_DEBUG_OBJECT (overlay, "unsupported caps %" GST_PTR_FORMAT, caps);
-    ret = FALSE;
-  }
-  GST_BASE_TEXT_OVERLAY_UNLOCK (overlay);
+  if (reset)
+    gst_sub_overlay_set_composition (suboverlay, NULL);
 
   return ret;
-
-  /* ERRORS */
-invalid_caps:
-  {
-    GST_DEBUG_OBJECT (overlay, "could not parse caps");
-    return FALSE;
-  }
 }
 
 static void
@@ -1116,7 +796,8 @@ gst_base_text_overlay_set_property (GObject * object, guint prop_id,
       overlay->outline_color = g_value_get_uint (value);
       break;
     case PROP_SILENT:
-      overlay->silent = g_value_get_boolean (value);
+      gst_sub_overlay_set_visible (GST_SUB_OVERLAY (overlay),
+          !g_value_get_boolean (value));
       break;
     case PROP_DRAW_SHADOW:
       overlay->draw_shadow = g_value_get_boolean (value);
@@ -1130,7 +811,8 @@ gst_base_text_overlay_set_property (GObject * object, guint prop_id,
           (PangoAlignment) overlay->line_align);
       break;
     case PROP_WAIT_TEXT:
-      overlay->wait_text = g_value_get_boolean (value);
+      gst_sub_overlay_set_wait (GST_SUB_OVERLAY (overlay),
+          g_value_get_boolean (value));
       break;
     case PROP_AUTO_ADJUST_SIZE:
       overlay->auto_adjust_size = g_value_get_boolean (value);
@@ -1162,6 +844,8 @@ gst_base_text_overlay_set_property (GObject * object, guint prop_id,
 
   overlay->need_render = TRUE;
   GST_BASE_TEXT_OVERLAY_UNLOCK (overlay);
+
+  gst_sub_overlay_set_composition (GST_SUB_OVERLAY (overlay), NULL);
 }
 
 static void
@@ -1212,7 +896,8 @@ gst_base_text_overlay_get_property (GObject * object, guint prop_id,
       g_value_set_enum (value, overlay->wrap_mode);
       break;
     case PROP_SILENT:
-      g_value_set_boolean (value, overlay->silent);
+      g_value_set_boolean (value,
+          !gst_sub_overlay_get_visible (GST_SUB_OVERLAY (overlay)));
       break;
     case PROP_DRAW_SHADOW:
       g_value_set_boolean (value, overlay->draw_shadow);
@@ -1224,7 +909,8 @@ gst_base_text_overlay_get_property (GObject * object, guint prop_id,
       g_value_set_enum (value, overlay->line_align);
       break;
     case PROP_WAIT_TEXT:
-      g_value_set_boolean (value, overlay->wait_text);
+      g_value_set_boolean (value,
+          gst_sub_overlay_get_wait (GST_SUB_OVERLAY (overlay)));
       break;
     case PROP_AUTO_ADJUST_SIZE:
       g_value_set_boolean (value, overlay->auto_adjust_size);
@@ -1277,40 +963,10 @@ gst_base_text_overlay_get_property (GObject * object, guint prop_id,
       break;
   }
 
-  overlay->need_render = TRUE;
   GST_BASE_TEXT_OVERLAY_UNLOCK (overlay);
 }
 
 static gboolean
-gst_base_text_overlay_src_query (GstPad * pad, GstObject * parent,
-    GstQuery * query)
-{
-  gboolean ret = FALSE;
-  GstBaseTextOverlay *overlay;
-
-  overlay = GST_BASE_TEXT_OVERLAY (parent);
-
-  switch (GST_QUERY_TYPE (query)) {
-    case GST_QUERY_CAPS:
-    {
-      GstCaps *filter, *caps;
-
-      gst_query_parse_caps (query, &filter);
-      caps = gst_base_text_overlay_get_src_caps (pad, overlay, filter);
-      gst_query_set_caps_result (query, caps);
-      gst_caps_unref (caps);
-      ret = TRUE;
-      break;
-    }
-    default:
-      ret = gst_pad_query_default (pad, parent, query);
-      break;
-  }
-
-  return ret;
-}
-
-static void
 gst_base_text_overlay_update_render_size (GstBaseTextOverlay * overlay)
 {
   gdouble video_aspect = (gdouble) overlay->width / (gdouble) overlay->height;
@@ -1330,9 +986,8 @@ gst_base_text_overlay_update_render_size (GstBaseTextOverlay * overlay)
 
   if ((overlay->render_width == text_buffer_width) &&
       (overlay->render_height == text_buffer_height))
-    return;
+    return FALSE;
 
-  overlay->need_render = TRUE;
   overlay->render_width = text_buffer_width;
   overlay->render_height = text_buffer_height;
   overlay->render_scale = (gdouble) overlay->render_width /
@@ -1342,227 +997,8 @@ gst_base_text_overlay_update_render_size (GstBaseTextOverlay * overlay)
       "and render scale %f", overlay->render_width, overlay->render_height,
       overlay->width, overlay->height, overlay->window_width,
       overlay->window_height, overlay->render_scale);
-}
 
-static gboolean
-gst_base_text_overlay_src_event (GstPad * pad, GstObject * parent,
-    GstEvent * event)
-{
-  GstBaseTextOverlay *overlay;
-  gboolean ret;
-
-  overlay = GST_BASE_TEXT_OVERLAY (parent);
-
-  if (overlay->text_linked) {
-    gst_event_ref (event);
-    ret = gst_pad_push_event (overlay->video_sinkpad, event);
-    gst_pad_push_event (overlay->text_sinkpad, event);
-  } else {
-    ret = gst_pad_push_event (overlay->video_sinkpad, event);
-  }
-
-  return ret;
-}
-
-/* gst_base_text_overlay_add_feature_and_intersect:
- *
- * Creates a new #GstCaps containing the (given caps +
- * given caps feature) + (given caps intersected by the
- * given filter).
- *
- * Returns: the new #GstCaps
- */
-static GstCaps *
-gst_base_text_overlay_add_feature_and_intersect (GstCaps * caps,
-    const gchar * feature, GstCaps * filter)
-{
-  int i, caps_size;
-  GstCaps *new_caps;
-
-  new_caps = gst_caps_copy (caps);
-
-  caps_size = gst_caps_get_size (new_caps);
-  for (i = 0; i < caps_size; i++) {
-    GstCapsFeatures *features = gst_caps_get_features (new_caps, i);
-
-    if (!gst_caps_features_is_any (features)) {
-      gst_caps_features_add (features, feature);
-    }
-  }
-
-  gst_caps_append (new_caps, gst_caps_intersect_full (caps,
-          filter, GST_CAPS_INTERSECT_FIRST));
-
-  return new_caps;
-}
-
-/* gst_base_text_overlay_intersect_by_feature:
- *
- * Creates a new #GstCaps based on the following filtering rule.
- *
- * For each individual caps contained in given caps, if the
- * caps uses the given caps feature, keep a version of the caps
- * with the feature and an another one without. Otherwise, intersect
- * the caps with the given filter.
- *
- * Returns: the new #GstCaps
- */
-static GstCaps *
-gst_base_text_overlay_intersect_by_feature (GstCaps * caps,
-    const gchar * feature, GstCaps * filter)
-{
-  int i, caps_size;
-  GstCaps *new_caps;
-
-  new_caps = gst_caps_new_empty ();
-
-  caps_size = gst_caps_get_size (caps);
-  for (i = 0; i < caps_size; i++) {
-    GstStructure *caps_structure = gst_caps_get_structure (caps, i);
-    GstCapsFeatures *caps_features =
-        gst_caps_features_copy (gst_caps_get_features (caps, i));
-    GstCaps *filtered_caps;
-    GstCaps *simple_caps =
-        gst_caps_new_full (gst_structure_copy (caps_structure), NULL);
-    gst_caps_set_features (simple_caps, 0, caps_features);
-
-    if (gst_caps_features_contains (caps_features, feature)) {
-      gst_caps_append (new_caps, gst_caps_copy (simple_caps));
-
-      gst_caps_features_remove (caps_features, feature);
-      filtered_caps = gst_caps_ref (simple_caps);
-    } else {
-      filtered_caps = gst_caps_intersect_full (simple_caps, filter,
-          GST_CAPS_INTERSECT_FIRST);
-    }
-
-    gst_caps_unref (simple_caps);
-    gst_caps_append (new_caps, filtered_caps);
-  }
-
-  return new_caps;
-}
-
-static GstCaps *
-gst_base_text_overlay_get_videosink_caps (GstPad * pad,
-    GstBaseTextOverlay * overlay, GstCaps * filter)
-{
-  GstPad *srcpad = overlay->srcpad;
-  GstCaps *peer_caps = NULL, *caps = NULL, *overlay_filter = NULL;
-
-  if (filter) {
-    /* filter caps + composition feature + filter caps
-     * filtered by the software caps. */
-    GstCaps *sw_caps = gst_static_caps_get (&sw_template_caps);
-    overlay_filter = gst_base_text_overlay_add_feature_and_intersect (filter,
-        GST_CAPS_FEATURE_META_GST_VIDEO_OVERLAY_COMPOSITION, sw_caps);
-    gst_caps_unref (sw_caps);
-
-    GST_DEBUG_OBJECT (overlay, "overlay filter %" GST_PTR_FORMAT,
-        overlay_filter);
-  }
-
-  peer_caps = gst_pad_peer_query_caps (srcpad, overlay_filter);
-
-  if (overlay_filter)
-    gst_caps_unref (overlay_filter);
-
-  if (peer_caps) {
-
-    GST_DEBUG_OBJECT (pad, "peer caps  %" GST_PTR_FORMAT, peer_caps);
-
-    if (gst_caps_is_any (peer_caps)) {
-      /* if peer returns ANY caps, return filtered src pad template caps */
-      caps = gst_caps_copy (gst_pad_get_pad_template_caps (srcpad));
-    } else {
-
-      /* duplicate caps which contains the composition into one version with
-       * the meta and one without. Filter the other caps by the software caps */
-      GstCaps *sw_caps = gst_static_caps_get (&sw_template_caps);
-      caps = gst_base_text_overlay_intersect_by_feature (peer_caps,
-          GST_CAPS_FEATURE_META_GST_VIDEO_OVERLAY_COMPOSITION, sw_caps);
-      gst_caps_unref (sw_caps);
-    }
-
-    gst_caps_unref (peer_caps);
-
-  } else {
-    /* no peer, our padtemplate is enough then */
-    caps = gst_pad_get_pad_template_caps (pad);
-  }
-
-  if (filter) {
-    GstCaps *intersection = gst_caps_intersect_full (filter, caps,
-        GST_CAPS_INTERSECT_FIRST);
-    gst_caps_unref (caps);
-    caps = intersection;
-  }
-
-  GST_DEBUG_OBJECT (overlay, "returning  %" GST_PTR_FORMAT, caps);
-
-  return caps;
-}
-
-static GstCaps *
-gst_base_text_overlay_get_src_caps (GstPad * pad, GstBaseTextOverlay * overlay,
-    GstCaps * filter)
-{
-  GstPad *sinkpad = overlay->video_sinkpad;
-  GstCaps *peer_caps = NULL, *caps = NULL, *overlay_filter = NULL;
-
-  if (filter) {
-    /* duplicate filter caps which contains the composition into one version
-     * with the meta and one without. Filter the other caps by the software
-     * caps */
-    GstCaps *sw_caps = gst_static_caps_get (&sw_template_caps);
-    overlay_filter =
-        gst_base_text_overlay_intersect_by_feature (filter,
-        GST_CAPS_FEATURE_META_GST_VIDEO_OVERLAY_COMPOSITION, sw_caps);
-    gst_caps_unref (sw_caps);
-  }
-
-  peer_caps = gst_pad_peer_query_caps (sinkpad, overlay_filter);
-
-  if (overlay_filter)
-    gst_caps_unref (overlay_filter);
-
-  if (peer_caps) {
-
-    GST_DEBUG_OBJECT (pad, "peer caps  %" GST_PTR_FORMAT, peer_caps);
-
-    if (gst_caps_is_any (peer_caps)) {
-
-      /* if peer returns ANY caps, return filtered sink pad template caps */
-      caps = gst_caps_copy (gst_pad_get_pad_template_caps (sinkpad));
-
-    } else {
-
-      /* return upstream caps + composition feature + upstream caps
-       * filtered by the software caps. */
-      GstCaps *sw_caps = gst_static_caps_get (&sw_template_caps);
-      caps = gst_base_text_overlay_add_feature_and_intersect (peer_caps,
-          GST_CAPS_FEATURE_META_GST_VIDEO_OVERLAY_COMPOSITION, sw_caps);
-      gst_caps_unref (sw_caps);
-    }
-
-    gst_caps_unref (peer_caps);
-
-  } else {
-    /* no peer, our padtemplate is enough then */
-    caps = gst_pad_get_pad_template_caps (pad);
-  }
-
-  if (filter) {
-    GstCaps *intersection;
-
-    intersection =
-        gst_caps_intersect_full (filter, caps, GST_CAPS_INTERSECT_FIRST);
-    gst_caps_unref (caps);
-    caps = intersection;
-  }
-  GST_DEBUG_OBJECT (overlay, "returning  %" GST_PTR_FORMAT, caps);
-
-  return caps;
+  return TRUE;
 }
 
 static void
@@ -1654,9 +1090,10 @@ static inline void
 gst_base_text_overlay_set_composition (GstBaseTextOverlay * overlay)
 {
   gint xpos, ypos;
-  GstVideoOverlayRectangle *rectangle;
+  GstVideoOverlayComposition *composition = NULL;
 
   if (overlay->text_image) {
+    GstVideoOverlayRectangle *rectangle;
     gint render_width, render_height;
 
     gst_base_text_overlay_get_pos (overlay, &xpos, &ypos);
@@ -1678,24 +1115,14 @@ gst_base_text_overlay_set_composition (GstBaseTextOverlay * overlay)
         xpos, ypos, render_width, render_height,
         GST_VIDEO_OVERLAY_FORMAT_FLAG_PREMULTIPLIED_ALPHA);
 
-    if (overlay->composition)
-      gst_video_overlay_composition_unref (overlay->composition);
-
-    if (overlay->upstream_composition) {
-      overlay->composition =
-          gst_video_overlay_composition_copy (overlay->upstream_composition);
-      gst_video_overlay_composition_add_rectangle (overlay->composition,
-          rectangle);
-    } else {
-      overlay->composition = gst_video_overlay_composition_new (rectangle);
-    }
-
+    composition = gst_video_overlay_composition_new (rectangle);
     gst_video_overlay_rectangle_unref (rectangle);
 
-  } else if (overlay->composition) {
-    gst_video_overlay_composition_unref (overlay->composition);
-    overlay->composition = NULL;
+  } else {
+    composition = gst_video_overlay_composition_new (NULL);
   }
+
+  gst_sub_overlay_set_composition (GST_SUB_OVERLAY (overlay), composition);
 }
 
 static gboolean
@@ -2194,11 +1621,6 @@ gst_base_text_overlay_render_text (GstBaseTextOverlay * overlay,
 {
   gchar *string;
 
-  if (!overlay->need_render) {
-    GST_DEBUG ("Using previously rendered text.");
-    return;
-  }
-
   /* -1 is the whole string */
   if (text != NULL && textlen < 0) {
     textlen = strlen (text);
@@ -2215,11 +1637,11 @@ gst_base_text_overlay_render_text (GstBaseTextOverlay * overlay,
   /* FIXME: should we check for UTF-8 here? */
 
   GST_DEBUG ("Rendering '%s'", string);
+  GST_BASE_TEXT_OVERLAY_LOCK (overlay);
   gst_base_text_overlay_render_pangocairo (overlay, string, textlen);
+  GST_BASE_TEXT_OVERLAY_UNLOCK (overlay);
 
   g_free (string);
-
-  overlay->need_render = FALSE;
 }
 
 /* FIXME: should probably be relative to width/height (adjusted for PAR) */
@@ -2296,568 +1718,135 @@ gst_base_text_overlay_shade_background (GstBaseTextOverlay * overlay,
   }
 }
 
-static GstFlowReturn
-gst_base_text_overlay_push_frame (GstBaseTextOverlay * overlay,
-    GstBuffer * video_frame)
+static gboolean
+gst_base_text_overlay_pre_apply (GstSubOverlay * sub_overlay,
+    GstBuffer * video_frame, GstVideoOverlayComposition * comp,
+    GstVideoOverlayComposition * merged, gboolean attach)
 {
+  GstBaseTextOverlay *overlay = GST_BASE_TEXT_OVERLAY (sub_overlay);
   GstVideoFrame frame;
-
-  if (overlay->composition == NULL)
-    goto done;
-
-  if (gst_pad_check_reconfigure (overlay->srcpad)) {
-    if (!gst_base_text_overlay_negotiate (overlay, NULL)) {
-      gst_pad_mark_reconfigure (overlay->srcpad);
-      gst_buffer_unref (video_frame);
-      if (GST_PAD_IS_FLUSHING (overlay->srcpad))
-        return GST_FLOW_FLUSHING;
-      else
-        return GST_FLOW_NOT_NEGOTIATED;
-    }
-  }
 
   video_frame = gst_buffer_make_writable (video_frame);
 
-  if (overlay->attach_compo_to_buffer) {
-    GST_DEBUG_OBJECT (overlay, "Attaching text overlay image to video buffer");
-    gst_buffer_add_video_overlay_composition_meta (video_frame,
-        overlay->composition);
+  if (attach) {
     /* FIXME: emulate shaded background box if want_shading=true */
     goto done;
   }
 
+  if (!comp || gst_video_overlay_composition_n_rectangles (comp) == 0)
+    goto done;
+
   if (!gst_video_frame_map (&frame, &overlay->info, video_frame,
-          GST_MAP_READWRITE))
-    goto invalid_frame;
+          GST_MAP_READWRITE)) {
+    GST_DEBUG_OBJECT (overlay, "received invalid buffer");
+    goto done;
+  }
 
   /* shaded background box */
+  GST_BASE_TEXT_OVERLAY_LOCK (overlay);
   if (overlay->want_shading) {
     gint xpos, ypos;
 
     gst_base_text_overlay_get_pos (overlay, &xpos, &ypos);
-
     gst_base_text_overlay_shade_background (overlay, &frame,
         xpos, xpos + overlay->text_width, ypos, ypos + overlay->text_height);
   }
-
-  gst_video_overlay_composition_blend (overlay->composition, &frame);
-
+  GST_BASE_TEXT_OVERLAY_UNLOCK (overlay);
   gst_video_frame_unmap (&frame);
 
 done:
-
-  return gst_pad_push (overlay->srcpad, video_frame);
-
-  /* ERRORS */
-invalid_frame:
-  {
-    gst_buffer_unref (video_frame);
-    GST_DEBUG_OBJECT (overlay, "received invalid buffer");
-    return GST_FLOW_OK;
-  }
-}
-
-static GstPadLinkReturn
-gst_base_text_overlay_text_pad_link (GstPad * pad, GstObject * parent,
-    GstPad * peer)
-{
-  GstBaseTextOverlay *overlay;
-
-  overlay = GST_BASE_TEXT_OVERLAY (parent);
-  if (G_UNLIKELY (!overlay))
-    return GST_PAD_LINK_REFUSED;
-
-  GST_DEBUG_OBJECT (overlay, "Text pad linked");
-
-  overlay->text_linked = TRUE;
-
-  return GST_PAD_LINK_OK;
-}
-
-static void
-gst_base_text_overlay_text_pad_unlink (GstPad * pad, GstObject * parent)
-{
-  GstBaseTextOverlay *overlay;
-
-  /* don't use gst_pad_get_parent() here, will deadlock */
-  overlay = GST_BASE_TEXT_OVERLAY (parent);
-
-  GST_DEBUG_OBJECT (overlay, "Text pad unlinked");
-
-  overlay->text_linked = FALSE;
-
-  gst_segment_init (&overlay->text_segment, GST_FORMAT_UNDEFINED);
-}
-
-static gboolean
-gst_base_text_overlay_text_event (GstPad * pad, GstObject * parent,
-    GstEvent * event)
-{
-  gboolean ret = FALSE;
-  GstBaseTextOverlay *overlay = NULL;
-
-  overlay = GST_BASE_TEXT_OVERLAY (parent);
-
-  GST_LOG_OBJECT (pad, "received event %s", GST_EVENT_TYPE_NAME (event));
-
-  switch (GST_EVENT_TYPE (event)) {
-    case GST_EVENT_STREAM_START:
-      /* Clear any pending EOS and segment on a new stream start */
-      GST_BASE_TEXT_OVERLAY_LOCK (overlay);
-      GST_INFO_OBJECT (overlay, "text stream-start");
-      overlay->text_flushing = FALSE;
-      overlay->text_eos = FALSE;
-      gst_base_text_overlay_pop_text (overlay);
-      gst_segment_init (&overlay->text_segment, GST_FORMAT_TIME);
-      GST_BASE_TEXT_OVERLAY_UNLOCK (overlay);
-      gst_event_unref (event);
-      ret = TRUE;
-      break;
-    case GST_EVENT_CAPS:
-    {
-      GstCaps *caps;
-
-      gst_event_parse_caps (event, &caps);
-      ret = gst_base_text_overlay_setcaps_txt (overlay, caps);
-      gst_event_unref (event);
-      break;
-    }
-    case GST_EVENT_SEGMENT:
-    {
-      const GstSegment *segment;
-
-      overlay->text_eos = FALSE;
-
-      gst_event_parse_segment (event, &segment);
-
-      if (segment->format == GST_FORMAT_TIME) {
-        GST_BASE_TEXT_OVERLAY_LOCK (overlay);
-        gst_segment_copy_into (segment, &overlay->text_segment);
-        GST_DEBUG_OBJECT (overlay, "TEXT SEGMENT now: %" GST_SEGMENT_FORMAT,
-            &overlay->text_segment);
-        GST_BASE_TEXT_OVERLAY_UNLOCK (overlay);
-      } else {
-        GST_ELEMENT_WARNING (overlay, STREAM, MUX, (NULL),
-            ("received non-TIME newsegment event on text input"));
-      }
-
-      gst_event_unref (event);
-      ret = TRUE;
-
-      /* wake up the video chain, it might be waiting for a text buffer or
-       * a text segment update */
-      GST_BASE_TEXT_OVERLAY_LOCK (overlay);
-      GST_BASE_TEXT_OVERLAY_BROADCAST (overlay);
-      GST_BASE_TEXT_OVERLAY_UNLOCK (overlay);
-      break;
-    }
-    case GST_EVENT_GAP:
-    {
-      GstClockTime start, duration;
-
-      gst_event_parse_gap (event, &start, &duration);
-      if (GST_CLOCK_TIME_IS_VALID (duration))
-        start += duration;
-      /* we do not expect another buffer until after gap,
-       * so that is our position now */
-      overlay->text_segment.position = start;
-
-      /* wake up the video chain, it might be waiting for a text buffer or
-       * a text segment update */
-      GST_BASE_TEXT_OVERLAY_LOCK (overlay);
-      GST_BASE_TEXT_OVERLAY_BROADCAST (overlay);
-      GST_BASE_TEXT_OVERLAY_UNLOCK (overlay);
-
-      gst_event_unref (event);
-      ret = TRUE;
-      break;
-    }
-    case GST_EVENT_FLUSH_STOP:
-      GST_BASE_TEXT_OVERLAY_LOCK (overlay);
-      GST_INFO_OBJECT (overlay, "text flush stop");
-      overlay->text_flushing = FALSE;
-      overlay->text_eos = FALSE;
-      gst_base_text_overlay_pop_text (overlay);
-      gst_segment_init (&overlay->text_segment, GST_FORMAT_TIME);
-      GST_BASE_TEXT_OVERLAY_UNLOCK (overlay);
-      gst_event_unref (event);
-      ret = TRUE;
-      break;
-    case GST_EVENT_FLUSH_START:
-      GST_BASE_TEXT_OVERLAY_LOCK (overlay);
-      GST_INFO_OBJECT (overlay, "text flush start");
-      overlay->text_flushing = TRUE;
-      GST_BASE_TEXT_OVERLAY_BROADCAST (overlay);
-      GST_BASE_TEXT_OVERLAY_UNLOCK (overlay);
-      gst_event_unref (event);
-      ret = TRUE;
-      break;
-    case GST_EVENT_EOS:
-      GST_BASE_TEXT_OVERLAY_LOCK (overlay);
-      overlay->text_eos = TRUE;
-      GST_INFO_OBJECT (overlay, "text EOS");
-      /* wake up the video chain, it might be waiting for a text buffer or
-       * a text segment update */
-      GST_BASE_TEXT_OVERLAY_BROADCAST (overlay);
-      GST_BASE_TEXT_OVERLAY_UNLOCK (overlay);
-      gst_event_unref (event);
-      ret = TRUE;
-      break;
-    default:
-      ret = gst_pad_event_default (pad, parent, event);
-      break;
-  }
-
-  return ret;
-}
-
-static gboolean
-gst_base_text_overlay_video_event (GstPad * pad, GstObject * parent,
-    GstEvent * event)
-{
-  gboolean ret = FALSE;
-  GstBaseTextOverlay *overlay = NULL;
-
-  overlay = GST_BASE_TEXT_OVERLAY (parent);
-
-  GST_DEBUG_OBJECT (pad, "received event %s", GST_EVENT_TYPE_NAME (event));
-
-  switch (GST_EVENT_TYPE (event)) {
-    case GST_EVENT_STREAM_START:
-      /* Clear any EOS and segment on a new stream */
-      GST_BASE_TEXT_OVERLAY_LOCK (overlay);
-      GST_INFO_OBJECT (overlay, "video stream-start");
-      overlay->video_flushing = FALSE;
-      overlay->video_eos = FALSE;
-      gst_segment_init (&overlay->segment, GST_FORMAT_TIME);
-      GST_BASE_TEXT_OVERLAY_UNLOCK (overlay);
-      ret = gst_pad_event_default (pad, parent, event);
-      break;
-    case GST_EVENT_CAPS:
-    {
-      GstCaps *caps;
-
-      gst_event_parse_caps (event, &caps);
-      ret = gst_base_text_overlay_setcaps (overlay, caps);
-      gst_event_unref (event);
-      break;
-    }
-    case GST_EVENT_SEGMENT:
-    {
-      const GstSegment *segment;
-
-      GST_DEBUG_OBJECT (overlay, "received new segment");
-
-      gst_event_parse_segment (event, &segment);
-
-      if (segment->format == GST_FORMAT_TIME) {
-        gst_segment_copy_into (segment, &overlay->segment);
-        GST_DEBUG_OBJECT (overlay, "VIDEO SEGMENT now: %" GST_SEGMENT_FORMAT,
-            &overlay->segment);
-      } else {
-        GST_ELEMENT_WARNING (overlay, STREAM, MUX, (NULL),
-            ("received non-TIME newsegment event on video input"));
-      }
-
-      ret = gst_pad_event_default (pad, parent, event);
-      break;
-    }
-    case GST_EVENT_EOS:
-      GST_BASE_TEXT_OVERLAY_LOCK (overlay);
-      GST_INFO_OBJECT (overlay, "video EOS");
-      overlay->video_eos = TRUE;
-      GST_BASE_TEXT_OVERLAY_UNLOCK (overlay);
-      ret = gst_pad_event_default (pad, parent, event);
-      break;
-    case GST_EVENT_FLUSH_START:
-      GST_BASE_TEXT_OVERLAY_LOCK (overlay);
-      GST_INFO_OBJECT (overlay, "video flush start");
-      overlay->video_flushing = TRUE;
-      GST_BASE_TEXT_OVERLAY_BROADCAST (overlay);
-      GST_BASE_TEXT_OVERLAY_UNLOCK (overlay);
-      ret = gst_pad_event_default (pad, parent, event);
-      break;
-    case GST_EVENT_FLUSH_STOP:
-      GST_BASE_TEXT_OVERLAY_LOCK (overlay);
-      GST_INFO_OBJECT (overlay, "video flush stop");
-      overlay->video_flushing = FALSE;
-      overlay->video_eos = FALSE;
-      gst_segment_init (&overlay->segment, GST_FORMAT_TIME);
-      GST_BASE_TEXT_OVERLAY_UNLOCK (overlay);
-      ret = gst_pad_event_default (pad, parent, event);
-      break;
-    default:
-      ret = gst_pad_event_default (pad, parent, event);
-      break;
-  }
-
-  return ret;
-}
-
-static gboolean
-gst_base_text_overlay_video_query (GstPad * pad, GstObject * parent,
-    GstQuery * query)
-{
-  gboolean ret = FALSE;
-  GstBaseTextOverlay *overlay;
-
-  overlay = GST_BASE_TEXT_OVERLAY (parent);
-
-  switch (GST_QUERY_TYPE (query)) {
-    case GST_QUERY_CAPS:
-    {
-      GstCaps *filter, *caps;
-
-      gst_query_parse_caps (query, &filter);
-      caps = gst_base_text_overlay_get_videosink_caps (pad, overlay, filter);
-      gst_query_set_caps_result (query, caps);
-      gst_caps_unref (caps);
-      ret = TRUE;
-      break;
-    }
-    default:
-      ret = gst_pad_query_default (pad, parent, query);
-      break;
-  }
-
-  return ret;
-}
-
-/* Called with lock held */
-static void
-gst_base_text_overlay_pop_text (GstBaseTextOverlay * overlay)
-{
-  g_return_if_fail (GST_IS_BASE_TEXT_OVERLAY (overlay));
-
-  if (overlay->text_buffer) {
-    GST_DEBUG_OBJECT (overlay, "releasing text buffer %p",
-        overlay->text_buffer);
-    gst_buffer_unref (overlay->text_buffer);
-    overlay->text_buffer = NULL;
-    overlay->text_buffer_running_time = overlay->text_buffer_running_time_end =
-        GST_CLOCK_TIME_NONE;
-  }
-
-  /* Let the text task know we used that buffer */
-  GST_BASE_TEXT_OVERLAY_BROADCAST (overlay);
-}
-
-/* We receive text buffers here. If they are out of segment we just ignore them.
-   If the buffer is in our segment we keep it internally except if another one
-   is already waiting here, in that case we wait that it gets kicked out */
-static GstFlowReturn
-gst_base_text_overlay_text_chain (GstPad * pad, GstObject * parent,
-    GstBuffer * buffer)
-{
-  GstFlowReturn ret = GST_FLOW_OK;
-  GstBaseTextOverlay *overlay = NULL;
-  gboolean in_seg = FALSE;
-  guint64 clip_start = 0, clip_stop = 0;
-
-  overlay = GST_BASE_TEXT_OVERLAY (parent);
-
-  GST_BASE_TEXT_OVERLAY_LOCK (overlay);
-
-  if (overlay->text_flushing) {
-    GST_BASE_TEXT_OVERLAY_UNLOCK (overlay);
-    ret = GST_FLOW_FLUSHING;
-    GST_LOG_OBJECT (overlay, "text flushing");
-    goto beach;
-  }
-
-  if (overlay->text_eos) {
-    GST_BASE_TEXT_OVERLAY_UNLOCK (overlay);
-    ret = GST_FLOW_EOS;
-    GST_LOG_OBJECT (overlay, "text EOS");
-    goto beach;
-  }
-
-  GST_LOG_OBJECT (overlay, "%" GST_SEGMENT_FORMAT "  BUFFER: ts=%"
-      GST_TIME_FORMAT ", end=%" GST_TIME_FORMAT, &overlay->segment,
-      GST_TIME_ARGS (GST_BUFFER_TIMESTAMP (buffer)),
-      GST_TIME_ARGS (GST_BUFFER_TIMESTAMP (buffer) +
-          GST_BUFFER_DURATION (buffer)));
-
-  if (G_LIKELY (GST_BUFFER_TIMESTAMP_IS_VALID (buffer))) {
-    GstClockTime stop;
-
-    if (G_LIKELY (GST_BUFFER_DURATION_IS_VALID (buffer)))
-      stop = GST_BUFFER_TIMESTAMP (buffer) + GST_BUFFER_DURATION (buffer);
-    else
-      stop = GST_CLOCK_TIME_NONE;
-
-    in_seg = gst_segment_clip (&overlay->text_segment, GST_FORMAT_TIME,
-        GST_BUFFER_TIMESTAMP (buffer), stop, &clip_start, &clip_stop);
-  } else {
-    in_seg = TRUE;
-  }
-
-  if (in_seg) {
-    /* about to change metadata */
-    buffer = gst_buffer_make_writable (buffer);
-    if (GST_BUFFER_TIMESTAMP_IS_VALID (buffer))
-      GST_BUFFER_TIMESTAMP (buffer) = clip_start;
-    if (GST_BUFFER_DURATION_IS_VALID (buffer))
-      GST_BUFFER_DURATION (buffer) = clip_stop - clip_start;
-
-    /* Wait for the previous buffer to go away */
-    while (overlay->text_buffer != NULL) {
-      GST_DEBUG ("Pad %s:%s has a buffer queued, waiting",
-          GST_DEBUG_PAD_NAME (pad));
-      GST_BASE_TEXT_OVERLAY_WAIT (overlay);
-      GST_DEBUG ("Pad %s:%s resuming", GST_DEBUG_PAD_NAME (pad));
-      if (overlay->text_flushing) {
-        GST_BASE_TEXT_OVERLAY_UNLOCK (overlay);
-        ret = GST_FLOW_FLUSHING;
-        goto beach;
-      }
-    }
-
-    /* Calculate and store the running time for this text buffer in 
-     * the current segment. We might receive a new text pad segment
-     * event while this buffer is still active, and that would
-     * lead to incorrect running time calculations if we did it later.
-     */
-    overlay->text_buffer_running_time = overlay->text_buffer_running_time_end =
-        GST_CLOCK_TIME_NONE;
-
-    if (GST_BUFFER_TIMESTAMP_IS_VALID (buffer)) {
-      GstClockTime text_start = GST_BUFFER_TIMESTAMP (buffer);
-
-      overlay->text_segment.position = clip_start;
-      overlay->text_buffer_running_time =
-          gst_segment_to_running_time (&overlay->text_segment,
-          GST_FORMAT_TIME, text_start);
-
-      if (GST_BUFFER_DURATION_IS_VALID (buffer)) {
-        GstClockTime text_end = text_start + GST_BUFFER_DURATION (buffer);
-        overlay->text_buffer_running_time_end =
-            gst_segment_to_running_time (&overlay->text_segment,
-            GST_FORMAT_TIME, text_end);
-      }
-    }
-
-    overlay->text_buffer = buffer;      /* pass ownership of @buffer */
-    buffer = NULL;
-
-    /* That's a new text buffer we need to render */
-    overlay->need_render = TRUE;
-
-    /* in case the video chain is waiting for a text buffer, wake it up */
-    GST_BASE_TEXT_OVERLAY_BROADCAST (overlay);
-  }
-
-  GST_BASE_TEXT_OVERLAY_UNLOCK (overlay);
-
-beach:
-  if (buffer)
-    gst_buffer_unref (buffer);
-
-  return ret;
+  return TRUE;
 }
 
 static GstFlowReturn
-gst_base_text_overlay_video_chain (GstPad * pad, GstObject * parent,
-    GstBuffer * buffer)
+gst_base_text_overlay_handle_buffer (GstSubOverlay * sub_overlay,
+    GstBuffer * buf)
 {
-  GstBaseTextOverlayClass *klass;
-  GstBaseTextOverlay *overlay;
-  GstFlowReturn ret = GST_FLOW_OK;
-  gboolean in_seg = FALSE;
-  guint64 start, stop, clip_start = 0, clip_stop = 0;
+  GstBaseTextOverlay *overlay = (GstBaseTextOverlay *) sub_overlay;
+  GstFlowReturn ret;
+
+  GST_SUB_OVERLAY_STREAM_LOCK (overlay);
+  overlay->pushed_fixed = FALSE;
+  ret = gst_sub_overlay_update_sub_buffer (sub_overlay, buf, FALSE);
+  GST_SUB_OVERLAY_STREAM_UNLOCK (overlay);
+
+  return ret;
+}
+
+static void
+gst_base_text_overlay_render (GstSubOverlay * sub_overlay, GstBuffer * buffer)
+{
+  GstBaseTextOverlay *overlay = (GstBaseTextOverlay *) sub_overlay;
+  GstMapInfo map;
+  gchar *in_text;
   gchar *text = NULL;
-  GstVideoOverlayCompositionMeta *composition_meta;
+  gsize in_size;
 
-  overlay = GST_BASE_TEXT_OVERLAY (parent);
+  g_return_if_fail (buffer != NULL);
 
-  composition_meta = gst_buffer_get_video_overlay_composition_meta (buffer);
-  if (composition_meta) {
-    if (overlay->upstream_composition != composition_meta->overlay) {
-      GST_DEBUG ("GstVideoOverlayCompositionMeta found.");
-      overlay->upstream_composition = composition_meta->overlay;
-      overlay->need_render = TRUE;
+  gst_buffer_map (buffer, &map, GST_MAP_READ);
+  in_text = (gchar *) map.data;
+  in_size = map.size;
+
+  if (in_size > 0) {
+    /* g_markup_escape_text() absolutely requires valid UTF8 input, it
+     * might crash otherwise. We don't fall back on GST_SUBTITLE_ENCODING
+     * here on purpose, this is something that needs fixing upstream */
+    if (!g_utf8_validate (in_text, in_size, NULL)) {
+      const gchar *end = NULL;
+
+      GST_WARNING_OBJECT (overlay, "received invalid UTF-8");
+      in_text = g_strndup (in_text, in_size);
+      while (!g_utf8_validate (in_text, in_size, &end) && end)
+        *((gchar *) end) = '*';
     }
-  } else if (overlay->upstream_composition != NULL) {
-    overlay->upstream_composition = NULL;
-    overlay->need_render = TRUE;
-  }
 
-  klass = GST_BASE_TEXT_OVERLAY_GET_CLASS (overlay);
-
-  if (!GST_BUFFER_TIMESTAMP_IS_VALID (buffer))
-    goto missing_timestamp;
-
-  /* ignore buffers that are outside of the current segment */
-  start = GST_BUFFER_TIMESTAMP (buffer);
-
-  if (!GST_BUFFER_DURATION_IS_VALID (buffer)) {
-    stop = GST_CLOCK_TIME_NONE;
-  } else {
-    stop = start + GST_BUFFER_DURATION (buffer);
-  }
-
-  GST_LOG_OBJECT (overlay, "%" GST_SEGMENT_FORMAT "  BUFFER: ts=%"
-      GST_TIME_FORMAT ", end=%" GST_TIME_FORMAT, &overlay->segment,
-      GST_TIME_ARGS (start), GST_TIME_ARGS (stop));
-
-  /* segment_clip() will adjust start unconditionally to segment_start if
-   * no stop time is provided, so handle this ourselves */
-  if (stop == GST_CLOCK_TIME_NONE && start < overlay->segment.start)
-    goto out_of_segment;
-
-  in_seg = gst_segment_clip (&overlay->segment, GST_FORMAT_TIME, start, stop,
-      &clip_start, &clip_stop);
-
-  if (!in_seg)
-    goto out_of_segment;
-
-  /* if the buffer is only partially in the segment, fix up stamps */
-  if (clip_start != start || (stop != -1 && clip_stop != stop)) {
-    GST_DEBUG_OBJECT (overlay, "clipping buffer timestamp/duration to segment");
-    buffer = gst_buffer_make_writable (buffer);
-    GST_BUFFER_TIMESTAMP (buffer) = clip_start;
-    if (stop != -1)
-      GST_BUFFER_DURATION (buffer) = clip_stop - clip_start;
-  }
-
-  /* now, after we've done the clipping, fix up end time if there's no
-   * duration (we only use those estimated values internally though, we
-   * don't want to set bogus values on the buffer itself) */
-  if (stop == -1) {
-    if (overlay->info.fps_n && overlay->info.fps_d) {
-      GST_DEBUG_OBJECT (overlay, "estimating duration based on framerate");
-      stop = start + gst_util_uint64_scale_int (GST_SECOND,
-          overlay->info.fps_d, overlay->info.fps_n);
+    /* Get the string */
+    if (overlay->have_pango_markup) {
+      text = g_strndup (in_text, in_size);
     } else {
-      GST_LOG_OBJECT (overlay, "no duration, assuming minimal duration");
-      stop = start + 1;         /* we need to assume some interval */
+      text = g_markup_escape_text (in_text, in_size);
     }
+
+    if (text != NULL && *text != '\0') {
+      gint text_len = strlen (text);
+
+      while (text_len > 0 && (text[text_len - 1] == '\n' ||
+              text[text_len - 1] == '\r')) {
+        --text_len;
+      }
+      GST_DEBUG_OBJECT (overlay, "Rendering text '%*s'", text_len, text);
+      gst_base_text_overlay_render_text (overlay, text, text_len);
+    } else {
+      GST_DEBUG_OBJECT (overlay, "No text to render (empty buffer)");
+      gst_base_text_overlay_render_text (overlay, " ", 1);
+    }
+    if (in_text != (gchar *) map.data)
+      g_free (in_text);
+  } else {
+    GST_DEBUG_OBJECT (overlay, "No text to render (empty buffer)");
+    gst_base_text_overlay_render_text (overlay, " ", 1);
   }
 
-  gst_object_sync_values (GST_OBJECT (overlay), GST_BUFFER_TIMESTAMP (buffer));
+  gst_buffer_unmap (buffer, &map);
+  g_free (text);
+}
 
-wait_for_text_buf:
+static void
+gst_base_text_overlay_advance (GstSubOverlay * sub_overlay,
+    GstBuffer * buffer, GstClockTime run_ts, GstClockTime run_ts_end)
+{
+  GstBaseTextOverlay *overlay = (GstBaseTextOverlay *) sub_overlay;
+  gboolean linked = gst_sub_overlay_get_linked (sub_overlay);
 
-  GST_BASE_TEXT_OVERLAY_LOCK (overlay);
+  /* update settings */
+  gst_object_sync_values (GST_OBJECT (sub_overlay), run_ts);
 
-  if (overlay->video_flushing)
-    goto flushing;
+  if (!linked) {
+    GstBaseTextOverlayClass *klass = GST_BASE_TEXT_OVERLAY_GET_CLASS (overlay);
+    GstBuffer *text_buf = NULL;
+    gchar *text;
 
-  if (overlay->video_eos)
-    goto have_eos;
-
-  if (overlay->silent) {
-    GST_BASE_TEXT_OVERLAY_UNLOCK (overlay);
-    ret = gst_pad_push (overlay->srcpad, buffer);
-
-    /* Update position */
-    overlay->segment.position = clip_start;
-
-    return ret;
-  }
-
-  /* Text pad not linked, rendering internal text */
-  if (!overlay->text_linked) {
     if (klass->get_text) {
       text = klass->get_text (overlay, buffer);
     } else {
@@ -2867,247 +1856,32 @@ wait_for_text_buf:
     GST_LOG_OBJECT (overlay, "Text pad not linked, rendering default "
         "text: '%s'", GST_STR_NULL (text));
 
-    GST_BASE_TEXT_OVERLAY_UNLOCK (overlay);
+    /* need to render if either text changed or somehow lost the text buffer
+     * (e.g. because of some FLUSH or so)
+     * so check for the latter if needed */
+    if (!overlay->need_render) {
+      GstBuffer *last_sub;
 
-    if (text != NULL && *text != '\0') {
-      /* Render and push */
-      gst_base_text_overlay_render_text (overlay, text, -1);
-      ret = gst_base_text_overlay_push_frame (overlay, buffer);
-    } else {
-      /* Invalid or empty string */
-      ret = gst_pad_push (overlay->srcpad, buffer);
+      gst_sub_overlay_get_buffers (sub_overlay, NULL, &last_sub);
+      overlay->need_render = !last_sub;
     }
-  } else {
-    /* Text pad linked, check if we have a text buffer queued */
-    if (overlay->text_buffer) {
-      gboolean pop_text = FALSE, valid_text_time = TRUE;
-      GstClockTime text_running_time = overlay->text_buffer_running_time;
-      GstClockTime text_running_time_end =
-          overlay->text_buffer_running_time_end;
-      GstClockTime vid_running_time, vid_running_time_end;
 
-      /* if the text buffer isn't stamped right, pop it off the
-       * queue and display it for the current video frame only */
-      if (!GST_CLOCK_TIME_IS_VALID (overlay->text_buffer_running_time) ||
-          !GST_CLOCK_TIME_IS_VALID (overlay->text_buffer_running_time_end)) {
-        GST_WARNING_OBJECT (overlay,
-            "Got text buffer with invalid timestamp or duration");
-        pop_text = TRUE;
-        valid_text_time = FALSE;
+    if (overlay->need_render) {
+      /* clear last render and activate buffer with provided text */
+      gst_sub_overlay_set_composition (sub_overlay, NULL);
+      overlay->need_render = FALSE;
+      if (text != NULL && *text != '\0') {
+        text_buf = gst_buffer_new_wrapped (text, strlen (text));
+        text = NULL;
       }
-
-      vid_running_time =
-          gst_segment_to_running_time (&overlay->segment, GST_FORMAT_TIME,
-          start);
-      vid_running_time_end =
-          gst_segment_to_running_time (&overlay->segment, GST_FORMAT_TIME,
-          stop);
-
-      GST_LOG_OBJECT (overlay, "T: %" GST_TIME_FORMAT " - %" GST_TIME_FORMAT,
-          GST_TIME_ARGS (text_running_time),
-          GST_TIME_ARGS (text_running_time_end));
-      GST_LOG_OBJECT (overlay, "V: %" GST_TIME_FORMAT " - %" GST_TIME_FORMAT,
-          GST_TIME_ARGS (vid_running_time),
-          GST_TIME_ARGS (vid_running_time_end));
-
-      /* Text too old or in the future */
-      if (valid_text_time && text_running_time_end <= vid_running_time) {
-        /* text buffer too old, get rid of it and do nothing  */
-        GST_LOG_OBJECT (overlay, "text buffer too old, popping");
-        pop_text = FALSE;
-        gst_base_text_overlay_pop_text (overlay);
-        GST_BASE_TEXT_OVERLAY_UNLOCK (overlay);
-        goto wait_for_text_buf;
-      } else if (valid_text_time && vid_running_time_end <= text_running_time) {
-        GST_LOG_OBJECT (overlay, "text in future, pushing video buf");
-        GST_BASE_TEXT_OVERLAY_UNLOCK (overlay);
-        /* Push the video frame */
-        ret = gst_pad_push (overlay->srcpad, buffer);
-      } else {
-        GstMapInfo map;
-        gchar *in_text;
-        gsize in_size;
-
-        gst_buffer_map (overlay->text_buffer, &map, GST_MAP_READ);
-        in_text = (gchar *) map.data;
-        in_size = map.size;
-
-        if (in_size > 0) {
-          /* g_markup_escape_text() absolutely requires valid UTF8 input, it
-           * might crash otherwise. We don't fall back on GST_SUBTITLE_ENCODING
-           * here on purpose, this is something that needs fixing upstream */
-          if (!g_utf8_validate (in_text, in_size, NULL)) {
-            const gchar *end = NULL;
-
-            GST_WARNING_OBJECT (overlay, "received invalid UTF-8");
-            in_text = g_strndup (in_text, in_size);
-            while (!g_utf8_validate (in_text, in_size, &end) && end)
-              *((gchar *) end) = '*';
-          }
-
-          /* Get the string */
-          if (overlay->have_pango_markup) {
-            text = g_strndup (in_text, in_size);
-          } else {
-            text = g_markup_escape_text (in_text, in_size);
-          }
-
-          if (text != NULL && *text != '\0') {
-            gint text_len = strlen (text);
-
-            while (text_len > 0 && (text[text_len - 1] == '\n' ||
-                    text[text_len - 1] == '\r')) {
-              --text_len;
-            }
-            GST_DEBUG_OBJECT (overlay, "Rendering text '%*s'", text_len, text);
-            gst_base_text_overlay_render_text (overlay, text, text_len);
-          } else {
-            GST_DEBUG_OBJECT (overlay, "No text to render (empty buffer)");
-            gst_base_text_overlay_render_text (overlay, " ", 1);
-          }
-          if (in_text != (gchar *) map.data)
-            g_free (in_text);
-        } else {
-          GST_DEBUG_OBJECT (overlay, "No text to render (empty buffer)");
-          gst_base_text_overlay_render_text (overlay, " ", 1);
-        }
-
-        gst_buffer_unmap (overlay->text_buffer, &map);
-
-        GST_BASE_TEXT_OVERLAY_UNLOCK (overlay);
-        ret = gst_base_text_overlay_push_frame (overlay, buffer);
-
-        if (valid_text_time && text_running_time_end <= vid_running_time_end) {
-          GST_LOG_OBJECT (overlay, "text buffer not needed any longer");
-          pop_text = TRUE;
-        }
-      }
-      if (pop_text) {
-        GST_BASE_TEXT_OVERLAY_LOCK (overlay);
-        gst_base_text_overlay_pop_text (overlay);
-        GST_BASE_TEXT_OVERLAY_UNLOCK (overlay);
-      }
-    } else {
-      gboolean wait_for_text_buf = TRUE;
-
-      if (overlay->text_eos)
-        wait_for_text_buf = FALSE;
-
-      if (!overlay->wait_text)
-        wait_for_text_buf = FALSE;
-
-      /* Text pad linked, but no text buffer available - what now? */
-      if (overlay->text_segment.format == GST_FORMAT_TIME) {
-        GstClockTime text_start_running_time, text_position_running_time;
-        GstClockTime vid_running_time;
-
-        vid_running_time =
-            gst_segment_to_running_time (&overlay->segment, GST_FORMAT_TIME,
-            GST_BUFFER_TIMESTAMP (buffer));
-        text_start_running_time =
-            gst_segment_to_running_time (&overlay->text_segment,
-            GST_FORMAT_TIME, overlay->text_segment.start);
-        text_position_running_time =
-            gst_segment_to_running_time (&overlay->text_segment,
-            GST_FORMAT_TIME, overlay->text_segment.position);
-
-        if ((GST_CLOCK_TIME_IS_VALID (text_start_running_time) &&
-                vid_running_time < text_start_running_time) ||
-            (GST_CLOCK_TIME_IS_VALID (text_position_running_time) &&
-                vid_running_time < text_position_running_time)) {
-          wait_for_text_buf = FALSE;
-        }
-      }
-
-      if (wait_for_text_buf) {
-        GST_DEBUG_OBJECT (overlay, "no text buffer, need to wait for one");
-        GST_BASE_TEXT_OVERLAY_WAIT (overlay);
-        GST_DEBUG_OBJECT (overlay, "resuming");
-        GST_BASE_TEXT_OVERLAY_UNLOCK (overlay);
-        goto wait_for_text_buf;
-      } else {
-        GST_BASE_TEXT_OVERLAY_UNLOCK (overlay);
-        GST_LOG_OBJECT (overlay, "no need to wait for a text buffer");
-        ret = gst_pad_push (overlay->srcpad, buffer);
-      }
+      /* time _NONE, so should always activate, but let's force  */
+      gst_sub_overlay_update_sub_buffer (sub_overlay, text_buf, TRUE);
+      overlay->pushed_fixed = TRUE;
     }
+
+    g_free (text);
+  } else if (overlay->pushed_fixed) {
+    gst_sub_overlay_update_sub_buffer (sub_overlay, NULL, TRUE);
+    overlay->pushed_fixed = FALSE;
   }
-
-  g_free (text);
-
-  /* Update position */
-  overlay->segment.position = clip_start;
-
-  return ret;
-
-missing_timestamp:
-  {
-    GST_WARNING_OBJECT (overlay, "buffer without timestamp, discarding");
-    gst_buffer_unref (buffer);
-    return GST_FLOW_OK;
-  }
-
-flushing:
-  {
-    GST_BASE_TEXT_OVERLAY_UNLOCK (overlay);
-    GST_DEBUG_OBJECT (overlay, "flushing, discarding buffer");
-    gst_buffer_unref (buffer);
-    return GST_FLOW_FLUSHING;
-  }
-have_eos:
-  {
-    GST_BASE_TEXT_OVERLAY_UNLOCK (overlay);
-    GST_DEBUG_OBJECT (overlay, "eos, discarding buffer");
-    gst_buffer_unref (buffer);
-    return GST_FLOW_EOS;
-  }
-out_of_segment:
-  {
-    GST_DEBUG_OBJECT (overlay, "buffer out of segment, discarding");
-    gst_buffer_unref (buffer);
-    return GST_FLOW_OK;
-  }
-}
-
-static GstStateChangeReturn
-gst_base_text_overlay_change_state (GstElement * element,
-    GstStateChange transition)
-{
-  GstStateChangeReturn ret = GST_STATE_CHANGE_SUCCESS;
-  GstBaseTextOverlay *overlay = GST_BASE_TEXT_OVERLAY (element);
-
-  switch (transition) {
-    case GST_STATE_CHANGE_PAUSED_TO_READY:
-      GST_BASE_TEXT_OVERLAY_LOCK (overlay);
-      overlay->text_flushing = TRUE;
-      overlay->video_flushing = TRUE;
-      /* pop_text will broadcast on the GCond and thus also make the video
-       * chain exit if it's waiting for a text buffer */
-      gst_base_text_overlay_pop_text (overlay);
-      GST_BASE_TEXT_OVERLAY_UNLOCK (overlay);
-      break;
-    default:
-      break;
-  }
-
-  ret = parent_class->change_state (element, transition);
-  if (ret == GST_STATE_CHANGE_FAILURE)
-    return ret;
-
-  switch (transition) {
-    case GST_STATE_CHANGE_READY_TO_PAUSED:
-      GST_BASE_TEXT_OVERLAY_LOCK (overlay);
-      overlay->text_flushing = FALSE;
-      overlay->video_flushing = FALSE;
-      overlay->video_eos = FALSE;
-      overlay->text_eos = FALSE;
-      gst_segment_init (&overlay->segment, GST_FORMAT_TIME);
-      gst_segment_init (&overlay->text_segment, GST_FORMAT_TIME);
-      GST_BASE_TEXT_OVERLAY_UNLOCK (overlay);
-      break;
-    default:
-      break;
-  }
-
-  return ret;
 }
