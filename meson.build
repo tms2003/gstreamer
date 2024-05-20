@@ -659,6 +659,8 @@ if dotnet_format.found()
     )
 endif
 
+subdir('cmake')
+
 summary({
   'gstreamer-full library': building_full,
   'gstreamer-full target type': get_option('gst-full-target-type'),
