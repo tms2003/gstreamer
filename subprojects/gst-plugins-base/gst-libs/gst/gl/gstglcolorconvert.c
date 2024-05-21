@@ -70,12 +70,6 @@ static gboolean _do_convert_draw (GstGLContext * context,
 
 /* *INDENT-OFF* */
 
-typedef struct
-{
-  GstGLColorConvert *convert;
-  GstBuffer *outbuf;
-} CopyMetaData;
-
 #define YUV_TO_RGB_COEFFICIENTS \
       "uniform mat4 to_RGB_matrix;\n" \
 
@@ -3257,31 +3251,6 @@ out:
   return res;
 }
 
-static gboolean
-foreach_metadata (GstBuffer * inbuf, GstMeta ** meta, gpointer user_data)
-{
-  CopyMetaData *data = user_data;
-  GstGLColorConvert *convert = data->convert;
-  const GstMetaInfo *info = (*meta)->info;
-  GstBuffer *outbuf = data->outbuf;
-
-  if (!gst_meta_api_type_has_tag (info->api, _gst_meta_tag_memory) &&
-      info->api != gst_video_overlay_composition_meta_api_get_type () &&
-      info->api != gst_gl_sync_meta_api_get_type ()) {
-    GstMetaTransformCopy copy_data = { FALSE, 0, -1 };
-    if (info->transform_func) {
-      GST_TRACE_OBJECT (convert, "copy metadata %s", g_type_name (info->api));
-      info->transform_func (outbuf, *meta, inbuf,
-          _gst_meta_transform_copy, &copy_data);
-    } else {
-      GST_DEBUG_OBJECT (convert, "couldn't copy metadata %s",
-          g_type_name (info->api));
-    }
-  }
-
-  return TRUE;
-}
-
 /* Called by the idle function in the gl thread */
 void
 _do_convert (GstGLContext * context, GstGLColorConvert * convert)
@@ -3417,18 +3386,9 @@ _do_convert (GstGLContext * context, GstGLColorConvert * convert)
   }
 
   if (convert->outbuf) {
-    CopyMetaData data;
     GstVideoOverlayCompositionMeta *composition_meta;
-    GstGLSyncMeta *sync_meta;
-
-    if (G_UNLIKELY (!gst_buffer_is_writable (convert->outbuf))) {
-      GST_WARNING_OBJECT (convert,
-          "buffer is not writable at this point, bailing out");
-      convert->priv->result = FALSE;
-      return;
-    }
-
-    sync_meta = gst_buffer_add_gl_sync_meta (convert->context, convert->outbuf);
+    GstGLSyncMeta *sync_meta =
+        gst_buffer_add_gl_sync_meta (convert->context, convert->outbuf);
 
     if (sync_meta)
       gst_gl_sync_meta_set_sync_point (sync_meta, convert->context);
@@ -3440,10 +3400,6 @@ _do_convert (GstGLContext * context, GstGLColorConvert * convert)
       gst_buffer_add_video_overlay_composition_meta
           (convert->outbuf, composition_meta->overlay);
     }
-
-    data.convert = convert;
-    data.outbuf = convert->outbuf;
-    gst_buffer_foreach_meta (convert->inbuf, foreach_metadata, &data);
   }
 
   convert->priv->result = res;
