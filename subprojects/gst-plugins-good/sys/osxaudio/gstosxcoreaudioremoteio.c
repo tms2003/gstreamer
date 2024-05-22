@@ -21,10 +21,14 @@
  */
 
 #import <AudioUnit/AUComponent.h>
+#import "gstiosaudiosession.h"
 
 static gboolean
 gst_core_audio_open_impl (GstCoreAudio * core_audio)
 {
+  /* This is needed for the sound to not be muted by the silent switch on iPhones. */
+  gst_ios_audio_session_start ();
+
   return gst_core_audio_open_device (core_audio, kAudioUnitSubType_RemoteIO,
       "RemoteIO");
 }
