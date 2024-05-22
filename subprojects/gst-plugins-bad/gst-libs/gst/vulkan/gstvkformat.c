@@ -172,9 +172,7 @@ static GstVulkanFormatInfo formats[] = {
   {FORMAT (R8, UINT), FLAG (RGB) | NE, DPTH8, PSTR4, PLANE0, OFFS0, SUB4, VK_IMAGE_ASPECT_COLOR_BIT},
   {FORMAT (R8, SINT), FLAG (RGB) | NE, DPTH8, PSTR4, PLANE0, OFFS0, SUB4, VK_IMAGE_ASPECT_COLOR_BIT},
   {FORMAT (R8, SRGB), FLAG (RGB) | NE, DPTH8, PSTR4, PLANE0, OFFS0, SUB4, VK_IMAGE_ASPECT_COLOR_BIT},
-#if (defined(VK_VERSION_1_3) || defined(VK_VERSION_1_2) && VK_HEADER_VERSION >= 199)
   {FORMAT (G8_B8R8_2PLANE_420, UNORM), FLAG (YUV), DPTH888, PSTR122, PLANE011, OFFS001, SUB420, ASPECT_2PLANE},
-#endif
 #if 0
 FIXME: implement:
   {VK_FORMAT_R4G4_UNORM_PACK8, {0, 1, -1, -1}},
@@ -433,20 +431,16 @@ gst_vulkan_format_get_aspect (VkFormat format)
 }
 
 /* *INDENT-OFF* */
-const static struct {
-  GstVideoFormat format;
-  VkFormat vkfrmt;
-  VkFormat vkfrmts[GST_VIDEO_MAX_PLANES];
-} vk_formats_map[] = {
-  /* RGB                                                     transfer sRGB */
-  { GST_VIDEO_FORMAT_RGBA,  VK_FORMAT_R8G8B8A8_SRGB,       { VK_FORMAT_R8G8B8A8_UNORM, } },
-  { GST_VIDEO_FORMAT_RGBx,  VK_FORMAT_R8G8B8A8_SRGB,       { VK_FORMAT_R8G8B8A8_UNORM, } },
-  { GST_VIDEO_FORMAT_BGRA,  VK_FORMAT_B8G8R8A8_SRGB,       { VK_FORMAT_B8G8R8A8_UNORM, } },
-  { GST_VIDEO_FORMAT_BGRx,  VK_FORMAT_B8G8R8A8_SRGB,       { VK_FORMAT_B8G8R8A8_UNORM, } },
-  { GST_VIDEO_FORMAT_ARGB,  VK_FORMAT_UNDEFINED,           { VK_FORMAT_R8G8B8A8_UNORM, } },
-  { GST_VIDEO_FORMAT_xRGB,  VK_FORMAT_UNDEFINED,           { VK_FORMAT_R8G8B8A8_UNORM, } },
-  { GST_VIDEO_FORMAT_ABGR,  VK_FORMAT_UNDEFINED,           { VK_FORMAT_R8G8B8A8_UNORM, } },
-  { GST_VIDEO_FORMAT_xBGR,  VK_FORMAT_UNDEFINED,           { VK_FORMAT_R8G8B8A8_UNORM, } },
+const static GstVulkanFormatMap vk_formats_map[] = {
+  /* RGB                   unsigned normalized format         sRGB nonlinear encoding */
+  { GST_VIDEO_FORMAT_RGBA,  VK_FORMAT_R8G8B8A8_UNORM,      { VK_FORMAT_R8G8B8A8_SRGB, } },
+  { GST_VIDEO_FORMAT_RGBx,  VK_FORMAT_R8G8B8A8_UNORM,      { VK_FORMAT_R8G8B8A8_SRGB, } },
+  { GST_VIDEO_FORMAT_BGRA,  VK_FORMAT_B8G8R8A8_UNORM,      { VK_FORMAT_B8G8R8A8_SRGB, } },
+  { GST_VIDEO_FORMAT_BGRx,  VK_FORMAT_B8G8R8A8_UNORM,      { VK_FORMAT_B8G8R8A8_SRGB, } },
+  { GST_VIDEO_FORMAT_ARGB,  VK_FORMAT_R8G8B8A8_UNORM,      { VK_FORMAT_UNDEFINED, } },
+  { GST_VIDEO_FORMAT_xRGB,  VK_FORMAT_R8G8B8A8_UNORM,      { VK_FORMAT_UNDEFINED, } },
+  { GST_VIDEO_FORMAT_ABGR,  VK_FORMAT_R8G8B8A8_UNORM,      { VK_FORMAT_UNDEFINED, } },
+  { GST_VIDEO_FORMAT_xBGR,  VK_FORMAT_R8G8B8A8_UNORM,      { VK_FORMAT_UNDEFINED, } },
   { GST_VIDEO_FORMAT_RGB,   VK_FORMAT_R8G8B8_UNORM,        { VK_FORMAT_UNDEFINED, } },
   { GST_VIDEO_FORMAT_BGR,   VK_FORMAT_B8G8R8_UNORM,        { VK_FORMAT_UNDEFINED, } },
   { GST_VIDEO_FORMAT_RGB16, VK_FORMAT_R5G6B5_UNORM_PACK16, { VK_FORMAT_UNDEFINED, } },
@@ -459,13 +453,7 @@ const static struct {
   { GST_VIDEO_FORMAT_AYUV, VK_FORMAT_UNDEFINED, { VK_FORMAT_R8G8B8A8_UNORM, } },
   { GST_VIDEO_FORMAT_YUY2, VK_FORMAT_UNDEFINED, { VK_FORMAT_R8G8_UNORM, } },
   { GST_VIDEO_FORMAT_UYVY, VK_FORMAT_UNDEFINED, { VK_FORMAT_R8G8_UNORM, } },
-  { GST_VIDEO_FORMAT_NV12,
-#if (defined(VK_VERSION_1_3) || defined(VK_VERSION_1_2) && VK_HEADER_VERSION >= 199)
-    VK_FORMAT_G8_B8R8_2PLANE_420_UNORM,
-#else
-    VK_FORMAT_UNDEFINED,
-#endif
-    { VK_FORMAT_R8_UNORM, VK_FORMAT_R8G8_UNORM } },
+  { GST_VIDEO_FORMAT_NV12, VK_FORMAT_G8_B8R8_2PLANE_420_UNORM, { VK_FORMAT_R8_UNORM, VK_FORMAT_R8G8_UNORM } },
   { GST_VIDEO_FORMAT_NV21, VK_FORMAT_UNDEFINED, { VK_FORMAT_R8_UNORM, VK_FORMAT_R8G8_UNORM } },
   { GST_VIDEO_FORMAT_Y444, VK_FORMAT_UNDEFINED, { VK_FORMAT_R8_UNORM,  } },
   { GST_VIDEO_FORMAT_Y42B, VK_FORMAT_UNDEFINED, { VK_FORMAT_R8_UNORM, } },
@@ -474,6 +462,20 @@ const static struct {
   { GST_VIDEO_FORMAT_YV12, VK_FORMAT_UNDEFINED, { VK_FORMAT_R8_UNORM, } },
 };
 /* *INDENT-ON* */
+
+const GstVulkanFormatMap *
+gst_vulkan_format_get_map (GstVideoFormat format)
+{
+  guint i;
+
+  for (i = 0; i < G_N_ELEMENTS (vk_formats_map); i++) {
+    if (vk_formats_map[i].format != format)
+      continue;
+    return &vk_formats_map[i];
+  }
+
+  return NULL;
+}
 
 /**
  * gst_vulkan_format_from_video_info: (skip)
@@ -494,12 +496,7 @@ gst_vulkan_format_from_video_info (GstVideoInfo * v_info, guint plane)
       continue;
 
     if (GST_VIDEO_INFO_IS_RGB (v_info)) {
-      if (GST_VIDEO_INFO_COLORIMETRY (v_info).transfer ==
-          GST_VIDEO_TRANSFER_SRGB) {
-        return vk_formats_map[i].vkfrmt;
-      } else {
-        return vk_formats_map[i].vkfrmts[0];
-      }
+      return vk_formats_map[i].vkfrmt;
     } else if (GST_VIDEO_INFO_IS_YUV (v_info) &&
         GST_VIDEO_INFO_N_PLANES (v_info) > plane) {
       return vk_formats_map[i].vkfrmts[plane];
@@ -655,33 +652,26 @@ gst_vulkan_format_from_video_info_2 (GstVulkanPhysicalDevice * physical_device,
     }
 
     if (GST_VIDEO_INFO_IS_RGB (info)) {
-      if ((GST_VIDEO_INFO_COLORIMETRY (info).transfer ==
-              GST_VIDEO_TRANSFER_SRGB
-              || GST_VIDEO_INFO_COLORIMETRY (info).transfer ==
-              GST_VIDEO_TRANSFER_UNKNOWN)) {
-        usage = _get_usage (feats_primary);
-        if ((requested_usage & usage) == requested_usage) {
-          if (fmts)
-            fmts[0] = vk_formats_map[i].vkfrmt;
-          if (n_imgs)
-            *n_imgs = 1;
-          if (usage_ret)
-            *usage_ret = usage;
-          return TRUE;
-        }
+      usage = _get_usage (feats_primary);
+      if ((requested_usage & usage) == requested_usage) {
+        if (fmts)
+          fmts[0] = vk_formats_map[i].vkfrmt;
+        if (n_imgs)
+          *n_imgs = 1;
+        if (usage_ret)
+          *usage_ret = usage;
+        return TRUE;
       }
 
-      if (GST_VIDEO_INFO_COLORIMETRY (info).transfer != GST_VIDEO_TRANSFER_SRGB) {
-        usage = _get_usage (feats_secondary);
-        if ((requested_usage & usage) == requested_usage) {
-          if (fmts)
-            fmts[0] = vk_formats_map[i].vkfrmts[0];
-          if (n_imgs)
-            *n_imgs = 1;
-          if (usage_ret)
-            *usage_ret = usage;
-          return TRUE;
-        }
+      usage = _get_usage (feats_secondary);
+      if ((requested_usage & usage) == requested_usage) {
+        if (fmts)
+          fmts[0] = vk_formats_map[i].vkfrmts[0];
+        if (n_imgs)
+          *n_imgs = 1;
+        if (usage_ret)
+          *usage_ret = usage;
+        return TRUE;
       }
       return FALSE;
     } else {
