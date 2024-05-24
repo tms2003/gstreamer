@@ -1730,6 +1730,11 @@ gst_kms_sink_propose_allocation (GstBaseSink * bsink, GstQuery * query)
   gst_query_parse_allocation (query, &caps, &need_pool);
   if (!caps)
     goto no_caps;
+
+  /* Do not support DMA buffer allocation from ourself. */
+  if (gst_video_is_dma_drm_caps (caps))
+    goto out;
+
   if (!gst_video_info_from_caps (&vinfo, caps))
     goto invalid_caps;
 
@@ -1755,6 +1760,7 @@ gst_kms_sink_propose_allocation (GstBaseSink * bsink, GstQuery * query)
   if (pool)
     gst_object_unref (pool);
 
+out:
   gst_query_add_allocation_meta (query, GST_VIDEO_META_API_TYPE, NULL);
   gst_query_add_allocation_meta (query, GST_VIDEO_CROP_META_API_TYPE, NULL);
 
