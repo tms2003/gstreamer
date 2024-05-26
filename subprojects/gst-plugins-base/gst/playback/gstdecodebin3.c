@@ -3743,7 +3743,7 @@ gst_decodebin3_change_state (GstElement * element, GstStateChange transition)
     goto beach;
 
   switch (transition) {
-    case GST_STATE_CHANGE_PAUSED_TO_READY:
+    case GST_STATE_CHANGE_READY_TO_NULL:
       gst_decodebin3_reset (dbin);
       break;
     default:
