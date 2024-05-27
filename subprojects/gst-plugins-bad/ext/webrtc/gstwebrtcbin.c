@@ -1285,6 +1285,7 @@ _collate_ice_connection_states (GstWebRTCBin * webrtc)
         g_ptr_array_index (webrtc->priv->transceivers, i);
     GstWebRTCICETransport *transport;
     GstWebRTCICEConnectionState ice_state;
+    GstWebRTCDTLSTransport *dtls_transport;
 
     if (rtp_trans->stopped) {
       GST_TRACE_OBJECT (webrtc, "transceiver %p stopped", rtp_trans);
@@ -1296,7 +1297,13 @@ _collate_ice_connection_states (GstWebRTCBin * webrtc)
       continue;
     }
 
-    transport = webrtc_transceiver_get_dtls_transport (rtp_trans)->transport;
+    dtls_transport = webrtc_transceiver_get_dtls_transport (rtp_trans);
+    if (!dtls_transport)
+      continue;
+
+    transport = dtls_transport->transport;
+    if (!transport)
+      continue;
 
     /* get transport state */
     g_object_get (transport, "state", &ice_state, NULL);
@@ -1473,6 +1480,8 @@ _collate_peer_connection_states (GstWebRTCBin * webrtc)
     }
 
     transport = webrtc_transceiver_get_dtls_transport (rtp_trans);
+    if (!transport)
+      continue;
 
     /* get transport state */
     g_object_get (transport, "state", &dtls_state, NULL);
@@ -5862,6 +5871,14 @@ _update_transceiver_from_sdp_media (GstWebRTCBin * webrtc,
         pad = _create_pad_for_sdp_media (webrtc, GST_PAD_SINK, rtp_trans,
             G_MAXUINT, local_msid);
         local_msid = NULL;
+
+        if (!trans->stream) {
+          TransportStream *item;
+
+          item = _get_or_create_transport_stream (webrtc, bundle_idx, FALSE);
+          webrtc_transceiver_set_transport (trans, item);
+        }
+
         _connect_input_stream (webrtc, pad);
         _add_pad (webrtc, pad);
       }

@@ -5844,6 +5844,122 @@ GST_START_TEST (test_ice_end_of_candidates)
 
 GST_END_TEST;
 
+#define SDP "v=0\r\n\
+o=- 4180051296005097592 1687871831 IN IP4 0.0.0.0\r\n\
+s=-\r\n\
+t=0 0\r\n\
+m=audio 9 UDP/TLS/RTP/SAVPF 96\r\n\
+c=IN IP4 0.0.0.0\r\n\
+a=rtpmap:96 OPUS/48000/2\r\n\
+a=fmtp:96 minptime=10;useinbandfec=1\r\n\
+a=setup:active\r\n\
+a=mid:audio0\r\n\
+a=msid:PA_MwRw5adFH7Dj|TR_AMLb8mQwQCQUZq TR_AMLb8mQwQCQUZq\r\n\
+a=sendrecv\r\n\
+a=ice-ufrag:FX7WvWdi2VPQNCdsBfx7NyBFhYeHdFxt\r\n\
+a=ice-pwd:PYEn/1T6gpRBbr8pOnDm8i8JZt/8x4zY\r\n\
+a=fingerprint:sha-256 E9:96:A2:76:5D:98:8A:E1:6A:12:91:18:EC:EC:A8:69:62:9D:77:23:F9:76:9F:EF:7D:53:ED:BA:10:BC:8D:43\r\n\
+a=rtcp-mux\r\n\
+a=rtcp-rsize\r\n\
+m=video 9 UDP/TLS/RTP/SAVPF 97\r\n\
+c=IN IP4 0.0.0.0\r\n\
+a=rtpmap:97 VP8/90000\r\n\
+a=setup:actpass\r\n\
+a=mid:video1\r\n\
+a=msid:PA_MwRw5adFH7Dj|TR_VCc28Pq83Ux8bL TR_VCc28Pq83Ux8bL\r\n\
+a=sendrecv\r\n\
+a=ice-ufrag:FX7WvWdi2VPQNCdsBfx7NyBFhYeHdFxt\r\n\
+a=ice-pwd:PYEn/1T6gpRBbr8pOnDm8i8JZt/8x4zY\r\n\
+a=fingerprint:sha-256 E9:96:A2:76:5D:98:8A:E1:6A:12:91:18:EC:EC:A8:69:62:9D:77:23:F9:76:9F:EF:7D:53:ED:BA:10:BC:8D:43\r\n\
+a=rtcp-mux\r\n\
+a=rtcp-rsize\r\n"
+
+#define ACTPASS_SDP "v=0\r\n\
+o=- 4180051296005097592 1687871831 IN IP4 0.0.0.0\r\n\
+s=-\r\n\
+t=0 0\r\n\
+m=audio 9 UDP/TLS/RTP/SAVPF 96\r\n\
+c=IN IP4 0.0.0.0\r\n\
+a=rtpmap:96 OPUS/48000/2\r\n\
+a=fmtp:96 minptime=10;useinbandfec=1\r\n\
+a=setup:actpass\r\n\
+a=mid:audio0\r\n\
+a=msid:PA_MwRw5adFH7Dj|TR_AMLb8mQwQCQUZq TR_AMLb8mQwQCQUZq\r\n\
+a=sendrecv\r\n\
+a=ice-ufrag:FX7WvWdi2VPQNCdsBfx7NyBFhYeHdFxt\r\n\
+a=ice-pwd:PYEn/1T6gpRBbr8pOnDm8i8JZt/8x4zY\r\n\
+a=fingerprint:sha-256 E9:96:A2:76:5D:98:8A:E1:6A:12:91:18:EC:EC:A8:69:62:9D:77:23:F9:76:9F:EF:7D:53:ED:BA:10:BC:8D:43\r\n\
+a=rtcp-mux\r\n\
+a=rtcp-rsize\r\n\
+m=video 9 UDP/TLS/RTP/SAVPF 97\r\n\
+c=IN IP4 0.0.0.0\r\n\
+a=rtpmap:97 VP8/90000\r\n\
+a=setup:actpass\r\n\
+a=mid:video1\r\n\
+a=msid:PA_MwRw5adFH7Dj|TR_VCc28Pq83Ux8bL TR_VCc28Pq83Ux8bL\r\n\
+a=sendrecv\r\n\
+a=ice-ufrag:FX7WvWdi2VPQNCdsBfx7NyBFhYeHdFxt\r\n\
+a=ice-pwd:PYEn/1T6gpRBbr8pOnDm8i8JZt/8x4zY\r\n\
+a=fingerprint:sha-256 E9:96:A2:76:5D:98:8A:E1:6A:12:91:18:EC:EC:A8:69:62:9D:77:23:F9:76:9F:EF:7D:53:ED:BA:10:BC:8D:43\r\n\
+a=rtcp-mux\r\n\
+a=rtcp-rsize\r\n"
+
+GST_START_TEST (test_activated_transceiver_has_transport)
+{
+  GstElement *webrtc;
+  GstPromise *promise;
+  GstWebRTCSessionDescription *desc;
+  GstCaps *caps;
+  GstWebRTCRTPTransceiverDirection direction;
+  GstWebRTCRTPTransceiver *trans;
+  GstSDPMessage *sdp;
+
+  webrtc = gst_element_factory_make ("webrtcbin", NULL);
+
+  fail_if (gst_element_set_state (webrtc,
+          GST_STATE_PLAYING) == GST_STATE_CHANGE_FAILURE);
+
+  caps = gst_caps_from_string (OPUS_RTP_CAPS (96));
+  direction = GST_WEBRTC_RTP_TRANSCEIVER_DIRECTION_SENDRECV;
+  g_signal_emit_by_name (webrtc, "add-transceiver", direction, caps, &trans);
+  gst_caps_unref (caps);
+  fail_unless (trans != NULL);
+  gst_object_unref (trans);
+
+  caps = gst_caps_from_string (VP8_RTP_CAPS (97));
+  direction = GST_WEBRTC_RTP_TRANSCEIVER_DIRECTION_SENDRECV;
+  g_signal_emit_by_name (webrtc, "add-transceiver", direction, caps, &trans);
+  fail_unless (trans != NULL);
+  gst_object_unref (trans);
+  gst_caps_unref (caps);
+
+  promise = gst_promise_new ();
+  gst_sdp_message_new_from_text (ACTPASS_SDP, &sdp);
+  desc = gst_webrtc_session_description_new (GST_WEBRTC_SDP_TYPE_OFFER, sdp);
+  g_signal_emit_by_name (webrtc, "set-local-description", desc, promise);
+  gst_promise_wait (promise);
+  gst_promise_unref (promise);
+  gst_webrtc_session_description_free (desc);
+
+  promise = gst_promise_new ();
+  gst_sdp_message_new_from_text (SDP, &sdp);
+  desc = gst_webrtc_session_description_new (GST_WEBRTC_SDP_TYPE_ANSWER, sdp);
+  g_signal_emit_by_name (webrtc, "set-remote-description", desc, promise);
+  gst_promise_wait (promise);
+  gst_promise_unref (promise);
+  gst_webrtc_session_description_free (desc);
+
+  fail_unless_equals_int (GST_STATE_CHANGE_SUCCESS,
+      gst_element_set_state (webrtc, GST_STATE_NULL));
+
+  gst_object_unref (webrtc);
+}
+
+#undef SDP
+#undef ACTPASS_SDP
+
+GST_END_TEST;
+
 static Suite *
 webrtcbin_suite (void)
 {
@@ -5910,6 +6026,7 @@ webrtcbin_suite (void)
     tcase_add_test (tc, test_add_turn_server);
     tcase_add_test (tc, test_msid);
     tcase_add_test (tc, test_ice_end_of_candidates);
+    tcase_add_test (tc, test_activated_transceiver_has_transport);
     if (sctpenc && sctpdec) {
       tcase_add_test (tc, test_data_channel_create);
       tcase_add_test (tc, test_data_channel_create_two_channels);
