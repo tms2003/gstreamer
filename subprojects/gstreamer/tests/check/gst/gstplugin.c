@@ -4,6 +4,8 @@
  *
  * Copyright 2004 Thomas Vander Stichele <thomas at apestaart dot org>
  * Copyright 2005 David Schleef <ds@schleef.org>
+ * Copyright 2024 Fluendo S.A. <engineering@fluendo.com>
+ * Copyright 2024 Fabian Orccon <forccon@fluendo.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -25,7 +27,8 @@
 #endif
 
 #include <gst/check/gstcheck.h>
-
+#include <gst/gstplugin.h>
+#include <gst/gstpluginprivate.h>
 
 static gboolean
 register_check_elements (GstPlugin * plugin)
@@ -360,6 +363,55 @@ GST_START_TEST (test_status_messages)
 
 GST_END_TEST;
 
+GST_START_TEST (test_deps_hashing)
+{
+  guint i, hash0, hash1, hash2;
+  const gchar *env_vars[] = {
+    "LIBVA_DRIVER_NAME",
+    "LIBVA_DRIVER_PATH",
+    "VDPAU_DRIVER_PATH",
+    "VDPAU_DRIVER",
+    "DISPLAY",
+    "XDG_SESSION_TYPE",
+    "WAYLAND_DISPLAY",
+    "FLUVADEC_HW_BACKEND",
+    NULL
+  };
+  GstPluginDep dep = {.env_vars = (gchar **) env_vars };
+  GstPlugin *plugin = g_object_new (GST_TYPE_PLUGIN, NULL);
+
+  for (i = 0; env_vars[i] != NULL; i++)
+    g_unsetenv (env_vars[i]);
+  hash0 = hash1 = gst_plugin_ext_dep_get_env_vars_hash (plugin, &dep);
+  g_setenv ("XDG_SESSION_TYPE", "wayland", TRUE);
+  hash2 = gst_plugin_ext_dep_get_env_vars_hash (plugin, &dep);
+  fail_if (hash1 == hash2);
+
+  hash1 = hash2;
+  g_setenv ("WAYLAND_DISPLAY", "wayland-0", TRUE);
+  hash2 = gst_plugin_ext_dep_get_env_vars_hash (plugin, &dep);
+  fail_if (hash1 == hash2);
+
+  hash1 = hash2;
+  g_setenv ("LIBVA_DRIVER_NAME", "iHD", TRUE);
+  hash2 = gst_plugin_ext_dep_get_env_vars_hash (plugin, &dep);
+  fail_if (hash1 == hash2);
+
+  hash1 = hash2;
+  g_setenv ("LIBVA_DRIVER_NAME", "i965", TRUE);
+  hash2 = gst_plugin_ext_dep_get_env_vars_hash (plugin, &dep);
+  fail_if (hash1 == hash2);
+
+  for (i = 0; env_vars[i] != NULL; i++)
+    g_unsetenv (env_vars[i]);
+  hash2 = gst_plugin_ext_dep_get_env_vars_hash (plugin, &dep);
+  fail_if (hash0 != hash2);
+
+  gst_object_unref (plugin);
+}
+
+GST_END_TEST;
+
 static Suite *
 gst_plugin_suite (void)
 {
@@ -382,6 +434,7 @@ gst_plugin_suite (void)
   tcase_add_test (tc_chain, test_find_element);
   tcase_add_test (tc_chain, test_version_checks);
   tcase_add_test (tc_chain, test_status_messages);
+  tcase_add_test (tc_chain, test_deps_hashing);
   //tcase_add_test (tc_chain, test_typefind);
 
   return s;
