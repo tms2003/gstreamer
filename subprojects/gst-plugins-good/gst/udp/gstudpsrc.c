@@ -567,7 +567,7 @@ static GstStaticPadTemplate src_template = GST_STATIC_PAD_TEMPLATE ("src",
 #define UDP_DEFAULT_CLOSE_SOCKET       TRUE
 #define UDP_DEFAULT_USED_SOCKET        NULL
 #define UDP_DEFAULT_AUTO_MULTICAST     TRUE
-#define UDP_DEFAULT_REUSE              TRUE
+#define UDP_DEFAULT_REUSE              FALSE
 #define UDP_DEFAULT_LOOP               TRUE
 #define UDP_DEFAULT_RETRIEVE_SENDER_ADDRESS TRUE
 #define UDP_DEFAULT_MTU                (1492)
