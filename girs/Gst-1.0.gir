@@ -33734,10 +33734,15 @@ The cache is flushed every time the registry is rebuilt.</doc>
       </method>
     </class>
     <bitfield name="PluginAPIFlags" version="1.18" glib:type-name="GstPluginAPIFlags" glib:get-type="gst_plugin_api_flags_get_type" c:type="GstPluginAPIFlags">
-      <member name="members" value="1" c:identifier="GST_PLUGIN_API_FLAG_IGNORE_ENUM_MEMBERS" glib:nick="members">
+      <member name="ignore_enum_members" value="1" c:identifier="GST_PLUGIN_API_FLAG_IGNORE_ENUM_MEMBERS" glib:nick="ignore-enum-members">
         <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstutils.h">Ignore enum members when generating
   the plugins cache. This is useful if the members of the enum are generated
   dynamically, in order not to expose incorrect documentation to the end user.</doc>
+      </member>
+      <member name="auto_generated" value="2" c:identifier="GST_PLUGIN_API_FLAG_AUTO_GENERATED" glib:nick="auto-generated">
+        <doc xml:space="preserve" filename="../subprojects/gstreamer/gst/gstutils.h">The type is automatically generated from
+  external libraries. This can be used to inform the documentation that it
+  it does not have any kind of versioning associated.</doc>
       </member>
     </bitfield>
     <record name="PluginClass" c:type="GstPluginClass" disguised="1" glib:is-gtype-struct-for="Plugin">

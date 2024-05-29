@@ -1187,11 +1187,15 @@ typedef enum {
  * @GST_PLUGIN_API_FLAG_IGNORE_ENUM_MEMBERS: Ignore enum members when generating
  *   the plugins cache. This is useful if the members of the enum are generated
  *   dynamically, in order not to expose incorrect documentation to the end user.
+ * @GST_PLUGIN_API_FLAG_AUTO_GENERATED: The type is automatically generated from
+ *   external libraries. This can be used to inform the documentation that it
+ *   it does not have any kind of versioning associated.
  *
  * Since: 1.18
  */
 typedef enum {
   GST_PLUGIN_API_FLAG_IGNORE_ENUM_MEMBERS = (1 << 0),
+  GST_PLUGIN_API_FLAG_AUTO_GENERATED = (1 << 1),
 } GstPluginAPIFlags;
 
 GST_API
