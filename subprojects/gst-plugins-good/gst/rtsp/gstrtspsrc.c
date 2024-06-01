@@ -5682,8 +5682,10 @@ gst_rtspsrc_send_keep_alive (GstRTSPSrc * src)
   /* find a method to use for keep-alive */
   if (src->methods & GST_RTSP_GET_PARAMETER)
     method = GST_RTSP_GET_PARAMETER;
-  else
+  else if (src->methods & GST_RTSP_OPTIONS)
     method = GST_RTSP_OPTIONS;
+  else
+    goto no_command;
 
   control = get_aggregate_control (src);
   if (control == NULL)
@@ -5705,6 +5707,12 @@ gst_rtspsrc_send_keep_alive (GstRTSPSrc * src)
   return GST_RTSP_OK;
 
   /* ERRORS */
+no_command:
+  {
+    GST_WARNING_OBJECT (src, "Neither GetParameter or Options is supported,"
+        " disabling keepalive");
+    return GST_RTSP_OK;
+  }
 no_control:
   {
     GST_WARNING_OBJECT (src, "no control url to send keepalive");
@@ -6815,8 +6823,12 @@ receive_error:
         gchar *str = gst_rtsp_strresult (res);
 
         if (res != GST_RTSP_EINTR) {
-          GST_ELEMENT_ERROR (src, RESOURCE, READ, (NULL),
-              ("Could not receive message. (%s)", str));
+          if (conninfo->ignore_errors)
+            GST_WARNING_OBJECT (src, "Could not receive message (but not"
+                " failing now). (%s)", str);
+          else
+            GST_ELEMENT_ERROR (src, RESOURCE, READ, (NULL),
+                ("Could not receive message. (%s)", str));
         } else {
           GST_WARNING_OBJECT (src, "receive interrupted");
         }
@@ -6868,8 +6880,20 @@ again:
   DEBUG_RTSP (src, request);
 
   res = gst_rtspsrc_connection_send (src, conninfo, request, src->tcp_timeout);
+  if (res < 0) {
+    GST_WARNING_OBJECT (src, "Sending failed (%s), let's try a second time",
+        gst_rtsp_strresult (res));
+    if ((try == 0) && !src->interleaved && src->udp_reconnect) {
+      try++;
+      /* if reconnect succeeds, try again */
+      if ((res = gst_rtsp_conninfo_reconnect (src, &src->conninfo, FALSE)) == 0)
+        goto again;
+    }
+  }
   if (res < 0)
     goto send_error;
+
+  try = 0;
 
   gst_rtsp_connection_reset_timeout (conninfo->connection);
   if (!response)
@@ -8355,11 +8379,24 @@ restart:
   if (async)
     GST_ELEMENT_PROGRESS (src, CONTINUE, "open", ("Retrieving server options"));
 
+  src->conninfo.ignore_errors = TRUE;
   if ((res =
           gst_rtspsrc_send (src, &src->conninfo, &request, &response,
               NULL, versions)) < 0) {
-    goto send_error;
+    GST_DEBUG_OBJECT (src, "could not get OPTIONS");
+    /* Assume DESCRIBE, SETUP and PLAY, otherwise it's unusable and
+     * we'll fail again later
+     */
+    src->methods = GST_RTSP_DESCRIBE | GST_RTSP_SETUP | GST_RTSP_PLAY;
+    src->methods |= GST_RTSP_PLAY;
+    /* also assume it will support Range */
+    src->seekable = G_MAXFLOAT;
+    /* and version 1.0 */
+    src->version = GST_RTSP_VERSION_1_0;
+    src->conninfo.ignore_errors = FALSE;
+    goto no_options;
   }
+  src->conninfo.ignore_errors = FALSE;
 
   src->version = request.type_data.request.version;
   GST_INFO_OBJECT (src, "Now using version: %s",
@@ -8369,6 +8406,7 @@ restart:
   if (!gst_rtspsrc_parse_methods (src, &response))
     goto methods_error;
 
+no_options:
   /* create DESCRIBE */
   GST_DEBUG_OBJECT (src, "create describe...");
   res =

@@ -86,6 +86,7 @@ struct _GstRTSPConnInfo {
   GstRTSPConnection  *connection;
   gboolean            connected;
   gboolean            flushing;
+  gboolean            ignore_errors;
 
   GMutex              send_lock;
   GMutex              recv_lock;
