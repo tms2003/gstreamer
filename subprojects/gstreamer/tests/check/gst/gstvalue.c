@@ -3714,6 +3714,30 @@ GST_START_TEST (test_deserialize_array)
 
 GST_END_TEST;
 
+GST_START_TEST (test_transform_null_aray)
+{
+  GValue arr_val = G_VALUE_INIT;
+  g_value_init (&arr_val, G_TYPE_VALUE_ARRAY);
+
+  GValue str_val = G_VALUE_INIT;
+  g_value_init (&str_val, G_TYPE_STRING);
+
+  g_value_set_boxed (&arr_val, NULL);
+
+  const gchar *transformed = NULL;
+  if (g_value_transform (&arr_val, &str_val)) {
+    transformed = g_value_get_string (&str_val);
+  }
+
+  fail_unless_equals_string (transformed, "<  >");
+
+  g_value_unset (&arr_val);
+  g_value_unset (&str_val);
+}
+
+GST_END_TEST;
+
+
 #define TEST_FLAGS_TYPE (test_flags_get_type())
 static GType
 test_flags_get_type (void)
@@ -4022,6 +4046,7 @@ gst_value_suite (void)
   tcase_add_test (tc_chain, test_deserialize_gtype_failures);
   tcase_add_test (tc_chain, test_deserialize_bitmask);
   tcase_add_test (tc_chain, test_deserialize_array);
+  tcase_add_test (tc_chain, test_transform_null_aray);
   tcase_add_test (tc_chain, test_serialize_flags);
   tcase_add_test (tc_chain, test_serialize_flags_invalid);
   tcase_add_test (tc_chain, test_deserialize_flags);
