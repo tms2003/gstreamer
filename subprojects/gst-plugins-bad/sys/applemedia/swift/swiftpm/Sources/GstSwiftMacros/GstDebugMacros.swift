@@ -1,4 +1,3 @@
-import CGStreamer
 import SwiftSyntax
 import SwiftSyntaxMacros
 
@@ -204,26 +203,26 @@ enum DebugMacroError: Error { case becauseOf(String) }
 enum DebugLevel {
   case None, Error, Warning, Fixme, Info, Debug, Log, Trace, Memdump
 
-  public func toGst() -> GstDebugLevel {
+  public func toGst() -> String {
     switch self {
     case .None:
-      return GST_LEVEL_NONE
+      return "GST_LEVEL_NONE"
     case .Error:
-      return GST_LEVEL_ERROR
+      return "GST_LEVEL_ERROR"
     case .Warning:
-      return GST_LEVEL_WARNING
+      return "GST_LEVEL_WARNING"
     case .Fixme:
-      return GST_LEVEL_FIXME
+      return "GST_LEVEL_FIXME"
     case .Info:
-      return GST_LEVEL_INFO
+      return "GST_LEVEL_INFO"
     case .Debug:
-      return GST_LEVEL_DEBUG
+      return "GST_LEVEL_DEBUG"
     case .Log:
-      return GST_LEVEL_LOG
+      return "GST_LEVEL_LOG"
     case .Trace:
-      return GST_LEVEL_TRACE
+      return "GST_LEVEL_TRACE"
     case .Memdump:
-      return GST_LEVEL_MEMDUMP
+      return "GST_LEVEL_MEMDUMP"
     }
   }
 }

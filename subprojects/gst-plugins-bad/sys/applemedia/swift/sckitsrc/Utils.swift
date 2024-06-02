@@ -1,4 +1,3 @@
-import CGStreamer
 import Dispatch
 
 /// Our macro from C is not supported unfortunately, gotta do this manually

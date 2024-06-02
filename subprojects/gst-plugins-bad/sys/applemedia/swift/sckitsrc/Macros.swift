@@ -1,5 +1,3 @@
-import CGStreamer
-
 @freestanding(expression)
 public macro gstError(_ cat: UnsafeMutablePointer<GstDebugCategory>, _: String) =
   #externalMacro(module: "GstSwiftMacros", type: "GstErrorMacro")

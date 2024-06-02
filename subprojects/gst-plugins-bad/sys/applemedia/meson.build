@@ -102,15 +102,15 @@ if gstvulkan_dep.found() and have_objcpp
   endif
 endif
 
-# dirs = gstvideo_dep.get_include_dirs()
-
 # Swift-based elements are hidden behind an option because they require an RPATH (/usr/lib/swift)
-# to be added to the resulting .dylib. We're not sure yet if this won't, for example,
-# prevent people from submitting their apps to the App Store, we need to be able to disable it.
-applemedia_rpath = ''
+# to be added to the resulting .dylib. We're not sure yet if this won't, for example, prevent
+# apps from being submitted to the App Store, so we need to be able to disable it just in case.
 applemedia_swift_option = get_option('applemedia-swift')
-swiftpm = find_program('swift', required : applemedia_swift_option)
-if swiftpm.found()
+# Currently we only have the SCKit element in Swift, this guard will have to change if more is added
+screencapturekit_dep = dependency('ScreenCaptureKit', required : applemedia_swift_option)
+if screencapturekit_dep.found() and not applemedia_swift_option.disabled()
+  # TODO: Compiling this requires Meson 1.5.0+
+  cdata.set('HAVE_SCREENCAPTUREKIT', 1)
   subdir('swift')
 endif
 
@@ -125,7 +125,6 @@ if applemedia_found_deps
         dependencies : [gstvideo_dep, gstpbutils_dep, gst_dep, gstbase_dep, gstgl_dep, gstglproto_dep, gstcodecparsers_dep] + applemedia_deps,
         override_options : ['cpp_std=c++11'],
         install : true,
-        install_rpath : applemedia_rpath,
         install_dir : plugins_install_dir,
     )
     plugins += [gstapplemedia]
