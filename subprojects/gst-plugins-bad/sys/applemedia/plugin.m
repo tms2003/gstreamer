@@ -46,6 +46,10 @@
 void gst_vtenc_register_elements (GstPlugin * plugin);
 #endif
 
+#ifdef HAVE_SCREENCAPTUREKIT
+#include "sckitaudiosrc.h"
+#endif
+
 #ifndef HAVE_IOS
 
 static void
@@ -92,6 +96,10 @@ plugin_init (GstPlugin * plugin)
   }
 #endif
 
+#ifdef HAVE_SCREENCAPTUREKIT
+  res &= gst_element_register (plugin, "sckitaudiosrc", GST_RANK_PRIMARY,
+      GST_TYPE_SCKIT_SRC);
+#endif
 
   return res;
 }

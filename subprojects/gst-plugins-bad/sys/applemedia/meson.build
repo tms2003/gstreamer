@@ -11,11 +11,6 @@ applemedia_sources = [
 ]
 
 applemedia_args = [
-    '-Dgst_core_media_buffer_new=gst_core_media_buffer_priv_new',
-    '-Dgst_core_media_buffer_get_type=gst_core_media_buffer_priv_get_type',
-    '-Dgst_core_media_buffer_get_pixel_buffer=gst_core_media_buffer_priv_get_pixel_buffer',
-    '-Dgst_core_video_buffer_new=gst_core_video_buffer_priv_new',
-    '-Dgst_core_video_buffer_get_type=gst_core_video_buffer_priv_get_type',
     '-DGST_USE_UNSTABLE_API'
 ]
 
@@ -81,6 +76,13 @@ else
     iosurface_dep = dependency('IOSurface', required : applemedia_option)
     applemedia_opengl_dep = dependency('appleframeworks', modules : ['OpenGL'], required : applemedia_option)
     applemedia_frameworks += [cocoa_dep, applemedia_opengl_dep, iosurface_dep]
+
+    screencapturekit_dep = dependency('ScreenCaptureKit', required : applemedia_option)
+    if screencapturekit_dep.found()
+        subdir('sckitsrc-swift')
+        applemedia_sources += ['sckitaudiosrc.m']
+        applemedia_frameworks += [sckitsrc_swift_dep]
+    endif
 endif
 
 applemedia_found_deps = true

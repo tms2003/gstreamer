@@ -453,6 +453,11 @@ if ['darwin', 'ios'].contains(host_system)
       cdata.set('HAVE_VIDEOTOOLBOX', 1)
   endif
 
+  screencapturekit_dep = dependency('ScreenCaptureKit', required : false)
+  if screencapturekit_dep.found()
+      cdata.set('HAVE_SCREENCAPTUREKIT', 1)
+  endif
+
 #  FIXME: framework.version() returns 'unknown'
 #  if videotoolbox_dep.version().version_compare('>=10.9.6')
 #    cdata.set('HAVE_VIDEOTOOLBOX_10_9_6', 1)

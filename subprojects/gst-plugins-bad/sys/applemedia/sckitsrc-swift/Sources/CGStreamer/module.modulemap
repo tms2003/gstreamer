@@ -1,0 +1,6 @@
+module CGStreamer {
+    // There's usually a 'link' line here, but don't need it
+    // (the applemedia plugin, which uses this module, will be linked to all the necessary libs)
+    umbrella header "gst-shim.h"
+    export *
+}
