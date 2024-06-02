@@ -14,7 +14,7 @@ let package = Package(
       // This is the output lib name (libgstsckitsrc.dylib)
       name: "gstsckitsrc",
       type: .static,
-      targets: ["sckitsrc"]),
+      targets: ["GstSCKitSrc"]),
     .library(
       name: "CGStreamer",
       targets: ["CGStreamer"]),
@@ -29,16 +29,16 @@ let package = Package(
   targets: [
     // Macros have to be a separate target
     .macro(
-      name: "gstSwiftMacros",
+      name: "GstSwiftMacros",
       dependencies: [
         "CGStreamer",
         .product(name: "SwiftCompilerPlugin", package: "swift-syntax"),
       ]
     ),
     .target(
-      name: "sckitsrc",
+      name: "GstSCKitSrc",
       dependencies: [
-        "gstSwiftMacros",
+        "GstSwiftMacros",
         "CGStreamer",
         .product(name: "Collections", package: "swift-collections"),
       ],

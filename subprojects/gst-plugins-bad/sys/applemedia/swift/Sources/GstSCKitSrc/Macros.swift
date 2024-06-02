@@ -2,80 +2,80 @@ import CGStreamer
 
 @freestanding(expression)
 public macro gstError(_ cat: UnsafeMutablePointer<GstDebugCategory>, _: String) =
-  #externalMacro(module: "gstSwiftMacros", type: "GstErrorMacro")
+  #externalMacro(module: "GstSwiftMacros", type: "GstErrorMacro")
 
 @freestanding(expression)
 public macro gstWarning(_ cat: UnsafeMutablePointer<GstDebugCategory>, _: String) =
-  #externalMacro(module: "gstSwiftMacros", type: "GstWarningMacro")
+  #externalMacro(module: "GstSwiftMacros", type: "GstWarningMacro")
 
 @freestanding(expression)
 public macro gstFixme(_ cat: UnsafeMutablePointer<GstDebugCategory>, _: String) =
-  #externalMacro(module: "gstSwiftMacros", type: "GstFixmeMacro")
+  #externalMacro(module: "GstSwiftMacros", type: "GstFixmeMacro")
 
 @freestanding(expression)
 public macro gstInfo(_ cat: UnsafeMutablePointer<GstDebugCategory>, _: String) =
-  #externalMacro(module: "gstSwiftMacros", type: "GstInfoMacro")
+  #externalMacro(module: "GstSwiftMacros", type: "GstInfoMacro")
 
 @freestanding(expression)
 public macro gstDebug(_ cat: UnsafeMutablePointer<GstDebugCategory>, _: String) =
-  #externalMacro(module: "gstSwiftMacros", type: "GstDebugMacro")
+  #externalMacro(module: "GstSwiftMacros", type: "GstDebugMacro")
 
 @freestanding(expression)
 public macro gstLog(_ cat: UnsafeMutablePointer<GstDebugCategory>, _: String) =
-  #externalMacro(module: "gstSwiftMacros", type: "GstLogMacro")
+  #externalMacro(module: "GstSwiftMacros", type: "GstLogMacro")
 
 @freestanding(expression)
 public macro gstTrace(_ cat: UnsafeMutablePointer<GstDebugCategory>, _: String) =
-  #externalMacro(module: "gstSwiftMacros", type: "GstTraceMacro")
+  #externalMacro(module: "GstSwiftMacros", type: "GstTraceMacro")
 
 @freestanding(expression)
 public macro gstMemdump(_ cat: UnsafeMutablePointer<GstDebugCategory>, _: String) =
-  #externalMacro(module: "gstSwiftMacros", type: "GstMemdumpMacro")
+  #externalMacro(module: "GstSwiftMacros", type: "GstMemdumpMacro")
 
 @freestanding(expression)
 public macro gstErrorObject(
   _ cat: UnsafeMutablePointer<GstDebugCategory>, _ obj: Any, _: String
 ) =
-  #externalMacro(module: "gstSwiftMacros", type: "GstErrorObjectMacro")
+  #externalMacro(module: "GstSwiftMacros", type: "GstErrorObjectMacro")
 
 @freestanding(expression)
 public macro gstWarningObject(
   _ cat: UnsafeMutablePointer<GstDebugCategory>, _ obj: Any, _: String
 ) =
-  #externalMacro(module: "gstSwiftMacros", type: "GstWarningObjectMacro")
+  #externalMacro(module: "GstSwiftMacros", type: "GstWarningObjectMacro")
 
 @freestanding(expression)
 public macro gstFixmeObject(
   _ cat: UnsafeMutablePointer<GstDebugCategory>, _ obj: Any, _: String
 ) =
-  #externalMacro(module: "gstSwiftMacros", type: "GstFixmeObjectMacro")
+  #externalMacro(module: "GstSwiftMacros", type: "GstFixmeObjectMacro")
 
 @freestanding(expression)
 public macro gstInfoObject(
   _ cat: UnsafeMutablePointer<GstDebugCategory>, _ obj: Any, _: String
 ) =
-  #externalMacro(module: "gstSwiftMacros", type: "GstInfoObjectMacro")
+  #externalMacro(module: "GstSwiftMacros", type: "GstInfoObjectMacro")
 
 @freestanding(expression)
 public macro gstDebugObject(
   _ cat: UnsafeMutablePointer<GstDebugCategory>, _ obj: Any, _: String
 ) =
-  #externalMacro(module: "gstSwiftMacros", type: "GstDebugObjectMacro")
+  #externalMacro(module: "GstSwiftMacros", type: "GstDebugObjectMacro")
 
 @freestanding(expression)
 public macro gstLogObject(
   _ cat: UnsafeMutablePointer<GstDebugCategory>, _ obj: Any, _: String
 ) =
-  #externalMacro(module: "gstSwiftMacros", type: "GstLogObjectMacro")
+  #externalMacro(module: "GstSwiftMacros", type: "GstLogObjectMacro")
 
 @freestanding(expression)
 public macro gstTraceObject(
   _ cat: UnsafeMutablePointer<GstDebugCategory>, _ obj: Any, _: String
 ) =
-  #externalMacro(module: "gstSwiftMacros", type: "GstTraceObjectMacro")
+  #externalMacro(module: "GstSwiftMacros", type: "GstTraceObjectMacro")
 
 @freestanding(expression)
 public macro gstMemdumpObject(
   _ cat: UnsafeMutablePointer<GstDebugCategory>, _ obj: Any, _: String
 ) =
-  #externalMacro(module: "gstSwiftMacros", type: "GstMemdumpObjectMacro")
+  #externalMacro(module: "GstSwiftMacros", type: "GstMemdumpObjectMacro")

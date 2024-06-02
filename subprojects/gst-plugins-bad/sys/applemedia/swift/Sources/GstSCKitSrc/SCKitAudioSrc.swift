@@ -31,8 +31,6 @@ var CAT: UnsafeMutablePointer<GstDebugCategory>!
    * although setters don't support async (which is what we need for that)
    * Will work around it later. */
   @objc public var excludeCurrentProcess: Bool = true
-  // TODO: Add more props, like which display/app to capture,
-  // what windows to exclude, etc. (see https://developer.apple.com/documentation/screencapturekit/sccontentfilter)
 
   private var scStream: SCStream?
   private var scOutputHandler: SCKitSrcOutputHandler?
@@ -234,10 +232,9 @@ var CAT: UnsafeMutablePointer<GstDebugCategory>!
    * "withCompletionHandler" version, which is very annoying to use in Obj-C + GStreamer scenario.
    * To use that properly, we'd have to create separate locks/signals for every method.
    * (see OBS SCKit implementation: https://github.com/obsproject/obs-studio/pull/6717/files)
-   * Instead, we wrap our async methods in a blocking task on the Swift side,
+   * Instead, let's wrap our async methods in a blocking task on the Swift side,
    * which effectively does the same thing, but creates much less noise. */
   @objc public func gstStart() -> Bool {
-    // TODO: convert this to a decorator?
     return BlockingTaskWithResult<Bool> { try await self.start() }.get() ?? false
   }
 

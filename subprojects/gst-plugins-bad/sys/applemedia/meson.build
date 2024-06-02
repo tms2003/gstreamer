@@ -1,13 +1,17 @@
 applemedia_sources = [
     'plugin.m',
     'vtutil.c',
+    'helpers.c',
+]
+
+# Shared with the swift subdir/plugin
+applemedia_shared_sources = [
     'corevideomemory.c',
     'corevideobuffer.c',
     'coremediabuffer.c',
     'videotexturecache.m',
     'videotexturecache-gl.m',
     'glcontexthelper.c',
-    'helpers.c',
 ]
 
 applemedia_args = [
@@ -69,20 +73,13 @@ if host_system == 'ios'
     iosurface_dep = dependency('IOSurface', required : applemedia_option)
     applemedia_frameworks += [ios_media_dep, iosurface_dep]
 else
-    applemedia_sources += [
+    applemedia_shared_sources += [
         'iosurfaceglmemory.c'
     ]
     cocoa_dep = dependency('Cocoa', required : applemedia_option)
     iosurface_dep = dependency('IOSurface', required : applemedia_option)
     applemedia_opengl_dep = dependency('appleframeworks', modules : ['OpenGL'], required : applemedia_option)
     applemedia_frameworks += [cocoa_dep, applemedia_opengl_dep, iosurface_dep]
-
-    screencapturekit_dep = dependency('ScreenCaptureKit', required : applemedia_option)
-    if screencapturekit_dep.found()
-        subdir('sckitsrc-swift')
-        applemedia_sources += ['sckitaudiosrc.m']
-        applemedia_frameworks += [sckitsrc_swift_dep]
-    endif
 endif
 
 applemedia_found_deps = true
@@ -98,7 +95,7 @@ if gstvulkan_dep.found() and have_objcpp
   metal_dep = dependency('appleframeworks', modules : ['Metal'], required : false)
   if metal_dep.found() and moltenvk_dep.found() and cc.has_header ('MoltenVK/vk_mvk_moltenvk.h')
     applemedia_frameworks += [moltenvk_dep, gstvulkan_dep, metal_dep]
-    applemedia_sources += [
+    applemedia_shared_sources += [
       'videotexturecache-vulkan.mm',
       'iosurfacevulkanmemory.c',
     ]
@@ -111,8 +108,12 @@ if gstvulkan_dep.found() and have_objcpp
 endif
 
 if applemedia_found_deps
+    # Makes paths correct when used in a subdir
+    applemedia_shared_sources = files(applemedia_shared_sources)
+    subdir('swift')
+
     gstapplemedia = library('gstapplemedia',
-        applemedia_sources,
+        applemedia_sources + applemedia_shared_sources,
         c_args : gst_plugins_bad_args + applemedia_args,
         objc_args : gst_plugins_bad_args + applemedia_args + applemedia_objc_args,
         objcpp_args : gst_plugins_bad_args + applemedia_args + applemedia_objc_args + applemedia_objcpp_args,

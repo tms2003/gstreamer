@@ -40,7 +40,7 @@ static GstStaticPadTemplate gst_sckitsrc_audio_template = GST_STATIC_PAD_TEMPLAT
     GST_STATIC_CAPS ("audio/x-raw, layout=non-interleaved, format = (string) { F32LE }, "
         "rate = (int) { 8000, 16000, 24000, 48000 }, channels = (int) { 1, 2 }"));
 
-GST_ELEMENT_REGISTER_DEFINE (sckitaudiosrc, "sckitaudiosrc", GST_RANK_PRIMARY, GST_TYPE_SCKIT_SRC); // TODO: rank?
+GST_ELEMENT_REGISTER_DEFINE (sckitaudiosrc, "sckitaudiosrc", GST_RANK_PRIMARY, GST_TYPE_SCKIT_AUDIO_SRC); // TODO: rank?
 
 #define gst_sckit_audio_src_parent_class parent_class
 G_DEFINE_TYPE (GstSCKitAudioSrc, gst_sckit_audio_src, GST_TYPE_BASE_SRC);
@@ -125,7 +125,7 @@ gst_sckit_audio_src_class_init (GstSCKitAudioSrcClass * klass)
 
   gst_element_class_set_static_metadata (element_class,
       "ScreenCaptureKit Audio Source", "Source/Audio",
-      "Captures system audio", "Piotr Brzeziński <piotr@centricular.com>");
+      "Captures system audio on macOS", "Piotr Brzeziński <piotr@centricular.com>");
 
   GST_DEBUG_CATEGORY_INIT (gst_sckit_audio_src_debug, "sckitaudiosrc", 0, "ScreenCaptureKit audio source");
 
@@ -140,6 +140,6 @@ gst_sckit_audio_src_class_init (GstSCKitAudioSrcClass * klass)
   g_object_class_install_property (gobject_class, PROP_EXCLUDE_CURRENT_PROCESS,
     g_param_spec_boolean ("exclude-current-process",
         "Exclude current process",
-        "Whether to exclude current the audio output by the current process from the capture",
+        "Whether to exclude audio output by the current process from the capture",
         TRUE, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 }

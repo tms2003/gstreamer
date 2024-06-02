@@ -22,14 +22,14 @@
 
 #include <gst/base/gstbasesrc.h>
 
-#include "sckitsrc-swift/sckitsrc-Swift.h"
+#include "GstSCKitSrc-Swift.h"
 
 G_BEGIN_DECLS
-#define GST_TYPE_SCKIT_SRC (gst_sckit_audio_src_get_type())
-#define GST_SCKIT_AUDIO_SRC(obj) (G_TYPE_CHECK_INSTANCE_CAST((obj), GST_TYPE_SCKIT_SRC, GstSCKitAudioSrc))
-#define GST_SCKIT_AUDIO_SRC_CLASS(klass) (G_TYPE_CHECK_CLASS_CAST((klass), GST_TYPE_SCKIT_SRC, GstSCKitAudioSrcClass))
-#define GST_IS_SCKIT_SRC(obj) (G_TYPE_CHECK_INSTANCE_TYPE((obj), GST_TYPE_SCKIT_SRC))
-#define GST_IS_SCKIT_SRC_CLASS(klass) (G_TYPE_CHECK_CLASS_TYPE((klass), GST_TYPE_SCKIT_SRC))
+#define GST_TYPE_SCKIT_AUDIO_SRC (gst_sckit_audio_src_get_type())
+#define GST_SCKIT_AUDIO_SRC(obj) (G_TYPE_CHECK_INSTANCE_CAST((obj), GST_TYPE_SCKIT_AUDIO_SRC, GstSCKitAudioSrc))
+#define GST_SCKIT_AUDIO_SRC_CLASS(klass) (G_TYPE_CHECK_CLASS_CAST((klass), GST_TYPE_SCKIT_AUDIO_SRC, GstSCKitAudioSrcClass))
+#define GST_IS_SCKIT_SRC(obj) (G_TYPE_CHECK_INSTANCE_TYPE((obj), GST_TYPE_SCKIT_AUDIO_SRC))
+#define GST_IS_SCKIT_SRC_CLASS(klass) (G_TYPE_CHECK_CLASS_TYPE((klass), GST_TYPE_SCKIT_AUDIO_SRC))
 
 typedef struct _GstSCKitAudioSrc GstSCKitAudioSrc;
 typedef struct _GstSCKitAudioSrcClass GstSCKitAudioSrcClass;
