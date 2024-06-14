@@ -1973,6 +1973,34 @@ GST_START_TEST (test_mark_as_plugin_api)
 
 GST_END_TEST;
 
+GST_START_TEST (test_uint64_update)
+{
+  guint64 value = -1;
+
+  /* Big value is not a wraparound when it's the initial value */
+  fail_unless_equals_int (gst_util_uint64_update (&value, G_MAXUINT32, 32),
+      G_MAXUINT32);
+  fail_unless_equals_int (value, G_MAXUINT32);
+
+  /* Going from G_MAXUINT32 to 0 is actually an increase of 1 */
+  guint64 prev = value;
+  fail_unless_equals_int (gst_util_uint64_update (&value, 0, 32), prev + 1);
+  fail_unless_equals_int (value, prev + 1);
+
+  /* Going back to G_MAXUINT32 unwrap but does not update value */
+  prev = value;
+  fail_unless_equals_int (gst_util_uint64_update (&value, G_MAXUINT32, 32),
+      prev - 1);
+  fail_unless_equals_int (value, prev);
+
+  /* Simple small increase */
+  prev = value;
+  fail_unless_equals_int (gst_util_uint64_update (&value, 42, 32), prev + 42);
+  fail_unless_equals_int (value, prev + 42);
+}
+
+GST_END_TEST;
+
 static Suite *
 gst_utils_suite (void)
 {
@@ -2015,6 +2043,8 @@ gst_utils_suite (void)
   tcase_add_test (tc_chain, test_regression);
 
   tcase_add_test (tc_chain, test_mark_as_plugin_api);
+
+  tcase_add_test (tc_chain, test_uint64_update);
 
   return s;
 }
