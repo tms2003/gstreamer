@@ -89,6 +89,8 @@ def prepend_env_var(env, var, value, sysroot):
     if os.name == 'nt':
         value = win32_get_short_path_name(value)
     env_val = env.get(var, '')
+    if value == env_val:
+        return
     val = os.pathsep + value + os.pathsep
     # Don't add the same value twice
     if val in env_val or env_val.startswith(value + os.pathsep):
