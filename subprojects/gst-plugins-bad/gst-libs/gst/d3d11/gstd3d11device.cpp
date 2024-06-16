@@ -171,6 +171,8 @@ struct _GstD3D11DevicePrivate
   HANDLE device_removed_event;
   HANDLE cancallable;
   std::atomic<HRESULT> removed_reason = { S_OK };
+
+  gboolean protect_intel_driver = FALSE;
 };
 /* *INDENT-ON* */
 
@@ -765,7 +767,8 @@ gst_d3d11_device_dispose (GObject * object)
     g_clear_pointer (&priv->device_removed_monitor_thread, g_thread_join);
   }
 
-  gst_win32_rw_lock_writer_lock (&_device_creation_rwlock);
+  if (priv->protect_intel_driver)
+    gst_win32_rw_lock_writer_lock (&_device_creation_rwlock);
 
   priv->ps_cache.clear ();
   priv->vs_cache.clear ();
@@ -793,7 +796,8 @@ gst_d3d11_device_dispose (GObject * object)
   GST_D3D11_CLEAR_COM (priv->dxgi_info_queue);
 #endif
 
-  gst_win32_rw_lock_writer_unlock (&_device_creation_rwlock);
+  if (priv->protect_intel_driver)
+    gst_win32_rw_lock_writer_unlock (&_device_creation_rwlock);
   G_OBJECT_CLASS (parent_class)->dispose (object);
 }
 
@@ -1208,6 +1212,15 @@ gst_d3d11_device_new_internal (const GstD3D11DeviceConstructData * data)
   priv->adapter_luid = gst_d3d11_luid_to_int64 (&adapter_desc.AdapterLuid);
   priv->feature_level = priv->device->GetFeatureLevel ();
 
+  if (adapter_desc.VendorId == 0x8086 &&
+      priv->description && strstr (priv->description, "HD")) {
+    /* If the device is Intel iGPU gen 11 or older (HD xxx or UHD xxx),
+     * we need to protect the driver from the D3D11CreateDevice collision
+     * with other calls to any instance D3D11Device and with D3D11Device
+     * destruction. */
+    priv->protect_intel_driver = TRUE;
+  }
+
   DXGI_ADAPTER_DESC1 desc1;
   hr = adapter->GetDesc1 (&desc1);
 
@@ -1435,7 +1448,8 @@ gst_d3d11_device_lock (GstD3D11Device * device)
 
   priv = device->priv;
 
-  gst_win32_rw_lock_reader_lock (&_device_creation_rwlock);
+  if (priv->protect_intel_driver)
+    gst_win32_rw_lock_reader_lock (&_device_creation_rwlock);
 
   GST_TRACE_OBJECT (device, "device locking");
   priv->extern_lock.lock ();
@@ -1463,7 +1477,8 @@ gst_d3d11_device_unlock (GstD3D11Device * device)
   priv->extern_lock.unlock ();
   GST_TRACE_OBJECT (device, "device unlocked");
 
-  gst_win32_rw_lock_reader_unlock (&_device_creation_rwlock);
+  if (priv->protect_intel_driver)
+    gst_win32_rw_lock_reader_unlock (&_device_creation_rwlock);
 }
 
 /**
