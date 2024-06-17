@@ -54,11 +54,7 @@ let package = Package(
     ),
     .systemLibrary(
       name: "CGStreamer",
-      pkgConfig: "gstreamer-1.0",
-      providers: [
-        .brew(["gstreamer-1.0"]),
-        .apt(["libgstreamer1.0-dev"]),
-      ]
+      pkgConfig: "gstreamer-1.0"
     ),
   ]
 )

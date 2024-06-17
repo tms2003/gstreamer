@@ -91,6 +91,7 @@ option('avtp', type : 'feature', value : 'auto', description : 'Audio/Video Tran
 option('amfcodec', type : 'feature', value : 'auto', description : 'AMD AMF codec plugin')
 option('androidmedia', type : 'feature', value : 'auto', description : 'Video capture and codec plugins for Android')
 option('applemedia', type : 'feature', value : 'auto', description : 'Video capture and codec access plugins for macOS and iOS')
+option('applemedia-swift', type : 'feature', value : 'auto', description : 'A/V capture elements for macOS built with Swift')
 option('asio', type : 'feature', value : 'auto', description : 'Steinberg Audio Streaming Input Output (ASIO) plugin')
 option('assrender', type : 'feature', value : 'auto', description : 'ASS/SSA subtitle renderer plugin')
 option('bluez', type : 'feature', value : 'auto', description : 'Bluetooth audio A2DP/AVDTP sink, AVDTP source plugin')
