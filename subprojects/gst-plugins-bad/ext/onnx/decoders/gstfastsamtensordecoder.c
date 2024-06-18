@@ -176,7 +176,7 @@ static GstFlowReturn gst_fastsam_tensor_decoder_transform_ip (GstBaseTransform *
 static gboolean gst_fastsam_tensor_decoder_set_caps (GstBaseTransform * trans,
     GstCaps * incaps, GstCaps * outcaps);
 static void gst_fastsam_tensor_decoder_decode_masks_f32 (GstFastSAMTensorDecoder
-    * self, GstBuffer * buf, GstTensor * masks_tensor,
+    * self, GstBuffer * buf, GstTensor * masks_tensor, GstTensor * logits_tensor,
     GstAnalyticsRelationMeta * rmeta);
 static void gst_fastsam_tensor_decoder_decode_logits (GstFastSAMTensorDecoder *
     self, GstBuffer * buf, GstTensor * masks_tensor,
@@ -547,12 +547,12 @@ gst_fastsam_tensor_decoder_transform_ip (GstBaseTransform * trans,
      * required simultanously to extract the segmentation. If this is the case
      * we probably should rename gst_fastsam_tensor_decoder_decode_masks_f32 to
      * gst_fastsam_tensor_decoder_decode_f32. */
-    gst_fastsam_tensor_decoder_decode_masks_f32 (self, buf, masks_tensor,
+    gst_fastsam_tensor_decoder_decode_masks_f32 (self, buf, masks_tensor, logits_tensor,
         rmeta);
 
     /* Decode logits_tensor and attach the information in a structured way
      * to rmeta.*/
-    gst_fastsam_tensor_decoder_decode_logits (self, buf, logits_tensor, rmeta);
+    // gst_fastsam_tensor_decoder_decode_logits (self, buf, logits_tensor, rmeta);
   }
 
   return GST_FLOW_OK;
@@ -658,16 +658,32 @@ gst_fastsam_tensor_decoder_debug_print_candidate (gpointer candidate_,
 }
 #endif
 
+
+float sigmoid(float x) {
+    // Check for positive overflow
+    if (x > 0) {
+        double exp_neg_x = exp(-x);
+        return 1.0 / (1.0 + exp_neg_x);
+    }
+    // Check for negative overflow and improve stability for negative x
+    else {
+        double exp_x = exp(x);
+        return exp_x / (1.0 + exp_x);
+    }
+}
+
 static void
 gst_fastsam_tensor_decoder_decode_masks_f32 (GstFastSAMTensorDecoder * self,
-    GstBuffer * buf, GstTensor * masks_tensor, GstAnalyticsRelationMeta * rmeta)
+    GstBuffer * buf, GstTensor * masks_tensor, GstTensor * logits_tensor,
+    GstAnalyticsRelationMeta * rmeta)
 {
   GstFastSAMTensorDecoderPrivate *priv = PRIV (self);
   /*guint batch_size = masks_tensor->dims[0]; */
   /*guint num_masks = masks_tensor->dims[1]; */
   GstMemory *memory = NULL;
-  GstMapInfo map_info;
-  gfloat *data, *candidate, **candidates, iou;
+  GstMemory *memory_logits = NULL;
+  GstMapInfo map_info, map_info_logits;
+  gfloat *data, *candidate, **candidates, iou, *data_logits;
   gboolean rv;
   gsize offset, x_offset, y_offset, w_offset, h_offset, c_offset, offsets[4];
   GPtrArray *sel_candidates = priv->sel_candidates;
@@ -819,6 +835,58 @@ gst_fastsam_tensor_decoder_decode_masks_f32 (GstFastSAMTensorDecoder * self,
 
   /* We unmap the memory */
   gst_memory_unmap (memory, &map_info);
+
+  memory_logits = gst_buffer_peek_memory (logits_tensor->data, 0);
+  g_return_if_fail (memory_logits != NULL);
+  rv = gst_buffer_map(logits_tensor->data, &map_info_logits, GST_MAP_READ);
+  g_return_if_fail (rv);
+  data_logits = (gfloat *) map_info_logits.data;
+
+  gint mask_rows = selected->len, mask_cols = 32;
+  gint logits_rows = 32, logits_cols = 256*256;
+  gint out_rows = mask_rows, out_cols = logits_cols;
+
+  float* multiplication_result = (float*)malloc(out_rows * out_cols * sizeof(float));
+
+  float* output = (float*)malloc(out_rows * out_cols * sizeof(float));
+  candidates = (gfloat **) selected->pdata;
+
+  for (gint c = 0; c < selected->len; c++){
+    float *masks_in = (float*)malloc(32 * sizeof(float));
+    candidate = candidates[c];
+    for (gint i = 0; i < 32; i++){
+      masks_in[i] = *(candidate + ((5 + i) * offset));
+    }
+
+    float *result = multiplication_result + (c * out_cols);
+    for (int j = 0; j < out_cols; ++j) {
+      float sum = 0.0f;
+      for (gint k = 0; k < 32; ++k) {
+        // GST_TRACE_OBJECT(self, "protos data at (%d, %d) is %f", j, k,  data_logits[k * out_cols + j]);
+        sum += masks_in[k] * data_logits[k * out_cols + j];
+      }
+      result[j] = sigmoid(sum) > 0.5 ? 1.0 : 0.0;
+    }
+  }
+
+  for (int i = 0; i < selected->len; ++i) {
+    float *result = multiplication_result + (i * out_cols);
+    for (int j = 0; j < 10; ++j) {
+      GST_TRACE_OBJECT(self, "Mask %d value %d is %f ",i,j, result[j]);
+    }
+    printf("\n");
+  }
+
+
+  // // /* We calculate the masks here. */
+  // GST_TRACE_OBJECT (self, "New Logits Tensor shape dims %d",
+  //     logits_tensor->num_dims);
+  // for (gint i = 0; i < logits_tensor->num_dims; i++) {
+  //   GST_TRACE_OBJECT (self, "New Logits Tensor dim %d: %ld", i,
+  //       logits_tensor->dims[i]);
+  // }
+  // gst_memory_unmap (buf, &map_info);
+  gst_memory_unmap (memory_logits, &map_info_logits);
 }
 
 static void
