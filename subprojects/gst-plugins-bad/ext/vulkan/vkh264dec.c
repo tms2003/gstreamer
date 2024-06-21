@@ -990,7 +990,7 @@ _fill_h264_pic (const GstH264Picture * picture, const GstH264Slice * slice,
 }
 
 static gint32
-_find_next_slot_idx (GArray * dpb)
+_find_next_slot_idx (GstH264Picture * picture, GArray * dpb)
 {
   gint32 i;
   guint len;
@@ -1002,13 +1002,19 @@ _find_next_slot_idx (GArray * dpb)
 
   for (i = 0; i < len; i++) {
     GstH264Picture *pic = g_array_index (dpb, GstH264Picture *, i);
-    GstVulkanH264Picture *h264_pic = gst_h264_picture_get_user_data (pic);
+    GstVulkanH264Picture *h264_pic;
+
+    if (pic->second_field)
+      continue;
+
+    h264_pic = gst_h264_picture_get_user_data (pic);
     arr[h264_pic->slot_idx] = pic;
   }
 
   /* let's return the smallest available / not ref index */
   for (i = 0; i < len; i++) {
-    if (!arr[i])
+    if (!arr[i]
+        || (picture->second_field && picture->other_field == arr[i]))
       return i;
   }
 
@@ -1026,7 +1032,8 @@ _fill_h264_slot (GstH264Picture * picture,
       .top_field_flag =
           (picture->field == GST_H264_PICTURE_FIELD_TOP_FIELD),
       .bottom_field_flag =
-          (picture->field == GST_H264_PICTURE_FIELD_BOTTOM_FIELD),
+          (picture->other_field
+           && picture->other_field->field == GST_H264_PICTURE_FIELD_BOTTOM_FIELD),
       .is_non_existing = picture->nonexisting,
       .used_for_long_term_reference =
           GST_H264_PICTURE_IS_LONG_TERM_REF (picture),
@@ -1127,6 +1134,7 @@ gst_vulkan_h264_decoder_start_picture (GstH264Decoder * decoder,
   GstVulkanH264Picture *pic;
   GArray *refs;
   guint i, j;
+  gboolean deinterlaced;
 
   GST_TRACE_OBJECT (self, "Start picture");
 
@@ -1143,31 +1151,39 @@ gst_vulkan_h264_decoder_start_picture (GstH264Decoder * decoder,
   g_assert (pic);
 
   _fill_h264_pic (picture, slice, &pic->vk_h264pic, &pic->std_h264pic);
-  pic->slot_idx = _find_next_slot_idx (refs);
+  pic->slot_idx = _find_next_slot_idx (picture, refs);
 
   /* fill main slot */
   _fill_ref_slot (self, picture, &pic->base.slot,
       &pic->base.pic_res, &pic->vk_slot, &pic->std_ref, NULL);
 
+  deinterlaced = GST_VIDEO_INFO_INTERLACE_MODE (&self->output_state->info)
+      != GST_VIDEO_INTERLACE_MODE_PROGRESSIVE;
   j = 0;
 
   /* Fill in short-term references */
   for (i = 0; i < refs->len; i++) {
     GstH264Picture *picture = g_array_index (refs, GstH264Picture *, i);
-    /* XXX: shall we add second fields? */
+
+    if (picture->second_field || (deinterlaced && !picture->other_field))
+      continue;
+
+    /* include non-existent? */
     if (GST_H264_PICTURE_IS_SHORT_TERM_REF (picture)) {
       _fill_ref_slot (self, picture, &pic->base.slots[j],
           &pic->base.pics_res[j], &pic->vk_slots[j], &pic->std_refs[j],
           &pic->base.refs[j]);
       j++;
     }
-    /* FIXME: do it in O(n) rather O(2n) */
   }
 
   /* Fill in long-term refs */
   for (i = 0; i < refs->len; i++) {
     GstH264Picture *picture = g_array_index (refs, GstH264Picture *, i);
-    /* XXX: shall we add non existing and second fields? */
+
+    if (picture->second_field || (deinterlaced && !picture->other_field))
+      continue;
+
     if (GST_H264_PICTURE_IS_LONG_TERM_REF (picture)) {
       _fill_ref_slot (self, picture, &pic->base.slots[j],
           &pic->base.pics_res[j], &pic->vk_slots[j], &pic->std_refs[j],
