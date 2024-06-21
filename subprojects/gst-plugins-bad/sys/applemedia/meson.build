@@ -108,11 +108,11 @@ endif
 # to be added to the resulting .dylib. We're not sure yet if this won't, for example,
 # prevent people from submitting their apps to the App Store, we need to be able to disable it.
 applemedia_rpath = ''
-# applemedia_swift_option = get_option('applemedia-swift')
-# swiftpm = find_program('swift', required : applemedia_swift_option)
-# if swiftpm.found()
-#   subdir('swift')
-# endif
+applemedia_swift_option = get_option('applemedia-swift')
+swiftpm = find_program('swift', required : applemedia_swift_option)
+if swiftpm.found()
+  subdir('swift')
+endif
 
 if applemedia_found_deps
     gstapplemedia = library('gstapplemedia',
