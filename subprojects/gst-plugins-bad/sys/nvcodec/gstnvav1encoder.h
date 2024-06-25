@@ -29,8 +29,9 @@ GstNvEncoderClassData * gst_nv_av1_encoder_register_cuda  (GstPlugin * plugin,
 
 #ifdef G_OS_WIN32
 GstNvEncoderClassData * gst_nv_av1_encoder_register_d3d11 (GstPlugin * plugin,
-                                                            GstD3D11Device * device,
-                                                            guint rank);
+                                                           GstD3D11Device * device,
+                                                           guint rank,
+                                                           gboolean d3d12_import);
 #endif
 
 void gst_nv_av1_encoder_register_auto_select (GstPlugin * plugin,

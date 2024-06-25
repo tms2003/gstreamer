@@ -79,6 +79,10 @@ struct _GstNvEncoderPrivate
   GstD3D11Fence *fence = nullptr;
 #endif
 
+#ifdef HAVE_GST_D3D12
+  GstD3D12Device *device12 = nullptr;
+#endif
+
 #ifdef HAVE_CUDA_GST_GL
   GstGLDisplay *gl_display = nullptr;
   GstGLContext *gl_context = nullptr;
@@ -93,6 +97,7 @@ struct _GstNvEncoderPrivate
   GstNvEncoderDeviceMode selected_device_mode;
   gint64 dxgi_adapter_luid = 0;
   guint cuda_device_id = 0;
+  gboolean d3d12_import = FALSE;
 
   NV_ENC_INITIALIZE_PARAMS init_params;
   NV_ENC_CONFIG config;
@@ -274,6 +279,10 @@ gst_nv_encoder_set_context (GstElement * element, GstContext * context)
     case GST_NV_ENCODER_DEVICE_D3D11:
       gst_d3d11_handle_set_context_for_adapter_luid (element,
           context, priv->dxgi_adapter_luid, &priv->device);
+#ifdef HAVE_GST_D3D12
+      gst_d3d12_handle_set_context_for_adapter_luid (element,
+          context, priv->dxgi_adapter_luid, &priv->device12);
+#endif
       break;
 #endif
     case GST_NV_ENCODER_DEVICE_CUDA:
@@ -420,6 +429,11 @@ gst_nv_encoder_open_d3d11_device (GstNvEncoder * self)
 
   multi_thread->SetMultithreadProtected (TRUE);
 
+#ifdef HAVE_GST_D3D12
+  gst_d3d12_ensure_element_data_for_adapter_luid (GST_ELEMENT (self),
+      priv->dxgi_adapter_luid, &priv->device12);
+#endif
+
   return TRUE;
 }
 #endif
@@ -466,6 +480,9 @@ gst_nv_encoder_close (GstVideoEncoder * encoder)
 #ifdef G_OS_WIN32
   gst_clear_d3d11_fence (&priv->fence);
   gst_clear_object (&priv->device);
+#endif
+#ifdef HAVE_GST_D3D12
+  gst_clear_object (&priv->device12);
 #endif
 #ifdef HAVE_CUDA_GST_GL
   gst_clear_object (&priv->gl_display);
@@ -581,6 +598,12 @@ gst_nv_encoder_handle_context_query (GstNvEncoder * self, GstQuery * query)
     case GST_NV_ENCODER_DEVICE_D3D11:
       ret = gst_d3d11_handle_context_query (GST_ELEMENT (self),
           query, priv->device);
+#ifdef HAVE_GST_D3D12
+      if (!ret) {
+        ret = gst_d3d12_handle_context_query (GST_ELEMENT (self),
+            query, priv->device12);
+      }
+#endif
       break;
 #endif
     case GST_NV_ENCODER_DEVICE_CUDA:
@@ -678,6 +701,9 @@ gst_nv_encoder_propose_allocation (GstVideoEncoder * encoder, GstQuery * query)
   GstCapsFeatures *features;
   guint min_buffers;
   gboolean use_cuda_pool = FALSE;
+#ifdef HAVE_GST_D3D12
+  gboolean is_d3d12 = FALSE;
+#endif
 
   gst_query_parse_allocation (query, &caps, NULL);
   if (!caps) {
@@ -712,6 +738,14 @@ gst_nv_encoder_propose_allocation (GstVideoEncoder * encoder, GstQuery * query)
         GST_DEBUG_OBJECT (self, "upstream support d3d11 memory");
         pool = gst_d3d11_buffer_pool_new (priv->device);
       }
+#ifdef HAVE_GST_D3D12
+      else if (features && gst_caps_features_contains (features,
+              GST_CAPS_FEATURE_MEMORY_D3D12_MEMORY) && priv->device12) {
+        GST_DEBUG_OBJECT (self, "upstream support d3d12 memory");
+        pool = gst_d3d12_buffer_pool_new (priv->device12);
+        is_d3d12 = TRUE;
+      }
+#endif
       break;
 #endif
     case GST_NV_ENCODER_DEVICE_CUDA:
@@ -758,6 +792,16 @@ gst_nv_encoder_propose_allocation (GstVideoEncoder * encoder, GstQuery * query)
     /* Set our stream on buffer pool config so that CUstream can be shared */
     gst_buffer_pool_config_set_cuda_stream (config, priv->stream);
   }
+#ifdef HAVE_GST_D3D12
+  if (is_d3d12) {
+    auto params = gst_d3d12_allocation_params_new (priv->device12, &info,
+        GST_D3D12_ALLOCATION_FLAG_DEFAULT,
+        D3D12_RESOURCE_FLAG_ALLOW_SIMULTANEOUS_ACCESS |
+        D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, D3D12_HEAP_FLAG_SHARED);
+    gst_buffer_pool_config_set_d3d12_allocation_params (config, params);
+    gst_d3d12_allocation_params_free (params);
+  }
+#endif
 
   if (!gst_buffer_pool_set_config (pool, config)) {
     GST_WARNING_OBJECT (self, "Failed to set pool config");
@@ -1757,28 +1801,55 @@ gst_nv_encoder_prepare_task_input_d3d11 (GstNvEncoder * self,
   }
 
   mem = gst_buffer_peek_memory (buffer, 0);
-  if (!gst_is_d3d11_memory (mem)) {
-    GST_LOG_OBJECT (self, "Not a D3D11 buffer, system copy");
-    return gst_nv_encoder_copy_system (self, info, buffer, task);
-  }
-
-  dmem = GST_D3D11_MEMORY_CAST (mem);
-  if (dmem->device != priv->device) {
-    gint64 adapter_luid;
-
-    g_object_get (dmem->device, "adapter-luid", &adapter_luid, NULL);
+#ifdef HAVE_GST_D3D12
+  if (priv->d3d12_import && gst_is_d3d12_memory (mem)) {
+    gint64 adapter_luid = 0;
+    auto d3d12mem = GST_D3D12_MEMORY_CAST (mem);
+    g_object_get (d3d12mem->device, "adapter-luid", &adapter_luid, NULL);
     if (adapter_luid == priv->dxgi_adapter_luid) {
-      GST_LOG_OBJECT (self, "Different device but same GPU, copy d3d11");
-      upload_buffer = gst_nv_encoder_copy_d3d11 (self, buffer, pool, TRUE);
-    } else {
-      GST_LOG_OBJECT (self, "Different device, system copy");
+      auto device11 = gst_d3d11_device_get_device_handle (priv->device);
+      auto texture = gst_d3d12_memory_get_d3d11_texture (d3d12mem, device11);
+      if (texture) {
+        gst_d3d12_memory_sync (d3d12mem);
+        auto wrapped = gst_d3d11_allocator_alloc_wrapped (nullptr,
+            priv->device, texture, 1, nullptr, nullptr);
+        if (wrapped) {
+          GST_TRACE_OBJECT (self, "Importing D3D12 resource");
+
+          auto upload_buffer = gst_buffer_new ();
+          gst_buffer_append_memory (upload_buffer, wrapped);
+          gst_buffer_add_parent_buffer_meta (upload_buffer, buffer);
+        }
+      }
+    }
+  }
+#endif
+
+  if (!upload_buffer) {
+    if (!gst_is_d3d11_memory (mem)) {
+      GST_LOG_OBJECT (self, "Not a D3D11 buffer, system copy");
       return gst_nv_encoder_copy_system (self, info, buffer, task);
+    }
+
+    dmem = GST_D3D11_MEMORY_CAST (mem);
+    if (dmem->device != priv->device) {
+      gint64 adapter_luid;
+
+      g_object_get (dmem->device, "adapter-luid", &adapter_luid, NULL);
+      if (adapter_luid == priv->dxgi_adapter_luid) {
+        GST_LOG_OBJECT (self, "Different device but same GPU, copy d3d11");
+        upload_buffer = gst_nv_encoder_copy_d3d11 (self, buffer, pool, TRUE);
+      } else {
+        GST_LOG_OBJECT (self, "Different device, system copy");
+        return gst_nv_encoder_copy_system (self, info, buffer, task);
+      }
     }
   }
 
-  if (!upload_buffer)
+  if (!upload_buffer) {
     upload_buffer =
         gst_nv_encoder_upload_d3d11_frame (self, info, buffer, pool);
+  }
 
   if (!upload_buffer) {
     GST_ERROR_OBJECT (self, "Failed to upload buffer");
@@ -2046,7 +2117,8 @@ out:
 
 void
 gst_nv_encoder_set_device_mode (GstNvEncoder * encoder,
-    GstNvEncoderDeviceMode mode, guint cuda_device_id, gint64 adapter_luid)
+    GstNvEncoderDeviceMode mode, guint cuda_device_id, gint64 adapter_luid,
+    gboolean d3d12_import)
 {
   GstNvEncoderPrivate *priv = encoder->priv;
 
@@ -2054,6 +2126,7 @@ gst_nv_encoder_set_device_mode (GstNvEncoder * encoder,
   priv->selected_device_mode = mode;
   priv->cuda_device_id = cuda_device_id;
   priv->dxgi_adapter_luid = adapter_luid;
+  priv->d3d12_import = d3d12_import;
 }
 
 /**

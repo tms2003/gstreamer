@@ -68,6 +68,10 @@ if host_system == 'linux'
   nvcodec_sources += nvcodec_unix_sources
 else
   nvcodec_sources += nvcodec_win32_sources
+  if gstd3d12_dep.found()
+    extra_deps += [gstd3d12_dep]
+    extra_args += ['-DHAVE_GST_D3D12']
+  endif
 endif
 
 if cc.get_id() != 'msvc'
