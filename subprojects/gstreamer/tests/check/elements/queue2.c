@@ -448,6 +448,226 @@ GST_START_TEST (test_filled_read)
 
 GST_END_TEST;
 
+typedef struct
+{
+  GstPad *sinkpad;
+  GMutex mutex;
+  gboolean received_seek;
+  GCond seek_request_cond;
+
+  GstBuffer *first_buffer;
+} ReReadData;
+
+static gpointer
+re_read_pushing_thread (ReReadData * mydata)
+{
+  GST_DEBUG ("Starting");
+  g_mutex_lock (&mydata->mutex);
+  if (!mydata->received_seek) {
+    GST_DEBUG ("Waiting for seek");
+    g_cond_wait (&mydata->seek_request_cond, &mydata->mutex);
+  }
+  if (!mydata->received_seek) {
+    GST_DEBUG ("Did not receive seek, bailing out");
+    g_mutex_unlock (&mydata->mutex);
+    return NULL;
+  }
+
+  g_mutex_unlock (&mydata->mutex);
+
+  GST_DEBUG ("Got seek, sending first buffer");
+  gst_pad_chain (mydata->sinkpad, mydata->first_buffer);
+  mydata->first_buffer = NULL;
+
+  GST_DEBUG ("done");
+
+  return NULL;
+}
+
+static gboolean
+my_src_pad_event_handler (GstPad * pad, GstObject * parent, GstEvent * event)
+{
+  ReReadData *mydata = g_object_get_data ((GObject *) pad, "debug-data");
+  GST_DEBUG ("event %" GST_PTR_FORMAT, event);
+
+  if (GST_EVENT_TYPE (event) == GST_EVENT_SEEK) {
+    GstSegment segment;
+    gdouble rate;
+    GstFormat format;
+    GstSeekFlags flags;
+    GstSeekType start_type, stop_type;
+    gint64 start, stop;
+    GstEvent *segment_event;
+    gst_segment_init (&segment, GST_FORMAT_BYTES);
+
+    gst_event_parse_seek (event, &rate, &format, &flags, &start_type, &start,
+        &stop_type, &stop);
+    gst_segment_do_seek (&segment, rate, format, flags, start_type, start,
+        stop_type, stop, NULL);
+    gst_pad_push_event (pad, gst_event_new_flush_start ());
+    gst_pad_push_event (pad, gst_event_new_flush_stop (TRUE));
+    segment_event = gst_event_new_segment (&segment);
+    GST_DEBUG ("Generated %" GST_PTR_FORMAT, segment_event);
+    gst_pad_push_event (pad, segment_event);
+    GST_DEBUG ("Handled seek");
+
+    g_mutex_lock (&mydata->mutex);
+    mydata->received_seek = TRUE;
+    g_cond_signal (&mydata->seek_request_cond);
+    g_mutex_unlock (&mydata->mutex);
+  }
+
+  gst_event_unref (event);
+  return TRUE;
+}
+
+GST_START_TEST (test_re_read)
+{
+  GstElement *queue2;
+  GstBuffer *buffer;
+  GstPad *sinkpad, *srcpad;
+  GstPad *mysrcpad;
+  GstSegment segment;
+  gpointer first_data, following_data;
+  GstMapInfo info;
+  GThread *thread;
+  ReReadData mydata;
+
+  g_mutex_init (&mydata.mutex);
+  g_cond_init (&mydata.seek_request_cond);
+  mydata.received_seek = FALSE;
+
+  /* The first buffer will contain a special 0x42 as the first byte followed
+   * with 0x00 */
+  first_data = g_malloc0 (1024);
+  memset (first_data, 0x42, 1);
+  /* The following buffers all contain 0xff */
+  following_data = g_malloc0 (1024);
+  memset (following_data, 0xff, 1024);
+
+  mydata.first_buffer = gst_buffer_new_memdup (first_data, 1024);
+
+  queue2 = gst_element_factory_make ("queue2", NULL);
+  mydata.sinkpad = sinkpad = gst_element_get_static_pad (queue2, "sink");
+  srcpad = gst_element_get_static_pad (queue2, "src");
+  mysrcpad = gst_pad_new ("debug-src-pad", GST_PAD_SRC);
+  g_object_set_data ((GObject *) mysrcpad, "debug-data", &mydata);
+  gst_pad_set_event_function (mysrcpad, my_src_pad_event_handler);
+  gst_pad_set_active (mysrcpad, TRUE);
+  gst_pad_link (mysrcpad, mydata.sinkpad);
+
+  g_object_set (queue2, "ring-buffer-max-size", (guint64) 5 * 1024,
+      "use-buffering", FALSE, NULL);
+
+  thread =
+      g_thread_new ("re-read-pushing-thread",
+      (GThreadFunc) re_read_pushing_thread, &mydata);
+
+  gst_pad_activate_mode (srcpad, GST_PAD_MODE_PULL, TRUE);
+  gst_element_set_state (queue2, GST_STATE_PLAYING);
+
+  gst_segment_init (&segment, GST_FORMAT_BYTES);
+  gst_pad_send_event (sinkpad, gst_event_new_stream_start ("test"));
+  gst_pad_send_event (sinkpad, gst_event_new_segment (&segment));
+
+  /* Let's send the first buffer, followed by a following buffer */
+  buffer = gst_buffer_new_memdup (first_data, 1024);
+  GST_DEBUG ("Pushing buffer 1");
+  fail_unless (gst_pad_chain (sinkpad, buffer) == GST_FLOW_OK);
+  buffer = gst_buffer_new_memdup (following_data, 1024);
+  GST_DEBUG ("Pushing buffer 2");
+  fail_unless (gst_pad_chain (sinkpad, buffer) == GST_FLOW_OK);
+
+  /* Let's get the first buffer back */
+  buffer = NULL;
+  GST_DEBUG ("Getting buffer 1");
+  fail_unless (gst_pad_get_range (srcpad, 0, 1024, &buffer) == GST_FLOW_OK);
+  fail_unless (gst_buffer_get_size (buffer) == 1024);
+  fail_unless (GST_BUFFER_OFFSET (buffer) == 0);
+  /* Check that it *is* the first buffer (starts with 0x42) */
+  gst_buffer_map (buffer, &info, GST_MAP_READ);
+  fail_unless (info.data[0] == 0x42);
+  gst_buffer_unmap (buffer, &info);
+  gst_buffer_unref (buffer);
+
+  /* Push in 3 more completion buffer, we have room for them, and we should
+   * always be able to re-read the first buffer*/
+  buffer = gst_buffer_new_memdup (following_data, 1024);
+  GST_DEBUG ("Pushing buffer 3");
+  fail_unless (gst_pad_chain (sinkpad, buffer) == GST_FLOW_OK);
+  buffer = NULL;
+  GST_DEBUG ("Getting buffer 1");
+  fail_unless (gst_pad_get_range (srcpad, 0, 1024, &buffer) == GST_FLOW_OK);
+  fail_unless (gst_buffer_get_size (buffer) == 1024);
+  fail_unless (GST_BUFFER_OFFSET (buffer) == 0);
+  /* Check that it *is* the first buffer (starts with 0x42) */
+  gst_buffer_map (buffer, &info, GST_MAP_READ);
+  fail_unless (info.data[0] == 0x42);
+  gst_buffer_unmap (buffer, &info);
+  gst_buffer_unref (buffer);
+
+  buffer = gst_buffer_new_memdup (following_data, 1024);
+  GST_DEBUG ("Pushing buffer 4");
+  fail_unless (gst_pad_chain (sinkpad, buffer) == GST_FLOW_OK);
+  buffer = NULL;
+  GST_DEBUG ("Getting buffer 1");
+  fail_unless (gst_pad_get_range (srcpad, 0, 1024, &buffer) == GST_FLOW_OK);
+  fail_unless (gst_buffer_get_size (buffer) == 1024);
+  fail_unless (GST_BUFFER_OFFSET (buffer) == 0);
+  /* Check that it *is* the first buffer (starts with 0x42) */
+  gst_buffer_map (buffer, &info, GST_MAP_READ);
+  fail_unless (info.data[0] == 0x42);
+  gst_buffer_unmap (buffer, &info);
+  gst_buffer_unref (buffer);
+
+  buffer = gst_buffer_new_memdup (following_data, 1024);
+  GST_DEBUG ("Pushing buffer 5");
+  fail_unless (gst_pad_chain (sinkpad, buffer) == GST_FLOW_OK);
+  buffer = NULL;
+  GST_DEBUG ("Getting buffer 1");
+  fail_unless (gst_pad_get_range (srcpad, 0, 1024, &buffer) == GST_FLOW_OK);
+  fail_unless (gst_buffer_get_size (buffer) == 1024);
+  fail_unless (GST_BUFFER_OFFSET (buffer) == 0);
+  /* Check that it *is* the first buffer (starts with 0x42) */
+  gst_buffer_map (buffer, &info, GST_MAP_READ);
+  fail_unless (info.data[0] == 0x42);
+  gst_buffer_unmap (buffer, &info);
+  gst_buffer_unref (buffer);
+
+  /* We now push *another* buffer, which will be allowed (we read 1024 bytes) */
+  buffer = gst_buffer_new_memdup (following_data, 1024);
+  GST_DEBUG ("Pushing buffer 6");
+  fail_unless (gst_pad_chain (sinkpad, buffer) == GST_FLOW_OK);
+
+  /* Try to get the first buffer again, this should trigger a seek upstream and
+   * gives up the proper first buffer */
+  buffer = NULL;
+  GST_DEBUG ("Attempting to get initial buffer again");
+  fail_unless (gst_pad_get_range (srcpad, 0, 1024, &buffer) == GST_FLOW_OK);
+  fail_unless (gst_buffer_get_size (buffer) == 1024);
+  fail_unless (GST_BUFFER_OFFSET (buffer) == 0);
+  /* Check that it *is* the first buffer (starts with 0x42) */
+  gst_buffer_map (buffer, &info, GST_MAP_READ);
+  fail_unless (info.data[0] == 0x42);
+  gst_buffer_unmap (buffer, &info);
+  gst_buffer_unref (buffer);
+
+  gst_element_set_state (queue2, GST_STATE_NULL);
+
+  gst_object_unref (sinkpad);
+  gst_object_unref (srcpad);
+  gst_object_unref (queue2);
+  gst_pad_set_active (mysrcpad, FALSE);
+  gst_object_unref (mysrcpad);
+
+  g_thread_join (thread);
+
+  g_free (first_data);
+  g_free (following_data);
+}
+
+GST_END_TEST;
+
 
 static GstPadProbeReturn
 block_callback (GstPad * pad, GstPadProbeInfo * info, gpointer user_data)
@@ -938,6 +1158,7 @@ queue2_suite (void)
   tcase_add_test (tc_chain, test_filled_read);
   tcase_add_test (tc_chain, test_percent_overflow);
   tcase_add_test (tc_chain, test_small_ring_buffer);
+  tcase_add_test (tc_chain, test_re_read);
   tcase_add_test (tc_chain, test_bitrate_query);
   tcase_add_test (tc_chain, test_ready_paused_buffering_message);
   tcase_add_test (tc_chain, test_flush_on_error);
