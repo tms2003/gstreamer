@@ -2095,7 +2095,7 @@ gst_queue2_create_write (GstQueue2 * queue, GstBuffer * buffer)
           if (new_wpos_virt <= range_data_start)
             goto next_range;
 
-          if (new_wpos_virt > rb_size && new_writing_pos >= range_data_end) {
+          if (new_wpos_virt > rb_size && new_writing_pos > range_data_end) {
             GST_DEBUG_OBJECT (queue,
                 "Removing range: offset %" G_GUINT64_FORMAT ", wpos %"
                 G_GUINT64_FORMAT, range->offset, range->writing_pos);
