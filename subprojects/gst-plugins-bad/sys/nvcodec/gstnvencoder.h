@@ -22,6 +22,10 @@
 #include <gst/gst.h>
 #include <gst/video/video.h>
 
+#ifdef HAVE_GST_D3D12
+#include <gst/d3d12/gstd3d12.h>
+#endif
+
 #ifdef G_OS_WIN32
 #include <gst/d3d11/gstd3d11.h>
 #endif
@@ -226,6 +230,8 @@ typedef struct
   guint cuda_device_id_size;
   guint cuda_device_id_list[8];
 
+  gboolean d3d12_import;
+
   gint ref_count;
 } GstNvEncoderClassData;
 
@@ -285,7 +291,8 @@ void gst_nv_encoder_preset_to_native (GstNvEncoderPresetResolution resolution,
 void gst_nv_encoder_set_device_mode (GstNvEncoder * encoder,
                                      GstNvEncoderDeviceMode mode,
                                      guint cuda_device_id,
-                                     gint64 adapter_luid);
+                                     gint64 adapter_luid,
+                                     gboolean d3d12_import);
 
 GstNvEncoderClassData * gst_nv_encoder_class_data_new (void);
 

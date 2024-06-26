@@ -44,6 +44,7 @@
 
 #ifdef G_OS_WIN32
 #include <gst/d3d11/gstd3d11.h>
+#include <gst/d3d11/gstd3d11device-private.h>
 #endif
 #include "gstnvh264encoder.h"
 #include "gstnvh265encoder.h"
@@ -273,18 +274,20 @@ plugin_init (GstPlugin * plugin)
         if (!d3d11_device) {
           GST_WARNING ("Failed to d3d11 create device");
         } else {
+          gboolean d3d12_import =
+              gst_d3d11_device_d3d12_import_supported (d3d11_device);
           cdata = gst_nv_h264_encoder_register_d3d11 (plugin,
-              d3d11_device, GST_RANK_NONE);
+              d3d11_device, GST_RANK_NONE, d3d12_import);
           if (cdata)
             h264_enc_cdata = g_list_append (h264_enc_cdata, cdata);
 
           cdata = gst_nv_h265_encoder_register_d3d11 (plugin,
-              d3d11_device, GST_RANK_NONE);
+              d3d11_device, GST_RANK_NONE, d3d12_import);
           if (cdata)
             h265_enc_cdata = g_list_append (h265_enc_cdata, cdata);
 
           cdata = gst_nv_av1_encoder_register_d3d11 (plugin,
-              d3d11_device, GST_RANK_NONE);
+              d3d11_device, GST_RANK_NONE, d3d12_import);
           if (cdata)
             av1_enc_cdata = g_list_append (av1_enc_cdata, cdata);
 

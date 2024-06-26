@@ -168,6 +168,8 @@ typedef struct _GstNvAv1EncoderClass
 
   gint64 adapter_luid_list[8];
   guint adapter_luid_size;
+
+  gboolean d3d12_import;
 } GstNvAv1EncoderClass;
 
 #define GST_NV_AV1_ENCODER(object) ((GstNvAv1Encoder *) (object))
@@ -437,6 +439,7 @@ gst_nv_av1_encoder_class_init (GstNvAv1EncoderClass * klass, gpointer data)
       sizeof (klass->cuda_device_id_list));
   memcpy (klass->adapter_luid_list, cdata->adapter_luid_list,
       sizeof (klass->adapter_luid_list));
+  klass->d3d12_import = cdata->d3d12_import;
 
   gst_nv_encoder_class_data_unref (cdata);
 }
@@ -482,7 +485,7 @@ gst_nv_av1_encoder_init (GstNvAv1Encoder * self)
   self->const_quality = DEFAULT_CONST_QUALITY;
 
   gst_nv_encoder_set_device_mode (GST_NV_ENCODER (self), klass->device_mode,
-      klass->cuda_device_id, klass->adapter_luid);
+      klass->cuda_device_id, klass->adapter_luid, klass->d3d12_import);
 }
 
 static void
@@ -1263,32 +1266,50 @@ gst_nv_av1_encoder_select_device (GstNvEncoder * encoder,
     return TRUE;
   }
 #ifdef G_OS_WIN32
-  if (klass->adapter_luid_size > 0 && gst_is_d3d11_memory (mem)) {
-    GstD3D11Memory *dmem = GST_D3D11_MEMORY_CAST (mem);
-    GstD3D11Device *device = dmem->device;
-    gint64 adapter_luid;
-    gboolean found = FALSE;
+  GstD3D11Device *device = nullptr;
+  gint64 adapter_luid = 0;
+  if (klass->adapter_luid_size > 0) {
+    if (gst_is_d3d11_memory (mem)) {
+      gboolean is_supported_device = FALSE;
+      auto dmem = GST_D3D11_MEMORY_CAST (mem);
+      device = dmem->device;
 
-    g_object_get (device, "adapter-luid", &adapter_luid, nullptr);
+      g_object_get (device, "adapter-luid", &adapter_luid, nullptr);
 
+      for (guint i = 0; i < klass->cuda_device_id_size; i++) {
+        if (klass->adapter_luid_list[i] == adapter_luid) {
+          is_supported_device = TRUE;
+          break;
+        }
+      }
+
+      if (is_supported_device)
+        gst_object_ref (device);
+      else
+        device = nullptr;
+    }
+#ifdef HAVE_GST_D3D12
+    else if (gst_is_d3d12_memory (mem)) {
+      auto dmem = GST_D3D12_MEMORY_CAST (mem);
+
+      g_object_get (dmem->device, "adapter-luid", &adapter_luid, nullptr);
+      for (guint i = 0; i < klass->cuda_device_id_size; i++) {
+        if (klass->adapter_luid_list[i] == adapter_luid) {
+          device = gst_d3d11_device_new_for_adapter_luid (adapter_luid,
+              D3D11_CREATE_DEVICE_BGRA_SUPPORT);
+          break;
+        }
+      }
+    }
+#endif
+  }
+
+  if (device) {
     data->device_mode = GST_NV_ENCODER_DEVICE_D3D11;
     self->selected_device_mode = GST_NV_ENCODER_DEVICE_D3D11;
 
-    for (guint i = 0; i < klass->cuda_device_id_size; i++) {
-      if (klass->adapter_luid_list[i] == adapter_luid) {
-        data->adapter_luid = adapter_luid;
-        found = TRUE;
-        break;
-      }
-    }
-
-    if (!found) {
-      GST_INFO_OBJECT (self,
-          "Upstream D3D11 device is not in supported device list");
-      data->adapter_luid = self->adapter_luid;
-    } else {
-      data->device = (GstObject *) gst_object_ref (device);
-    }
+    data->adapter_luid = adapter_luid;
+    data->device = (GstObject *) device;
 
     if (data->adapter_luid != self->adapter_luid) {
       self->adapter_luid = data->adapter_luid;
@@ -1335,7 +1356,7 @@ gst_nv_av1_encoder_calculate_min_buffers (GstNvEncoder * encoder)
 
 static GstNvEncoderClassData *
 gst_nv_av1_encoder_create_class_data (GstObject * device, gpointer session,
-    GstNvEncoderDeviceMode device_mode)
+    GstNvEncoderDeviceMode device_mode, gboolean d3d12_import)
 {
   NVENCSTATUS status;
   GstNvEncoderDeviceCaps dev_caps = { 0, };
@@ -1458,6 +1479,12 @@ gst_nv_av1_encoder_create_class_data (GstObject * device, gpointer session,
   if (device_mode == GST_NV_ENCODER_DEVICE_D3D11) {
     gst_caps_set_features (sink_caps, 0,
         gst_caps_features_new (GST_CAPS_FEATURE_MEMORY_D3D11_MEMORY, nullptr));
+#ifdef HAVE_GST_D3D12
+    auto d3d12_caps = gst_caps_copy (system_caps);
+    gst_caps_set_features (d3d12_caps, 0,
+        gst_caps_features_new (GST_CAPS_FEATURE_MEMORY_D3D12_MEMORY, nullptr));
+    gst_caps_append (sink_caps, d3d12_caps);
+#endif
   }
 #endif
 
@@ -1479,6 +1506,7 @@ gst_nv_av1_encoder_create_class_data (GstObject * device, gpointer session,
   cdata->src_caps = gst_caps_from_string (src_caps_str.c_str ());
   cdata->device_caps = dev_caps;
   cdata->device_mode = device_mode;
+  cdata->d3d12_import = d3d12_import;
 
   /* *INDENT-OFF* */
   for (const auto &iter: formats)
@@ -1525,7 +1553,7 @@ gst_nv_av1_encoder_register_cuda (GstPlugin * plugin, GstCudaContext * context,
   }
 
   cdata = gst_nv_av1_encoder_create_class_data (GST_OBJECT (context), session,
-      GST_NV_ENCODER_DEVICE_CUDA);
+      GST_NV_ENCODER_DEVICE_CUDA, FALSE);
   NvEncDestroyEncoder (session);
 
   if (!cdata)
@@ -1581,7 +1609,7 @@ gst_nv_av1_encoder_register_cuda (GstPlugin * plugin, GstCudaContext * context,
 #ifdef G_OS_WIN32
 GstNvEncoderClassData *
 gst_nv_av1_encoder_register_d3d11 (GstPlugin * plugin, GstD3D11Device * device,
-    guint rank)
+    guint rank, gboolean d3d12_import)
 {
   NV_ENC_OPEN_ENCODE_SESSION_EX_PARAMS session_params = { 0, };
   gpointer session;
@@ -1604,7 +1632,7 @@ gst_nv_av1_encoder_register_d3d11 (GstPlugin * plugin, GstD3D11Device * device,
   }
 
   cdata = gst_nv_av1_encoder_create_class_data (GST_OBJECT (device), session,
-      GST_NV_ENCODER_DEVICE_D3D11);
+      GST_NV_ENCODER_DEVICE_D3D11, d3d12_import);
   NvEncDestroyEncoder (session);
 
   if (!cdata)
@@ -1676,6 +1704,7 @@ gst_nv_av1_encoder_register_auto_select (GstPlugin * plugin,
   GstNvEncoderClassData *cdata;
   GstCaps *sink_caps = nullptr;
   GstCaps *system_caps;
+  gboolean d3d12_import = FALSE;
 
   GST_DEBUG_CATEGORY_INIT (gst_nv_av1_encoder_debug, "nvav1encoder", 0,
       "nvav1encoder");
@@ -1698,6 +1727,9 @@ gst_nv_av1_encoder_register_auto_select (GstPlugin * plugin,
       cuda_device_id_list[cuda_device_id_size] = cdata->cuda_device_id;
       cuda_device_id_size++;
     }
+
+    if (cdata->d3d12_import)
+      d3d12_import = TRUE;
 
     if (iter == device_caps_list) {
       dev_caps = cdata->device_caps;
@@ -1766,6 +1798,13 @@ gst_nv_av1_encoder_register_auto_select (GstPlugin * plugin,
     gst_caps_set_features (d3d11_caps, 0,
         gst_caps_features_new (GST_CAPS_FEATURE_MEMORY_D3D11_MEMORY, nullptr));
     gst_caps_append (sink_caps, d3d11_caps);
+
+#ifdef HAVE_GST_D3D12
+    auto d3d12_caps = gst_caps_copy (system_caps);
+    gst_caps_set_features (d3d12_caps, 0,
+        gst_caps_features_new (GST_CAPS_FEATURE_MEMORY_D3D12_MEMORY, nullptr));
+    gst_caps_append (sink_caps, d3d12_caps);
+#endif
   }
 #endif
 
@@ -1791,6 +1830,7 @@ gst_nv_av1_encoder_register_auto_select (GstPlugin * plugin,
   cdata->cuda_device_id_size = cuda_device_id_size;
   memcpy (&cdata->cuda_device_id_list,
       cuda_device_id_list, sizeof (cuda_device_id_list));
+  cdata->d3d12_import = d3d12_import;
 
   /* class data will be leaked if the element never gets instantiated */
   GST_MINI_OBJECT_FLAG_SET (cdata->sink_caps,
