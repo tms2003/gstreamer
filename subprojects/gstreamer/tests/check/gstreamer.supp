@@ -4095,3 +4095,33 @@
   ...
   fun:g_socket_create_source
 }
+
+{
+   ducktape shows up from glib-networking calling into libproxy if there's a proxy setup, like in the CI
+   Memcheck:ReallocZero
+   fun:realloc
+   fun:duk_heap_mem_realloc_indirect.lto_priv.0
+   fun:duk_hbuffer_resize.lto_priv.0
+   fun:UnknownInlinedFun
+   fun:UnknownInlinedFun
+   fun:duk__parse_func_body
+   fun:duk__parse_func_like_raw
+   fun:duk__parse_func_like_fnum
+   fun:duk__parse_stmt
+   fun:duk__parse_stmts
+   fun:duk__parse_func_body
+   fun:duk__js_compile_raw
+   fun:UnknownInlinedFun
+   fun:duk_handle_safe_call.lto_priv.0
+   fun:duk_js_compile.lto_priv.0
+   fun:duk__do_compile
+   fun:UnknownInlinedFun
+   fun:duk_handle_safe_call.lto_priv.0
+   fun:duk_compile_raw
+   fun:duk_eval_raw
+   fun:px_pacrunner_duktape_init
+   fun:g_type_create_instance
+   fun:g_object_new_internal.part.0
+   fun:UnknownInlinedFun
+   fun:g_object_new_with_properties
+}
