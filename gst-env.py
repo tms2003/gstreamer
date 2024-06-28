@@ -529,7 +529,16 @@ if __name__ == "__main__":
                         action='store_true',
                         default=False,
                         help="Do not start a shell, only print required environment.")
-    options, args = parser.parse_known_args()
+    # avoid parsing a subsequent command's arguments as our own;
+    # either nothing follows
+    # either a command is expected with any number of remaining arguments
+    # (as in python documentation example)
+    parser.add_argument("command", nargs='?')
+    parser.add_argument("args", nargs=argparse.REMAINDER)
+    # collect all arguments
+    options = parser.parse_args()
+    # determine command and arguments
+    args = [options.command] + options.args if options.command else []
 
     if not os.path.exists(options.builddir):
         print("GStreamer not built in %s\n\nBuild it and try again" %
