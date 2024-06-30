@@ -255,7 +255,8 @@ enum
   PROP_BITRATE,
   PROP_PCR_INTERVAL,
   PROP_SCTE_35_PID,
-  PROP_SCTE_35_NULL_INTERVAL
+  PROP_SCTE_35_NULL_INTERVAL,
+  PROP_TDT_INTERVAL
 };
 
 #define DEFAULT_SCTE_35_PID 0
@@ -2706,6 +2707,11 @@ gst_base_ts_mux_set_property (GObject * object, guint prop_id,
     case PROP_SCTE_35_NULL_INTERVAL:
       mux->scte35_null_interval = g_value_get_uint (value);
       break;
+    case PROP_TDT_INTERVAL:
+      mux->tdt_interval = g_value_get_uint (value);
+      if (mux->tsmux)
+        tsmux_set_tdt_interval (mux->tsmux, mux->tdt_interval);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -2746,6 +2752,9 @@ gst_base_ts_mux_get_property (GObject * object, guint prop_id,
     case PROP_SCTE_35_NULL_INTERVAL:
       g_value_set_uint (value, mux->scte35_null_interval);
       break;
+    case PROP_TDT_INTERVAL:
+      g_value_set_uint (value, mux->tdt_interval);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -2764,6 +2773,7 @@ gst_base_ts_mux_default_create_ts_mux (GstBaseTsMux * mux)
   tsmux_set_si_interval (tsmux, mux->si_interval);
   tsmux_set_bitrate (tsmux, mux->bitrate);
   tsmux_set_pcr_interval (tsmux, mux->pcr_interval);
+  tsmux_set_tdt_interval (tsmux, mux->tdt_interval);
 
   return tsmux;
 }
@@ -2898,6 +2908,13 @@ gst_base_ts_mux_class_init (GstBaseTsMuxClass * klass)
           "Set the interval (in ticks of the 90kHz clock) for writing SCTE-35 NULL (heartbeat) packets. 0=disable"
           " (only valid if scte-35-pid is different from 0)", 0, G_MAXUINT,
           TSMUX_DEFAULT_SCTE_35_NULL_INTERVAL,
+          (GParamFlags) (G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS)));
+
+  g_object_class_install_property (G_OBJECT_CLASS (klass),
+      PROP_TDT_INTERVAL, g_param_spec_uint ("tdt-interval",
+          "TDT interval",
+          "Set the interval (in ticks of the 90kHz clock) for writing TDT. 0=disable",
+          0, G_MAXUINT, TSMUX_DEFAULT_TDT_INTERVAL,
           (GParamFlags) (G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS)));
 
   gst_element_class_add_static_pad_template_with_gtype (gstelement_class,
