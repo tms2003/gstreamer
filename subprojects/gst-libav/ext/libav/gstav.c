@@ -42,6 +42,9 @@ GST_DEBUG_CATEGORY (ffmpeg_debug);
 
 static GMutex gst_avcodec_mutex;
 
+static gboolean plugin_init (GstPlugin * plugin);
+GST_ELEMENT_REGISTER_DEFINE_CUSTOM (libav, plugin_init);
+
 /*
  * Check for FFmpeg-provided libavcodec/format
  */
