@@ -226,6 +226,13 @@ tsmux_stream_new (guint16 pid, guint stream_type, guint stream_number)
       stream->is_opus = TRUE;
       stream->pi.flags |= TSMUX_PACKET_FLAG_PES_FULL_HEADER;
       break;
+    case TSMUX_ST_PS_ARIB:
+      stream->id = 0xBD;
+      stream->is_audio = FALSE;
+      stream->is_arib_sub = TRUE;
+      stream->stream_type = TSMUX_ST_PRIVATE_DATA;
+      stream->pi.flags |= TSMUX_PACKET_FLAG_PES_FULL_HEADER;    // | TSMUX_PACKET_FLAG_PES_DATA_ALIGNMENT;
+      break;
     default:
       /* Might be a custom stream type implemented by a subclass */
       break;
@@ -942,6 +949,20 @@ tsmux_stream_default_get_es_descrs (TsMuxStream * stream,
       if (stream->is_meta) {
         descriptor = gst_mpegts_descriptor_from_registration ("KLVA", NULL, 0);
         GST_DEBUG ("adding KLVA registration descriptor");
+        g_ptr_array_add (pmt_stream->descriptors, descriptor);
+      }
+      if (stream->is_arib_sub) {
+        guint8 descriptorData[3];
+        descriptorData[0] = 48;
+        descriptor =
+            gst_mpegts_descriptor_from_custom
+            (GST_MTS_DESC_DVB_STREAM_IDENTIFIER, descriptorData, 1);
+        g_ptr_array_add (pmt_stream->descriptors, descriptor);
+        descriptorData[0] = 0;
+        descriptorData[1] = 0x8;
+        descriptorData[2] = 0x3D;
+        descriptor =
+            gst_mpegts_descriptor_from_custom (0xFD, descriptorData, 3);
         g_ptr_array_add (pmt_stream->descriptors, descriptor);
       }
     default:

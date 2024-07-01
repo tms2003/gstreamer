@@ -1505,6 +1505,15 @@ create_pad_for_stream (MpegTSBase * base, MpegTSBaseStream * bstream,
         break;
       }
 
+      desc = mpegts_get_descriptor_from_stream (bstream, 0xFD);
+      if (desc) {
+        GST_LOG_OBJECT (demux, "ARIB subtitles");
+        is_private = TRUE;
+        caps = gst_caps_new_empty_simple ("application/x-arib-subtitles");
+        sparse = TRUE;
+        break;
+      }
+
       switch (bstream->registration_id) {
         case DRF_ID_DTS1:
         case DRF_ID_DTS2:
