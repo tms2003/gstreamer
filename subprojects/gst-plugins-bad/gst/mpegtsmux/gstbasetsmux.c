@@ -2196,6 +2196,24 @@ gst_base_ts_mux_sink_event (GstAggregator * agg, GstAggregatorPad * agg_pad,
         goto out;
       }
 
+      if (gst_structure_has_name (s, "change-pid")) {
+        guint new_pid;
+        forward = FALSE;
+        if (!gst_structure_get_uint (s, "pid", &new_pid))
+          goto out;
+        g_mutex_lock (&mux->lock);
+        ts_pad->pid = new_pid;
+        ts_pad->stream->pi.pid = new_pid;
+        mux->tsmux->pat_changed = TRUE;
+        mux->tsmux->si_changed = TRUE;
+        tsmux_resend_pat (mux->tsmux);
+        tsmux_resend_si (mux->tsmux);
+        gst_base_ts_mux_resend_all_pmts (mux);
+        g_mutex_unlock (&mux->lock);
+        res = TRUE;
+        goto out;
+      }
+
       if (!gst_video_event_is_force_key_unit (event))
         goto out;
 
@@ -2702,6 +2720,13 @@ gst_base_ts_mux_set_property (GObject * object, guint prop_id,
       break;
     case PROP_SCTE_35_PID:
       mux->scte35_pid = g_value_get_uint (value);
+      for (l = GST_ELEMENT_CAST (mux)->sinkpads; l; l = l->next) {
+        GstBaseTsMuxPad *ts_pad = GST_BASE_TS_MUX_PAD (l->data);
+        g_mutex_lock (&mux->lock);
+        if (ts_pad->prog)
+          tsmux_program_set_scte35_pid (ts_pad->prog, mux->scte35_pid);
+        g_mutex_unlock (&mux->lock);
+      }
       break;
     case PROP_SCTE_35_NULL_INTERVAL:
       mux->scte35_null_interval = g_value_get_uint (value);
