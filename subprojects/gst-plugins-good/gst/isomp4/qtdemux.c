@@ -9120,6 +9120,11 @@ qtdemux_parse_node (GstQTDemux * qtdemux, GNode * node, const guint8 * buffer,
         qtdemux_parse_container (qtdemux, node, buffer + 36, end);
         break;
       }
+      case FOURCC_ec_3:
+      {
+        qtdemux_parse_container (qtdemux, node, buffer + 36, end);
+        break;
+      }
       default:
         if (!strcmp (type->name, "unknown"))
           GST_MEMDUMP ("Unknown tag", buffer + 4, end - buffer - 4);
@@ -13265,7 +13270,7 @@ qtdemux_parse_trak (GstQTDemux * qtdemux, GNode * trak)
           /* According to TS 102 366, the channel count in
            * a (E)AC3SampleEntry box is to be ignored */
         case 0x20736d:
-        case GST_MAKE_FOURCC ('e', 'c', '-', '3'):
+        case FOURCC_ec_3:
         case GST_MAKE_FOURCC ('s', 'a', 'c', '3'):     // Nero Recode
         case FOURCC_ac_3:
           entry->n_channels = 0;
@@ -13953,6 +13958,49 @@ qtdemux_parse_trak (GstQTDemux * qtdemux, GNode * trak)
           case FOURCC_s16l:
             /* Fully handled elsewhere */
             break;
+          case FOURCC_ec_3:
+          {
+            GNode *ec_3_node =
+                qtdemux_tree_get_child_by_type (stsd, FOURCC_ec_3);
+            if (ec_3_node) {
+              GstByteReader dec3_data;
+              GNode *dec3_node =
+                  qtdemux_tree_get_child_by_type_full (ec_3_node, FOURCC_dec3,
+                  &dec3_data);
+              if (dec3_node) {
+                // F.6.2.2 and F.6.2.3
+                // Skip data_rate (13 bits) and num_ind_sub (3 bits)
+                if (gst_byte_reader_skip (&dec3_data, 2)) {
+                  guint32 eac3info;
+                  if (gst_byte_reader_get_uint24_be (&dec3_data, &eac3info)) {
+                    const int acmod = (eac3info >> 9) & 0x7;
+
+                    // 4.4.2.3 acmod - Audio coding mode - 3 bits
+                    // Table 4.3: Audio coding mode
+                    // acmod  Nfchans
+                    //  000   2
+                    //  001   1
+                    //  010   2
+                    //  011   3
+                    //  100   3
+                    //  101   4
+                    //  110   4
+                    //  111   5
+                    const int acmod_to_channels[8] = { 2, 1, 2, 3, 3, 4, 4, 5 };
+
+                    entry->n_channels = acmod_to_channels[acmod];
+
+                    const int lfeon = (eac3info >> 8) & 0x1;
+                    // 4.4.2.7 lfeon - Low frequency effects channel on - 1 bit
+                    // This bit has a value of 1 if the lfe (sub woofer) channel is on, and a value of 0 if the lfe channel is off.
+                    if (lfeon == 1)
+                      entry->n_channels += 1;
+                  }
+                }
+              }
+            }
+            break;
+          }
           default:
             GST_INFO_OBJECT (qtdemux,
                 "unhandled type %" GST_FOURCC_FORMAT, GST_FOURCC_ARGS (fourcc));
@@ -15996,7 +16044,7 @@ qtdemux_audio_caps (GstQTDemux * qtdemux, QtDemuxStream * stream,
           "mpegversion", G_TYPE_INT, 1, NULL);
       break;
     case 0x20736d:
-    case GST_MAKE_FOURCC ('e', 'c', '-', '3'):
+    case FOURCC_ec_3:
       _codec ("EAC-3 audio");
       caps = gst_caps_new_simple ("audio/x-eac3",
           "framed", G_TYPE_BOOLEAN, TRUE, NULL);
