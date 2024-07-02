@@ -43,6 +43,7 @@ struct _GstMDNSDeviceProvider
  */
 struct _ListenerContext
 {
+  GThread *thread;
   GMutex lock;
   GCond stop_cond;
   GstDeviceProvider *provider;
@@ -360,6 +361,8 @@ _listen (ListenerContext * ctx)
     goto err;
   }
 
+  mdns_destroy (mctx);
+
 done:
   GST_INFO_OBJECT (ctx->provider, "Done listening");
 
@@ -402,7 +405,7 @@ gst_mdns_device_provider_start (GstDeviceProvider * provider)
   ctx->last_seen_devices = g_sequence_new (NULL);
   self->current_ctx = ctx;
 
-  g_thread_new (NULL, (GThreadFunc) _listen, ctx);
+  ctx->thread = g_thread_new (NULL, (GThreadFunc) _listen, ctx);
 
   return TRUE;
 }
@@ -418,6 +421,7 @@ gst_mdns_device_provider_stop (GstDeviceProvider * provider)
   self->current_ctx->stop = true;
   g_cond_broadcast (&self->current_ctx->stop_cond);
   g_mutex_unlock (&self->current_ctx->lock);
+  g_thread_join (self->current_ctx->thread);
 
   self->current_ctx = NULL;
 }
