@@ -152,7 +152,7 @@ if host_machine.system() != 'windows'
         not faac_dep.found() or not cc.has_header_symbol('faac.h', 'faacEncOpen') or not cdata.has('HAVE_UNISTD_H'),
         [faac_dep]],
     [['elements/faad.c'],
-        not faad_dep.found() or not have_faad_2_7 or not cdata.has('HAVE_UNISTD_H'),
+        not faad_dep.found() or not cdata.has('HAVE_UNISTD_H'),
         [faad_dep]],
     [['elements/jifmux.c'],
         not exif_dep.found() or not cdata.has('HAVE_UNISTD_H'), [exif_dep]],
