@@ -81,7 +81,10 @@ if __name__ == "__main__":
     filesink = Gst.ElementFactory.make("filesink", None)
     filesink.props.location = sys.argv[1]
 
-    pipeline.add(source, conv, transcodebin, filesink)
+    pipeline.add(source)
+    pipeline.add(conv)
+    pipeline.add(transcodebin)
+    pipeline.add(filesink)
     source.link(conv)
     conv.link(transcodebin)
 
