@@ -595,6 +595,8 @@ gst_file_sink_query (GstBaseSink * bsink, GstQuery * query)
 
 #ifdef HAVE_FSEEKO
 # define __GST_STDIO_SEEK_FUNCTION "fseeko"
+#elif defined HAVE__FSEEKI64
+# define __GST_STDIO_SEEK_FUNCTION "_fseeki64"
 #elif defined (G_OS_UNIX) || defined (G_OS_WIN32)
 # define __GST_STDIO_SEEK_FUNCTION "lseek"
 #else
@@ -612,6 +614,9 @@ gst_file_sink_do_seek (GstFileSink * filesink, guint64 new_offset)
 
 #ifdef HAVE_FSEEKO
   if (fseeko (filesink->file, (off_t) new_offset, SEEK_SET) != 0)
+    goto seek_failed;
+#elif defined HAVE__FSEEKI64
+  if (_fseeki64 (filesink->file, (gint64) new_offset, SEEK_SET) != 0)
     goto seek_failed;
 #elif defined (G_OS_UNIX) || defined (G_OS_WIN32)
   if (lseek (fileno (filesink->file), (off_t) new_offset,
@@ -740,6 +745,8 @@ gst_file_sink_get_current_offset (GstFileSink * filesink, guint64 * p_pos)
 
 #ifdef HAVE_FTELLO
   ret = ftello (filesink->file);
+#elif defined (HAVE__FTELLI64)
+  ret = (off_t) _ftelli64 (filesink->file);
 #elif defined (G_OS_UNIX) || defined (G_OS_WIN32)
   ret = lseek (fileno (filesink->file), 0, SEEK_CUR);
 #else
