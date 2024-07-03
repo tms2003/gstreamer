@@ -52,6 +52,10 @@
  * references exist when no messages are read from the #GstBus. This
  * behaviour can be changed with gst_pipeline_set_auto_flush_bus().
  *
+ * Application is responsible to pop messages from the #GstBus using for example
+ * gst_bus_pop() or gst_bus_add_watch(), otherwise they will accumulate and
+ * consume memory infinitely.
+ *
  * When the #GstPipeline performs the PAUSED to PLAYING state change it will
  * select a clock for the elements. The clock selection algorithm will by
  * default select a clock provided by an element that is most upstream
