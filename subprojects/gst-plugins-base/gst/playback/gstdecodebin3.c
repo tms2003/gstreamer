@@ -1956,6 +1956,25 @@ sink_query_function (GstPad * sinkpad, GstDecodebin3 * dbin, GstQuery * query)
 
   GST_DEBUG_OBJECT (sinkpad, "query %" GST_PTR_FORMAT, query);
 
+  /* report the caps if needed */
+  if (GST_QUERY_TYPE (query) == GST_QUERY_CAPS) {
+    GstCaps *filter;
+    gst_query_parse_caps (query, &filter);
+    if (filter) {
+      if (gst_caps_can_intersect (filter, dbin->caps)) {
+        GstCaps *intersection;
+
+        intersection = gst_caps_intersect_full (filter, dbin->caps,
+            GST_CAPS_INTERSECT_FIRST);
+        gst_query_set_caps_result (query, intersection);
+        GST_DEBUG_OBJECT (sinkpad, "query caps result: %"
+        GST_PTR_FORMAT, intersection);
+        gst_caps_unref (intersection);
+        return TRUE;
+      }
+    }
+  }
+
   /* We accept any caps, since we will reconfigure ourself internally if the new
    * stream is incompatible */
   if (GST_QUERY_TYPE (query) == GST_QUERY_ACCEPT_CAPS) {

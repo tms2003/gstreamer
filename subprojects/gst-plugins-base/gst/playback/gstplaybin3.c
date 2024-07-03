@@ -512,6 +512,8 @@ static void gst_play_bin3_navigation_init (gpointer g_iface,
     gpointer g_iface_data);
 static void gst_play_bin3_colorbalance_init (gpointer g_iface,
     gpointer g_iface_data);
+static void gst_play_bin3_handle_sink_caps (GstPlayBin3 * playbin,
+    GstElement *sink);
 
 static void
 _do_init_type (GType type)
@@ -1461,6 +1463,7 @@ gst_play_bin3_set_property (GObject * object, guint prop_id,
     case PROP_AUDIO_SINK:
       gst_play_bin3_set_sink (playbin, GST_PLAY_SINK_TYPE_AUDIO, "audio",
           &playbin->audio_sink, g_value_get_object (value));
+      gst_play_bin3_handle_sink_caps (playbin, playbin->audio_sink);
       break;
     case PROP_VIS_PLUGIN:
       gst_play_sink_set_vis_plugin (playbin->playsink,
@@ -2547,6 +2550,70 @@ select_stream_cb (GstElement * decodebin, GstStreamCollection * collection,
 
   /* Let decodebin3 decide otherwise */
   return -1;
+}
+
+static void
+gst_play_bin3_handle_sink_caps (GstPlayBin3 * playbin, GstElement *sink)
+{
+  GstElement *actual_sink = NULL;
+  GstPad *sinkpad = NULL;
+  GstCaps *sinkcaps = NULL;
+  GstCaps *currentcaps = NULL;
+
+  if (NULL == sink) {
+    GST_LOG_OBJECT (playbin, "No audio sink found");
+    return;
+  }
+
+  /* check the sink type */
+  if (!GST_IS_BIN ((GstBin*) sink)) {
+    actual_sink = sink;
+  } else {
+    GstIterator *it;
+    GValue item = { 0, };
+    GstIteratorResult rc;
+
+    it = gst_bin_iterate_sinks ((GstBin *) sink);
+    do {
+      rc = gst_iterator_next (it, &item);
+      if (rc == GST_ITERATOR_OK) {
+        break;
+      }
+    } while (rc != GST_ITERATOR_DONE);
+
+    actual_sink = g_value_get_object (&item);
+    g_value_unset (&item);
+    gst_iterator_free (it);
+  }
+
+  if (NULL == actual_sink) {
+    GST_LOG_OBJECT (playbin, "No sink found");
+    return;
+  }
+
+  sinkpad = gst_element_get_static_pad (actual_sink, "sink");
+  if (NULL == sinkpad) {
+    GST_LOG_OBJECT (playbin, "No pad found");
+    return;
+  }
+
+  sinkcaps = gst_pad_query_caps (sinkpad, NULL);
+  if (NULL == sinkcaps) {
+    GST_LOG_OBJECT (playbin, "No caps found");
+    return;
+  }
+
+  GST_DEBUG_OBJECT (playbin, "sink caps: %s ", gst_caps_to_string(sinkcaps));
+  /* analyze the caps and update uridecodebin caps if needed */
+  if (!gst_caps_is_any (sinkcaps)) {
+    g_object_get (playbin->uridecodebin, "caps", &currentcaps, NULL);
+    currentcaps = gst_caps_merge (currentcaps, sinkcaps);
+    g_object_set (playbin->uridecodebin, "caps", currentcaps, NULL);
+    GST_DEBUG_OBJECT (playbin, "current caps: %"
+        GST_PTR_FORMAT, currentcaps);
+    gst_caps_unref (currentcaps);
+  }
+  gst_object_unref (sinkpad);
 }
 
 /* We get called when the selected stream types change and
