@@ -186,6 +186,70 @@ gst_video_colorimetry_matches (const GstVideoColorimetry * cinfo,
 }
 
 /**
+ * gst_video_colorimetry_normalize:
+ * @cinfo: (transfer full): a #GstVideoColorimetry to normalize
+ *
+ * Returns a #GstVideoColorimetry that represent a complete version of @cinfo.
+ * If @cinfo is incomplete (e.g. if any entry in the structure is
+ * set to `UNKNOWN`) it will try to find the best suitable value.
+ * If we can't solve the `UNKNOWN` entry in @cinfo, the @cinfo would
+ * become `DEFAULT_UNKNOWN`.
+ *
+ * Since: 1.24
+ */
+void
+gst_video_colorimetry_normalize (GstVideoColorimetry * cinfo)
+{
+  guint score, highest_score, idx;
+  GstVideoColorRange range;
+  const GstVideoColorimetry *cur_cinfo;
+  guint i;
+
+  if (IS_UNKNOWN (cinfo))
+    return cinfo;
+
+  range = cinfo->range;
+
+  if (cinfo->transfer != GST_VIDEO_TRANSFER_UNKNOWN
+      && cinfo->primaries != GST_VIDEO_COLOR_PRIMARIES_UNKNOWN
+      && cinfo->matrix != GST_VIDEO_COLOR_MATRIX_UNKNOWN
+      && range != GST_VIDEO_COLOR_RANGE_UNKNOWN)
+    return;
+
+  cinfo->range = GST_VIDEO_COLOR_RANGE_UNKNOWN;
+  if (IS_UNKNOWN (cinfo))
+    return;
+
+  idx = DEFAULT_UNKNOWN;
+  highest_score = 0;
+
+  /* The last two are invalid colorimetry */
+  for (i = 0; i < G_N_ELEMENTS (colorimetry) - 2; i++) {
+    cur_cinfo = &(colorimetry[i].color);
+    score = 0;
+
+    if (cinfo->transfer == cur_cinfo->transfer)
+      score = 5;
+
+    if (cinfo->primaries == cur_cinfo->primaries)
+      score += 2;
+
+    if (cinfo->matrix == cur_cinfo->matrix)
+      score += 2;
+
+    if (range == cur_cinfo->range)
+      score++;
+
+    if (score > highest_score) {
+      highest_score = score;
+      idx = i;
+    }
+  }
+
+  *cinfo = colorimetry[idx].color;
+}
+
+/**
  * gst_video_color_range_offsets:
  * @range: a #GstVideoColorRange
  * @info: a #GstVideoFormatInfo

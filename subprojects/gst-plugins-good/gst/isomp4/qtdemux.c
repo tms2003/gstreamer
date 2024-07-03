@@ -9483,6 +9483,9 @@ gst_qtdemux_configure_stream (GstQTDemux * qtdemux, QtDemuxStream * stream)
     gboolean fps_available = gst_qtdemux_guess_framerate (qtdemux, stream);
 
     if (CUR_STREAM (stream)->caps) {
+      GstVideoColorimetry * cinfo;
+      gchar * colorimetry;
+
       CUR_STREAM (stream)->caps =
           gst_caps_make_writable (CUR_STREAM (stream)->caps);
 
@@ -9545,13 +9548,10 @@ gst_qtdemux_configure_stream (GstQTDemux * qtdemux, QtDemuxStream * stream)
         }
       }
 
-      /* Create incomplete colorimetry here if needed */
-      if (CUR_STREAM (stream)->colorimetry.range ||
-          CUR_STREAM (stream)->colorimetry.matrix ||
-          CUR_STREAM (stream)->colorimetry.transfer
-          || CUR_STREAM (stream)->colorimetry.primaries) {
-        gchar *colorimetry =
-            gst_video_colorimetry_to_string (&CUR_STREAM (stream)->colorimetry);
+      cinfo = &(CUR_STREAM (stream)->colorimetry);
+      gst_video_colorimetry_normalize (cinfo);
+      colorimetry = gst_video_colorimetry_to_string (cinfo);
+      if (colorimetry) {
         gst_caps_set_simple (CUR_STREAM (stream)->caps, "colorimetry",
             G_TYPE_STRING, colorimetry, NULL);
         g_free (colorimetry);

@@ -6765,6 +6765,8 @@ gst_matroska_demux_video_caps (GstMatroskaTrackVideoContext *
   if (caps != NULL) {
     int i;
     GstStructure *structure;
+    GstVideoColorimetry *cinfo;
+    gchar *colorimetry;
 
     for (i = 0; i < gst_caps_get_size (caps); i++) {
       structure = gst_caps_get_structure (caps, i);
@@ -6859,13 +6861,10 @@ gst_matroska_demux_video_caps (GstMatroskaTrackVideoContext *
           GST_FLAG_SET_MASK_EXACT, NULL);
     }
 
-    if (videocontext->colorimetry.range != GST_VIDEO_COLOR_RANGE_UNKNOWN ||
-        videocontext->colorimetry.matrix != GST_VIDEO_COLOR_MATRIX_UNKNOWN ||
-        videocontext->colorimetry.transfer != GST_VIDEO_TRANSFER_UNKNOWN ||
-        videocontext->colorimetry.primaries !=
-        GST_VIDEO_COLOR_PRIMARIES_UNKNOWN) {
-      gchar *colorimetry =
-          gst_video_colorimetry_to_string (&videocontext->colorimetry);
+    cinfo = &videocontext->colorimetry;
+    gst_video_colorimetry_normalize (cinfo);
+    colorimetry = gst_video_colorimetry_to_string (cinfo);
+    if (colorimetry) {
       gst_caps_set_simple (caps, "colorimetry", G_TYPE_STRING, colorimetry,
           NULL);
       GST_DEBUG ("setting colorimetry to %s", colorimetry);
