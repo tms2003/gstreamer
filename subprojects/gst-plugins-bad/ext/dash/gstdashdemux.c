@@ -424,6 +424,8 @@ static gboolean gst_dash_demux_poll_clock_drift (GstDashDemux * demux);
 static GTimeSpan gst_dash_demux_get_clock_compensation (GstDashDemux * demux);
 static GDateTime *gst_dash_demux_get_server_now_utc (GstDashDemux * demux);
 
+static gboolean
+gst_dash_demux_stream_is_single_fragment (GstAdaptiveDemuxStream * stream);
 #define SIDX(s) (&(s)->sidx_parser.sidx)
 
 static inline GstSidxBoxEntry *
@@ -1338,6 +1340,13 @@ gst_dash_demux_stream_update_fragment_info (GstAdaptiveDemuxStream * stream)
        * stream to a subsegment */
       return GST_FLOW_OK;
     }
+
+    /* If stream is single fragment, avoid download header and index fragment data again */
+    if (gst_dash_demux_stream_is_single_fragment (stream)) {
+      if (stream->fragment.index_uri) {
+        return GST_FLOW_OK;
+      }
+    }
   }
 
   if (dashstream->moof_sync_samples
@@ -1451,6 +1460,12 @@ gst_dash_demux_stream_update_fragment_info (GstAdaptiveDemuxStream * stream)
         dashstream->actual_position += entry->duration;
       } else {
         stream->fragment.range_end = fragment.range_end;
+
+        /* If stream is single fragment, download only one sub fragment a time */
+        if (gst_dash_demux_stream_is_single_fragment (stream)) {
+          stream->fragment.range_end =
+              stream->fragment.range_start + entry->size - 1;
+        }
       }
     } else {
       dashstream->actual_position = stream->fragment.timestamp =
@@ -2257,6 +2272,18 @@ gst_dash_demux_stream_advance_fragment (GstAdaptiveDemuxStream * stream)
         dashstream->active_stream, stream->demux->segment.rate > 0.0);
   }
   return ret;
+}
+
+static gboolean
+gst_dash_demux_stream_is_single_fragment (GstAdaptiveDemuxStream * stream)
+{
+  GstDashDemux *dashdemux = GST_DASH_DEMUX_CAST (stream->demux);
+  GstDashDemuxStream *dashstream = (GstDashDemuxStream *) stream;
+  gboolean has_next_fragment =
+      gst_mpd_client_has_next_segment (dashdemux->client,
+      dashstream->active_stream, stream->demux->segment.rate > 0.0);
+
+  return !has_next_fragment;
 }
 
 static gboolean
