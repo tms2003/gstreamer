@@ -57,6 +57,7 @@ gst_core_audio_init (GstCoreAudio * core_audio)
   core_audio->is_passthrough = FALSE;
   core_audio->device_id = kAudioDeviceUnknown;
   core_audio->is_src = FALSE;
+  core_audio->is_following_default = FALSE;
   core_audio->audiounit = NULL;
   core_audio->cached_caps = NULL;
   core_audio->cached_caps_valid = FALSE;
@@ -143,6 +144,9 @@ gboolean
 gst_core_audio_close (GstCoreAudio * core_audio)
 {
   OSStatus status;
+
+  if (!gst_core_audio_close_impl (core_audio))
+    return FALSE;
 
   /* Uninitialize the AudioUnit */
   status = AudioUnitUninitialize (core_audio->audiounit);

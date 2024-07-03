@@ -82,6 +82,7 @@ struct _GstOsxAudioSink
   GstAudioBaseSink sink;
 
   AudioDeviceID device_id;
+  gboolean is_default;
 
   AudioUnit audiounit;
   double volume;

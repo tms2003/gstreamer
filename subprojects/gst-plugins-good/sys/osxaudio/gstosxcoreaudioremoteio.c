@@ -30,6 +30,12 @@ gst_core_audio_open_impl (GstCoreAudio * core_audio)
 }
 
 static gboolean
+gst_core_audio_close_impl (GstCoreAudio * core_audio)
+{
+  return TRUE;
+}
+
+static gboolean
 gst_core_audio_start_processing_impl (GstCoreAudio * core_audio)
 {
   return gst_core_audio_io_proc_start (core_audio);
