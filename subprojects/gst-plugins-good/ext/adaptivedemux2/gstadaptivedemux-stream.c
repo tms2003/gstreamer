@@ -1297,15 +1297,15 @@ update_stream_bitrate (GstAdaptiveDemux2Stream * stream,
       GST_CLOCK_DIFF (request->download_request_time,
       request->download_end_time);
 
-  /* Here we only track the time the data took to arrive and ignore request delay, so we can estimate bitrate */
+  /* Here we only track the time the data took to arrive and ignore request
+   * delay, so we can estimate bitrate */
   last_download_duration =
       GST_CLOCK_DIFF (request->download_start_time, request->download_end_time);
 
-  /* If the entire response arrived in the first buffer
-   * though, include the request time to get a valid
-   * bitrate estimate */
-  if (last_download_duration < 2 * stream->last_download_time)
-    last_download_duration = stream->last_download_time;
+  GST_DEBUG_OBJECT (stream,
+      "Download duration : %" GST_TIME_FORMAT " , with headers : %"
+      GST_TIME_FORMAT, GST_TIME_ARGS (last_download_duration),
+      GST_TIME_ARGS (stream->last_download_time));
 
   if (last_download_duration > 0) {
     stream->last_bitrate =

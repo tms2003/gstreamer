@@ -561,6 +561,11 @@ on_request_sent (GObject * source, GAsyncResult * result, gpointer user_data)
 
     if (SOUP_STATUS_IS_SUCCESSFUL (request->status_code)
         || SOUP_STATUS_IS_REDIRECTION (request->status_code)) {
+      GST_LOG ("Got headers %d for uri %s", request->status_code, request->uri);
+      if (request->download_start_time == GST_CLOCK_TIME_NONE) {
+        GstClockTime now = gst_adaptive_demux_clock_get_time (dh->clock);
+        request->download_start_time = now;
+      }
       request->state = DOWNLOAD_REQUEST_STATE_HEADERS_RECEIVED;
       transfer_task_report_progress (transfer_task);
     } else {
