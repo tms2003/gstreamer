@@ -214,7 +214,7 @@ struct _MpegTSBaseClass {
   GstFlowReturn (*drain) (MpegTSBase * base);
 
   /* flush all streams
-   * The hard inicator is used to flush completely on FLUSH_STOP events
+   * The hard indicator is used to flush completely on FLUSH_STOP events
    * or partially in pull mode seeks of tsdemux */
   void (*flush) (MpegTSBase * base, gboolean hard);
 

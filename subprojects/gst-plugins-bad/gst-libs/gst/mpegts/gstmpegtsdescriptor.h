@@ -38,6 +38,8 @@
 G_BEGIN_DECLS
 
 /*
+ * As of ISO/IEC 13818-1:2018:
+ * 
  * descriptor_tag TS  PS                      Identification
  *        0       n/a n/a Reserved
  *        1       n/a n/a Reserved
@@ -58,7 +60,39 @@ G_BEGIN_DECLS
  *       16        X   X  smoothing buffer descriptor
  *       17        X      STD_descriptor
  *       18        X   X  IBP descriptor
- *      19-63     n/a n/a ITU-T Rec. H.222.0 | ISO/IEC 13818-1 Reserved
+ *      19-26      X      Defined in ISO/IEC 13818-6
+ *       27        X   X  MPEG-4_video_descriptor
+ *       28        X   X  MPEG-4_audio_descriptor
+ *       29        X   X  IOD_descriptor
+ *       30        X      SL_descriptor
+ *       31        X   X  FMC_descriptor
+ *       32        X   X  external_ES_ID_descriptor
+ *       33        X   X  MuxCode_descriptor
+ *       34        X   X  FmxBufferSize_descriptor
+ *       35        X      multiplexBuffer_descriptor
+ *       36        X   X  content_labeling_descriptor
+ *       37        X   X  metadata_pointer_descriptor
+ *       38        X   X  metadata_descriptor
+ *       39        X   X  metadata_STD_descriptor
+ *       40        X   X  AVC video descriptor
+ *       41        X   X  IPMP_descriptor (defined in ISO/IEC 13818-11, MPEG-2 IPMP)
+ *       42        X   X  AVC timing and HRD descriptor
+ *       43        X   X  MPEG-2_AAC_audio_descriptor
+ *       44        X   X  FlexMuxTiming_descriptor
+ *       45        X   X  MPEG-4_text_descriptor
+ *       46        X   X  MPEG-4_audio_extension_descriptor
+ *       47        X   X  Auxiliary_video_stream_descriptor
+ *       48        X   X  SVC extension descriptor
+ *       49        X   X  MVC extension descriptor
+ *       50        X  n/a J2K video descriptor
+ *       51        X   X  MVC operation point descriptor
+ *       52        X   X  MPEG2_stereoscopic_video_format_descriptor
+ *       53        X   X  Stereoscopic_program_info_descriptor
+ *       54        X   X  Stereoscopic_video_info_descriptor
+ *       55        X  n/a Transport_profile_descriptor
+ *       56        X  n/a HEVC video descriptor
+ *      57-62     n/a n/a Rec. ITU-T H.222.0 | ISO/IEC 13818-1 Reserved
+ *       63        X   X  Extension_descriptor
  *     64-255     n/a n/a User Private
  */
 
@@ -71,6 +105,40 @@ G_BEGIN_DECLS
  * the base MPEG-TS specifications (ITU H.222.0 | ISO/IEC 13818-1).
  *
  * Consult the relevant specifications for more details.
+ */
+/**
+ * GST_MTS_DESC_TRANSPORT_PROTOCOL:
+ *
+ * The Transport_profile_descriptor may be associated in the PMT
+ * to signal a profile value of transport stream in the associated
+ * program.
+ * 
+ * Since: 1.22.
+ */
+/**
+ * GST_MTS_DESC_HEVC_VIDEO:
+ *
+ * For an HEVC video stream, the HEVC video descriptor provides
+ * basic information for identifying coding parameters, such as
+ * profile and level parameters of that HEVC video stream. For
+ * an HEVC temporal video sub-bitstream or an HEVC temporal video
+ * subset, the HEVC video descriptor provides information such as
+ * the associated HEVC highest temporal sub-layer representation
+ * contained in the elementary stream to which it applies. This
+ * descriptor can also be used to indicate presence of WCG and
+ * HDR video components in the associated PID as well as additional
+ * parameters to assist decoders with HDR capability to render
+ * intended video data on HDR capable display devices.
+ *
+ * Since: 1.22.
+ */
+/**
+ * GST_MTS_DESC_EXTENSION:
+ *
+ * The extension descriptor  provides a mechanism to extend the
+ * Rec. ITU-T H.222.0 | ISO/IEC 13818-1 descriptor range.
+ * 
+ * Since: 1.22.
  */
 typedef enum {
   /* 0-18 ISO/IEC 13818-1 (H222.0 06/2012) */
@@ -134,8 +202,10 @@ typedef enum {
   GST_MTS_DESC_MPEG2_STEREOSCOPIC_VIDEO_FORMAT  = 0x34,
   GST_MTS_DESC_STEREOSCOPIC_PROGRAM_INFO        = 0x35,
   GST_MTS_DESC_STEREOSCOPIC_VIDEO_INFO          = 0x36,
-
-  /* 55-63 ITU-T Rec. H.222.0 | ISO/IEC 13818-1 Reserved */
+  GST_MTS_DESC_TRANSPORT_PROTOCOL               = 0x37,
+  GST_MTS_DESC_HEVC_VIDEO                       = 0x38,
+  /* 57-62 Rec. ITU-T H.222.0 | ISO/IEC 13818-1 Reserved */
+  GST_MTS_DESC_EXTENSION                        = 0x3F,
 } GstMpegtsDescriptorType;
 
 /**
