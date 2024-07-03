@@ -51,7 +51,7 @@ _init_debug (void)
 static double
 monotonic_time_as_double_milliseconds (void)
 {
-  return g_get_monotonic_time () / 1000.0;
+  return g_get_real_time () / 1000.0;
 }
 
 static void
