@@ -25,6 +25,7 @@
 #include "nicestream.h"
 /* libnice */
 #include <agent.h>
+#include <glib/gregex.h>
 
 #define HTTP_PROXY_PORT_DEFAULT 3128
 
@@ -245,9 +246,29 @@ _create_nice_stream_item (GstWebRTCNice * ice, guint session_id)
   return _find_item (ice, item.session_id, item.nice_stream_id, item.stream);
 }
 
+static gboolean
+_has_timestamp (const gchar * s)
+{
+  /* https://datatracker.ietf.org/doc/html/rfc5766#section-5 */
+  GRegex *regex;
+  GMatchInfo *match_info;
+  gboolean found = FALSE;
+
+  regex = g_regex_new ("\\d{10}:", 0, 0, NULL);
+  g_regex_match (regex, s, 0, &match_info);
+  if (g_match_info_get_match_count (match_info) > 0)
+    found = TRUE;
+
+  g_match_info_free (match_info);
+  g_regex_unref (regex);
+
+  return found;
+}
+
 static void
 _parse_userinfo (const gchar * userinfo, gchar ** user, gchar ** pass)
 {
+  gchar *unescaped_userinfo;
   const gchar *colon;
 
   if (!userinfo) {
@@ -256,20 +277,28 @@ _parse_userinfo (const gchar * userinfo, gchar ** user, gchar ** pass)
     return;
   }
 
-  colon = g_strstr_len (userinfo, -1, ":");
+  unescaped_userinfo = g_uri_unescape_string (userinfo, NULL);
+
+  colon = g_strstr_len (unescaped_userinfo, -1, ":");
   if (!colon) {
-    *user = g_uri_unescape_string (userinfo, NULL);
+    *user = unescaped_userinfo;
     *pass = NULL;
     return;
   }
 
-  /* Check that the first occurence is also the last occurence */
-  if (colon != g_strrstr (userinfo, ":"))
-    GST_WARNING ("userinfo %s contains more than one ':', will assume that the "
-        "first ':' delineates user:pass. You should escape the user and pass "
-        "before adding to the URI.", userinfo);
+  /* Check that the first occurrence is also the last occurrence */
+  if (colon != g_strrstr (unescaped_userinfo, ":")) {
+    GST_INFO ("userinfo %s contains more than one ':'", unescaped_userinfo);
+    if (_has_timestamp (unescaped_userinfo)) {
+      GST_INFO ("assume that the first ':' delineates timestamp:user as "
+          "a user field and the second one represents user:pass.");
+      colon = g_strstr_len (colon + 1, -1, ":");
+    } else {
+      GST_INFO ("assume that the first ':' delineates user:pass.");
+    }
+  }
 
-  *user = g_uri_unescape_segment (userinfo, colon, NULL);
+  *user = g_uri_unescape_segment (unescaped_userinfo, colon, NULL);
   *pass = g_uri_unescape_string (&colon[1], NULL);
 }
 
@@ -1293,15 +1322,53 @@ _clear_ice_stream (struct NiceStreamItem *item)
   }
 }
 
+gchar *
+_escape_userinfo_of_turn_server (const gchar * s)
+{
+  g_autofree gchar *protocol;
+  g_autofree gchar *location;
+  g_autofree gchar *escaped_userinfo;
+  g_autofree gchar *replaced_userinfo;
+  g_auto (GStrv) str_arr;
+  g_auto (GStrv) str_arr2;
+
+  protocol = gst_uri_get_protocol (s);
+  if (!protocol)
+    return NULL;
+
+  location = gst_uri_get_location (s);
+  if (!location)
+    return NULL;
+
+  str_arr = g_strsplit (location, "@", 2);
+  escaped_userinfo = g_uri_escape_string (str_arr[0], NULL, FALSE);
+
+  /* replace all ':' characters to '%3A' */
+  str_arr2 = g_strsplit (escaped_userinfo, ":", -1);
+  replaced_userinfo = g_strjoinv ("%3A", str_arr2);
+
+  return g_strdup_printf ("%s://%s@%s", protocol, replaced_userinfo,
+      str_arr[1]);
+}
+
 static GstUri *
 _validate_turn_server (GstWebRTCNice * ice, const gchar * s)
 {
-  GstUri *uri = gst_uri_from_string_escaped (s);
+  g_autofree gchar *escaped_s;
+  GstUri *uri;
   const gchar *userinfo, *scheme;
   GList *keys = NULL, *l;
   gchar *user = NULL, *pass = NULL;
   gboolean turn_tls = FALSE;
   guint port;
+
+  escaped_s = _escape_userinfo_of_turn_server (s);
+  if (!escaped_s) {
+    GST_ERROR_OBJECT (ice, "invalid turn server '%s'", s);
+    return NULL;
+  }
+
+  uri = gst_uri_from_string_escaped (escaped_s);
 
   GST_DEBUG_OBJECT (ice, "validating turn server, %s", s);
 

@@ -5578,9 +5578,10 @@ GST_END_TEST;
 
 #define VALID_TURN_SERVER_URL1   "turn://testuser:testpass@test.com:1234"
 #define VALID_TURN_SERVER_URL2   "turns://1665056262%3Atestuser:T4VwcehYgPAa5bpFAO14gVE19so=@test.com:1234"
+#define VALID_TURN_SERVER_URL3   "turns://1665056262:testuser:T4VwcehYgPAa5bpFAO14gVE19so=@test.com:1234"       /* 'timestamp:user' as a username */
+#define VALID_TURN_SERVER_URL4   "turns://testuser:testpass/@test.com:1234"     /* unescaped character in password */
 #define INVALID_TURN_SERVER_URL1 "testuser@testpass@test.com:1234"      /* protocol of uri is missing */
-#define INVALID_TURN_SERVER_URL2 "turns://testuser:testpass/@test.com:1234"     /* unescaped character in password */
-#define INVALID_TURN_SERVER_URL3 "turns://test.com:1234"        /* 'user:pass' is missing */
+#define INVALID_TURN_SERVER_URL2 "turns://test.com:1234"        /* 'user:pass' is missing */
 
 GST_START_TEST (test_add_turn_server)
 {
@@ -5596,15 +5597,19 @@ GST_START_TEST (test_add_turn_server)
   fail_unless (ret != FALSE);
 
   g_signal_emit_by_name (t->webrtc1, "add-turn-server",
+      VALID_TURN_SERVER_URL3, &ret);
+  fail_unless (ret != FALSE);
+
+  g_signal_emit_by_name (t->webrtc1, "add-turn-server",
+      VALID_TURN_SERVER_URL4, &ret);
+  fail_unless (ret != FALSE);
+
+  g_signal_emit_by_name (t->webrtc1, "add-turn-server",
       INVALID_TURN_SERVER_URL1, &ret);
   fail_unless (ret != TRUE);
 
   g_signal_emit_by_name (t->webrtc1, "add-turn-server",
       INVALID_TURN_SERVER_URL2, &ret);
-  fail_unless (ret != TRUE);
-
-  g_signal_emit_by_name (t->webrtc1, "add-turn-server",
-      INVALID_TURN_SERVER_URL3, &ret);
   fail_unless (ret != TRUE);
 
   test_webrtc_free (t);
