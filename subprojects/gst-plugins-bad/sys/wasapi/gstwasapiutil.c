@@ -997,13 +997,14 @@ gboolean
 gst_wasapi_util_initialize_audioclient3 (GstElement * self,
     GstAudioRingBufferSpec * spec, IAudioClient3 * client,
     WAVEFORMATEX * format, gboolean low_latency, gboolean loopback,
-    guint * ret_devicep_frames)
+    guint min_period, guint * ret_devicep_frames)
 {
   HRESULT hr;
   gint stream_flags;
   guint devicep_frames;
   guint defaultp_frames, fundp_frames, minp_frames, maxp_frames;
   WAVEFORMATEX *tmpf;
+  AudioClientProperties audio_props = {0};
 
   hr = IAudioClient3_GetSharedModeEnginePeriod (client, format,
       &defaultp_frames, &fundp_frames, &minp_frames, &maxp_frames);
@@ -1013,12 +1014,23 @@ gst_wasapi_util_initialize_audioclient3 (GstElement * self,
       "fundamental period %i frames, minimum period %i frames, maximum period "
       "%i frames", defaultp_frames, fundp_frames, minp_frames, maxp_frames);
 
-  if (low_latency)
-    devicep_frames = minp_frames;
-  else
+  if (low_latency) {
+    /* Convert minimum usec to frames as a multiple of fundp_frames */
+    devicep_frames = (guint)gst_util_uint64_scale_ceil(min_period,
+        format->nSamplesPerSec, GST_SECOND / GST_USECOND);
+    devicep_frames = ((devicep_frames + fundp_frames - 1) /
+        fundp_frames) * fundp_frames;
+    devicep_frames = CLAMP (devicep_frames, minp_frames, maxp_frames);
+  } else {
     /* Just pick the max period, because lower values can cause glitches
      * https://bugzilla.gnome.org/show_bug.cgi?id=794497 */
     devicep_frames = maxp_frames;
+  }
+
+  audio_props.cbSize = sizeof( AudioClientProperties );
+  audio_props.eCategory = AudioCategory_Other;
+  hr = IAudioClient3_SetClientProperties (client, &audio_props);
+  HR_FAILED_RET (hr, IAudioClient3::SetClientProperties, FALSE);
 
   stream_flags = AUDCLNT_STREAMFLAGS_EVENTCALLBACK;
   if (loopback)
@@ -1026,13 +1038,35 @@ gst_wasapi_util_initialize_audioclient3 (GstElement * self,
 
   hr = IAudioClient3_InitializeSharedAudioStream (client, stream_flags,
       devicep_frames, format, NULL);
+  if (hr == AUDCLNT_E_ENGINE_PERIODICITY_LOCKED) {
+    /* Another WASAPI client has set "exact match" client properties and
+     * initialized a shared period other than what we requested. We must
+     * match the same period, but we leave the devicep_frames variable
+     * unchanged in order to honor the implied minimum WASAPI buffer size. */
+    guint locked_period;
+    hr = IAudioClient3_GetCurrentSharedModeEnginePeriod (client, &tmpf,
+        &locked_period);
+    CoTaskMemFree (tmpf);
+    HR_FAILED_RET (hr, IAudioClient3::GetCurrentSharedModeEnginePeriod, FALSE);
+    GST_INFO_OBJECT (self, "Received E_ENGINE_PERIODICITY_LOCKED, "
+        "retrying with period %i frames", locked_period);
+    hr = IAudioClient3_InitializeSharedAudioStream (client, stream_flags,
+        locked_period, format, NULL);
+  }
   HR_FAILED_RET (hr, IAudioClient3::InitializeSharedAudioStream, FALSE);
 
+  /* Query the device to find the actual period, which may be different */
   hr = IAudioClient3_GetCurrentSharedModeEnginePeriod (client, &tmpf,
-      &devicep_frames);
+      ret_devicep_frames);
   CoTaskMemFree (tmpf);
   HR_FAILED_RET (hr, IAudioClient3::GetCurrentSharedModeEnginePeriod, FALSE);
 
-  *ret_devicep_frames = devicep_frames;
+  /* The actual period may be lower than devicep_frames if another app has
+   * also requested a lower shared period, or higher if locked by another
+   * application. We return the maximum of actual and requested periods, so
+   * our target buffer size (based on period) never shrinks below min_period
+   * microseconds. It is okay to return a larger-than-actual period because
+   * writes are scheduled using the WASAPI event handle, not clock time. */
+  *ret_devicep_frames = MAX (*ret_devicep_frames, devicep_frames);
   return TRUE;
 }

@@ -607,7 +607,7 @@ gst_wasapi_src_prepare (GstAudioSrc * asrc, GstAudioRingBufferSpec * spec)
   if (gst_wasapi_src_can_audioclient3 (self)) {
     if (!gst_wasapi_util_initialize_audioclient3 (GST_ELEMENT (self), spec,
             (IAudioClient3 *) self->client, self->mix_format, self->low_latency,
-            self->loopback, &devicep_frames))
+            self->loopback, 0, &devicep_frames))
       goto beach;
   } else {
     if (!gst_wasapi_util_initialize_audioclient (GST_ELEMENT (self), spec,

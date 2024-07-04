@@ -59,6 +59,7 @@ static GstStaticPadTemplate sink_template = GST_STATIC_PAD_TEMPLATE ("sink",
 #define DEFAULT_EXCLUSIVE     FALSE
 #define DEFAULT_LOW_LATENCY   FALSE
 #define DEFAULT_AUDIOCLIENT3  TRUE
+#define DEFAULT_MIN_PERIOD    2500
 
 enum
 {
@@ -68,7 +69,8 @@ enum
   PROP_DEVICE,
   PROP_EXCLUSIVE,
   PROP_LOW_LATENCY,
-  PROP_AUDIOCLIENT3
+  PROP_AUDIOCLIENT3,
+  PROP_MIN_PERIOD
 };
 
 static void gst_wasapi_sink_dispose (GObject * object);
@@ -145,6 +147,16 @@ gst_wasapi_sink_class_init (GstWasapiSinkClass * klass)
           "low-latency property is set to TRUE",
           DEFAULT_AUDIOCLIENT3, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
+  g_object_class_install_property (gobject_class,
+      PROP_MIN_PERIOD,
+      g_param_spec_uint ("min-period", "Minimum WASAPI device period",
+          "The smallest WASAPI device period in microseconds that will "
+          "be negotiated when use-audioclient3 and low-latency are TRUE. "
+          "Lower values might be supported on specialized hardware but "
+          "could also lead to increased CPU usage or playback glitches.",
+          0, G_MAXUINT32, DEFAULT_MIN_PERIOD,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
   gst_element_class_add_static_pad_template (gstelement_class, &sink_template);
   gst_element_class_set_static_metadata (gstelement_class, "WasapiSrc",
       "Sink/Audio/Hardware",
@@ -176,6 +188,7 @@ gst_wasapi_sink_init (GstWasapiSink * self)
   self->sharemode = AUDCLNT_SHAREMODE_SHARED;
   self->low_latency = DEFAULT_LOW_LATENCY;
   self->try_audioclient3 = DEFAULT_AUDIOCLIENT3;
+  self->min_period = DEFAULT_MIN_PERIOD;
   self->event_handle = CreateEvent (NULL, FALSE, FALSE, NULL);
   self->cancellable = CreateEvent (NULL, TRUE, FALSE, NULL);
   self->client_needs_restart = FALSE;
@@ -264,6 +277,9 @@ gst_wasapi_sink_set_property (GObject * object, guint prop_id,
     case PROP_AUDIOCLIENT3:
       self->try_audioclient3 = g_value_get_boolean (value);
       break;
+    case PROP_MIN_PERIOD:
+      self->min_period = g_value_get_uint (value);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -296,6 +312,9 @@ gst_wasapi_sink_get_property (GObject * object, guint prop_id,
       break;
     case PROP_AUDIOCLIENT3:
       g_value_set_boolean (value, self->try_audioclient3);
+      break;
+    case PROP_MIN_PERIOD:
+      g_value_set_uint (value, self->min_period);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -473,6 +492,9 @@ gst_wasapi_sink_get_can_frames (GstWasapiSink * self)
   GST_DEBUG_OBJECT (self, "%i unread frames (padding)", n_frames_padding);
 
   /* We can write out these many frames */
+  if (n_frames_padding > self->buffer_frame_count) {
+    return 0;
+  }
   return self->buffer_frame_count - n_frames_padding;
 }
 
@@ -494,8 +516,8 @@ gst_wasapi_sink_prepare (GstAudioSink * asink, GstAudioRingBufferSpec * spec)
 
   if (gst_wasapi_sink_can_audioclient3 (self)) {
     if (!gst_wasapi_util_initialize_audioclient3 (GST_ELEMENT (self), spec,
-            (IAudioClient3 *) self->client, self->mix_format, self->low_latency,
-            FALSE, &devicep_frames))
+            (IAudioClient3 *)self->client, self->mix_format, self->low_latency,
+            FALSE, self->min_period, &devicep_frames))
       goto beach;
   } else {
     if (!gst_wasapi_util_initialize_audioclient (GST_ELEMENT (self), spec,
@@ -514,6 +536,13 @@ gst_wasapi_sink_prepare (GstAudioSink * asink, GstAudioRingBufferSpec * spec)
   GST_INFO_OBJECT (self, "buffer size is %i frames, device period is %i "
       "frames, bpf is %i bytes, rate is %i Hz", self->buffer_frame_count,
       devicep_frames, bpf, rate);
+
+  /* In low-latency shared mode, restrict buffer to one device period */
+  if (self->low_latency && self->sharemode == AUDCLNT_SHAREMODE_SHARED) {
+    self->buffer_frame_count = MIN (self->buffer_frame_count, devicep_frames);
+    GST_INFO_OBJECT (self, "low-latency buffer size capped at %i frames",
+        self->buffer_frame_count);
+  }
 
   /* Actual latency-time/buffer-time will be different now */
   spec->segsize = devicep_frames * bpf;
@@ -672,7 +701,7 @@ gst_wasapi_sink_write (GstAudioSink * asink, gpointer data, guint length)
       goto err;
     }
 
-    if (can_frames == 0) {
+    while (can_frames == 0) {
       dwWaitResult = WaitForMultipleObjects (2, event_handle, FALSE, INFINITE);
       if (dwWaitResult != WAIT_OBJECT_0 && dwWaitResult != WAIT_OBJECT_0 + 1) {
         GST_ERROR_OBJECT (self, "Error waiting for event handle: %x",
