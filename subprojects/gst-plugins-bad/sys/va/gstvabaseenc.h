@@ -40,6 +40,12 @@ typedef struct _GstVaBaseEnc GstVaBaseEnc;
 typedef struct _GstVaBaseEncClass GstVaBaseEncClass;
 typedef struct _GstVaBaseEncPrivate GstVaBaseEncPrivate;
 
+enum
+{
+  GST_VA_ENC_PROP_RATE_CONTROL = 1,
+  GST_VA_ENC_PROP_MAX
+};
+
 struct _GstVaEncFrame
 {
   GstVaEncodePicture *picture;
@@ -166,6 +172,12 @@ void                  gst_va_base_enc_update_property_bool (GstVaBaseEnc * base,
                                                             gboolean * old_val,
                                                             gboolean new_val,
                                                             GParamSpec * pspec);
+
+void                  gst_va_base_enc_class_install_properties_helper
+                                                           (GParamSpec *properties[],
+                                                            GstVaCodecs codec,
+                                                            VAEntrypoint entrypoint,
+                                                            const char * render_device_path);
 
 static inline gpointer
 gst_va_get_enc_frame (GstVideoCodecFrame * frame)

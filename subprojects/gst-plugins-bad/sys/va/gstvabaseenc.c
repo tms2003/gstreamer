@@ -1291,4 +1291,80 @@ gst_va_base_enc_update_property_bool (GstVaBaseEnc * base, gboolean * old_val,
 }
 
 #undef UPDATE_PROPERTY
+
+/* Rate Controls */
+static struct RateControls {
+  GType type;
+  char name[64];
+  GEnumValue values[16];
+} va_rate_controls[20 /* 10 codecs * 2 entrypoints */] = {
+  { 0, },
+};
 /* *INDENT-ON* */
+
+static int va_rate_controls_nb = 0;
+
+#define GST_TYPE_VA_RATE_CONTROL_NONE (gst_va_rate_control_none_get_type ())
+static GType
+gst_va_rate_control_none_get_type (void)
+{
+  static GType type = 0;
+  static const GEnumValue values[] = {
+    {VA_RC_NONE, "No bitrate control support", "none",},
+    {0, NULL, NULL},
+  };
+
+  if (g_once_init_enter (&type)) {
+    const GType _type =
+        g_enum_register_static ("GstVaEncoderRateControl_None", values);
+    g_once_init_leave (&type, _type);
+  }
+
+  return type;
+}
+
+void
+gst_va_base_enc_class_install_properties_helper (GParamSpec * properties[],
+    GstVaCodecs codec, VAEntrypoint entrypoint, const char *render_device_path)
+{
+  GstVaDisplay *display;
+  GstVaEncoder *encoder;
+  struct RateControls *rc;
+  GType rc_type;
+  guint rc_value;
+  GParamFlags param_flags =
+      G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | G_PARAM_CONSTRUCT;
+
+  rc = &va_rate_controls[va_rate_controls_nb];
+
+  display = gst_va_display_platform_new (render_device_path);
+  encoder = gst_va_encoder_new (display, codec, entrypoint);
+
+  if (gst_va_encoder_get_rate_control_enum (encoder, rc->values)) {
+    gchar *basename = g_path_get_basename (render_device_path);
+    g_snprintf (rc->name, sizeof (rc->name),
+        "GstVaEncoderRateControl_%" GST_FOURCC_FORMAT "%s_%s",
+        GST_FOURCC_ARGS (codec),
+        (entrypoint == VAEntrypointEncSliceLP) ? "_LP" : "", basename);
+    rc->type = g_enum_register_static (rc->name, rc->values);
+    g_free (basename);
+
+    gst_type_mark_as_plugin_api (rc->type, 0);
+
+    rc_type = rc->type;
+    rc_value = rc->values[0].value;
+    va_rate_controls_nb++;
+  } else {
+    rc_type = GST_TYPE_VA_RATE_CONTROL_NONE;
+    rc_value = VA_RC_NONE;
+  }
+
+  gst_object_unref (encoder);
+  gst_object_unref (display);
+
+  properties[GST_VA_ENC_PROP_RATE_CONTROL] = g_param_spec_enum ("rate-control",
+      "rate control mode", "The desired rate control mode for the encoder",
+      rc_type, rc_value,
+      GST_PARAM_CONDITIONALLY_AVAILABLE | GST_PARAM_MUTABLE_PLAYING
+      | param_flags);
+}

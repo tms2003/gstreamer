@@ -1357,3 +1357,16 @@ gst_va_encoder_get_rate_control_enum (GstVaEncoder * self,
   /* *INDENT-ON* */
   return TRUE;
 }
+
+const gchar *
+gst_va_encoder_get_rate_control_name (guint32 rc_mode)
+{
+  int i;
+
+  for (i = 0; i < G_N_ELEMENTS (rate_control_map); i++) {
+    if (rc_mode == rate_control_map[i].value)
+      return rate_control_map[i].value_name;
+  }
+
+  return NULL;
+}
