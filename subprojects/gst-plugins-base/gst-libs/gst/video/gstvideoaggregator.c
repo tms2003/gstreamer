@@ -1681,7 +1681,10 @@ static void
 gst_video_aggregator_reset_qos (GstVideoAggregator * vagg)
 {
   gst_video_aggregator_update_qos (vagg, 0.5, 0, GST_CLOCK_TIME_NONE);
+
+  GST_OBJECT_LOCK (vagg);
   vagg->priv->qos_processed = vagg->priv->qos_dropped = 0;
+  GST_OBJECT_UNLOCK (vagg);
 }
 
 static void
@@ -2357,11 +2360,19 @@ gst_video_aggregator_aggregate (GstAggregator * agg, gboolean timeout)
         output_end_time, &outbuf);
     if (flow_ret != GST_FLOW_OK)
       goto done;
+
+    GST_OBJECT_LOCK (vagg);
     vagg->priv->qos_processed++;
+    GST_OBJECT_UNLOCK (vagg);
   } else {
     GstMessage *msg;
+    guint64 qos_processed, qos_dropped;
 
+    GST_OBJECT_LOCK (vagg);
     vagg->priv->qos_dropped++;
+    qos_dropped = vagg->priv->qos_dropped;
+    qos_processed = vagg->priv->qos_processed;
+    GST_OBJECT_UNLOCK (vagg);
 
     msg =
         gst_message_new_qos (GST_OBJECT_CAST (vagg), vagg->priv->live,
@@ -2370,7 +2381,7 @@ gst_video_aggregator_aggregate (GstAggregator * agg, gboolean timeout)
         output_end_time - output_start_time);
     gst_message_set_qos_values (msg, jitter, vagg->priv->proportion, 1000000);
     gst_message_set_qos_stats (msg, GST_FORMAT_BUFFERS,
-        vagg->priv->qos_processed, vagg->priv->qos_dropped);
+        qos_processed, qos_dropped);
     gst_element_post_message (GST_ELEMENT_CAST (vagg), msg);
 
     flow_ret = GST_FLOW_OK;
