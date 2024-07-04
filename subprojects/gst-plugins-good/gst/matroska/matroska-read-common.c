@@ -2701,7 +2701,7 @@ gst_matroska_read_common_parse_metadata_id_tag (GstMatroskaReadCommon * common,
         GstMatroskaTrackContext *stream = g_ptr_array_index (common->src, j);
 
         if (stream->uid == tgt) {
-          gst_tag_list_insert (stream->tags, taglist, GST_TAG_MERGE_REPLACE);
+          gst_tag_list_insert (stream->tags, taglist, GST_TAG_MERGE_APPEND);
           stream->tags_changed = TRUE;
           found = TRUE;
         }
@@ -2713,7 +2713,7 @@ gst_matroska_read_common_parse_metadata_id_tag (GstMatroskaReadCommon * common,
         GstTagList *cached_taglist =
             g_hash_table_lookup (common->cached_track_taglists, track_uid);
         if (cached_taglist)
-          gst_tag_list_insert (cached_taglist, taglist, GST_TAG_MERGE_REPLACE);
+          gst_tag_list_insert (cached_taglist, taglist, GST_TAG_MERGE_APPEND);
         else {
           gst_tag_list_ref (taglist);
           g_hash_table_insert (common->cached_track_taglists, track_uid,
