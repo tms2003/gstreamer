@@ -736,6 +736,7 @@ gstreamer-full static build:
   variables:
     BUILD_TYPE: "--default-library=static"
     MESON_ARGS: >-
+      --wrap-mode=forcefallback
       -Ddoc=disabled
     SUBPROJECTS_CACHE_DIR: "/subprojects"
   script:
