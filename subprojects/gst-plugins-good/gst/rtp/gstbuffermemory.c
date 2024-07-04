@@ -118,3 +118,53 @@ gst_buffer_memory_unmap (GstBufferMemoryMap * map)
     map->mem = NULL;
   }
 }
+
+gsize
+gst_buffer_memory_copy (GstBufferMemoryMap * map, guint8 * dest,
+    const guint8 * source, gsize size)
+{
+  gsize i;
+  gsize n;
+  gsize rem = size;
+  gboolean found = FALSE;
+
+  g_return_val_if_fail (map != NULL, 0);
+  g_return_val_if_fail (dest != NULL, 0);
+  g_return_val_if_fail (source != NULL, 0);
+
+  n = gst_buffer_n_memory (map->buf);
+  if (n == 0) {
+    GST_DEBUG ("no memory blocks in buffer");
+    return 0;
+  }
+
+  for (i = 0; rem && i < n; i++) {
+    GstMemory *mem;
+    GstMapInfo info;
+    const guint8 *ofs = NULL;
+    gsize avail;
+
+    mem = gst_buffer_get_memory (map->buf, i);
+    gst_memory_map (mem, &info, GST_MAP_READ);
+
+    if (found) {
+      ofs = info.data;
+      avail = MIN (rem, info.size);
+    } else if (source >= info.data && source < (info.data + info.size)) {
+      found = TRUE;
+      ofs = source;
+      avail = MIN (rem, info.size - (source - info.data));
+    }
+
+    if (ofs) {
+      memcpy (dest, ofs, avail);
+      dest += avail;
+      rem -= avail;
+    }
+
+    gst_memory_unmap (mem, &info);
+    gst_memory_unref (mem);
+  }
+
+  return size - rem;
+}
