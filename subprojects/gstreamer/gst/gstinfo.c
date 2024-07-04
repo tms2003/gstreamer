@@ -256,6 +256,8 @@ GstDebugCategory *GST_CAT_META = NULL;
 GstDebugCategory *GST_CAT_LOCKING = NULL;
 GstDebugCategory *GST_CAT_CONTEXT = NULL;
 GstDebugCategory *_priv_GST_CAT_PROTECTION = NULL;
+GHashTable *_once_debug_messages = NULL;
+GRWLock _once_debug_lock;
 
 
 #endif /* !defined(GST_DISABLE_GST_DEBUG) || !defined(GST_REMOVE_DISABLED) */
@@ -302,6 +304,7 @@ struct _GstDebugMessage
   gchar *message;
   const gchar *format;
   va_list arguments;
+  gsize message_len;
 
   /* The emitter of the message (can be NULL) */
   GObject *object;
@@ -412,6 +415,9 @@ _priv_gst_debug_init (void)
 
     gst_debug_add_log_function (gst_debug_log_default, log_file, NULL);
   }
+
+  _once_debug_messages =
+      g_hash_table_new_full (g_direct_hash, g_direct_equal, NULL, NULL);
 
   __gst_printf_pointer_extension_set_func
       (gst_info_printf_pointer_extension_func);
@@ -585,9 +591,54 @@ gst_path_basename (const gchar * file_name)
   return file_name;
 }
 
+/* Using a djb like hashing function */
+static guint
+gst_debug_message_hash (const gchar * file, gint line, GObject * object,
+    const gchar * id)
+{
+  guint hash = 5381;
+  const gchar *str = file;
+
+  if (object) {
+    hash = ((hash << 5) + hash) + GPOINTER_TO_UINT (object);
+  }
+
+  while (*str)
+    hash = ((hash << 5) + hash) + *str++;
+  hash = ((hash << 5) + hash) + (guint) line;
+
+  if (id) {
+    str = id;
+    while (*str)
+      hash = ((hash << 5) + hash) + *str++;
+  }
+
+  return hash;
+}
+
+static gboolean
+gst_debug_message_should_log_once (const gchar * file, gint line,
+    GObject * object, const gchar * debug_id)
+{
+  guint id = gst_debug_message_hash (file, line, object, debug_id);
+
+  g_rw_lock_reader_lock (&_once_debug_lock);
+  if (g_hash_table_lookup (_once_debug_messages, GUINT_TO_POINTER (id))) {
+    g_rw_lock_reader_unlock (&_once_debug_lock);
+    return FALSE;
+  }
+  g_rw_lock_reader_unlock (&_once_debug_lock);
+
+  g_rw_lock_writer_lock (&_once_debug_lock);
+  g_hash_table_add (_once_debug_messages, GUINT_TO_POINTER (id));
+  g_rw_lock_writer_unlock (&_once_debug_lock);
+
+  return TRUE;
+}
+
 static void
 gst_debug_log_full_valist (GstDebugCategory * category, GstDebugLevel level,
-    const gchar * file, const gchar * function, gint line,
+    const gchar * file, const gchar * function, gint line, gboolean once,
     GObject * object, const gchar * id, const gchar * format, va_list args)
 {
   GstDebugMessage message;
@@ -607,6 +658,10 @@ gst_debug_log_full_valist (GstDebugCategory * category, GstDebugLevel level,
   g_return_if_fail (id != NULL || object == NULL || G_IS_OBJECT (object));
 #endif
 
+  if (once && !gst_debug_message_should_log_once (file, line, object, id)) {
+    return;
+  }
+
   message.message = NULL;
   message.format = format;
   message.object = object;
@@ -622,6 +677,7 @@ gst_debug_log_full_valist (GstDebugCategory * category, GstDebugLevel level,
     entry->func (category, level, file, function, line, object, &message,
         entry->user_data);
   }
+
   g_free (message.message);
   if (message.free_object_id)
     g_free (message.object_id);
@@ -651,8 +707,8 @@ gst_debug_log_valist (GstDebugCategory * category, GstDebugLevel level,
   g_warn_if_fail (object == NULL || G_IS_OBJECT (object));
 #endif
 
-  gst_debug_log_full_valist (category, level, file, function, line, object,
-      NULL, format, args);
+  gst_debug_log_full_valist (category, level, file, function, line, FALSE,
+      object, NULL, format, args);
 }
 
 /**
@@ -676,13 +732,13 @@ gst_debug_log_id_valist (GstDebugCategory * category, GstDebugLevel level,
     const gchar * file, const gchar * function, gint line,
     const gchar * id, const gchar * format, va_list args)
 {
-  gst_debug_log_full_valist (category, level, file, function, line, NULL, id,
-      format, args);
+  gst_debug_log_full_valist (category, level, file, function, line, FALSE, NULL,
+      id, format, args);
 }
 
 static void
 gst_debug_log_literal_full (GstDebugCategory * category, GstDebugLevel level,
-    const gchar * file, const gchar * function, gint line,
+    const gchar * file, const gchar * function, gint line, gboolean once,
     GObject * object, const gchar * id, const gchar * message_string)
 {
   GstDebugMessage message;
@@ -701,6 +757,10 @@ gst_debug_log_literal_full (GstDebugCategory * category, GstDebugLevel level,
   g_return_if_fail (file != NULL);
   g_return_if_fail (function != NULL);
   g_return_if_fail (message_string != NULL);
+
+  if (once && !gst_debug_message_should_log_once (file, line, object, id)) {
+    return;
+  }
 
   message.message = (gchar *) message_string;
   message.object = object;
@@ -743,8 +803,8 @@ gst_debug_log_literal (GstDebugCategory * category, GstDebugLevel level,
   g_warn_if_fail (object == NULL || G_IS_OBJECT (object));
 #endif
 
-  gst_debug_log_literal_full (category, level, file, function, line, object,
-      NULL, message_string);
+  gst_debug_log_literal_full (category, level, file, function, line, FALSE,
+      object, NULL, message_string);
 }
 
 /**
@@ -767,9 +827,185 @@ gst_debug_log_id_literal (GstDebugCategory * category, GstDebugLevel level,
     const gchar * file, const gchar * function, gint line,
     const gchar * id, const gchar * message_string)
 {
-  gst_debug_log_literal_full (category, level, file, function, line, NULL, id,
-      message_string);
+  gst_debug_log_literal_full (category, level, file, function, line, FALSE,
+      NULL, id, message_string);
 }
+
+/**
+ * gst_debug_log_valist_once:
+ * @category: category to log
+ * @level: level of the message is in
+ * @file: the file that emitted the message, usually the __FILE__ identifier
+ * @function: the function that emitted the message
+ * @line: the line from that the message was emitted, usually __LINE__
+ * @object: (transfer none) (allow-none): the object this message relates to,
+ *    or %NULL if none
+ * @format: a printf style format string
+ * @...: optional arguments for the format
+ *
+ * Logs the given message using the currently registered debugging handlers.
+ * The message will only be output once per object.
+ *
+ * Since: 1.26
+ */
+void
+gst_debug_log_once (GstDebugCategory * category,
+    GstDebugLevel level,
+    const gchar * file,
+    const gchar * function,
+    gint line, GObject * object, const gchar * format, ...)
+{
+  va_list args;
+
+  va_start (args, format);
+  gst_debug_log_valist_once (category, level, file, function, line, object,
+      format, args);
+  va_end (args);
+}
+
+/**
+ * gst_debug_log_valist_once:
+ * @category: category to log
+ * @level: level of the message is in
+ * @file: the file that emitted the message, usually the __FILE__ identifier
+ * @function: the function that emitted the message
+ * @line: the line from that the message was emitted, usually __LINE__
+ * @object: (transfer none) (allow-none): the object this message relates to,
+ *    or %NULL if none
+ * @format: a printf style format string
+ * @args: optional arguments for the format
+ *
+ * Logs the given message using the currently registered debugging handlers.
+ * The message will only be output once per object.
+ *
+ * Since: 1.26
+ */
+void
+gst_debug_log_valist_once (GstDebugCategory * category,
+    GstDebugLevel level,
+    const gchar * file,
+    const gchar * function,
+    gint line, GObject * object, const gchar * format, va_list args)
+{
+  gst_debug_log_full_valist (category, level, file, function, line, TRUE,
+      object, NULL, format, args);
+}
+
+/**
+ * gst_debug_log_literal_once:
+ * @category: category to logger
+ * @level: level of the message is in
+ * @file: the file that emitted the message, usually the __FILE__ identifier
+ * @function: the function that emitted the message
+ * @line: the line from that the message was emitted, usually __LINE__
+ * @object: (transfer none) (allow-none): the object this message relates to,
+ *   or %NULL if none
+ * @message_string: a message string
+ *
+ * Logs the given message using the currently registered debugging handlers,
+ * once per object.
+ *
+ * Since: 1.26
+ */
+void
+gst_debug_log_literal_once (GstDebugCategory * category,
+    GstDebugLevel level,
+    const gchar * file,
+    const gchar * function,
+    gint line, GObject * object, const gchar * message_string)
+{
+  gst_debug_log_literal_full (category, level, file, function, line, TRUE,
+      object, NULL, message_string);
+}
+
+/**
+ * gst_debug_log_id_once:
+ * @category: category to log
+ * @level: level of the message is in
+ * @file: the file that emitted the message, usually the __FILE__ identifier
+ * @function: the function that emitted the message
+ * @line: the line from that the message was emitted, usually __LINE__
+ * @id: (transfer none) (allow-none): the identifier of the object this message
+ *    relates to, or %NULL if none
+ * @format: a printf style format string
+ * @...: optional arguments for the format
+ *
+ * Logs the given message using the currently registered debugging handlers.
+ * The message will only be output once per ID.
+ *
+ * Since: 1.26
+ */
+void
+gst_debug_log_id_once (GstDebugCategory * category,
+    GstDebugLevel level,
+    const gchar * file,
+    const gchar * function,
+    gint line, const gchar * id, const gchar * format, ...)
+{
+  va_list args;
+
+  va_start (args, format);
+  gst_debug_log_id_valist_once (category, level, file, function, line, id,
+      format, args);
+  va_end (args);
+}
+
+/**
+ * gst_debug_log_id_valist:
+ * @category: category to log
+ * @level: level of the message is in
+ * @file: the file that emitted the message, usually the __FILE__ identifier
+ * @function: the function that emitted the message
+ * @line: the line from that the message was emitted, usually __LINE__
+ * @id: (transfer none) (allow-none): the identifier of the object this message
+ *    relates to or %NULL if none.
+ * @format: a printf style format string
+ * @args: optional arguments for the format
+ *
+ * Logs the given message using the currently registered debugging handlers once
+ * per ID.
+ *
+ * Since: 1.26
+ */
+void
+gst_debug_log_id_valist_once (GstDebugCategory * category,
+    GstDebugLevel level,
+    const gchar * file,
+    const gchar * function,
+    gint line, const gchar * id, const gchar * format, va_list args)
+{
+  gst_debug_log_full_valist (category, level, file, function, line, TRUE, NULL,
+      id, format, args);
+}
+
+/**
+ * gst_debug_log_id_literal_once:
+ * @category: category to log
+ * @level: level of the message is in
+ * @file: the file that emitted the message, usually the __FILE__ identifier
+ * @function: the function that emitted the message
+ * @line: the line from that the message was emitted, usually __LINE__
+ * @id: (transfer none) (allow-none): the identifier of the object this message
+ *    relates to, or %NULL if none.
+ * @message_string: a message string
+ *
+ * Logs the given message using the currently registered debugging handlers once
+ * per ID.
+ *
+ * Since: 1.26
+ */
+void
+gst_debug_log_id_literal_once (GstDebugCategory * category,
+    GstDebugLevel level,
+    const gchar * file,
+    const gchar * function,
+    gint line, const gchar * id, const gchar * message_string)
+{
+  gst_debug_log_literal_full (category, level, file, function, line, TRUE, NULL,
+      id, message_string);
+}
+
+
 
 /**
  * gst_debug_message_get:
@@ -789,8 +1025,11 @@ gst_debug_message_get (GstDebugMessage * message)
     len = __gst_vasprintf (&message->message, message->format,
         message->arguments);
 
-    if (len < 0)
+    if (len < 0) {
       message->message = NULL;
+    } else {
+      message->message_len = len;
+    }
   }
   return message->message;
 }
@@ -2579,6 +2818,13 @@ _priv_gst_debug_cleanup (void)
     __log_functions = g_slist_delete_link (__log_functions, __log_functions);
   }
   g_mutex_unlock (&__log_func_mutex);
+
+  g_rw_lock_writer_lock (&_once_debug_lock);
+  if (_once_debug_messages) {
+    g_hash_table_unref (_once_debug_messages);
+    _once_debug_messages = NULL;
+  }
+  g_rw_lock_writer_unlock (&_once_debug_lock);
 }
 
 static void
