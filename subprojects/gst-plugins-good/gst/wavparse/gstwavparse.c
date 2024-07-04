@@ -1305,12 +1305,6 @@ gst_wavparse_stream_headers (GstWavParse * wav)
         "Got TAG: %" GST_FOURCC_FORMAT ", offset %" G_GUINT64_FORMAT ", size %"
         G_GUINT32_FORMAT, GST_FOURCC_ARGS (tag), wav->offset, size);
 
-    /* Maximum valid size is INT_MAX */
-    if (size & 0x80000000) {
-      GST_WARNING_OBJECT (wav, "Invalid size, clipping to 0x7fffffff");
-      size = 0x7fffffff;
-    }
-
     /* Clip to upstream size if known */
     if (upstream_size > 0 && size + wav->offset > upstream_size) {
       GST_WARNING_OBJECT (wav, "Clipping chunk size to file size");
