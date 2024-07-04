@@ -282,14 +282,17 @@ gst_d3d11_window_dispose (GObject * object)
 {
   GstD3D11Window *self = GST_D3D11_WINDOW (object);
 
-  gst_clear_buffer (&self->backbuffer);
-  GST_D3D11_CLEAR_COM (self->swap_chain);
+  {
+    GstD3D11DeviceLockGuard lk (self->device);
+    gst_clear_buffer (&self->backbuffer);
+    GST_D3D11_CLEAR_COM (self->swap_chain);
 
-  gst_clear_object (&self->compositor);
-  gst_clear_object (&self->converter);
+    gst_clear_object (&self->compositor);
+    gst_clear_object (&self->converter);
 
-  gst_clear_buffer (&self->msaa_buffer);
-  gst_clear_buffer (&self->cached_buffer);
+    gst_clear_buffer (&self->msaa_buffer);
+    gst_clear_buffer (&self->cached_buffer);
+  }
   gst_clear_object (&self->device);
 
   G_OBJECT_CLASS (parent_class)->dispose (object);
@@ -638,6 +641,7 @@ gst_d3d11_window_prepare_default (GstD3D11Window * window, guint display_width,
    * Otherwise, use DXGI_FORMAT_B8G8R8A8_UNORM or DXGI_FORMAT_B8G8R8A8_UNORM
    */
   gst_video_info_from_caps (&window->info, caps);
+  GstD3D11DeviceLockGuard lkd (device);
   device_handle = gst_d3d11_device_get_device_handle (device);
   for (guint i = 0; i < G_N_ELEMENTS (formats); i++) {
     hr = device_handle->CheckFormatSupport (formats[i].dxgi_format,

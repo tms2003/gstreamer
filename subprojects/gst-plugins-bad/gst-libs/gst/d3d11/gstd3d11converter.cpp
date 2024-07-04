@@ -800,6 +800,7 @@ gst_d3d11_color_convert_setup_shader (GstD3D11Converter * self,
   memset (&subresource, 0, sizeof (subresource));
   memset (&buffer_desc, 0, sizeof (buffer_desc));
 
+  GstD3D11DeviceLockGuard lk (device);
   device_handle = gst_d3d11_device_get_device_handle (device);
 
   hr = gst_d3d11_device_get_sampler (device, sampler_filter, &sampler);
@@ -1873,6 +1874,7 @@ gst_d3d11_converter_setup_processor (GstD3D11Converter * self)
     return FALSE;
   }
 
+  GstD3D11DeviceLockGuard lkd (self->device);
   video_device = gst_d3d11_device_get_video_device_handle (self->device);
   if (!video_device) {
     GST_DEBUG_OBJECT (self, "video device interface is not available");
@@ -1947,7 +1949,6 @@ gst_d3d11_converter_setup_processor (GstD3D11Converter * self)
     return FALSE;
   }
 
-  GstD3D11DeviceLockGuard lk (device);
   /* We don't want auto processing by driver */
   video_context1->VideoProcessorSetStreamAutoProcessingMode
       (processor.Get (), 0, FALSE);
