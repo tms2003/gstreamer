@@ -184,14 +184,12 @@ G_BEGIN_DECLS
  * For example, if this tag value is 2, the focal ratio is f/2.
  */
 #define GST_TAG_CAPTURING_FOCAL_RATIO          "capturing-focal-ratio"
-
 /**
  * GST_TAG_CAPTURING_FOCAL_LENGTH:
  *
  * Focal length used when capturing an image, in mm. (double)
  */
 #define GST_TAG_CAPTURING_FOCAL_LENGTH         "capturing-focal-length"
-
 /**
  * GST_TAG_CAPTURING_FOCAL_LENGTH_35_MM:
  *
@@ -207,14 +205,44 @@ G_BEGIN_DECLS
  * Digital zoom ratio used when capturing an image. (double)
  */
 #define GST_TAG_CAPTURING_DIGITAL_ZOOM_RATIO   "capturing-digital-zoom-ratio"
-
 /**
  * GST_TAG_CAPTURING_ISO_SPEED:
  *
  * ISO speed used when capturing an image. (integer)
  */
 #define GST_TAG_CAPTURING_ISO_SPEED           "capturing-iso-speed"
-
+/**
+ * GST_TAG_SENSITIVITY_TYPE:
+ *
+ * Sensor sensitivity Type as in Exif Standard (integer)
+ * 0 = Unknown
+ * 1 = Standard Output Sensitivity
+ * 2 = Recommended Exposure Index
+ * 3 = ISO Speed
+ * 4 = Standard Output Sensitivity and Recommended Exposure Index
+ * 5 = Standard Output Sensitivity and ISO Speed
+ * 6 = Recommended Exposure Index and ISO Speed
+ * 7 = Standard Output Sensitivity, Recommended Exposure Index and ISO Speed 
+ */
+#define GST_TAG_SENSITIVITY_TYPE "sensor-sensitivity-iso-speed"
+/**
+ * GST_TAG_ISO_SPEED_SENSITIVITY:
+ *
+ * Sensor sensitivity in ISO speed units (integer)
+ */
+#define GST_TAG_ISO_SPEED_SENSITIVITY "sensor-sensitivity-iso-speed"
+/**
+ * GST_TAG_STANDARD_OUTPUT_SENSITIVITY:
+ *
+ * Sensor Standard Output sensitivity (integer)
+ */
+#define GST_TAG_STANDARD_OUTPUT_SENSITIVITY "sensor-sensitivity-standard-output"
+/**
+ * GST_TAG_RECOMMENDED_EXPOSURE_INDEX_SENSITIVITY:
+ *
+ * Sensor sensitivity in Recommended Exposure Index units (integer)
+ */
+#define GST_TAG_RECOMMENDED_EXPOSURE_INDEX_SENSITIVITY "sensor-sensitivity-recommended-exposure-index"
 /**
  * GST_TAG_CAPTURING_EXPOSURE_PROGRAM:
  *

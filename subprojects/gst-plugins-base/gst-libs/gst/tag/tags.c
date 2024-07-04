@@ -141,6 +141,30 @@ gst_tag_register_tags_internal (gpointer unused)
       G_TYPE_INT, _("capturing iso speed"),
       _("The ISO speed used when capturing an image"), NULL);
 
+  gst_tag_register_static (GST_TAG_SENSITIVITY_TYPE, GST_TAG_FLAG_META,
+      G_TYPE_INT, _("Sensor sensitivity Type"),
+      _("The sensitivity measurement type the sensor reports"), NULL);
+
+  gst_tag_register_static (GST_TAG_ISO_SPEED_SENSITIVITY, GST_TAG_FLAG_META,
+      G_TYPE_INT, _("Sensor sensitivity in iso speed units"),
+      _
+      ("Numerical value calculated from the exposure provided at the focal plane of a Digital Camera System to produce specified camera output signal characteristics using the methods described in this International Standard.[ISO 12232:2006]"),
+      NULL);
+
+  gst_tag_register_static (GST_TAG_STANDARD_OUTPUT_SENSITIVITY,
+      GST_TAG_FLAG_META, G_TYPE_INT,
+      _("Sensor sensitivity in standard output units"),
+      _
+      ("Specific exposure index value for a DSC that provides a still image with a specified digital output signal value under specified test conditions, as defined in this International Standard.[ISO 12232:2006]"),
+      NULL);
+
+  gst_tag_register_static (GST_TAG_RECOMMENDED_EXPOSURE_INDEX_SENSITIVITY,
+      GST_TAG_FLAG_META, G_TYPE_INT,
+      _("Sensor sensitivity in Recommended Exposure Index units"),
+      _
+      ("Specific exposure index value recommended by a DSC provider as a reference for adjusting photographic accessories, as defined in this International Standard.[ISO 12232:2006]"),
+      NULL);
+
   gst_tag_register_static (GST_TAG_CAPTURING_EXPOSURE_PROGRAM,
       GST_TAG_FLAG_META, G_TYPE_STRING, _("capturing exposure program"),
       _("The exposure program used when capturing an image"), NULL);

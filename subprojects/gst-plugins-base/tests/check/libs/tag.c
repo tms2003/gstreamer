@@ -31,6 +31,8 @@
 #include <string.h>
 #include <locale.h>
 
+#include <gio/gio.h>
+
 GST_START_TEST (test_parse_extended_comment)
 {
   gchar *key, *val, *lang;
@@ -1964,6 +1966,118 @@ GST_START_TEST (test_exif_tags_serialization_deserialization)
 
 GST_END_TEST;
 
+static void
+gzipped_file_get_contents (const gchar * fn, GstBuffer ** p_buf)
+{
+  GZlibDecompressor *decompress;
+  GConverterResult decomp_res;
+  guint8 *data;
+  gchar *path, *gzipped_data = NULL;
+  gsize gzipped_size, size, bytes_read, bytes_written;
+
+  path = g_build_filename (GST_TEST_FILES_PATH, fn, NULL);
+  GST_LOG ("reading file '%s'", path);
+
+  fail_if (!g_file_get_contents (path, &gzipped_data, &gzipped_size, NULL),
+      "error loading test file %s", fn);
+  fail_unless (gzipped_size >= 8);
+
+  /* check magic */
+  fail_unless_equals_int (gzipped_data[0], 0x1f);
+
+  /* uncompressed size is in last 4 bytes */
+  size = GST_READ_UINT32_LE (gzipped_data + gzipped_size - 4);
+  GST_LOG ("uncompressed size: %u", (guint) size);
+
+  data = g_malloc (size);
+
+  decompress = g_zlib_decompressor_new (G_ZLIB_COMPRESSOR_FORMAT_GZIP);
+  decomp_res = g_converter_convert (G_CONVERTER (decompress),
+      gzipped_data, gzipped_size, data, size,
+      G_CONVERTER_INPUT_AT_END, &bytes_read, &bytes_written, NULL);
+  fail_unless_equals_int (decomp_res, G_CONVERTER_FINISHED);
+  fail_unless_equals_int (bytes_read, gzipped_size);
+  fail_unless_equals_int (bytes_written, size);
+  g_object_unref (decompress);
+  g_free (gzipped_data);
+
+  *p_buf = gst_buffer_new ();
+  gst_buffer_append_memory (*p_buf,
+      gst_memory_new_wrapped (GST_MEMORY_FLAG_READONLY,
+          (gpointer) data, size, 0, size, data, g_free));
+
+  g_free (path);
+}
+
+#define check_int_tag(taglist,tag,value) \
+  G_STMT_START { \
+    gint __v_i; \
+    fail_unless (gst_tag_list_get_int (taglist, tag, &__v_i)); \
+    fail_unless_equals_int (__v_i, value); \
+  } G_STMT_END
+
+#define check_double_tag(taglist,tag,value) \
+  G_STMT_START { \
+    gdouble __v_d; \
+    fail_unless (gst_tag_list_get_double (taglist, tag, &__v_d)); \
+    fail_unless_equals_float (__v_d, value); \
+  } G_STMT_END
+
+#define check_string_tag(taglist,tag,value) \
+  G_STMT_START { \
+    gchar *__v_s; \
+    fail_unless (gst_tag_list_get_string (taglist, tag, &__v_s)); \
+    fail_unless_equals_string (__v_s, value); \
+    g_free  (__v_s); \
+  } G_STMT_END
+
+GST_START_TEST (test_exif_iso_speed_photo_sensitivity)
+{
+  GstTagList *tags;
+  GstBuffer *buf;
+
+  gzipped_file_get_contents ("exif-tag.gz", &buf);
+
+  tags = gst_tag_list_from_exif_buffer_with_tiff_header (buf);
+  fail_unless (tags != NULL);
+  gst_tag_list_remove_tag (tags, GST_TAG_APPLICATION_DATA);
+#if 0
+  /* description is made up of white spaces only, should not have been added */
+  fail_if (gst_tag_list_get_value_index (tags, GST_TAG_DESCRIPTION, 0) != NULL);
+#endif
+  GST_INFO ("EXIF tags: %" GST_PTR_FORMAT, tags);
+  check_int_tag (tags, GST_TAG_CAPTURING_ISO_SPEED, 100);
+  check_int_tag (tags, GST_TAG_SENSITIVITY_TYPE, 2);
+  check_int_tag (tags, GST_TAG_RECOMMENDED_EXPOSURE_INDEX_SENSITIVITY, 100);
+  check_string_tag (tags, GST_TAG_DEVICE_MANUFACTURER, "SONY");
+  check_string_tag (tags, GST_TAG_DEVICE_MODEL, "ILCE-5000");
+  check_string_tag (tags, GST_TAG_IMAGE_ORIENTATION, "rotate-0");
+  check_double_tag (tags, GST_TAG_IMAGE_HORIZONTAL_PPI, 350.0);
+  check_double_tag (tags, GST_TAG_IMAGE_VERTICAL_PPI, 350.0);
+  /* datetime=(datetime)2016-03-22T17:33:24Z */
+  /* capturing-shutter-speed=(fraction)1/200 */
+  check_double_tag (tags, GST_TAG_IMAGE_VERTICAL_PPI, 350.0);
+  check_double_tag (tags, GST_TAG_CAPTURING_FOCAL_RATIO, 10.0);
+  /* capturing-exposure-program=(string)manual */
+  /* capturing-exposure-compensation=(double)0 */
+  /* capturing-metering-mode=(string)pattern */
+  /* capturing-flash-fired=(boolean)false */
+  /* capturing-flash-mode=(string)never */
+  /* capturing-focal-length=(double)16 */
+  /* capturing-source=(string)dsc */
+  /* capturing-exposure-mode=(string)manual-exposure */
+  /* capturing-white-balance=(string)manual */
+  check_double_tag (tags, GST_TAG_CAPTURING_DIGITAL_ZOOM_RATIO, 1.0);
+  /* capturing-scene-capture-type=(string)standard */
+  /* capturing-contrast=(string)normal */
+  /* capturing-saturation=(string)normal */
+  /* capturing-sharpness=(string)normal */
+  gst_tag_list_unref (tags);
+  gst_buffer_unref (buf);
+}
+
+GST_END_TEST;
+
 static Suite *
 tag_suite (void)
 {
@@ -1988,6 +2102,7 @@ tag_suite (void)
   tcase_add_test (tc_chain, test_exif_parsing);
   tcase_add_test (tc_chain, test_exif_tags_serialization_deserialization);
   tcase_add_test (tc_chain, test_exif_multiple_tags);
+  tcase_add_test (tc_chain, test_exif_iso_speed_photo_sensitivity);
   return s;
 }
 

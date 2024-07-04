@@ -273,7 +273,6 @@ EXIF_SERIALIZATION_DESERIALIZATION_FUNC (orientation);
 EXIF_SERIALIZATION_DESERIALIZATION_FUNC (saturation);
 EXIF_SERIALIZATION_DESERIALIZATION_FUNC (scene_capture_type);
 EXIF_SERIALIZATION_DESERIALIZATION_FUNC (scene_type);
-EXIF_SERIALIZATION_DESERIALIZATION_FUNC (sensitivity_type);
 EXIF_SERIALIZATION_DESERIALIZATION_FUNC (sharpness);
 EXIF_SERIALIZATION_DESERIALIZATION_FUNC (shutter_speed);
 EXIF_SERIALIZATION_DESERIALIZATION_FUNC (source);
@@ -282,7 +281,6 @@ EXIF_SERIALIZATION_DESERIALIZATION_FUNC (white_balance);
 
 EXIF_DESERIALIZATION_FUNC (resolution);
 EXIF_DESERIALIZATION_FUNC (add_to_pending_tags);
-
 /* FIXME copyright tag has a weird "artist\0editor\0" format that is
  * not yet handled */
 
@@ -315,8 +313,10 @@ EXIF_DESERIALIZATION_FUNC (add_to_pending_tags);
 #define EXIF_TAG_F_NUMBER 0x829D
 #define EXIF_TAG_EXPOSURE_PROGRAM 0x8822
 #define EXIF_TAG_PHOTOGRAPHIC_SENSITIVITY 0x8827
-#define EXIF_TAG_SENSITIVITY_TYPE 0x8830
+#define EXIF_TAG_STANDARD_OUTPUT_SENSITIVITY 0x8831
+#define EXIF_TAG_RECOMMENDED_EXPOSURE_INDEX 0x8832
 #define EXIF_TAG_ISO_SPEED 0x8833
+#define EXIF_TAG_SENSITIVITY_TYPE 0x8830
 #define EXIF_TAG_DATE_TIME_ORIGINAL 0x9003
 #define EXIF_TAG_DATE_TIME_DIGITIZED 0x9004
 #define EXIF_TAG_SHUTTER_SPEED_VALUE 0x9201
@@ -392,15 +392,19 @@ static const GstExifTagMatch tag_map_exif[] = {
         EXIF_TYPE_SHORT, 0, serialize_exposure_program,
       deserialize_exposure_program},
 
-  /* don't need the serializer as we always write the iso speed alone */
   {GST_TAG_CAPTURING_ISO_SPEED, EXIF_TAG_PHOTOGRAPHIC_SENSITIVITY,
-        EXIF_TYPE_SHORT, 0, NULL,
-      deserialize_add_to_pending_tags},
+      EXIF_TYPE_SHORT, 0, NULL, NULL},
 
-  {GST_TAG_CAPTURING_ISO_SPEED, EXIF_TAG_SENSITIVITY_TYPE, EXIF_TYPE_SHORT, 0,
-      serialize_sensitivity_type, deserialize_sensitivity_type},
-  {GST_TAG_CAPTURING_ISO_SPEED, EXIF_TAG_ISO_SPEED, EXIF_TYPE_LONG, 0, NULL,
+  {GST_TAG_SENSITIVITY_TYPE, EXIF_TAG_SENSITIVITY_TYPE, EXIF_TYPE_SHORT, 0,
+      NULL, NULL},
+  {GST_TAG_ISO_SPEED_SENSITIVITY, EXIF_TAG_ISO_SPEED, EXIF_TYPE_LONG, 0, NULL,
       NULL},
+  {GST_TAG_STANDARD_OUTPUT_SENSITIVITY, EXIF_TAG_STANDARD_OUTPUT_SENSITIVITY,
+        EXIF_TYPE_LONG, 0, NULL,
+      NULL},
+  {GST_TAG_RECOMMENDED_EXPOSURE_INDEX_SENSITIVITY,
+      EXIF_TAG_RECOMMENDED_EXPOSURE_INDEX, EXIF_TYPE_LONG, 0, NULL, NULL},
+
   {NULL, EXIF_VERSION_TAG, EXIF_TYPE_UNDEFINED, 0, NULL, NULL},
   {GST_TAG_DATE_TIME, EXIF_TAG_DATE_TIME_ORIGINAL, EXIF_TYPE_ASCII, 0, NULL,
       NULL},
@@ -1383,6 +1387,11 @@ parse_exif_long_tag (GstExifReader * reader, const GstExifTagMatch * tag,
 
   tagtype = gst_tag_get_type (tag->gst_tag);
   if (tagtype == G_TYPE_INT) {
+    if (reader->byte_order == G_LITTLE_ENDIAN)
+      offset = GST_READ_UINT32_LE (offset_as_data);
+    else
+      offset = GST_READ_UINT32_BE (offset_as_data);
+
     gst_tag_list_add (reader->taglist, GST_TAG_MERGE_REPLACE, tag->gst_tag,
         offset, NULL);
   } else {
@@ -1830,16 +1839,16 @@ parse_exif_ifd (GstExifReader * exif_reader, gint buf_offset,
         parse_exif_rational_tag (exif_reader, tag_map[map_index].gst_tag,
             tagdata.count, tagdata.offset, 1, TRUE);
         break;
+      case EXIF_TYPE_SHORT:
+        parse_exif_short_tag (exif_reader, &tag_map[map_index],
+            tagdata.count, tagdata.offset, tagdata.offset_as_data);
+        break;
       case EXIF_TYPE_UNDEFINED:
         parse_exif_undefined_tag (exif_reader, &tag_map[map_index],
             tagdata.count, tagdata.offset, tagdata.offset_as_data);
         break;
       case EXIF_TYPE_LONG:
         parse_exif_long_tag (exif_reader, &tag_map[map_index],
-            tagdata.count, tagdata.offset, tagdata.offset_as_data);
-        break;
-      case EXIF_TYPE_SHORT:
-        parse_exif_short_tag (exif_reader, &tag_map[map_index],
             tagdata.count, tagdata.offset, tagdata.offset_as_data);
         break;
       default:
@@ -2699,51 +2708,6 @@ deserialize_aperture_value (GstExifReader * exif_reader,
 
   gst_tag_list_add (exif_reader->taglist, GST_TAG_MERGE_KEEP,
       exiftag->gst_tag, d, NULL);
-
-  return 0;
-}
-
-static void
-serialize_sensitivity_type (GstExifWriter * writer, const GstTagList * taglist,
-    const GstExifTagMatch * exiftag)
-{
-  /* we only support ISOSpeed as the sensitivity type (3) */
-  gst_exif_writer_write_short_tag (writer, exiftag->exif_tag, 3);
-}
-
-static gint
-deserialize_sensitivity_type (GstExifReader * exif_reader,
-    GstByteReader * reader, const GstExifTagMatch * exiftag,
-    GstExifTagData * tagdata)
-{
-  GstExifTagData *sensitivity = NULL;
-  guint16 type_data;
-
-  if (exif_reader->byte_order == G_LITTLE_ENDIAN) {
-    type_data = GST_READ_UINT16_LE (tagdata->offset_as_data);
-  } else {
-    type_data = GST_READ_UINT16_BE (tagdata->offset_as_data);
-  }
-
-  if (type_data != 3) {
-    GST_WARNING ("We only support SensitivityType=3");
-    return 0;
-  }
-
-  /* check the pending tags for the PhotographicSensitivity tag */
-  sensitivity =
-      gst_exif_reader_get_pending_tag (exif_reader,
-      EXIF_TAG_PHOTOGRAPHIC_SENSITIVITY);
-  if (sensitivity == NULL) {
-    GST_WARNING ("PhotographicSensitivity tag not found");
-    return 0;
-  }
-
-  GST_LOG ("Starting to parse %s tag in exif 0x%x", exiftag->gst_tag,
-      exiftag->exif_tag);
-
-  gst_tag_list_add (exif_reader->taglist, GST_TAG_MERGE_KEEP,
-      GST_TAG_CAPTURING_ISO_SPEED, sensitivity->offset_as_data, NULL);
 
   return 0;
 }
