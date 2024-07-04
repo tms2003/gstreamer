@@ -941,7 +941,7 @@
           depth:           10
 
         Image
-          default rstride: RU4 (width * 2 * 5)
+          default rstride: RU2 (width) / 2 * 5
           default size:    rstride (image) * height
 ```
 
