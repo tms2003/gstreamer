@@ -51,7 +51,7 @@
 #include "config.h"
 #endif
 
-#include "gst_private.h"
+#include "gstpluginprivate.h"
 
 #include <glib/gstdio.h>
 #include <sys/types.h>
@@ -1504,73 +1504,6 @@ gst_plugin_list_free (GList * list)
 }
 
 /* ===== plugin dependencies ===== */
-
-/* Scenarios:
- * ENV + xyz     where ENV can contain multiple values separated by SEPARATOR
- *               xyz may be "" (if ENV contains path to file rather than dir)
- * ENV + *xyz   same as above, but xyz acts as suffix filter
- * ENV + xyz*   same as above, but xyz acts as prefix filter (is this needed?)
- * ENV + *xyz*  same as above, but xyz acts as strstr filter (is this needed?)
- *
- * same as above, with additional paths hard-coded at compile-time:
- *   - only check paths + ... if ENV is not set or yields not paths
- *   - always check paths + ... in addition to ENV
- *
- * When user specifies set of environment variables, he/she may also use e.g.
- * "HOME/.mystuff/plugins", and we'll expand the content of $HOME with the
- * remainder
- */
-
-/* we store in registry:
- *  sets of:
- *   {
- *     - environment variables (array of strings)
- *     - last hash of env variable contents (uint) (so we can avoid doing stats
- *       if one of the env vars has changed; premature optimisation galore)
- *     - hard-coded paths (array of strings)
- *     - xyz filename/suffix/prefix strings (array of strings)
- *     - flags (int)
- *     - last hash of file/dir stats (int)
- *   }
- *   (= struct GstPluginDep)
- */
-
-static guint
-gst_plugin_ext_dep_get_env_vars_hash (GstPlugin * plugin, GstPluginDep * dep)
-{
-  gchar **e;
-  guint hash;
-
-  /* there's no deeper logic to what we do here; all we want to know (when
-   * checking if the plugin needs to be rescanned) is whether the content of
-   * one of the environment variables in the list is different from when it
-   * was last scanned */
-  hash = 0;
-  for (e = dep->env_vars; e != NULL && *e != NULL; ++e) {
-    const gchar *val;
-    gchar env_var[256];
-
-    /* order matters: "val",NULL needs to yield a different hash than
-     * NULL,"val", so do a shift here whether the var is set or not */
-    hash = hash << 5;
-
-    /* want environment variable at beginning of string */
-    if (!g_ascii_isalnum (**e)) {
-      GST_WARNING_OBJECT (plugin, "string prefix is not a valid environment "
-          "variable string: %s", *e);
-      continue;
-    }
-
-    /* user is allowed to specify e.g. "HOME/.pitivi/plugins" */
-    g_strlcpy (env_var, *e, sizeof (env_var));
-    g_strdelimit (env_var, "/\\", '\0');
-
-    if ((val = g_getenv (env_var)))
-      hash += g_str_hash (val);
-  }
-
-  return hash;
-}
 
 gboolean
 _priv_plugin_deps_env_vars_changed (GstPlugin * plugin)
