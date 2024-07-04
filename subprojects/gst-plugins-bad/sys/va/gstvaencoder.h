@@ -52,7 +52,8 @@ gboolean              gst_va_encoder_open                 (GstVaEncoder * self,
                                                            gint codedbuf_size,
                                                            guint max_reconstruct_surfaces,
                                                            guint rc_ctrl,
-                                                           guint32 packed_headers);
+                                                           guint32 packed_headers,
+                                                           VAConfigAttrib * extra_attr);
 gboolean              gst_va_encoder_close                (GstVaEncoder * self);
 gboolean              gst_va_encoder_get_reconstruct_pool_config (GstVaEncoder * self,
                                                                   GstCaps ** caps,
