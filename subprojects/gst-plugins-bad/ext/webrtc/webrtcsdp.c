@@ -306,11 +306,10 @@ validate_sdp (GstWebRTCSignalingState state, SDPSource source,
 
   for (i = 0; i < gst_sdp_message_medias_len (sdp->sdp); i++) {
     const GstSDPMedia *media = gst_sdp_message_get_media (sdp->sdp, i);
-    const gchar *mid;
+    const gchar *mid = NULL;
     gboolean media_in_bundle = FALSE;
-    if (!_media_has_mid (media, i, error))
-      goto fail;
-    mid = gst_sdp_media_get_attribute_val (media, "mid");
+    if (is_bundle && _media_has_mid (media, i, error))
+      mid = gst_sdp_media_get_attribute_val (media, "mid");
     media_in_bundle = is_bundle
         && g_strv_contains ((const gchar **) group_members, mid);
     if (!_media_get_ice_ufrag (sdp->sdp, i)) {
