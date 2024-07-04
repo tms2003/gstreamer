@@ -496,7 +496,13 @@ gst_hlsdemux_handle_content_isobmff (GstHLSDemux * demux,
 out:
   gst_buffer_unmap (*buffer, &info);
 
-  if (smallest_ts != GST_CLOCK_TIME_NONE) {
+  if (draining && !GST_CLOCK_TIME_IS_VALID (smallest_ts)) {
+    GST_INFO_OBJECT (hls_stream,
+        "Draining without any timing information, skipping");
+    smallest_ts = hls_stream->current_segment->stream_time;
+  }
+
+  if (GST_CLOCK_TIME_IS_VALID (smallest_ts)) {
     ret = gst_hlsdemux_stream_handle_internal_time (hls_stream, smallest_ts);
   }
 
