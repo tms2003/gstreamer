@@ -154,6 +154,7 @@ option('openmpt', type : 'feature', value : 'auto', description : 'OpenMPT modul
 option('openni2', type : 'feature', value : 'auto', description : 'OpenNI2 library plugin')
 option('opensles', type : 'feature', value : 'auto', description : 'OpenSL ES audio source/sink plugin')
 option('opus', type : 'feature', value : 'auto', description : 'OPUS audio parser plugin')
+option('qoi', type : 'feature', value : 'auto', description : 'QOI plugin library')
 option('qroverlay', type : 'feature', value : 'auto', description : 'Element to set random data on a qroverlay')
 option('qsv', type : 'feature', value : 'auto', description : 'Intel Quick Sync Video plugin')
 option('qt6d3d11', type : 'feature', value : 'auto', description : 'Qt6 Direct3D11 plugin')
