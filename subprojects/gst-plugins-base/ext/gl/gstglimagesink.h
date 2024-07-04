@@ -57,6 +57,8 @@ struct _GstGLImageSink
     gulong mouse_sig_id;
     gulong key_sig_id;
     gulong mouse_scroll_sig_id;
+    gulong touch_sig_id;
+    gulong touch_meta_sig_id;
 
     /* GstVideoOverlay::set_render_rectangle() cache */
     gint x;

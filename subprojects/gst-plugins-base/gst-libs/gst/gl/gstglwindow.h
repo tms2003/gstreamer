@@ -241,6 +241,18 @@ void     gst_gl_window_send_scroll_event    (GstGLWindow * window,
                                              double delta_x,
                                              double delta_y);
 
+GST_GL_API
+void     gst_gl_window_send_touch_event     (GstGLWindow * window,
+                                             const char * event_type,
+                                             unsigned int id,
+                                             double posx,
+                                             double posy,
+                                             double pressure);
+
+GST_GL_API
+void     gst_gl_window_send_touch_meta_event (GstGLWindow * window,
+                                              const char * event_type);
+
 /* surfaces/rendering */
 GST_GL_API
 void     gst_gl_window_queue_resize         (GstGLWindow *window);

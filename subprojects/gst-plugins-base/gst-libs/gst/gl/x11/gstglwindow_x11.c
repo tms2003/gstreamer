@@ -26,7 +26,9 @@
 #endif
 
 #include <gst/gst.h>
+#include <gst/gl/gstglconfig.h>
 #include <locale.h>
+#include <math.h>
 
 #include "gstglwindow_x11.h"
 #include "gstgldisplay_x11.h"
@@ -35,6 +37,12 @@
 
 /* for XkbKeycodeToKeysym */
 #include <X11/XKBlib.h>
+
+/* for touchscreen events */
+#ifdef GST_GL_HAVE_XINPUT
+#include <xcb/xinput.h>
+#include <X11/extensions/XInput2.h>
+#endif
 
 #define GST_CAT_DEFAULT gst_gl_window_debug
 
@@ -64,6 +72,11 @@ struct _GstGLWindowX11Private
 
   Colormap internal_colormap;
   GstVideoRectangle render_rect;
+
+#ifdef GST_GL_HAVE_XINPUT
+  xcb_timestamp_t last_touch;
+  gboolean touch_frame_open;
+#endif
 };
 
 #define gst_gl_window_x11_parent_class parent_class
@@ -88,6 +101,9 @@ static gboolean gst_gl_window_x11_open (GstGLWindow * window, GError ** error);
 static void gst_gl_window_x11_close (GstGLWindow * window);
 static void gst_gl_window_x11_handle_events (GstGLWindow * window,
     gboolean handle_events);
+#ifdef GST_GL_HAVE_XINPUT
+static void gst_gl_window_x11_select_touch_events (GstGLWindowX11 * window_x11);
+#endif
 
 static void
 gst_gl_window_x11_finalize (GObject * object)
@@ -505,6 +521,60 @@ gst_gl_window_x11_draw (GstGLWindow * window)
   gst_gl_window_send_message (window, (GstGLWindowCB) draw_cb, window);
 }
 
+#ifdef GST_GL_HAVE_XINPUT
+static void
+gst_gl_window_x11_select_touch_events (GstGLWindowX11 * window_x11)
+{
+  XIDeviceInfo *devices;
+  int ndevices, i, j, mask_len, deviceid;
+  unsigned char *mask;
+  char *name;
+
+  mask_len = (XI_LASTEVENT + 7) << 3;
+  mask = g_new0 (unsigned char, mask_len);
+  XISetMask (mask, XI_TouchBegin);
+  XISetMask (mask, XI_TouchUpdate);
+  XISetMask (mask, XI_TouchEnd);
+
+  devices = XIQueryDevice (window_x11->device, XIAllDevices, &ndevices);
+
+  /* Find suitable touch screen devices, and select touch events for each */
+  for (i = 0; i < ndevices; i++) {
+    XIEventMask mask_data;
+    gboolean has_touch = FALSE;
+
+    if (devices[i].use != XISlavePointer)
+      continue;
+
+    deviceid = devices[i].deviceid;
+    name = devices[i].name;
+
+    for (j = 0; j < devices[i].num_classes; j++) {
+      XIAnyClassInfo *class = devices[i].classes[j];
+
+      /* only pick devices with direct touch, to avoid touchpads and similar */
+      if (class->type == XITouchClass &&
+          ((XITouchClassInfo *) class)->mode == XIDirectTouch) {
+        has_touch = TRUE;
+      }
+    }
+
+    if (has_touch) {
+      GST_DEBUG ("found touch screen with id %d: %s", deviceid, name);
+      mask_data.deviceid = deviceid;
+      mask_data.mask_len = mask_len;
+      mask_data.mask = mask;
+      XISelectEvents (window_x11->device, window_x11->internal_win_id,
+          &mask_data, 1);
+    }
+  }
+
+  g_free (mask);
+  XIFreeDeviceInfo (devices);
+}
+
+#endif
+
 static void
 gst_gl_window_x11_handle_events (GstGLWindow * window, gboolean handle_events)
 {
@@ -517,7 +587,22 @@ gst_gl_window_x11_handle_events (GstGLWindow * window, gboolean handle_events)
   window_x11->priv->handle_events = handle_events;
 
   if (window_x11->internal_win_id) {
+#ifdef GST_GL_HAVE_XINPUT
+    XIEventMask mask_data;
+    unsigned char mask[2];
+
+    XISetMask (mask, XI_HierarchyChanged);
+    mask_data.deviceid = XIAllDevices;
+    mask_data.mask_len = sizeof (mask);
+    mask_data.mask = mask;
+
+    XISelectEvents (window_x11->device, window_x11->internal_win_id,
+        &mask_data, 1);
+#endif
     if (handle_events) {
+#ifdef GST_GL_HAVE_XINPUT
+      gst_gl_window_x11_select_touch_events (window_x11);
+#endif
       XSelectInput (window_x11->device, window_x11->internal_win_id,
           StructureNotifyMask | ExposureMask | VisibilityChangeMask |
           PointerMotionMask | KeyPressMask | KeyReleaseMask | ButtonPressMask |
@@ -623,6 +708,67 @@ gst_gl_window_x11_handle_event (GstGLWindowX11 * window_x11,
           (double) motion->event_x, (double) motion->event_y);
       break;
     }
+#ifdef GST_GL_HAVE_XINPUT
+    case XCB_GE_GENERIC:{
+      xcb_ge_generic_event_t *generic = (xcb_ge_generic_event_t *) event;
+      xcb_input_touch_begin_event_t *touch;
+      const gchar *event_type_str;
+      unsigned int ev_id;
+
+      if (!display_x11->ABI.abi.use_xinput) {
+        GST_TRACE ("ignored generic XCB event: %u", generic->event_type);
+        break;
+      }
+
+      if (generic->event_type == XCB_INPUT_HIERARCHY) {
+        GST_INFO ("devices changed, searching for touch devices again");
+        gst_gl_window_x11_select_touch_events (window_x11);
+        break;
+      }
+
+      if (generic->event_type != XCB_INPUT_TOUCH_BEGIN
+          && generic->event_type != XCB_INPUT_TOUCH_UPDATE
+          && generic->event_type != XCB_INPUT_TOUCH_END) {
+        GST_TRACE ("unhandled generic XCB event: %u", generic->event_type);
+        break;
+      }
+
+      /* all three touch event structures are identical, */
+      /* so we can just use any one of them */
+      touch = (xcb_input_touch_begin_event_t *) generic;
+      ev_id = ((unsigned int) touch->deviceid) << 16 |
+          (((unsigned int) touch->detail) & 0x00ff);
+
+      if (touch->time != window_x11->priv->last_touch
+          && window_x11->priv->touch_frame_open) {
+        if (touch->time < window_x11->priv->last_touch)
+          GST_WARNING ("received out of order touch event");
+        else
+          gst_gl_window_send_touch_meta_event (window, "touch-frame");
+      }
+
+      switch (generic->event_type) {
+        case XCB_INPUT_TOUCH_BEGIN:
+          event_type_str = "touch-down";
+          break;
+        case XCB_INPUT_TOUCH_UPDATE:
+          event_type_str = "touch-motion";
+          break;
+        case XCB_INPUT_TOUCH_END:
+          event_type_str = "touch-up";
+          break;
+        default:
+          event_type_str = NULL;
+          break;
+      }
+
+      /* event coordinates are 16.16 fixed point numbers */
+      gst_gl_window_send_touch_event (window, event_type_str, ev_id,
+          (double) (touch->event_x >> 16), (double) (touch->event_y >> 16),
+          NAN);
+      break;
+    }
+#endif
     default:
       GST_TRACE ("unhandled XCB event: %u", event_code);
       break;

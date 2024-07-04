@@ -128,6 +128,8 @@ enum
   EVENT_KEY_SIGNAL,
   EVENT_SCROLL_SIGNAL,
   WINDOW_HANDLE_CHANGED_SIGNAL,
+  EVENT_TOUCH_SIGNAL,
+  EVENT_TOUCH_META_SIGNAL,
   LAST_SIGNAL
 };
 
@@ -253,6 +255,41 @@ gst_gl_window_class_init (GstGLWindowClass * klass)
       G_SIGNAL_RUN_LAST, 0, NULL, NULL, g_cclosure_marshal_generic,
       G_TYPE_NONE, 4, G_TYPE_DOUBLE, G_TYPE_DOUBLE, G_TYPE_DOUBLE,
       G_TYPE_DOUBLE);
+
+  /**
+   * GstGLWindow::touch-event:
+   * @object: the #GstGLWindow
+   * @id: the name of the event
+   * @touch_id: the unique identifier of the touch event
+   * @x: the x coordinate of the touch event
+   * @y: the y coordinate of the touch event
+   * @pressure: the pressure data associated with the touch event, from 0.0 to
+   *     1.0, or NAN if not available
+   *
+   * Will be emitted when a touch event is received by the GstGLwindow.
+   *
+   * Since: 1.22
+   */
+  gst_gl_window_signals[EVENT_TOUCH_SIGNAL] =
+      g_signal_new ("touch-event", G_TYPE_FROM_CLASS (klass),
+      G_SIGNAL_RUN_LAST, 0, NULL, NULL, g_cclosure_marshal_generic,
+      G_TYPE_NONE, 5, G_TYPE_STRING, G_TYPE_UINT, G_TYPE_DOUBLE, G_TYPE_DOUBLE,
+      G_TYPE_DOUBLE);
+
+  /**
+   * GstGLWindow::touch-meta-event:
+   * @object: the #GstGLWindow
+   * @id: the name of the event
+   *
+   * Will be emitted when a touch-frame or touch-cancel event is received by
+   * the GstGLwindow.
+   *
+   * Since: 1.22
+   */
+  gst_gl_window_signals[EVENT_TOUCH_META_SIGNAL] =
+      g_signal_new ("touch-meta-event", G_TYPE_FROM_CLASS (klass),
+      G_SIGNAL_RUN_LAST, 0, NULL, NULL, g_cclosure_marshal_generic,
+      G_TYPE_NONE, 1, G_TYPE_STRING);
 
   /**
    * GstGLWindow::window-handle-changed:
@@ -982,6 +1019,47 @@ gst_gl_window_send_scroll_event (GstGLWindow * window,
       posx, posy, delta_x, delta_y);
 }
 
+/**
+* gst_gl_window_send_touch_event:
+* @window: the #GstGLWindow
+* @event_type: the type of the event, recognized values are "touch-down",
+*    "touch-motion" and "touch-up"
+* @id: the unique identifier of the touch event
+* @posx: the x coordinate of the touch event
+* @posy: the y coordinate of the touch event
+* @pressure: the pressure data associated with the touch event, from 0.0 to
+*     1.0, or NAN if not available
+*
+* Notify a @window about a touch-down, touch-motion, or touch-up event.
+*
+* Since: 1.22
+*/
+void
+gst_gl_window_send_touch_event (GstGLWindow * window,
+    const char *event_type, unsigned int id, double posx, double posy,
+    double pressure)
+{
+  g_signal_emit (window, gst_gl_window_signals[EVENT_TOUCH_SIGNAL], 0,
+      event_type, id, posx, posy, pressure);
+}
+
+/**
+* gst_gl_window_send_touch_meta_event:
+* @window: the #GstGLWindow
+* @event_type: The type of the event, recognized values are "touch-frame" and
+*    "touch-cancel"
+*
+* Notify a @window about either a touch-frame event, or a touch-cancel event.
+*
+* Since: 1.22
+*/
+void
+gst_gl_window_send_touch_meta_event (GstGLWindow * window,
+    const char *event_type)
+{
+  g_signal_emit (window, gst_gl_window_signals[EVENT_TOUCH_META_SIGNAL], 0,
+      event_type);
+}
 
 /**
  * gst_gl_window_handle_events:

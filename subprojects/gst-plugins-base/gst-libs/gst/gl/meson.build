@@ -718,6 +718,13 @@ if need_win_x11 != 'no'
       gl_platform_deps += glx_dep
       enabled_gl_platforms += 'glx'
     endif
+
+    xi_dep = dependency('xi', required : false)
+    xcb_xi_dep = dependency('xcb-xinput', required : false)
+    if xi_dep.found() and xcb_xi_dep.found()
+      glconf.set('GST_GL_HAVE_XINPUT', 1)
+      gl_winsys_deps += [xi_dep, xcb_xi_dep]
+    endif
   elif need_win_x11 == 'yes'
     error ('Could not find requested X11 libraries')
   endif

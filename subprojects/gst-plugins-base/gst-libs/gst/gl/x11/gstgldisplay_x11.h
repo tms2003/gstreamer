@@ -58,7 +58,22 @@ struct _GstGLDisplayX11
   xcb_connection_t *xcb_connection;
   gboolean foreign_display;
 
-  gpointer _padding[GST_PADDING];
+  union {
+    /**
+     * GstGLDisplayX11.ABI._padding:
+     *
+     * Since: 1.22
+     */
+    gpointer _padding[GST_PADDING];
+    struct {
+      /**
+       * GstGLDisplayX11.ABI.abi.use_xinput:
+       *
+       * Since: 1.22
+       */
+      gboolean use_xinput;
+    } abi;
+  } ABI;
 };
 
 struct _GstGLDisplayX11Class

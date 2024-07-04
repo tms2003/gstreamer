@@ -1002,6 +1002,41 @@ gst_glimage_sink_mouse_scroll_event_cb (GstGLWindow * window,
 }
 
 static void
+gst_glimage_sink_touch_event_cb (GstGLWindow * window, char *event_name,
+    unsigned int id, double posx, double posy, double pressure,
+    GstGLImageSink * gl_sink)
+{
+  GstEvent *event = NULL;
+
+  GST_DEBUG_OBJECT (gl_sink, "event %s at %g, %g", event_name, posx, posy);
+  if (0 == g_strcmp0 ("touch-motion", event_name))
+    event = gst_navigation_event_new_touch_motion (id, posx, posy, pressure);
+  else if (0 == g_strcmp0 ("touch-down", event_name))
+    event = gst_navigation_event_new_touch_down (id, posx, posy, pressure);
+  else if (0 == g_strcmp0 ("touch-up", event_name))
+    event = gst_navigation_event_new_touch_up (id, posx, posy);
+
+  if (event)
+    gst_navigation_send_event_simple (GST_NAVIGATION (gl_sink), event);
+}
+
+static void
+gst_glimage_sink_touch_meta_event_cb (GstGLWindow * window, char *event_name,
+    GstGLImageSink * gl_sink)
+{
+  GstEvent *event = NULL;
+
+  GST_DEBUG_OBJECT (gl_sink, "event %s", event_name);
+  if (0 == g_strcmp0 ("touch-frame", event_name))
+    event = gst_navigation_event_new_touch_frame ();
+  else if (0 == g_strcmp0 ("touch-cancel", event_name))
+    event = gst_navigation_event_new_touch_cancel ();
+
+  if (event)
+    gst_navigation_send_event_simple (GST_NAVIGATION (gl_sink), event);
+}
+
+static void
 _set_context (GstGLImageSink * gl_sink, GstGLContext * context)
 {
   GstGLContext *old_context;
@@ -1117,6 +1152,12 @@ _ensure_gl_setup (GstGLImageSink * gl_sink)
       gl_sink->mouse_scroll_sig_id =
           g_signal_connect (window, "scroll-event",
           G_CALLBACK (gst_glimage_sink_mouse_scroll_event_cb), gl_sink);
+      gl_sink->touch_sig_id =
+          g_signal_connect (window, "touch-event",
+          G_CALLBACK (gst_glimage_sink_touch_event_cb), gl_sink);
+      gl_sink->touch_meta_sig_id =
+          g_signal_connect (window, "touch-meta-event",
+          G_CALLBACK (gst_glimage_sink_touch_meta_event_cb), gl_sink);
 
       gst_gl_window_set_render_rectangle (window, gl_sink->x, gl_sink->y,
           gl_sink->width, gl_sink->height);

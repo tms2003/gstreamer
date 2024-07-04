@@ -35,7 +35,14 @@
 
 #include <gst/gl/x11/gstgldisplay_x11.h>
 #include <gst/gl/x11/gstglwindow_x11.h>
+#include <gst/gl/gstglconfig.h>
 #include "xcb_event_source.h"
+
+#ifdef GST_GL_HAVE_XINPUT
+#define XI_MAJOR 2
+#define XI_MINOR 2
+#include <xcb/xinput.h>
+#endif
 
 GST_DEBUG_CATEGORY_STATIC (gst_gl_display_debug);
 #define GST_CAT_DEFAULT gst_gl_display_debug
@@ -67,6 +74,7 @@ gst_gl_display_x11_init (GstGLDisplayX11 * display_x11)
 
   display->type = GST_GL_DISPLAY_TYPE_X11;
   display_x11->foreign_display = FALSE;
+  display_x11->ABI.abi.use_xinput = FALSE;
 }
 
 static void
@@ -97,6 +105,11 @@ GstGLDisplayX11 *
 gst_gl_display_x11_new (const gchar * name)
 {
   GstGLDisplayX11 *ret;
+#ifdef GST_GL_HAVE_XINPUT
+  xcb_input_xi_query_version_cookie_t xi_cookie;
+  xcb_input_xi_query_version_reply_t *xi_reply;
+  xcb_generic_error_t *error = NULL;
+#endif
 
   GST_DEBUG_CATEGORY_GET (gst_gl_display_debug, "gldisplay");
 
@@ -117,6 +130,27 @@ gst_gl_display_x11_new (const gchar * name)
     gst_object_unref (ret);
     return NULL;
   }
+#ifdef GST_GL_HAVE_XINPUT
+  xi_cookie = xcb_input_xi_query_version (ret->xcb_connection, XI_MAJOR,
+      XI_MINOR);
+  xi_reply = xcb_input_xi_query_version_reply (ret->xcb_connection, xi_cookie,
+      &error);
+
+  ret->ABI.abi.use_xinput = FALSE;
+  if (error == NULL) {
+    if (xi_reply->major_version > XI_MAJOR ||
+        (xi_reply->major_version == XI_MAJOR
+            && xi_reply->minor_version >= XI_MINOR)) {
+      ret->ABI.abi.use_xinput = TRUE;
+    } else {
+      GST_INFO ("Not using XInput extension, found version %d.%d, "
+          "but required %d.%d", xi_reply->major_version,
+          xi_reply->minor_version, XI_MAJOR, XI_MINOR);
+    }
+  } else {
+    GST_INFO ("Failed to find XInput extension");
+  }
+#endif
 
   XSetEventQueueOwner (ret->display, XCBOwnsEventQueue);
 
@@ -139,6 +173,11 @@ GstGLDisplayX11 *
 gst_gl_display_x11_new_with_display (Display * display)
 {
   GstGLDisplayX11 *ret;
+#ifdef GST_GL_HAVE_XINPUT
+  xcb_input_xi_query_version_cookie_t xi_cookie;
+  xcb_input_xi_query_version_reply_t *xi_reply;
+  xcb_generic_error_t *error = NULL;
+#endif
 
   g_return_val_if_fail (display != NULL, NULL);
 
@@ -158,6 +197,28 @@ gst_gl_display_x11_new_with_display (Display * display)
   }
 
   ret->foreign_display = TRUE;
+
+#ifdef GST_GL_HAVE_XINPUT
+  xi_cookie = xcb_input_xi_query_version (ret->xcb_connection, XI_MAJOR,
+      XI_MINOR);
+  xi_reply = xcb_input_xi_query_version_reply (ret->xcb_connection, xi_cookie,
+      &error);
+
+  ret->ABI.abi.use_xinput = FALSE;
+  if (error == NULL) {
+    if (xi_reply->major_version > XI_MAJOR ||
+        (xi_reply->major_version == XI_MAJOR
+            && xi_reply->minor_version >= XI_MINOR)) {
+      ret->ABI.abi.use_xinput = TRUE;
+    } else {
+      GST_INFO ("Not using XInput extension, found version %d.%d, "
+          "but required %d.%d", xi_reply->major_version,
+          xi_reply->minor_version, XI_MAJOR, XI_MINOR);
+    }
+  } else {
+    GST_INFO ("Failed to find XInput extension");
+  }
+#endif
 
   return ret;
 }
@@ -211,6 +272,22 @@ _window_from_event (GstGLDisplayX11 * display_x11, xcb_generic_event_t * event)
     WIN_FROM_EVENT (XCB_BUTTON_RELEASE, xcb_button_release_event_t, event)
     WIN_FROM_EVENT (XCB_MOTION_NOTIFY, xcb_motion_notify_event_t, event)
 #undef WIN_FROM_EVENT
+#ifdef GST_GL_HAVE_XINPUT
+    case XCB_GE_GENERIC:{
+      xcb_ge_generic_event_t *ge = (xcb_ge_generic_event_t *) event;
+      switch (ge->event_type) {
+        case XCB_INPUT_TOUCH_BEGIN:
+        case XCB_INPUT_TOUCH_UPDATE:
+        case XCB_INPUT_TOUCH_END:{
+          xcb_input_touch_begin_event_t *touch =
+              (xcb_input_touch_begin_event_t *) ge;
+          return _find_window_from_xcb_window (display_x11, touch->event);
+        }
+        default:
+          break;
+      }
+    }
+#endif
 /* *INDENT-ON* */
     default:
       return NULL;
