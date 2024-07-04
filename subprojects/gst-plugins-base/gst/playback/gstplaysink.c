@@ -1780,7 +1780,11 @@ gen_video_chain (GstPlaySink * playsink, gboolean raw, gboolean async)
       /* if default sink from config.h is different then try it too */
       if (strcmp (DEFAULT_VIDEOSINK, "autovideosink")) {
         GST_DEBUG_OBJECT (playsink, "trying " DEFAULT_VIDEOSINK);
-        elem = gst_element_factory_make (DEFAULT_VIDEOSINK, "videosink");
+        /* Check if it's a pipeline description */
+        if (strchr (DEFAULT_VIDEOSINK, ' ') != NULL)
+          elem = gst_parse_bin_from_description (DEFAULT_VIDEOSINK, TRUE, NULL);
+        else
+          elem = gst_element_factory_make (DEFAULT_VIDEOSINK, "videosink");
         chain->sink = try_element (playsink, elem, TRUE);
       }
     }
@@ -2723,7 +2727,11 @@ gen_audio_chain (GstPlaySink * playsink, gboolean raw)
       /* if default sink from config.h is different then try it too */
       if (strcmp (DEFAULT_AUDIOSINK, "autoaudiosink")) {
         GST_DEBUG_OBJECT (playsink, "trying " DEFAULT_AUDIOSINK);
-        elem = gst_element_factory_make (DEFAULT_AUDIOSINK, "audiosink");
+        /* Check if it's a pipeline description */
+        if (strchr (DEFAULT_AUDIOSINK, ' ') != NULL)
+          elem = gst_parse_bin_from_description (DEFAULT_AUDIOSINK, TRUE, NULL);
+        else
+          elem = gst_element_factory_make (DEFAULT_AUDIOSINK, "audiosink");
         chain->sink = try_element (playsink, elem, TRUE);
       }
     }

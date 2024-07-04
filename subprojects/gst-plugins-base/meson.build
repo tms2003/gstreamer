@@ -291,9 +291,8 @@ endif
 core_conf.set_quoted('GST_PACKAGE_NAME', gst_package_name)
 core_conf.set_quoted('GST_PACKAGE_ORIGIN', get_option('package-origin'))
 
-# FIXME: These should be configure options
-core_conf.set_quoted('DEFAULT_VIDEOSINK', 'autovideosink')
-core_conf.set_quoted('DEFAULT_AUDIOSINK', 'autoaudiosink')
+core_conf.set_quoted('DEFAULT_VIDEOSINK', get_option('default_videosink'))
+core_conf.set_quoted('DEFAULT_AUDIOSINK', get_option('default_audiosink'))
 
 # Set whether the audioresampling method should be detected at runtime
 core_conf.set('AUDIORESAMPLE_FORMAT_' + get_option('audioresample_format').to_upper(), true)
