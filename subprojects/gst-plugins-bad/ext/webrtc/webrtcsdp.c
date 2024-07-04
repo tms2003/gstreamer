@@ -362,38 +362,52 @@ fail:
 GstWebRTCRTPTransceiverDirection
 _get_direction_from_media (const GstSDPMedia * media)
 {
-  GstWebRTCRTPTransceiverDirection new_dir =
-      GST_WEBRTC_RTP_TRANSCEIVER_DIRECTION_NONE;
+  GstWebRTCRTPTransceiverDirection new_dir;
   int i;
+  gboolean have_direction = FALSE, default_recvonly = FALSE;
 
   for (i = 0; i < gst_sdp_media_attributes_len (media); i++) {
     const GstSDPAttribute *attr = gst_sdp_media_get_attribute (media, i);
 
     if (g_strcmp0 (attr->key, "sendonly") == 0) {
-      if (new_dir != GST_WEBRTC_RTP_TRANSCEIVER_DIRECTION_NONE) {
+      if (have_direction) {
         GST_ERROR ("Multiple direction attributes");
         return GST_WEBRTC_RTP_TRANSCEIVER_DIRECTION_NONE;
       }
       new_dir = GST_WEBRTC_RTP_TRANSCEIVER_DIRECTION_SENDONLY;
+      have_direction = TRUE;
     } else if (g_strcmp0 (attr->key, "sendrecv") == 0) {
-      if (new_dir != GST_WEBRTC_RTP_TRANSCEIVER_DIRECTION_NONE) {
+      if (have_direction) {
         GST_ERROR ("Multiple direction attributes");
         return GST_WEBRTC_RTP_TRANSCEIVER_DIRECTION_NONE;
       }
       new_dir = GST_WEBRTC_RTP_TRANSCEIVER_DIRECTION_SENDRECV;
+      have_direction = TRUE;
     } else if (g_strcmp0 (attr->key, "recvonly") == 0) {
-      if (new_dir != GST_WEBRTC_RTP_TRANSCEIVER_DIRECTION_NONE) {
+      if (have_direction) {
         GST_ERROR ("Multiple direction attributes");
         return GST_WEBRTC_RTP_TRANSCEIVER_DIRECTION_NONE;
       }
       new_dir = GST_WEBRTC_RTP_TRANSCEIVER_DIRECTION_RECVONLY;
+      have_direction = TRUE;
     } else if (g_strcmp0 (attr->key, "inactive") == 0) {
-      if (new_dir != GST_WEBRTC_RTP_TRANSCEIVER_DIRECTION_NONE) {
+      if (have_direction) {
         GST_ERROR ("Multiple direction attributes");
         return GST_WEBRTC_RTP_TRANSCEIVER_DIRECTION_NONE;
       }
       new_dir = GST_WEBRTC_RTP_TRANSCEIVER_DIRECTION_INACTIVE;
+      have_direction = TRUE;
+    } else if (g_str_has_prefix (attr->key, "type:") == 0) {
+      if (g_strcmp0 (&attr->key[5], "H332") == 0 ||
+          g_strcmp0 (&attr->key[5], "broadcast") == 0) {
+        default_recvonly = TRUE;
+      }
     }
+  }
+
+  if (!have_direction) {
+    new_dir = default_recvonly ? GST_WEBRTC_RTP_TRANSCEIVER_DIRECTION_RECVONLY :
+        GST_WEBRTC_RTP_TRANSCEIVER_DIRECTION_SENDRECV;
   }
 
   return new_dir;
