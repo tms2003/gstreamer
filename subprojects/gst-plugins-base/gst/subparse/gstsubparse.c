@@ -31,6 +31,10 @@
 #include <sys/types.h>
 #include <glib.h>
 
+#if defined(HAVE_UCHARDET)
+#include <uchardet.h>
+#endif
+
 #include "gstsubparse.h"
 
 #include "gstssaparse.h"
@@ -149,8 +153,9 @@ gst_sub_parse_class_init (GstSubParseClass * klass)
           "Encoding to assume if input subtitles are not in UTF-8 or any other "
           "Unicode encoding. If not set, the GST_SUBTITLE_ENCODING environment "
           "variable will be checked for an encoding to use. If that is not set "
-          "either, ISO-8859-15 will be assumed.", DEFAULT_ENCODING,
-          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+          "either, then if plugin was built with uchardet support it will be "
+          "used to guess the encoding, otherwise ISO-8859-15 will be assumed.",
+          DEFAULT_ENCODING, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property (object_class, PROP_VIDEOFPS,
       gst_param_spec_fraction ("video-fps", "Video framerate",
@@ -398,9 +403,34 @@ gst_sub_parse_get_format_description (GstSubParseFormat format)
   return NULL;
 }
 
+#if defined(HAVE_UCHARDET)
+static const gchar *
+gst_sub_parse_uchardet_detect_encoding (GstSubParse * self, uchardet_t handle,
+    const gchar * str, gsize len)
+{
+  const gchar *charset = NULL;
+  gint retval;
 
+  GST_DEBUG_OBJECT (self,
+      "detecting encoding with uchardet using %li characters", len);
+  retval = uchardet_handle_data (handle, str, len);
 
+  if (retval != 0) {
+    GST_WARNING_OBJECT (self, "could not handle data with uchardet, code: %i",
+        retval);
+  } else {
+    uchardet_data_end (handle);
+    charset = uchardet_get_charset (handle);
 
+    if (charset == NULL || *charset == '\0')
+      GST_WARNING_OBJECT (self, "uchardet could not detect encoding");
+    else
+      GST_DEBUG_OBJECT (self, "uchardet detected encoding: %s", charset);
+  }
+
+  return charset;
+}
+#endif
 
 static gchar *
 convert_encoding (GstSubParse * self, const gchar * str, gsize len,
@@ -409,6 +439,10 @@ convert_encoding (GstSubParse * self, const gchar * str, gsize len,
   const gchar *encoding;
   GError *err = NULL;
   gchar *ret = NULL;
+
+#if defined(HAVE_UCHARDET)
+  uchardet_t handle = NULL;
+#endif
 
   *consumed = 0;
 
@@ -444,12 +478,18 @@ convert_encoding (GstSubParse * self, const gchar * str, gsize len,
   if (encoding == NULL || *encoding == '\0') {
     encoding = g_getenv ("GST_SUBTITLE_ENCODING");
   }
+#if defined(HAVE_UCHARDET)
   if (encoding == NULL || *encoding == '\0') {
-    /* if local encoding is UTF-8 and no encoding specified
-     * via the environment variable, assume ISO-8859-15 */
-    if (g_get_charset (&encoding)) {
+    /* no encoding specified via the environment variable either,
+     * so try to autodetect with uchardet */
+    handle = uchardet_new ();
+    encoding = gst_sub_parse_uchardet_detect_encoding (self, handle, str, len);
+  }
+#endif
+  /* if uchardet failed and local encoding is UTF-8, assume ISO-8859-15 */
+  if (encoding == NULL || *encoding == '\0') {
+    if (g_get_charset (&encoding))
       encoding = "ISO-8859-15";
-    }
   }
 
   ret = gst_sub_parse_gst_convert_to_utf8 (str, len, encoding, consumed, &err);
@@ -463,11 +503,19 @@ convert_encoding (GstSubParse * self, const gchar * str, gsize len,
     ret =
         gst_sub_parse_gst_convert_to_utf8 (str, len, "ISO-8859-15", consumed,
         NULL);
+  } else {
+    /* reuse the detected encoding from now on */
+    self->detected_encoding = g_strdup (encoding);
   }
 
   GST_LOG_OBJECT (self,
       "successfully converted %" G_GSIZE_FORMAT " characters from %s to UTF-8"
       "%s", len, encoding, (err) ? " , using ISO-8859-15 as fallback" : "");
+
+#if defined(HAVE_UCHARDET)
+  if (handle)
+    uchardet_delete (handle);
+#endif
 
   return ret;
 }

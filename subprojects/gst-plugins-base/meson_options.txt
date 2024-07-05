@@ -69,6 +69,9 @@ option('xshm', type : 'feature', value : 'auto', description : 'X11 shared memor
 option('xvideo', type : 'feature', value : 'auto', description : 'X11 XVideo xvimagesink plugin')
 option('xi', type : 'feature', value : 'auto', description : 'X11 input extension for touch support in ximagesink')
 
+# Subparse plugin options
+option('subparse-uchardet', type : 'feature', value : 'auto', description: 'Autodetect subtitles text encoding using uchardet')
+
 # Common feature options
 option('examples', type : 'feature', value : 'auto', yield : true)
 option('tests', type : 'feature', value : 'auto', yield : true)
