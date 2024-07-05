@@ -2324,7 +2324,12 @@ gst_h264_parse_update_src_caps (GstH264Parse * h264parse, GstCaps * caps)
 
       /* upstream overrides */
       if (s && gst_structure_has_field (s, "framerate")) {
-        gst_structure_get_fraction (s, "framerate", &fps_num, &fps_den);
+        gint num, den;
+
+        if (gst_structure_get_fraction (s, "framerate", &num, &den) && num > 0) {
+          fps_num = num;
+          fps_den = den;
+        }
       }
 
       /* but not necessarily or reliably this */
