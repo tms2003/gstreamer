@@ -1600,16 +1600,101 @@ static gboolean
 find_timestamp (GstBuffer ** buffer, guint idx, gpointer user_data)
 {
   HeaderData *data = user_data;
+
   data->dts = GST_BUFFER_DTS (*buffer);
   data->pts = GST_BUFFER_PTS (*buffer);
   data->offset = GST_BUFFER_OFFSET (*buffer);
 
   /* stop when we find a timestamp. We take whatever offset is associated with
    * the timestamp (if any) to do perfect timestamps when we need to. */
-  if (data->pts != -1)
+  if (data->pts != GST_CLOCK_TIME_NONE)
     return FALSE;
   else
     return TRUE;
+}
+
+static gboolean
+calculate_rtptime (GstBuffer ** buffer, guint idx, gpointer user_data)
+{
+  HeaderData *data = user_data;
+  GstRTPBasePayload *payload = data->payload;
+  GstRTPBasePayloadPrivate *priv = payload->priv;
+
+  /* when dealing with a buffer list, take the dts/pts/offset of the buffer
+   * if the pts is valid, otherwise take the existing values in data
+   * (from a previous buffer in the list or from a next buffer,
+   * found via find_timestamp() earlier) */
+  if (idx > 0 && GST_CLOCK_TIME_IS_VALID (GST_BUFFER_PTS (*buffer))) {
+    data->dts = GST_BUFFER_DTS (*buffer);
+    data->pts = GST_BUFFER_PTS (*buffer);
+    data->offset = GST_BUFFER_OFFSET (*buffer);
+  }
+
+  /* convert to RTP time */
+  if (priv->perfect_rtptime && data->offset != GST_BUFFER_OFFSET_NONE &&
+      priv->base_offset != GST_BUFFER_OFFSET_NONE) {
+    /* generate perfect RTP time by adding together the base timestamp, the
+     * running time of the first buffer and difference between the offset of the
+     * first buffer and the offset of the current buffer. */
+    guint64 offset = data->offset - priv->base_offset;
+    data->rtptime = payload->ts_base + priv->base_rtime_hz + offset;
+
+    GST_LOG_OBJECT (payload,
+        "Using offset %" G_GUINT64_FORMAT " for RTP timestamp", data->offset);
+
+    /* store buffer's running time */
+    GST_LOG_OBJECT (payload,
+        "setting running-time to %" G_GUINT64_FORMAT,
+        data->offset - priv->base_offset);
+    priv->running_time = priv->base_rtime + data->offset - priv->base_offset;
+  } else if (GST_CLOCK_TIME_IS_VALID (data->pts)) {
+    guint64 rtime_ns;
+    guint64 rtime_hz;
+
+    /* no offset, use the gstreamer pts */
+    if (priv->onvif_no_rate_control || !priv->scale_rtptime)
+      rtime_ns = gst_segment_to_stream_time (&payload->segment,
+          GST_FORMAT_TIME, data->pts);
+    else
+      rtime_ns =
+          gst_segment_to_running_time (&payload->segment, GST_FORMAT_TIME,
+          data->pts);
+
+    if (!GST_CLOCK_TIME_IS_VALID (rtime_ns)) {
+      GST_LOG_OBJECT (payload, "Clipped pts, using base RTP timestamp");
+      rtime_hz = 0;
+    } else {
+      GST_LOG_OBJECT (payload,
+          "Using running_time %" GST_TIME_FORMAT " for RTP timestamp",
+          GST_TIME_ARGS (rtime_ns));
+      rtime_hz =
+          gst_util_uint64_scale_int (rtime_ns, payload->clock_rate, GST_SECOND);
+      priv->base_offset = data->offset;
+      priv->base_rtime_hz = rtime_hz;
+    }
+
+    /* add running_time in clock-rate units to the base timestamp */
+    data->rtptime = payload->ts_base + rtime_hz;
+
+    /* store buffer's running time */
+    if (priv->perfect_rtptime) {
+      GST_LOG_OBJECT (payload,
+          "setting running-time to %" G_GUINT64_FORMAT, rtime_hz);
+      priv->running_time = rtime_hz;
+    } else {
+      GST_LOG_OBJECT (payload,
+          "setting running-time to %" GST_TIME_FORMAT,
+          GST_TIME_ARGS (rtime_ns));
+      priv->running_time = rtime_ns;
+    }
+  } else {
+    GST_LOG_OBJECT (payload,
+        "Using previous RTP timestamp %" G_GUINT32_FORMAT, payload->timestamp);
+    /* no timestamp to convert, take previous timestamp */
+    data->rtptime = payload->timestamp;
+  }
+
+  return TRUE;
 }
 
 static void
@@ -1889,6 +1974,14 @@ filter_meta (GstBuffer ** buffer, guint idx, gpointer user_data)
       (gpointer) GST_RTP_SOURCE_META_API_TYPE);
 }
 
+static gboolean
+prepare_buffer (GstBuffer ** buffer, guint idx, gpointer user_data)
+{
+  return (calculate_rtptime (buffer, idx, user_data) &&
+      set_headers (buffer, idx, user_data) &&
+      filter_meta (buffer, idx, user_data));
+}
+
 /* Updates the SSRC, payload type, seqnum and timestamp of the RTP buffer
  * before the buffer is pushed. */
 static GstFlowReturn
@@ -1915,8 +2008,8 @@ gst_rtp_base_payload_prepare_push (GstRTPBasePayload * payload,
 
   /* find the first buffer with a timestamp */
   if (is_list) {
-    data.dts = -1;
-    data.pts = -1;
+    data.dts = GST_CLOCK_TIME_NONE;
+    data.pts = GST_CLOCK_TIME_NONE;
     data.offset = GST_BUFFER_OFFSET_NONE;
     gst_buffer_list_foreach (GST_BUFFER_LIST_CAST (obj), find_timestamp, &data);
   } else {
@@ -1925,81 +2018,15 @@ gst_rtp_base_payload_prepare_push (GstRTPBasePayload * payload,
     data.offset = GST_BUFFER_OFFSET (GST_BUFFER_CAST (obj));
   }
 
-  /* convert to RTP time */
-  if (priv->perfect_rtptime && data.offset != GST_BUFFER_OFFSET_NONE &&
-      priv->base_offset != GST_BUFFER_OFFSET_NONE) {
-    /* generate perfect RTP time by adding together the base timestamp, the
-     * running time of the first buffer and difference between the offset of the
-     * first buffer and the offset of the current buffer. */
-    guint64 offset = data.offset - priv->base_offset;
-    data.rtptime = payload->ts_base + priv->base_rtime_hz + offset;
-
-    GST_LOG_OBJECT (payload,
-        "Using offset %" G_GUINT64_FORMAT " for RTP timestamp", data.offset);
-
-    /* store buffer's running time */
-    GST_LOG_OBJECT (payload,
-        "setting running-time to %" G_GUINT64_FORMAT,
-        data.offset - priv->base_offset);
-    priv->running_time = priv->base_rtime + data.offset - priv->base_offset;
-  } else if (GST_CLOCK_TIME_IS_VALID (data.pts)) {
-    guint64 rtime_ns;
-    guint64 rtime_hz;
-
-    /* no offset, use the gstreamer pts */
-    if (priv->onvif_no_rate_control || !priv->scale_rtptime)
-      rtime_ns = gst_segment_to_stream_time (&payload->segment,
-          GST_FORMAT_TIME, data.pts);
-    else
-      rtime_ns =
-          gst_segment_to_running_time (&payload->segment, GST_FORMAT_TIME,
-          data.pts);
-
-    if (!GST_CLOCK_TIME_IS_VALID (rtime_ns)) {
-      GST_LOG_OBJECT (payload, "Clipped pts, using base RTP timestamp");
-      rtime_hz = 0;
-    } else {
-      GST_LOG_OBJECT (payload,
-          "Using running_time %" GST_TIME_FORMAT " for RTP timestamp",
-          GST_TIME_ARGS (rtime_ns));
-      rtime_hz =
-          gst_util_uint64_scale_int (rtime_ns, payload->clock_rate, GST_SECOND);
-      priv->base_offset = data.offset;
-      priv->base_rtime_hz = rtime_hz;
-    }
-
-    /* add running_time in clock-rate units to the base timestamp */
-    data.rtptime = payload->ts_base + rtime_hz;
-
-    /* store buffer's running time */
-    if (priv->perfect_rtptime) {
-      GST_LOG_OBJECT (payload,
-          "setting running-time to %" G_GUINT64_FORMAT, rtime_hz);
-      priv->running_time = rtime_hz;
-    } else {
-      GST_LOG_OBJECT (payload,
-          "setting running-time to %" GST_TIME_FORMAT,
-          GST_TIME_ARGS (rtime_ns));
-      priv->running_time = rtime_ns;
-    }
-  } else {
-    GST_LOG_OBJECT (payload,
-        "Using previous RTP timestamp %" G_GUINT32_FORMAT, payload->timestamp);
-    /* no timestamp to convert, take previous timestamp */
-    data.rtptime = payload->timestamp;
-  }
-
   /* set ssrc, payload type, seq number, caps and rtptime */
   /* remove unwanted meta */
   if (is_list) {
-    gst_buffer_list_foreach (GST_BUFFER_LIST_CAST (obj), set_headers, &data);
-    gst_buffer_list_foreach (GST_BUFFER_LIST_CAST (obj), filter_meta, NULL);
+    gst_buffer_list_foreach (GST_BUFFER_LIST_CAST (obj), prepare_buffer, &data);
     /* sequence number has increased more if this was a buffer list */
     payload->seqnum = data.seqnum - 1;
   } else {
     GstBuffer *buf = GST_BUFFER_CAST (obj);
-    set_headers (&buf, 0, &data);
-    filter_meta (&buf, 0, NULL);
+    prepare_buffer (&buf, 0, &data);
   }
 
   priv->next_seqnum = data.seqnum;

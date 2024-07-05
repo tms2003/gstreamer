@@ -46,12 +46,21 @@ typedef struct
   int frame_data_size;
   int frame_count;
   GstEvent *custom_event;
+  GstClockTime frame_time;
 } rtp_pipeline;
 
 /*
  * Number of bytes received in the chain list function when using buffer lists
  */
 static guint chain_list_bytes_received;
+/*
+ * Number of packets received in the chain list function when using buffer lists
+ */
+static guint chain_list_packets_received;
+/*
+ * Timestamps of packets received in the chain list function
+ */
+static GArray *chain_list_packet_times;
 
 /*
  * Chain list function for testing buffer lists
@@ -67,6 +76,8 @@ rtp_pipeline_chain_list (GstPad * pad, GstObject * parent, GstBufferList * list)
    */
   len = gst_buffer_list_length (list);
   GST_LOG ("list length %u", len);
+
+  chain_list_packets_received = len;
 
   /* Loop through all buffers */
   for (i = 0; i < len; i++) {
@@ -84,6 +95,9 @@ rtp_pipeline_chain_list (GstPad * pad, GstObject * parent, GstBufferList * list)
     gst_memory_unref (mem);
     chain_list_bytes_received += size;
     GST_LOG ("size %d, total %u", size, chain_list_bytes_received);
+
+    if (chain_list_packet_times)
+      g_array_append_val (chain_list_packet_times, GST_BUFFER_PTS (paybuf));
   }
   gst_buffer_list_unref (list);
 
@@ -179,6 +193,7 @@ rtp_pipeline_create (const guint8 * frame_data, int frame_data_size,
   p->frame_data_size = frame_data_size;
   p->frame_count = frame_count;
   p->custom_event = NULL;
+  p->frame_time = GST_CLOCK_TIME_NONE;
 
   /* Create elements. */
   pipeline_name = g_strdup_printf ("%s-%s-pipeline", pay, depay);
@@ -344,6 +359,11 @@ rtp_pipeline_run (rtp_pipeline * p)
           (guint8 *) data, p->frame_data_size, 0, p->frame_data_size, NULL,
           NULL);
 
+      if (GST_CLOCK_TIME_IS_VALID (p->frame_time)) {
+        GST_BUFFER_PTS (buf) = j * p->frame_time;
+        GST_BUFFER_DURATION (buf) = p->frame_time;
+      }
+
       g_signal_emit_by_name (p->appsrc, "push-buffer", buf, &flow_ret);
       fail_unless_equals_int (flow_ret, GST_FLOW_OK);
       data += p->frame_data_size;
@@ -421,6 +441,7 @@ rtp_pipeline_test (const guint8 * frame_data, int frame_data_size,
   if (use_lists) {
     rtp_pipeline_enable_lists (p);
     chain_list_bytes_received = 0;
+    chain_list_packets_received = 0;
   }
 
   /* Run RTP pipeline. */
@@ -433,6 +454,62 @@ rtp_pipeline_test (const guint8 * frame_data, int frame_data_size,
     /* 'next NAL' indicator is 4 bytes */
     fail_unless_equals_int (chain_list_bytes_received, bytes_sent * LOOP_COUNT);
   }
+}
+
+/*
+ * Like rtp_pipeline_test(), but for raw audio split into small packets using
+ * buffer lists.
+ * @frame_time The duration of each input frame
+ * @bytes_sent The expected amount of data sent in total, without headers
+ * @packets_sent The expected number of packets sent
+ * @packet_time The expected duration of each output packet
+ */
+static void
+rtp_pipeline_test_audio_raw_list (const guint8 * frame_data,
+    int frame_data_size, int frame_count, GstClockTime frame_time,
+    const char *filtercaps, const char *pay, const char *depay, guint mtu_size,
+    guint bytes_sent, guint packets_sent, GstClockTime packet_time)
+{
+  int i;
+
+  /* Create RTP pipeline. */
+  rtp_pipeline *p =
+      rtp_pipeline_create (frame_data, frame_data_size, frame_count, filtercaps,
+      pay, depay);
+
+  if (p == NULL) {
+    return;
+  }
+
+  p->frame_time = frame_time;
+
+  /* set mtu size if needed */
+  if (mtu_size > 0) {
+    g_object_set (p->rtppay, "mtu", mtu_size, NULL);
+  }
+
+  rtp_pipeline_enable_lists (p);
+  chain_list_bytes_received = 0;
+  chain_list_packets_received = 0;
+  chain_list_packet_times = g_array_new (FALSE, FALSE, sizeof (GstClockTime));
+
+  /* Run RTP pipeline. */
+  rtp_pipeline_run (p);
+
+  /* Destroy RTP pipeline. */
+  rtp_pipeline_destroy (p);
+
+  fail_unless_equals_int (chain_list_bytes_received, bytes_sent);
+  fail_unless_equals_int (chain_list_packets_received, packets_sent);
+  fail_unless_equals_int (chain_list_packet_times->len, packets_sent);
+  for (i = 0; i < packets_sent; i++) {
+    GstClockTime time =
+        g_array_index (chain_list_packet_times, GstClockTime, i);
+    GST_LOG ("packet %d, time %" GST_TIME_FORMAT ", expected %" GST_TIME_FORMAT,
+        i, GST_TIME_ARGS (time), GST_TIME_ARGS (i * packet_time));
+    fail_unless_equals_uint64 (time, i * packet_time);
+  }
+  g_clear_pointer (&chain_list_packet_times, g_array_unref);
 }
 
 static const guint8 rtp_ilbc_frame_data[] =
@@ -1270,6 +1347,18 @@ GST_START_TEST (rtp_L16)
 
 GST_END_TEST;
 
+GST_START_TEST (rtp_L16_list)
+{
+  /* 20 bytes -> 10 samples / 2 bytes each / 100 msec each @ 10 samples/sec */
+  rtp_pipeline_test_audio_raw_list (rtp_L16_frame_data, rtp_L16_frame_data_size,
+      rtp_L16_frame_count, 1 * GST_SECOND,
+      "audio/x-raw,format=S16BE,rate=10,channels=1,layout=(string)interleaved",
+      "rtpL16pay buffer-list=true max-ptime=100000000", "rtpL16depay", 0,
+      rtp_L16_frame_data_size * rtp_L16_frame_count, 10, 100 * GST_MSECOND);
+}
+
+GST_END_TEST;
+
 static const guint8 rtp_L24_frame_data[] =
     { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
@@ -1288,6 +1377,19 @@ GST_START_TEST (rtp_L24)
 }
 
 GST_END_TEST;
+
+GST_START_TEST (rtp_L24_list)
+{
+  /* 24 bytes -> 8 samples / 3 bytes each / 125 msec each @ 8 samples/sec */
+  rtp_pipeline_test_audio_raw_list (rtp_L24_frame_data, rtp_L24_frame_data_size,
+      rtp_L24_frame_count, 1 * GST_SECOND,
+      "audio/x-raw,format=S24BE,rate=8,channels=1,layout=(string)interleaved",
+      "rtpL24pay buffer-list=true max-ptime=125000000", "rtpL24depay", 0,
+      rtp_L24_frame_data_size * rtp_L24_frame_count, 8, 125 * GST_MSECOND);
+}
+
+GST_END_TEST;
+
 static const guint8 rtp_mp2t_frame_data[] =
     { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
@@ -1892,7 +1994,9 @@ rtp_payloading_suite (void)
   tcase_add_test (tc_chain, rtp_klv_fragmented);
   tcase_add_test (tc_chain, rtp_klv_fragmented_packet_loss);
   tcase_add_test (tc_chain, rtp_L16);
+  tcase_add_test (tc_chain, rtp_L16_list);
   tcase_add_test (tc_chain, rtp_L24);
+  tcase_add_test (tc_chain, rtp_L24_list);
   tcase_add_test (tc_chain, rtp_mp2t);
   tcase_add_test (tc_chain, rtp_mp4v);
   tcase_add_test (tc_chain, rtp_mp4v_list);

@@ -2598,11 +2598,43 @@ gst_rtp_session_chain_send_rtp (GstPad * pad, GstObject * parent,
   return gst_rtp_session_chain_send_rtp_common (rtpsession, buffer, FALSE);
 }
 
+typedef struct
+{
+  GstRtpSession *rtpsession;
+  GstFlowReturn ret;
+} SendRtpListConsumeData;
+
+static gboolean
+send_rtp_list_consume (GstBuffer ** buffer, guint idx, gpointer user_data)
+{
+  SendRtpListConsumeData *data = user_data;
+  GstFlowReturn ret =
+      gst_rtp_session_chain_send_rtp_common (data->rtpsession, *buffer, FALSE);
+  *buffer = NULL;
+  if (ret != GST_FLOW_OK)
+    data->ret = ret;
+  return (ret == GST_FLOW_OK);
+}
+
 static GstFlowReturn
 gst_rtp_session_chain_send_rtp_list (GstPad * pad, GstObject * parent,
     GstBufferList * list)
 {
   GstRtpSession *rtpsession = GST_RTP_SESSION (parent);
+  GstBuffer *first = gst_buffer_list_get (list, 0);
+  GstBuffer *second = gst_buffer_list_get (list, 1);
+
+  /* if the list contains buffers with non-equal timestamps, split it up and
+   * handle each buffer individually. We can only send it as a list if all
+   * buffers are part of the same frame */
+  if (first && second && GST_BUFFER_PTS (first) != GST_BUFFER_PTS (second)) {
+    SendRtpListConsumeData data = {
+      .rtpsession = rtpsession,
+      .ret = GST_FLOW_OK,
+    };
+    gst_buffer_list_foreach (list, send_rtp_list_consume, &data);
+    return data.ret;
+  }
 
   return gst_rtp_session_chain_send_rtp_common (rtpsession, list, TRUE);
 }
