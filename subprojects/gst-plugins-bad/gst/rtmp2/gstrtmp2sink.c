@@ -713,10 +713,13 @@ buffer_to_message (GstRtmp2Sink * self, GstBuffer * buffer, GstBuffer ** outbuf)
       if (self->base_ts > 0) {
         self->base_ts -= G_MAXUINT32;
         self->base_ts -= 1;
-      } else {
+      } else if (self->last_ts > 0) {
         GST_WARNING_OBJECT (self, "Cannot regress further;"
             " forcing timestamp to zero");
         timestamp = 0;
+      } else {                  /* last_ts == 0 */
+        GST_WARNING_OBJECT (self, "Initial timestamp is %" G_GUINT64_FORMAT,
+            timestamp);
       }
     }
     timestamp += self->base_ts;
