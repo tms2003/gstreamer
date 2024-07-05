@@ -64,8 +64,8 @@ gtk_gst_widget_draw (GtkWidget * widget, cairo_t * cr)
   if (gst_widget->negotiated && gst_widget->buffer
       && gst_video_frame_map (&frame, &gst_widget->v_info,
           gst_widget->buffer, GST_MAP_READ)) {
-    gdouble scale_x = (gdouble) widget_width / gst_widget->display_width;
-    gdouble scale_y = (gdouble) widget_height / gst_widget->display_height;
+    gdouble scale_x;
+    gdouble scale_y;
     GstVideoRectangle result;
     cairo_format_t format;
 
@@ -94,14 +94,21 @@ gtk_gst_widget_draw (GtkWidget * widget, cairo_t * cr)
       dst.h = widget_height;
 
       gst_video_sink_center_rect (src, dst, &result, TRUE);
-
-      scale_x = scale_y = MIN (scale_x, scale_y);
     } else {
       result.x = 0;
       result.y = 0;
       result.w = widget_width;
       result.h = widget_height;
     }
+
+    scale_x = (gdouble) result.w / (gdouble) frame.info.width;
+    scale_y = (gdouble) result.h / (gdouble) frame.info.height;
+
+    GST_TRACE ("Force AR? %u, scale, %fx%f, input frame %ux%u, widget %ux%u, "
+        "display %ux%u, result %ux%u", gst_widget->force_aspect_ratio,
+        scale_x, scale_y, frame.info.width, frame.info.height, widget_width,
+        widget_height, gst_widget->display_width, gst_widget->display_height,
+        result.w, result.h);
 
     if (gst_widget->ignore_alpha) {
       GdkRGBA color = { 0.0, 0.0, 0.0, 1.0 };
@@ -126,10 +133,6 @@ gtk_gst_widget_draw (GtkWidget * widget, cairo_t * cr)
         cairo_fill (cr);
       }
     }
-
-    scale_x *= (gdouble) gst_widget->display_width / (gdouble) frame.info.width;
-    scale_y *=
-        (gdouble) gst_widget->display_height / (gdouble) frame.info.height;
 
     cairo_translate (cr, result.x, result.y);
     cairo_scale (cr, scale_x, scale_y);

@@ -86,8 +86,9 @@ _calculate_par (GtkGstBaseWidget * widget, GstVideoInfo * info)
       display_par_d);
 
   if (ok) {
-    GST_LOG ("PAR: %u/%u DAR:%u/%u", par_n, par_d, display_par_n,
-        display_par_d);
+    GST_LOG ("PAR: %u/%u DAR:%u/%u, display_ratio:%u/%u", par_n, par_d,
+        display_par_n, display_par_d, widget->display_ratio_num,
+        widget->display_ratio_den);
     return TRUE;
   }
 
