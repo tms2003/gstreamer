@@ -108,8 +108,9 @@ static SubParseInputChunk srt_input[] = {
         "27\n00:06:00,000 --> 00:08:00,000\nRock & Roll\n\n",
       360 * GST_SECOND, 480 * GST_SECOND, "Rock &amp; Roll"}, {
         "28\n00:10:00,000 --> 00:11:00,000\n"
-        "<font \"#0000FF\"><joj>This is </xxx>in blue but <5</font>\n\n",
-      600 * GST_SECOND, 660 * GST_SECOND, "This is in blue but &lt;5"}, {
+        "<font color=\"#0000FF\"><joj>This is </xxx>in blue but <5</font>\n\n",
+        600 * GST_SECOND, 660 * GST_SECOND,
+      "<span color=\"#0000FF\">This is in blue but &lt;5</span>"}, {
         /* closing tags should be recognised properly even if there's a space */
         "29\n00:11:00,000 --> 00:12:00,000\n" "<i>italics</ i>\n\n",
       660 * GST_SECOND, 720 * GST_SECOND, "<i>italics</i>"}, {
@@ -203,6 +204,22 @@ static SubParseInputChunk srt_input6[] = {
   ,
 };
 
+/* Test SubRip font tags, attributes should not be stripped, <font> tag should
+   be converted to a <span> tag. */
+static SubParseInputChunk srt_input7[] = {
+  {"1\n00:00:01,000 --> 00:00:02,000\n<font color=\"#EAC118\">Fancy "
+        "yellow</font>\n\n",
+        1 * GST_SECOND, 2 * GST_SECOND,
+      "<span color=\"#EAC118\">Fancy yellow</span>"},
+  {"1\n00:00:01,000 --> 00:00:02,000\n<font color=\"#EAC118\">Fancy "
+        "yellow\n\n",
+        1 * GST_SECOND, 2 * GST_SECOND,
+      "<span color=\"#EAC118\">Fancy yellow</span>"},
+  {"1\n00:00:01,000 --> 00:00:02,000\n<font color=\"yellow\">Fancy "
+        "yellow\n\n",
+        1 * GST_SECOND, 2 * GST_SECOND,
+      "<span color=\"yellow\">Fancy yellow</span>"},
+};
 
 static void
 setup_subparse (void)
@@ -402,6 +419,9 @@ GST_START_TEST (test_srt)
 
   /* try without an empty line at the end */
   test_srt_do_test (srt_input6, 0, G_N_ELEMENTS (srt_input6));
+
+  /* try with font tags */
+  test_srt_do_test (srt_input7, 0, G_N_ELEMENTS (srt_input7));
 }
 
 GST_END_TEST;

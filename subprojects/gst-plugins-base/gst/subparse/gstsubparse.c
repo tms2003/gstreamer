@@ -2,7 +2,7 @@
  * Copyright (C) <1999> Erik Walthinsen <omega@cse.ogi.edu>
  * Copyright (C) 2004 Ronald S. Bultje <rbultje@ronald.bitfreak.net>
  * Copyright (C) 2006 Tim-Philipp Müller <tim centricular net>
- * Copyright (C) 2016 Philippe Normand <pnormand@igalia.com>
+ * Copyright (C) 2016, 2022 Philippe Normand <philn@igalia.com>
  * Copyright (C) 2016 Jan Schmidt <jan@centricular.com>
  *
  * This library is free software; you can redistribute it and/or
@@ -41,8 +41,11 @@
 #include "gstsubparseelements.h"
 
 #define DEFAULT_ENCODING   NULL
+
 #define ATTRIBUTE_REGEX "\\s?[a-zA-Z0-9\\. \t\\(\\)]*"
-static const gchar *allowed_srt_tags[] = { "i", "b", "u", NULL };
+#define QUOTED_ATTRIBUTE_REGEX "\\s?[a-zA-Z0-9\\.\t\\(\\)\"=#]*"
+
+static const gchar *allowed_srt_tags[] = { "i", "b", "u", "font", NULL };
 static const gchar *allowed_vtt_tags[] =
     { "i", "b", "c", "u", "v", "ruby", "rt", NULL };
 
@@ -94,8 +97,10 @@ static GstFlowReturn gst_sub_parse_chain (GstPad * sinkpad, GstObject * parent,
 G_DEFINE_TYPE (GstSubParse, gst_sub_parse, GST_TYPE_ELEMENT);
 
 GST_ELEMENT_REGISTER_DEFINE_WITH_CODE (subparse, "subparse",
-    GST_RANK_PRIMARY, GST_TYPE_SUBPARSE, sub_parse_element_init (plugin))
-     static void gst_sub_parse_dispose (GObject * object)
+    GST_RANK_PRIMARY, GST_TYPE_SUBPARSE, sub_parse_element_init (plugin));
+
+static void
+gst_sub_parse_dispose (GObject * object)
 {
   GstSubParse *subparse = GST_SUBPARSE (object);
 
@@ -643,34 +648,54 @@ subrip_unescape_formatting (gchar * txt, gconstpointer allowed_tags_ptr,
     gboolean allows_tag_attributes)
 {
   gchar *res;
+  gchar *buffer;
   GRegex *tag_regex;
   gchar *allowed_tags_pattern, *search_pattern;
   const gchar *replace_pattern;
+  gboolean cue_has_font_tag = FALSE;
 
   /* No processing needed if no escaped tag marker found in the string. */
   if (strstr (txt, "&lt;") == NULL)
     return;
+
+  cue_has_font_tag = strstr (txt, "&lt;font") != NULL;
+
+  GST_LOG ("SubRip cue before unescape: %s", txt);
 
   /* Build a list of alternates for our regexp.
    * FIXME: Could be built once and stored */
   allowed_tags_pattern = g_strjoinv ("|", (gchar **) allowed_tags_ptr);
   /* Look for starting/ending escaped tags with optional attributes. */
   search_pattern = g_strdup_printf ("&lt;(/)?\\ *(%s)(%s)&gt;",
-      allowed_tags_pattern, ATTRIBUTE_REGEX);
+      allowed_tags_pattern,
+      cue_has_font_tag ? QUOTED_ATTRIBUTE_REGEX : ATTRIBUTE_REGEX);
+  GST_LOG ("Search pattern: %s", search_pattern);
   /* And unescape appropriately */
-  if (allows_tag_attributes) {
+  if (allows_tag_attributes || cue_has_font_tag) {
     replace_pattern = "<\\1\\2\\3>";
+
+    /* Unquote attributes here because the regex being matched expects it. */
+    tag_regex = g_regex_new ("&quot;", 0, 0, NULL);
+    buffer =
+        g_regex_replace_literal (tag_regex, txt, strlen (txt), 0, "\"", 0,
+        NULL);
+    g_regex_unref (tag_regex);
   } else {
     replace_pattern = "<\\1\\2>";
+    buffer = g_strdup (txt);
   }
 
   tag_regex = g_regex_new (search_pattern, 0, 0, NULL);
-  res = g_regex_replace (tag_regex, txt, strlen (txt), 0,
+  res = g_regex_replace (tag_regex, buffer, strlen (buffer), 0,
       replace_pattern, 0, NULL);
+
+  g_free (buffer);
 
   /* res will always be shorter than the input or identical, so this
    * copy is OK */
   strcpy (txt, res);
+
+  GST_LOG ("SubRip cue after unescape: %s", txt);
 
   g_free (res);
   g_free (search_pattern);
@@ -708,7 +733,8 @@ subrip_remove_unhandled_tags (gchar * txt)
   gchar *pos, *gt;
 
   for (pos = txt; pos != NULL && *pos != '\0'; ++pos) {
-    if (strncmp (pos, "&lt;", 4) == 0 && (gt = strstr (pos + 4, "&gt;"))) {
+    if (strncmp (pos, "&lt;", 4) == 0 && strncmp (pos, "&lt;font", 8)
+        && (gt = strstr (pos + 4, "&gt;"))) {
       if (subrip_remove_unhandled_tag (pos, gt + strlen ("&gt;")))
         --pos;
     }
@@ -739,6 +765,7 @@ subrip_fix_up_markup (gchar ** p_txt, gconstpointer allowed_tags_ptr)
 
   open_tags = g_ptr_array_new_with_free_func (g_free);
   cur = *p_txt;
+  GST_LOG ("Fixing up markup in SubRip cue: %s", cur);
   while (*cur != '\0') {
     next_tag = strchr (cur, '<');
     if (next_tag == NULL)
@@ -746,9 +773,17 @@ subrip_fix_up_markup (gchar ** p_txt, gconstpointer allowed_tags_ptr)
     offset = 0;
     index = 0;
     while (index < g_strv_length (allowed_tags)) {
+      gboolean has_font_tag = FALSE;
+
       iter_tag = allowed_tags[index];
-      /* Look for a white listed tag */
-      cur_tag = g_strconcat ("<", iter_tag, ATTRIBUTE_REGEX, ">", NULL);
+      has_font_tag = strncmp (iter_tag, "font", 4) == 0
+          && strstr (next_tag, "<font");
+
+      /* Look for a allow-listed tag */
+      cur_tag =
+          g_strconcat ("<", iter_tag,
+          has_font_tag ? QUOTED_ATTRIBUTE_REGEX : ATTRIBUTE_REGEX, ">", NULL);
+      GST_LOG ("Looking for tag matching %s in %s", cur_tag, next_tag);
       tag_regex = g_regex_new (cur_tag, 0, 0, NULL);
       (void) g_regex_match (tag_regex, next_tag, 0, &match_info);
 
@@ -821,6 +856,46 @@ subrip_fix_up_markup (gchar ** p_txt, gconstpointer allowed_tags_ptr)
     *p_txt = g_string_free (s, FALSE);
   }
   g_ptr_array_free (open_tags, TRUE);
+}
+
+/* <font> is the only SubRip tag that has no direct equivalent to Pango, so
+ * manually convert <font> tags to <span> tags, preserving (optional color)
+ * attribute(s). */
+static void
+subrip_to_pango_markup (gchar * read)
+{
+  gchar *write = read;
+
+  for (guint i = 0; i < 7; i++) {
+    if (read[i] == '\0')
+      return;
+  }
+
+  /* in-place replacement should be safe here because strlen("font") ==
+   * strlen("span") */
+  do {
+    if (strncmp (read, "<font", 5) == 0) {
+      *write++ = '<';
+      *write++ = 's';
+      *write++ = 'p';
+      *write++ = 'a';
+      *write++ = 'n';
+      read += 5;
+    } else if (strncmp (read, "</font>", 7) == 0) {
+      *write++ = '<';
+      *write++ = '/';
+      *write++ = 's';
+      *write++ = 'p';
+      *write++ = 'a';
+      *write++ = 'n';
+      *write++ = '>';
+      read += 7;
+    } else {
+      *write++ = *read++;
+    }
+  } while (*read);
+
+  *write = '\0';
 }
 
 static gboolean
@@ -1047,6 +1122,7 @@ parse_subrip (ParserState * state, const gchar * line)
         subrip_remove_unhandled_tags (ret);
         strip_trailing_newlines (ret);
         subrip_fix_up_markup (&ret, state->allowed_tags);
+        subrip_to_pango_markup (ret);
         return ret;
       }
       return NULL;
