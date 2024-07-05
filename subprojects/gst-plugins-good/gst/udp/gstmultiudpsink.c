@@ -42,6 +42,14 @@
 #include <sys/socket.h>
 #endif
 
+#ifdef SO_TXTIME
+#include <linux/net_tstamp.h>
+#include <linux/errqueue.h>
+#include <linux/if_ether.h>
+#include <linux/ipv6.h>
+#include <linux/udp.h>
+#endif
+
 #include <gio/gnetworking.h>
 
 #include "gst/net/net.h"
@@ -51,6 +59,111 @@ GST_DEBUG_CATEGORY_STATIC (multiudpsink_debug);
 #define GST_CAT_DEFAULT (multiudpsink_debug)
 
 #define UDP_MAX_SIZE 65507
+
+#ifdef SO_TXTIME
+G_DECLARE_FINAL_TYPE (GstScmTxtime, gst_scm_txtime,
+    GST, SCM_TXTIME, GSocketControlMessage);
+
+struct _GstScmTxtime
+{
+  GSocketControlMessage parent;
+  guint64 time;
+};
+
+G_DEFINE_TYPE (GstScmTxtime, gst_scm_txtime, G_TYPE_SOCKET_CONTROL_MESSAGE);
+
+static void
+gst_scm_txtime_init (GstScmTxtime * self)
+{
+}
+
+static gsize
+gst_scm_txtime_get_size (GSocketControlMessage * message)
+{
+  return sizeof (guint64);
+}
+
+static int
+gst_scm_txtime_get_level (GSocketControlMessage * message)
+{
+  return SOL_SOCKET;
+}
+
+static int
+gst_scm_txtime_get_msg_type (GSocketControlMessage * message)
+{
+  return SCM_TXTIME;
+}
+
+static void
+gst_scm_txtime_serialize (GSocketControlMessage * message, gpointer data)
+{
+  GstScmTxtime *self = GST_SCM_TXTIME (message);
+  memcpy (data, &self->time, sizeof (self->time));
+}
+
+static void
+gst_scm_txtime_class_init (GstScmTxtimeClass * klass)
+{
+  GSocketControlMessageClass *scmklass = (GSocketControlMessageClass *) klass;
+  scmklass->get_size = gst_scm_txtime_get_size;
+  scmklass->get_level = gst_scm_txtime_get_level;
+  scmklass->get_type = gst_scm_txtime_get_msg_type;
+  scmklass->serialize = gst_scm_txtime_serialize;
+}
+
+static GstScmTxtime *
+gst_scm_txtime_new (void)
+{
+  return g_object_new (gst_scm_txtime_get_type (), NULL);
+}
+
+G_DECLARE_FINAL_TYPE (GstScmTxtimeError, gst_scm_txtime_error,
+    GST, SCM_TXTIME_ERROR, GSocketControlMessage);
+
+struct _GstScmTxtimeError
+{
+  GSocketControlMessage parent;
+  guint8 code;
+  guint64 time;
+};
+
+G_DEFINE_TYPE (GstScmTxtimeError, gst_scm_txtime_error,
+    G_TYPE_SOCKET_CONTROL_MESSAGE);
+
+static void
+gst_scm_txtime_error_init (GstScmTxtimeError * self)
+{
+}
+
+static GSocketControlMessage *
+gst_scm_txtime_error_deserialize (int level, int msg_type, gsize size,
+    gpointer data)
+{
+  GstScmTxtimeError *self = NULL;
+
+  if (((level == SOL_IP && msg_type == IP_RECVERR) ||
+          (level == SOL_IPV6 && msg_type == IPV6_RECVERR)) &&
+      size >= sizeof (struct sock_extended_err)) {
+    struct sock_extended_err *err = data;
+
+    if (err->ee_origin == SO_EE_ORIGIN_TXTIME) {
+      self = g_object_new (gst_scm_txtime_error_get_type (), NULL);
+      self->code = err->ee_code;
+      self->time = ((guint64) err->ee_data) << 32 | err->ee_info;
+    }
+  }
+  return (GSocketControlMessage *) self;
+}
+
+static void
+gst_scm_txtime_error_class_init (GstScmTxtimeErrorClass * klass)
+{
+  GSocketControlMessageClass *scmklass = (GSocketControlMessageClass *) klass;
+  scmklass->deserialize = gst_scm_txtime_error_deserialize;
+}
+#endif
+
 
 static GstStaticPadTemplate sink_template = GST_STATIC_PAD_TEMPLATE ("sink",
     GST_PAD_SINK,
@@ -92,6 +205,8 @@ enum
 #define DEFAULT_BUFFER_SIZE        0
 #define DEFAULT_BIND_ADDRESS       NULL
 #define DEFAULT_BIND_PORT          0
+#define DEFAULT_SO_PRIORITY        0
+#define DEFAULT_SO_TXTIME          FALSE
 
 enum
 {
@@ -114,7 +229,9 @@ enum
   PROP_SEND_DUPLICATES,
   PROP_BUFFER_SIZE,
   PROP_BIND_ADDRESS,
-  PROP_BIND_PORT
+  PROP_BIND_PORT,
+  PROP_SO_PRIORITY,
+  PROP_SO_TXTIME,
 };
 
 static void gst_multiudpsink_finalize (GObject * object);
@@ -128,6 +245,12 @@ static gboolean gst_multiudpsink_start (GstBaseSink * bsink);
 static gboolean gst_multiudpsink_stop (GstBaseSink * bsink);
 static gboolean gst_multiudpsink_unlock (GstBaseSink * bsink);
 static gboolean gst_multiudpsink_unlock_stop (GstBaseSink * bsink);
+static void gst_multiudpsink_get_times (GstBaseSink * bsink,
+    GstBuffer * buffer, GstClockTime * start, GstClockTime * end);
+
+static GstClock *gst_multiudpsink_provide_clock (GstElement * element);
+static gboolean gst_multiudpsink_set_clock (GstElement * element,
+    GstClock * clock);
 
 static void gst_multiudpsink_set_property (GObject * object, guint prop_id,
     const GValue * value, GParamSpec * pspec);
@@ -351,6 +474,19 @@ gst_multiudpsink_class_init (GstMultiUDPSinkClass * klass)
           "Port to bind the socket to", 0, G_MAXUINT16,
           DEFAULT_BIND_PORT, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
+  g_object_class_install_property (gobject_class, PROP_SO_PRIORITY,
+      g_param_spec_int ("socket-priority", "Socket priority",
+          "Priority configured into socket (SO_PRIORITY)", 0, G_MAXINT,
+          DEFAULT_SO_PRIORITY, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
+          GST_PARAM_MUTABLE_READY));
+
+  g_object_class_install_property (gobject_class, PROP_SO_TXTIME,
+      g_param_spec_boolean ("socket-txtime", "Socket TxTime",
+          "Set timestamps on socket messages for TxTime-assisted traffic "
+          "control (requires TAI system clock)", DEFAULT_SO_TXTIME,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
+          GST_PARAM_MUTABLE_READY));
+
   gst_element_class_add_static_pad_template (gstelement_class, &sink_template);
 
   gst_element_class_set_static_metadata (gstelement_class, "UDP packet sender",
@@ -365,12 +501,19 @@ gst_multiudpsink_class_init (GstMultiUDPSinkClass * klass)
   gstbasesink_class->stop = gst_multiudpsink_stop;
   gstbasesink_class->unlock = gst_multiudpsink_unlock;
   gstbasesink_class->unlock_stop = gst_multiudpsink_unlock_stop;
+  gstbasesink_class->get_times = gst_multiudpsink_get_times;
+  gstelement_class->provide_clock = gst_multiudpsink_provide_clock;
+  gstelement_class->set_clock = gst_multiudpsink_set_clock;
   klass->add = gst_multiudpsink_add;
   klass->remove = gst_multiudpsink_remove;
   klass->clear = gst_multiudpsink_clear;
   klass->get_stats = gst_multiudpsink_get_stats;
 
   GST_DEBUG_CATEGORY_INIT (multiudpsink_debug, "multiudpsink", 0, "UDP sink");
+
+#ifdef SO_TXTIME
+  g_type_ensure (gst_scm_txtime_error_get_type ());
+#endif
 }
 
 static void
@@ -419,6 +562,8 @@ gst_multiudpsink_init (GstMultiUDPSink * sink)
   sink->qos_dscp = DEFAULT_QOS_DSCP;
   sink->send_duplicates = DEFAULT_SEND_DUPLICATES;
   sink->multi_iface = g_strdup (DEFAULT_MULTICAST_IFACE);
+  sink->so_priority = DEFAULT_SO_PRIORITY;
+  sink->so_txtime = DEFAULT_SO_TXTIME;
 
   gst_multiudpsink_create_cancellable (sink);
 
@@ -557,6 +702,7 @@ gst_multiudpsink_finalize (GObject * object)
   sink->maps = NULL;
   g_free (sink->messages);
   sink->messages = NULL;
+  g_clear_pointer (&sink->scms, g_ptr_array_unref);
 
   g_free (sink->bind_address);
   sink->bind_address = NULL;
@@ -632,6 +778,52 @@ gst_udp_address_get_string (GSocketAddress * addr, gchar * s, gsize size)
   g_free (addr_str);
 
   return s;
+}
+
+static void
+gst_multiudpsink_process_error_queue (GstMultiUDPSink * sink, GSocket * socket)
+{
+#ifdef SO_TXTIME
+  guint8 buf[sizeof (struct ethhdr) + sizeof (struct ipv6hdr) +
+      sizeof (struct udphdr) + 1];
+  GInputVector ivec = {.buffer = &buf,.size = sizeof (buf) };
+  GSocketControlMessage **cmsgs = NULL;
+  gint n_cmsgs = 0;
+  gint flags, i;
+
+  while (g_socket_condition_check (socket, G_IO_ERR)) {
+    n_cmsgs = 0;
+    flags = MSG_ERRQUEUE;
+    g_socket_receive_message (socket, NULL, &ivec, 1, &cmsgs, &n_cmsgs,
+        &flags, NULL, NULL);
+
+    for (i = 0; i < n_cmsgs; i++) {
+      if (GST_IS_SCM_TXTIME_ERROR (cmsgs[i])) {
+        GstScmTxtimeError *txtime_err = GST_SCM_TXTIME_ERROR (cmsgs[i]);
+        const gchar *reason;
+
+        switch (txtime_err->code) {
+          case SO_EE_CODE_TXTIME_MISSED:
+            reason = "missed txtime";
+            break;
+          case SO_EE_CODE_TXTIME_INVALID_PARAM:
+            reason = "invalid txtime";
+            break;
+          default:
+            reason = "reason unknown";
+        }
+
+        GST_INFO_OBJECT (sink, "SO_TXTIME: packet at %" GST_TIME_FORMAT
+            " dropped: %s", GST_TIME_ARGS (txtime_err->time), reason);
+      }
+      g_object_unref (cmsgs[i]);
+    }
+    g_clear_pointer (&cmsgs, g_free);
+  }
+#else
+  (void) sink;
+  (void) socket;
+#endif
 }
 
 /* Wrapper around g_socket_send_messages() plus error handling (ignoring).
@@ -711,7 +903,46 @@ gst_multiudpsink_send_messages (GstMultiUDPSink * sink, GSocket * socket,
     num_messages -= ret;
   }
 
+  if (sink->so_txtime)
+    gst_multiudpsink_process_error_queue (sink, socket);
+
   return GST_FLOW_OK;
+}
+
+/* Copy of gst_avtp_sink_adjust_time(),
+ * based on gst_base_sink_adjust_time()
+ */
+static GstClockTime
+gst_multiudp_sink_adjust_time (GstBaseSink * basesink, GstClockTime time)
+{
+  GstClockTimeDiff ts_offset;
+  GstClockTime render_delay;
+
+  /* don't do anything funny with invalid timestamps */
+  if (G_UNLIKELY (!GST_CLOCK_TIME_IS_VALID (time)))
+    return time;
+
+  time += gst_base_sink_get_latency (basesink);
+
+  /* apply offset, be careful for underflows */
+  ts_offset = gst_base_sink_get_ts_offset (basesink);
+  if (ts_offset < 0) {
+    ts_offset = -ts_offset;
+    if (ts_offset < time)
+      time -= ts_offset;
+    else
+      time = 0;
+  } else
+    time += ts_offset;
+
+  /* subtract the render delay again, which was included in the latency */
+  render_delay = gst_base_sink_get_render_delay (basesink);
+  if (time > render_delay)
+    time -= render_delay;
+  else
+    time = 0;
+
+  return time;
 }
 
 static GstFlowReturn
@@ -722,6 +953,7 @@ gst_multiudpsink_render_buffers (GstMultiUDPSink * sink, GstBuffer ** buffers,
   gboolean send_duplicates;
   GstUDPClient **clients;
   GOutputVector *vecs;
+  GSocketControlMessage **scms;
   GstMapInfo *map_infos;
   GstFlowReturn flow_ret;
   guint num_addr_v4, num_addr_v6;
@@ -784,6 +1016,19 @@ gst_multiudpsink_render_buffers (GstMultiUDPSink * sink, GstBuffer ** buffers,
   }
   msgs = sink->messages;
 
+#ifdef SO_TXTIME
+  if (sink->so_txtime) {
+    if (!sink->scms || sink->scms->len < num_buffers) {
+      guint n_scms = GST_ROUND_UP_16 (num_buffers);
+      g_clear_pointer (&sink->scms, g_ptr_array_unref);
+      sink->scms = g_ptr_array_new_full (n_scms, g_object_unref);
+      for (i = 0; i < n_scms; i++)
+        g_ptr_array_add (sink->scms, gst_scm_txtime_new ());
+    }
+  }
+  scms = sink->so_txtime ? (GSocketControlMessage **) sink->scms->pdata : NULL;
+#endif
+
   /* populate first num_buffers messages with output vectors for the buffers */
   for (i = 0, mem = 0; i < num_buffers; ++i) {
     size += fill_vectors (&vecs[mem], &map_infos[mem], mem_nums[i], buffers[i]);
@@ -794,6 +1039,37 @@ gst_multiudpsink_render_buffers (GstMultiUDPSink * sink, GstBuffer ** buffers,
     msgs[i].control_messages = NULL;
     msgs[i].address = clients[0]->addr;
     mem += mem_nums[i];
+
+#ifdef SO_TXTIME
+    if (sink->so_txtime) {
+      GstScmTxtime *scm_txtime = GST_SCM_TXTIME (scms[i]);
+      GstSegment *segment;
+      GstClockTime running_time;
+
+      segment = &GST_BASE_SINK_CAST (sink)->segment;
+      running_time = gst_segment_to_running_time (segment, GST_FORMAT_TIME,
+          GST_BUFFER_DTS_OR_PTS (buffers[i]));
+      running_time = gst_multiudp_sink_adjust_time (GST_BASE_SINK_CAST (sink),
+          running_time);
+      running_time += gst_element_get_base_time (GST_ELEMENT (sink));
+      running_time = gst_clock_unadjust_unlocked (sink->provided_clock,
+          running_time);
+
+      {
+        GstClockTime cur_sys_time =
+            gst_clock_get_internal_time (sink->provided_clock);
+        gint64 delta = running_time - cur_sys_time;
+
+        GST_LOG_OBJECT (sink, "running_time %" GST_TIME_FORMAT
+            ", now %" GST_TIME_FORMAT ", delta %" G_GINT64_FORMAT,
+            GST_TIME_ARGS (running_time), GST_TIME_ARGS (cur_sys_time), delta);
+      }
+
+      scm_txtime->time = running_time;
+      msgs[i].control_messages = &scms[i];
+      msgs[i].num_control_messages = 1;
+    }
+#endif
   }
 
   /* FIXME: how about some locking? (there wasn't any before either, but..) */
@@ -1094,6 +1370,12 @@ gst_multiudpsink_set_property (GObject * object, guint prop_id,
     case PROP_BIND_PORT:
       udpsink->bind_port = g_value_get_int (value);
       break;
+    case PROP_SO_PRIORITY:
+      udpsink->so_priority = g_value_get_int (value);
+      break;
+    case PROP_SO_TXTIME:
+      udpsink->so_txtime = g_value_get_boolean (value);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -1166,6 +1448,12 @@ gst_multiudpsink_get_property (GObject * object, guint prop_id, GValue * value,
       break;
     case PROP_BIND_PORT:
       g_value_set_int (value, udpsink->bind_port);
+      break;
+    case PROP_SO_PRIORITY:
+      g_value_set_int (value, udpsink->so_priority);
+      break;
+    case PROP_SO_TXTIME:
+      g_value_set_boolean (value, udpsink->so_txtime);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -1410,6 +1698,34 @@ gst_multiudpsink_start (GstBaseSink * bsink)
   }
 #endif
 
+#ifdef SO_PRIORITY
+  {
+    GError *opt_err = NULL;
+
+    GST_DEBUG_OBJECT (sink, "setting socket priority to %d", sink->so_priority);
+
+    if (sink->used_socket) {
+      if (!g_socket_set_option (sink->used_socket, SOL_SOCKET, SO_PRIORITY,
+              sink->so_priority, &opt_err)) {
+        GST_ELEMENT_WARNING (sink, RESOURCE, SETTINGS, (NULL),
+            ("Could not set socket priority to %d (%s)", sink->so_priority,
+                opt_err->message));
+        g_clear_error (&opt_err);
+      }
+    }
+
+    if (sink->used_socket_v6) {
+      if (!g_socket_set_option (sink->used_socket_v6, SOL_SOCKET, SO_PRIORITY,
+              sink->so_priority, &opt_err)) {
+        GST_ELEMENT_WARNING (sink, RESOURCE, SETTINGS, (NULL),
+            ("Could not set socket priority to %d (%s)", sink->so_priority,
+                opt_err->message));
+        g_clear_error (&opt_err);
+      }
+    }
+  }
+#endif
+
 #ifdef SO_BINDTODEVICE
   if (sink->multi_iface) {
     if (sink->used_socket) {
@@ -1428,6 +1744,46 @@ gst_multiudpsink_start (GstBaseSink * bsink)
     }
   }
 #endif
+
+  if (sink->so_txtime) {
+#ifdef SO_TXTIME
+    struct sock_txtime txtimeopt = {
+      .clockid = CLOCK_TAI,
+      .flags = SOF_TXTIME_REPORT_ERRORS
+    };
+
+    if (sink->used_socket) {
+      if (setsockopt (g_socket_get_fd (sink->used_socket), SOL_SOCKET,
+              SO_TXTIME, &txtimeopt, sizeof (txtimeopt)) < 0)
+        GST_WARNING_OBJECT (sink, "setsockopt SO_TXTIME failed: %s",
+            strerror (errno));
+    }
+
+    if (sink->used_socket_v6) {
+      if (setsockopt (g_socket_get_fd (sink->used_socket_v6), SOL_SOCKET,
+              SO_TXTIME, &txtimeopt, sizeof (txtimeopt)) < 0)
+        GST_WARNING_OBJECT (sink, "setsockopt SO_TXTIME failed: %s",
+            strerror (errno));
+    }
+#else
+    GST_WARNING_OBJECT (sink, "turning off socket-txtime "
+        "because the kernel doesn't support it");
+    sink->so_txtime = FALSE;
+#endif
+  }
+
+  if (sink->so_txtime) {
+    sink->provided_clock = g_object_new (GST_TYPE_SYSTEM_CLOCK,
+        "name", "GstUdpTaiSystemClock", "clock-type", GST_CLOCK_TYPE_TAI, NULL);
+    gst_object_ref_sink (sink->provided_clock);
+
+    GST_OBJECT_FLAG_SET (sink->provided_clock, GST_CLOCK_FLAG_CAN_SET_MASTER);
+    GST_OBJECT_FLAG_SET (sink, GST_ELEMENT_FLAG_PROVIDE_CLOCK);
+
+    gst_element_post_message (GST_ELEMENT_CAST (sink),
+        gst_message_new_clock_provide (GST_OBJECT_CAST (sink),
+            sink->provided_clock, TRUE));
+  }
 
   if (sink->used_socket)
     g_socket_set_broadcast (sink->used_socket, TRUE);
@@ -1483,6 +1839,9 @@ gst_multiudpsink_stop (GstBaseSink * bsink)
   udpsink = GST_MULTIUDPSINK (bsink);
 
   if (udpsink->used_socket) {
+    if (udpsink->so_txtime)
+      gst_multiudpsink_process_error_queue (udpsink, udpsink->used_socket);
+
     if (udpsink->close_socket || !udpsink->external_socket) {
       GError *err = NULL;
 
@@ -1497,6 +1856,9 @@ gst_multiudpsink_stop (GstBaseSink * bsink)
   }
 
   if (udpsink->used_socket_v6) {
+    if (udpsink->so_txtime)
+      gst_multiudpsink_process_error_queue (udpsink, udpsink->used_socket_v6);
+
     if (udpsink->close_socket || !udpsink->external_socket) {
       GError *err = NULL;
 
@@ -1508,6 +1870,15 @@ gst_multiudpsink_stop (GstBaseSink * bsink)
 
     g_object_unref (udpsink->used_socket_v6);
     udpsink->used_socket_v6 = NULL;
+  }
+
+  if (udpsink->provided_clock) {
+    gst_element_post_message (GST_ELEMENT_CAST (udpsink),
+        gst_message_new_clock_lost (GST_OBJECT_CAST (udpsink),
+            udpsink->provided_clock));
+    GST_OBJECT_FLAG_UNSET (udpsink, GST_ELEMENT_FLAG_PROVIDE_CLOCK);
+    gst_clock_set_master (udpsink->provided_clock, NULL);
+    gst_clear_object (&udpsink->provided_clock);
   }
 
   return TRUE;
@@ -1817,4 +2188,53 @@ gst_multiudpsink_unlock_stop (GstBaseSink * bsink)
   gst_multiudpsink_create_cancellable (sink);
 
   return TRUE;
+}
+
+static void
+gst_multiudpsink_get_times (GstBaseSink * bsink, GstBuffer * buffer,
+    GstClockTime * start, GstClockTime * end)
+{
+  GstMultiUDPSink *sink = GST_MULTIUDPSINK (bsink);
+
+  if (sink->so_txtime) {
+    /* Disable synchronization in GstBaseSink if we are going to use SO_TXTIME
+       to control packet transmission synchronization in kernel space */
+    *start = GST_CLOCK_TIME_NONE;
+    *end = GST_CLOCK_TIME_NONE;
+  } else {
+    GST_BASE_SINK_CLASS (parent_class)->get_times (bsink, buffer, start, end);
+  }
+}
+
+static GstClock *
+gst_multiudpsink_provide_clock (GstElement * element)
+{
+  GstMultiUDPSink *sink = GST_MULTIUDPSINK (element);
+  return sink->provided_clock ? gst_object_ref (sink->provided_clock) : NULL;
+}
+
+static gboolean
+gst_multiudpsink_set_clock (GstElement * element, GstClock * clock)
+{
+  GstMultiUDPSink *sink = GST_MULTIUDPSINK (element);
+
+  /* setup clock slaving */
+  if (sink->provided_clock) {
+    GstClockTime internal = gst_clock_get_internal_time (sink->provided_clock);
+
+    if (clock && clock != sink->provided_clock) {
+      /* set initial calibration assuming 1/1 rate to avoid waiting
+         for the linear regression to complete */
+      GstClockTime external = gst_clock_get_time (clock);
+      gst_clock_set_calibration (sink->provided_clock, internal, external, 1,
+          1);
+      gst_clock_set_master (sink->provided_clock, clock);
+    } else {
+      gst_clock_set_master (sink->provided_clock, NULL);
+      gst_clock_set_calibration (sink->provided_clock, internal, internal, 1,
+          1);
+    }
+  }
+
+  return GST_ELEMENT_CLASS (parent_class)->set_clock (element, clock);
 }
