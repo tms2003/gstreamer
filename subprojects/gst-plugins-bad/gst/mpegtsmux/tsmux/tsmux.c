@@ -1496,12 +1496,12 @@ rewrite_si (TsMux * mux, gint64 cur_ts)
 static gboolean
 pad_stream (TsMux * mux, TsMuxStream * stream, gint64 cur_ts)
 {
-  guint64 bitrate;
   GstBuffer *buf = NULL;
   GstMapInfo map;
   gboolean ret = TRUE;
   GstClockTimeDiff diff;
   guint64 start_n_bytes;
+  guint64 expected_n_bytes;
 
   if (!mux->bitrate)
     goto done;
@@ -1518,54 +1518,45 @@ pad_stream (TsMux * mux, TsMuxStream * stream, gint64 cur_ts)
 
   ret = FALSE;
   start_n_bytes = mux->n_bytes;
-  do {
-    GST_LOG ("Transport stream bitrate: %" G_GUINT64_FORMAT " over %"
-        G_GUINT64_FORMAT " bytes, duration %" GST_TIME_FORMAT,
-        gst_util_uint64_scale (mux->n_bytes * 8, TSMUX_CLOCK_FREQ, diff),
-        mux->n_bytes, GST_TIME_ARGS (diff * GST_SECOND / TSMUX_CLOCK_FREQ));
+  expected_n_bytes =
+      gst_util_uint64_scale (mux->bitrate, diff, TSMUX_CLOCK_FREQ) / 8;
 
-    /* calculate what the overall bitrate will be if we add 1 more packet */
-    bitrate =
-        gst_util_uint64_scale ((mux->n_bytes + TSMUX_PACKET_LENGTH) * 8,
-        TSMUX_CLOCK_FREQ, diff);
+  while (mux->n_bytes < expected_n_bytes) {
+    gint64 new_pcr;
 
-    if (bitrate <= mux->bitrate) {
-      gint64 new_pcr;
+    if (!tsmux_get_buffer (mux, &buf))
+      goto done;
 
-      if (!tsmux_get_buffer (mux, &buf))
-        goto done;
+    if (!gst_buffer_map (buf, &map, GST_MAP_WRITE)) {
+      gst_buffer_unref (buf);
+      goto done;
+    }
 
-      if (!gst_buffer_map (buf, &map, GST_MAP_WRITE)) {
+    new_pcr = write_new_pcr (mux, stream, get_current_pcr (mux, cur_ts),
+        get_next_pcr (mux, cur_ts));
+    if (new_pcr != -1) {
+      GST_LOG ("Writing PCR-only packet on PID 0x%04x", stream->pi.pid);
+      tsmux_write_ts_header (mux, map.data, &stream->pi, 0, NULL, NULL);
+    } else {
+      GST_LOG ("Writing null stuffing packet");
+      if (!rewrite_si (mux, cur_ts)) {
+        gst_buffer_unmap (buf, &map);
         gst_buffer_unref (buf);
         goto done;
       }
-
-      new_pcr = write_new_pcr (mux, stream, get_current_pcr (mux, cur_ts),
-          get_next_pcr (mux, cur_ts));
-      if (new_pcr != -1) {
-        GST_LOG ("Writing PCR-only packet on PID 0x%04x", stream->pi.pid);
-        tsmux_write_ts_header (mux, map.data, &stream->pi, 0, NULL, NULL);
-      } else {
-        GST_LOG ("Writing null stuffing packet");
-        if (!rewrite_si (mux, cur_ts)) {
-          gst_buffer_unmap (buf, &map);
-          gst_buffer_unref (buf);
-          goto done;
-        }
-        tsmux_write_null_ts_header (map.data);
-        memset (map.data + TSMUX_HEADER_LENGTH, 0xFF, TSMUX_PAYLOAD_LENGTH);
-      }
-
-      gst_buffer_unmap (buf, &map);
-
-      stream->pi.flags &= TSMUX_PACKET_FLAG_PES_FULL_HEADER;
-      if (!tsmux_packet_out (mux, buf, new_pcr))
-        goto done;
+      tsmux_write_null_ts_header (map.data);
+      memset (map.data + TSMUX_HEADER_LENGTH, 0xFF, TSMUX_PAYLOAD_LENGTH);
     }
-  } while (bitrate < mux->bitrate);
+
+    gst_buffer_unmap (buf, &map);
+
+    stream->pi.flags &= TSMUX_PACKET_FLAG_PES_FULL_HEADER;
+    if (!tsmux_packet_out (mux, buf, new_pcr))
+      goto done;
+  }
 
   if (mux->n_bytes != start_n_bytes) {
-    GST_LOG ("Finished padding the mux");
+    GST_LOG ("Padded muxer with %ld bytes", mux->n_bytes - start_n_bytes);
   }
 
   ret = TRUE;
