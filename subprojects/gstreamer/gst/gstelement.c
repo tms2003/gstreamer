@@ -2932,8 +2932,13 @@ only_async_start:
  * element will perform the remainder of the state change asynchronously in
  * another thread.
  * An application can use gst_element_get_state() to wait for the completion
- * of the state change or it can wait for a %GST_MESSAGE_ASYNC_DONE or
- * %GST_MESSAGE_STATE_CHANGED on the bus.
+ * of the state change or it can wait for a %GST_MESSAGE_STATE_CHANGED on
+ * the bus.
+ *
+ * An application can also wait for %GST_MESSAGE_ASYNC_DONE but this
+ * message is sent once the asynchronous state change is complete,
+ * this does not mean that the target state has been reached. Using
+ * this message is not recommended.
  *
  * State changes to %GST_STATE_READY or %GST_STATE_NULL never return
  * #GST_STATE_CHANGE_ASYNC.
