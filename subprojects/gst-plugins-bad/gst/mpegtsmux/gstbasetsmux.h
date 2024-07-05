@@ -161,6 +161,7 @@ struct GstBaseTsMux {
   guint si_interval;
   guint64 bitrate;
   guint pcr_interval;
+ guint pcr_offset;
   guint scte35_pid;
   guint scte35_null_interval;
   guint32 last_scte35_event_seqnum;

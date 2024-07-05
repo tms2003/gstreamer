@@ -111,6 +111,9 @@ G_BEGIN_DECLS
 #define TSMUX_DEFAULT_SCTE_35_NULL_INTERVAL (TSMUX_CLOCK_FREQ * 300)
 /* Bitrate (bits per second) */
 #define TSMUX_DEFAULT_BITRATE      0
+/* buffering offset for the PCR - this is the amount 'in advance' of the stream that the PCR sits.
+   by default 0.25s */
+#define TSMUX_DEFAULT_PCR_OFFSET (TSMUX_CLOCK_FREQ / 4)
 
 typedef struct TsMuxPacketInfo TsMuxPacketInfo;
 typedef struct TsMuxProgram TsMuxProgram;

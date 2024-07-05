@@ -254,6 +254,7 @@ enum
   PROP_SI_INTERVAL,
   PROP_BITRATE,
   PROP_PCR_INTERVAL,
+  PROP_PCR_OFFSET,
   PROP_SCTE_35_PID,
   PROP_SCTE_35_NULL_INTERVAL
 };
@@ -2702,6 +2703,11 @@ gst_base_ts_mux_set_property (GObject * object, guint prop_id,
         tsmux_set_pcr_interval (mux->tsmux, mux->pcr_interval);
       g_mutex_unlock (&mux->lock);
       break;
+    case PROP_PCR_OFFSET:
+      mux->pcr_offset = g_value_get_uint (value);
+      if (mux->tsmux)
+        tsmux_set_pcr_offset (mux->tsmux, mux->pcr_offset);
+      break;
     case PROP_SCTE_35_PID:
       mux->scte35_pid = g_value_get_uint (value);
       break;
@@ -2742,6 +2748,9 @@ gst_base_ts_mux_get_property (GObject * object, guint prop_id,
     case PROP_PCR_INTERVAL:
       g_value_set_uint (value, mux->pcr_interval);
       break;
+    case PROP_PCR_OFFSET:
+      g_value_set_uint (value, mux->pcr_offset);
+      break;
     case PROP_SCTE_35_PID:
       g_value_set_uint (value, mux->scte35_pid);
       break;
@@ -2766,6 +2775,7 @@ gst_base_ts_mux_default_create_ts_mux (GstBaseTsMux * mux)
   tsmux_set_si_interval (tsmux, mux->si_interval);
   tsmux_set_bitrate (tsmux, mux->bitrate);
   tsmux_set_pcr_interval (tsmux, mux->pcr_interval);
+  tsmux_set_pcr_offset (tsmux, mux->pcr_offset);
 
   return tsmux;
 }
@@ -2886,6 +2896,13 @@ gst_base_ts_mux_class_init (GstBaseTsMuxClass * klass)
       g_param_spec_uint ("pcr-interval", "PCR interval",
           "Set the interval (in ticks of the 90kHz clock) for writing PCR",
           1, G_MAXUINT, TSMUX_DEFAULT_PCR_INTERVAL,
+          (GParamFlags) (G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS)));
+
+  g_object_class_install_property (G_OBJECT_CLASS (klass),
+      PROP_PCR_OFFSET, g_param_spec_uint ("pcr-offset",
+          "PCR offset",
+          "Set the offset (in ticks of the 90kHz clock) for how far is PCR behind PTS",
+          0, G_MAXUINT, TSMUX_DEFAULT_PCR_OFFSET,
           (GParamFlags) (G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS)));
 
   g_object_class_install_property (G_OBJECT_CLASS (klass), PROP_SCTE_35_PID,
