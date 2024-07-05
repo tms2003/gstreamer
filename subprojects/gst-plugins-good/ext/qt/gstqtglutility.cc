@@ -108,6 +108,14 @@ gst_qt_get_gl_display (gboolean sink)
         native->nativeResourceForWindow("display", NULL);
     display = (GstGLDisplay *)
         gst_gl_display_wayland_new_with_display (wayland_display);
+    if (display) {
+      QObject::connect (QGuiApplication::instance (),
+          &QGuiApplication::aboutToQuit,[=] () {
+            GST_INFO("Unref wayland display on QGuiApplication::aboutToQuit()");
+            gst_object_unref (display);
+          }
+      );
+    }
   }
 #endif
 #if GST_GL_HAVE_PLATFORM_EGL && GST_GL_HAVE_WINDOW_ANDROID

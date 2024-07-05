@@ -115,6 +115,7 @@ QtGLVideoItem::QtGLVideoItem()
   g_weak_ref_init (&priv->sink, NULL);
 
   this->priv->display = gst_qt_get_gl_display(TRUE);
+  gst_object_ref (this->priv->display);
 
   connect(this, SIGNAL(windowChanged(QQuickWindow*)), this,
           SLOT(handleWindowChanged(QQuickWindow*)));
