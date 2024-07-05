@@ -2414,7 +2414,7 @@ gst_qtdemux_handle_sink_event (GstPad * sinkpad, GstObject * parent,
       gst_qtdemux_process_adapter (demux, TRUE);
       gst_qtdemux_reset (demux, FALSE);
       /* We expect new moov box after new stream-start event */
-      if (demux->exposed) {
+      if (demux->exposed && !demux->mss_mode) {
         gst_qtdemux_stream_concat (demux,
             demux->old_streams, demux->active_streams);
       }
