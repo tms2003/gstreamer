@@ -4015,6 +4015,11 @@ pop_and_push_next (GstRtpJitterBuffer * jitterbuffer, guint seqnum)
   if (type == ITEM_TYPE_EVENT && outevent &&
       GST_EVENT_TYPE (outevent) == GST_EVENT_EOS) {
     g_assert (priv->eos);
+    /* For some platform with low performance, the eos event here is
+     * later than previous call of wait_next_time() on eos, it will
+     * wait in that thread, so wait here will cause completion, need
+     * signal that thread first */
+    JBUF_SIGNAL_TIMER (priv);
     while (rtp_timer_queue_length (priv->timers) > 0) {
       /* Stopping timers */
       unschedule_current_timer (jitterbuffer);
