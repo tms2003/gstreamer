@@ -4,7 +4,7 @@ endif
 
 have_gme = cc.has_header ('gme/gme.h')
 if have_gme
-  gme_dep = cc.find_library('gme', required: get_option('gme'))
+  gme_dep = dependency('libgme', version : '>= 0.6.0', required: get_option('gme'))
   have_gme = gme_dep.found()
 endif
 
