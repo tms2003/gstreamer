@@ -80,6 +80,8 @@ typedef struct _GstWlWindowPrivate
   gboolean clear_window;
   struct wl_callback *frame_callback;
   struct wl_callback *commit_callback;
+
+  GMutex commit_lock;
 } GstWlWindowPrivate;
 
 G_DEFINE_TYPE_WITH_CODE (GstWlWindow, gst_wl_window, G_TYPE_OBJECT,
@@ -185,6 +187,7 @@ gst_wl_window_init (GstWlWindow * self)
   g_cond_init (&priv->configure_cond);
   g_mutex_init (&priv->configure_mutex);
   g_mutex_init (&priv->window_lock);
+  g_mutex_init (&priv->commit_lock);
 }
 
 static void
@@ -202,6 +205,7 @@ gst_wl_window_finalize (GObject * gobject)
   g_cond_clear (&priv->configure_cond);
   g_mutex_clear (&priv->configure_mutex);
   g_mutex_clear (&priv->window_lock);
+  g_mutex_clear (&priv->commit_lock);
 
   if (priv->xdg_toplevel)
     xdg_toplevel_destroy (priv->xdg_toplevel);
@@ -556,6 +560,7 @@ gst_wl_window_commit_buffer (GstWlWindow * self, GstWlBuffer * buffer)
   GstVideoInfo *info = priv->next_video_info;
   struct wl_callback *callback;
 
+  g_mutex_lock (&priv->commit_lock);
   if (G_UNLIKELY (info)) {
     priv->scaled_width =
         gst_util_uint64_scale_int_round (info->width, info->par_n, info->par_d);
@@ -600,6 +605,7 @@ gst_wl_window_commit_buffer (GstWlWindow * self, GstWlBuffer * buffer)
     gst_video_info_free (priv->next_video_info);
     priv->next_video_info = NULL;
   }
+  g_mutex_unlock (&priv->commit_lock);
 
 }
 
@@ -750,14 +756,17 @@ gst_wl_window_update_geometry (GstWlWindow * self)
     return;
 
   if (priv->scaled_width != 0) {
+    g_mutex_lock (&priv->commit_lock);
     wl_subsurface_set_sync (priv->video_subsurface);
     gst_wl_window_resize_video_surface (self, TRUE);
   }
 
   wl_surface_commit (priv->area_surface_wrapper);
 
-  if (priv->scaled_width != 0)
+  if (priv->scaled_width != 0) {
     wl_subsurface_set_desync (priv->video_subsurface);
+    g_mutex_unlock (&priv->commit_lock);
+  }
 }
 
 void
