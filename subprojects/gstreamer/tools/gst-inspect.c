@@ -2101,13 +2101,16 @@ redirect_stdout (void)
   gchar **envp;
 
   pager = g_getenv ("PAGER");
+  if (pager && !*pager)
+    return FALSE;
+
   if (pager == NULL)
     pager = DEFAULT_PAGER;
 
   argv = g_strsplit (pager, " ", 0);
 
   less = g_getenv ("GST_LESS");
-  if (less == NULL)
+  if (less == NULL || !*less)
     less = DEFAULT_LESS_OPTS;
 
   envp = g_get_environ ();
