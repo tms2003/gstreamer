@@ -18,7 +18,7 @@ set-child-properties, element-name=c0, pattern=blue
 
 container-add-child,
     container-name=c0,
-    asset-id="videotestsrc pattern=green ! video/x-raw,width=640,height=360 ! compositor sink_0::xpos=320 sink_0::ypos=180 sink_0::zorder=500",
+    asset-id="videotestsrc pattern=green ! video/x-raw,width=640,height=360,format=ABGR64_LE ! compositor sink_0::xpos=320 sink_0::ypos=180 sink_0::zorder=500 name=c capsfilter caps=video/x-raw,format=ABGR ! c.",
     child-type=GESEffect,
     child-name=effect
 play
