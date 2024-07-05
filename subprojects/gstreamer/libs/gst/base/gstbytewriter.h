@@ -104,6 +104,20 @@ GstBuffer *     gst_byte_writer_reset_and_get_buffer    (GstByteWriter *writer) 
  * Returns: %TRUE if the new position could be set
  */
 /**
+ * gst_byte_writer_move_pos:
+ * @writer: #GstByteWriter instance
+ * @pos: relative position to the current one
+ *
+ * Sets the current read/write cursor of @writer to a position relative
+ * to the current one.
+ * The new position can only be a value so that summed with the current
+ * position does is between 0 and the current size.
+ *
+ * Returns: %TRUE if the new position could be set.
+ *
+ * Since: 1.26
+ */
+/**
  * gst_byte_writer_get_size:
  * @writer: #GstByteWriter instance
  *
@@ -118,6 +132,17 @@ gst_byte_writer_get_pos (const GstByteWriter *writer)
 static inline gboolean
 gst_byte_writer_set_pos (GstByteWriter *writer, guint pos)
 {
+  return gst_byte_reader_set_pos (GST_BYTE_READER (writer), pos);
+}
+
+static inline gboolean
+gst_byte_writer_move_pos (GstByteWriter *writer, gint pos)
+{
+  pos = gst_byte_writer_get_pos (writer) + pos;
+
+  if (pos < 0)
+    return FALSE;
+
   return gst_byte_reader_set_pos (GST_BYTE_READER (writer), pos);
 }
 
@@ -462,6 +487,9 @@ _gst_byte_writer_put_buffer_inline (GstByteWriter * writer, GstBuffer * buffer,
     G_LIKELY (_gst_byte_writer_put_buffer_inline (writer, buffer, offset, size))
 
 #endif
+
+G_DEFINE_AUTOPTR_CLEANUP_FUNC (GstByteWriter, gst_byte_writer_free);
+G_DEFINE_AUTO_CLEANUP_CLEAR_FUNC (GstByteWriter, gst_byte_writer_reset);
 
 G_END_DECLS
 
