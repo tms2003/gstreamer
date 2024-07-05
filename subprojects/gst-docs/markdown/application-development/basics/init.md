@@ -101,7 +101,7 @@ main (int   argc,
 ```
 
 As shown in this fragment, you can use a
-[GOption](http://developer.gnome.org/glib/stable/glib-Commandline-option-parser.html)
+[GOption](https://developer-old.gnome.org/glib/unstable/glib-Commandline-option-parser.html)
 table to define your application-specific command line options, and pass
 this table to the GLib initialization function along with the option
 group returned from the function `gst_init_get_option_group`. Your
