@@ -1579,7 +1579,7 @@ ensure_context (GstVaapiDecoderH264 * decoder, GstH264SPS * sps)
     switch (num_views) {
       case 1:
         /* Frame-packed mode details should be used if we got */
-        if (priv->stereo_info.mode != GST_VIDEO_MULTIVIEW_MODE_NONE) {
+        if (priv->stereo_info.mode > GST_VIDEO_MULTIVIEW_MODE_RIGHT) {
           gst_vaapi_decoder_set_multiview_mode (base_decoder,
               2, priv->stereo_info.mode, priv->stereo_info.flags);
         } else {
