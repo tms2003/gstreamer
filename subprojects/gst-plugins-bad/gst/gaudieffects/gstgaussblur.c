@@ -63,6 +63,8 @@
 #include <string.h>
 #endif
 
+#include "gbconfig.h"
+
 #include <math.h>
 #include <gst/gst.h>
 
@@ -177,6 +179,7 @@ gst_gaussianblur_init (GstGaussianBlur * gb)
 {
   gb->sigma = (gfloat) DEFAULT_SIGMA;
   gb->cur_sigma = -1.0;
+  gb->first = TRUE;
 }
 
 static void
@@ -290,63 +293,90 @@ blur_row_x (GstGaussianBlur * gb, guint8 * in_row, gfloat * out_row)
 }
 
 static void
-gaussian_smooth (GstGaussianBlur * gb, guint8 * image, guint8 * out_image)
+blur_row (GstGaussianBlur * gb, guint8 * in_row, guint8 * out_image,
+    int r, float *tmp_out_row, int iters, int stride, int offset)
 {
-  int r, c, rr, center;
+  int c, rr, center;
   float dot[4], sum;
-  int k, kmin, kmax;
-  guint8 *in_row = image;
-  float *tmp_out_row = gb->tempim;
+  int k, kmin, kmax, i, current_stride;
   float *tmp_in_pos;
-  gint y_avail = 0;
   guint8 *out_row;
 
   /* Apply the gaussian kernel */
   center = gb->windowsize / 2;
 
   /* Blur in the y - direction. */
-  for (r = 0; r < gb->height; r++) {
-    /* Calculate input row range */
-    rr = center - r;
-    kmin = MAX (0, rr);
-    rr = kmin - rr;
-    /* Calc max */
-    kmax = MIN (gb->windowsize, gb->height - rr);
+  /* Calculate input row range */
+  rr = center - r;
+  kmin = MAX (0, rr);
+  rr = kmin - rr;
+  /* Calc max */
+  kmax = MIN (gb->windowsize, gb->height - rr);
 
-    /* Precalculate sum for range */
-    sum = gb->kernel_sum[kmax - 1];
-    sum -= kmin ? gb->kernel_sum[kmin - 1] : 0.0;
+  /* Precalculate sum for range */
+  sum = gb->kernel_sum[kmax - 1];
+  sum -= kmin ? gb->kernel_sum[kmin - 1] : 0.0;
 
-    /* Blur more input rows (x direction blur) */
-    while (y_avail <= (r + center) && y_avail < gb->height) {
-      blur_row_x (gb, in_row, tmp_out_row);
-      in_row += gb->stride;
-      tmp_out_row += gb->stride;
-      y_avail++;
+  /* Blur more input rows (x direction blur) */
+
+  for (i = 0; i < iters; i++) {
+    current_stride = i * stride + offset;
+    blur_row_x (gb, in_row + current_stride, tmp_out_row + current_stride);
+  }
+
+  tmp_in_pos = gb->tempim + (rr * gb->stride);
+  out_row = out_image + r * gb->stride;
+
+  for (c = 0; c < gb->width; c++) {
+    float *tmp = tmp_in_pos;
+
+    dot[0] = dot[1] = dot[2] = dot[3] = 0.0;
+    for (k = kmin; k < kmax; k++, tmp += gb->stride) {
+      float kern = gb->kernel[k];
+      dot[0] += tmp[0] * kern;
+      dot[1] += tmp[1] * kern;
+      dot[2] += tmp[2] * kern;
+      dot[3] += tmp[3] * kern;
     }
 
-    tmp_in_pos = gb->tempim + (rr * gb->stride);
-    out_row = out_image + r * gb->stride;
+    *out_row++ = (guint8) CLAMP ((dot[0] / sum + 0.5), 0, 255);
+    *out_row++ = (guint8) CLAMP ((dot[1] / sum + 0.5), 0, 255);
+    *out_row++ = (guint8) CLAMP ((dot[2] / sum + 0.5), 0, 255);
+    *out_row++ = (guint8) CLAMP ((dot[3] / sum + 0.5), 0, 255);
 
-    for (c = 0; c < gb->width; c++) {
-      float *tmp = tmp_in_pos;
+    tmp_in_pos += 4;
+  }
+}
 
-      dot[0] = dot[1] = dot[2] = dot[3] = 0.0;
-      for (k = kmin; k < kmax; k++, tmp += gb->stride) {
-        float kern = gb->kernel[k];
-        dot[0] += tmp[0] * kern;
-        dot[1] += tmp[1] * kern;
-        dot[2] += tmp[2] * kern;
-        dot[3] += tmp[3] * kern;
-      }
+static void
+gaussian_smooth (GstGaussianBlur * gb, guint8 * image, guint8 * out_image)
+{
+  int r;
+  int center = (gb->windowsize / 2);
 
-      *out_row++ = (guint8) CLAMP ((dot[0] / sum + 0.5), 0, 255);
-      *out_row++ = (guint8) CLAMP ((dot[1] / sum + 0.5), 0, 255);
-      *out_row++ = (guint8) CLAMP ((dot[2] / sum + 0.5), 0, 255);
-      *out_row++ = (guint8) CLAMP ((dot[3] / sum + 0.5), 0, 255);
+  // Blur first row according kernel size
+  blur_row (gb, image, out_image, 0, gb->tempim, center + 1, gb->stride, 0);
 
-      tmp_in_pos += 4;
+  if (gb->first) {
+    for (r = 1; r < gb->height - center; r++) {
+      blur_row (gb, image + (r * gb->stride), out_image, r,
+          gb->tempim + (r * gb->stride), 1, 0, gb->stride * center);
     }
+    gb->first = FALSE;
+  } else {
+#ifdef HAS_OPENMP
+#pragma omp parallel for
+#endif
+    for (r = 1; r < gb->height - center; r++) {
+      blur_row (gb, image + (r * gb->stride), out_image, r,
+          gb->tempim + (r * gb->stride), 1, 0, gb->stride * center);
+    }
+  }
+
+  // Blur last rows according kernel size
+  for (r = gb->height - center; r < gb->height; r++) {
+    blur_row (gb, image + (r * gb->stride), out_image, r,
+        gb->tempim + (r * gb->stride), 0, 0, 0);
   }
 }
 

@@ -38,6 +38,7 @@ base_tests = [
   [['elements/d3d11colorconvert.c'], host_machine.system() != 'windows', ],
   [['elements/d3d11videosink.c'], host_machine.system() != 'windows', ],
   [['elements/fdkaac.c'], not fdkaac_dep.found(), ],
+  [['elements/gaussblur.c'], get_option('gaudieffects').disabled()],
   [['elements/gdpdepay.c'], get_option('gdp').disabled()],
   [['elements/gdppay.c'], get_option('gdp').disabled()],
   [['elements/h263parse.c'], false, [libparser_dep, gstcodecparsers_dep]],
@@ -186,6 +187,7 @@ test_defines = [
   '-DGST_TEST_FILES_PATH="' + fsmod.as_posix(meson.current_source_dir()) + '/../files"',
   '-DTEST_PATH="' + fsmod.as_posix(meson.current_build_dir()) + '/media"',
   '-DDASH_MPD_DATADIR=' + fsmod.as_posix(meson.current_source_dir()) + '/elements/dash_mpd_data',
+  '-DGAUSSBLUR_DATADIR=' + fsmod.as_posix(meson.current_source_dir()) + '/elements/gaussblur_data',
   '-DGST_USE_UNSTABLE_API',
 ]
 
