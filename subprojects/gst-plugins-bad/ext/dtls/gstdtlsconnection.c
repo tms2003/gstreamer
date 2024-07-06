@@ -28,6 +28,7 @@
 #endif
 
 #include <gst/gst.h>
+#include <gio/gio.h>
 
 #include "gstdtlsconnection.h"
 
@@ -266,6 +267,42 @@ X509_STORE_CTX_get0_cert (X509_STORE_CTX * ctx)
 #endif
 
 static void
+log_ssl_key (const SSL * ssl, const char *line)
+{
+  const gchar *file;
+  GFileOutputStream *os;
+  GError *error;
+
+  if ((file = g_getenv ("SSLKEYLOGFILE")) != NULL) {
+    GFile *fd = g_file_parse_name (file);
+    error = NULL;
+    if ((os =
+            g_file_append_to (fd, G_FILE_CREATE_PRIVATE, NULL,
+                &error)) != NULL) {
+      static GMutex mutex;
+      error = NULL;
+
+      g_mutex_lock (&mutex);
+      g_output_stream_printf (G_OUTPUT_STREAM (os), NULL, NULL, &error, "%s\n",
+          line);
+      g_object_unref (os);
+      g_mutex_unlock (&mutex);
+
+      if (error != NULL) {
+        g_warning ("Could append SSL key to '%s': %s", file, error->message);
+        g_error_free (error);
+      }
+    } else if (error != NULL) {
+      g_warning ("Could not open '%s' for SSL key appending: %s", file,
+          error->message);
+      g_error_free (error);
+    }
+
+    g_object_unref (fd);
+  }
+}
+
+static void
 gst_dtls_connection_set_property (GObject * object, guint prop_id,
     const GValue * value, GParamSpec * pspec)
 {
@@ -281,6 +318,7 @@ gst_dtls_connection_set_property (GObject * object, guint prop_id,
       g_return_if_fail (GST_IS_DTLS_AGENT (agent));
 
       ssl_context = _gst_dtls_agent_peek_context (agent);
+      SSL_CTX_set_keylog_callback (ssl_context, log_ssl_key);
 
       priv->ssl = SSL_new (ssl_context);
       g_return_if_fail (priv->ssl);
