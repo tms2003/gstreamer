@@ -923,6 +923,37 @@ valgrind ges:
   # as flaky. Until then, just ignore failures.
   allow_failure: true
 
+fuzzing:
+  image:
+    name: gcr.io/oss-fuzz-base/clusterfuzzlite-run-fuzzers:v1
+    entrypoint: [""]
+  needs:
+    - "trigger"
+  stage: test
+  services:
+    - docker:dind
+  variables:
+    DOCKER_HOST: "tcp://docker:2375"
+    DOCKER_IN_DOCKER: "True"
+    CFL_PLATFORM: gitlab
+    MODE: "code-change"
+    FUZZ_SECONDS: 600
+  parallel:
+    matrix:
+      - SANITIZER: [address, undefined]
+  before_script:
+    # Get gitlab's container id.
+    - export CFL_CONTAINER_ID=`cut -c9- < /proc/1/cpuset`
+    - ls -al
+  script:
+    # Will build and run the fuzzers.
+    - python3 "/opt/oss-fuzz/infra/cifuzz/cifuzz_combined_entrypoint.py"
+  artifacts:
+    # Upload artifacts when a crash makes the job fail.
+    when: always
+    paths:
+      - artifacts/
+
 # ---- Integration ----- #
 
 .documentation:
