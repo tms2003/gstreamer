@@ -1262,6 +1262,150 @@ gst_video_time_code_meta_free (GstMeta * meta, GstBuffer * buffer)
   gst_video_time_code_clear (&emeta->tc);
 }
 
+static gboolean
+gst_video_time_code_meta_serialize (const GstMeta * meta,
+    GstByteArrayInterface * data, guint8 * version)
+{
+  GstVideoTimeCodeMeta *tcmeta = (GstVideoTimeCodeMeta *) meta;
+
+  gsize size = 2 * 4 + 4 + 1 + 5 * 4;
+  const gchar *tz_str = NULL;
+  gsize tz_str_len = 0;
+
+  if (tcmeta->tc.config.latest_daily_jam) {
+    size += 5 * 4 + 8 + 2;
+
+    GTimeZone *tz =
+        g_date_time_get_timezone (tcmeta->tc.config.latest_daily_jam);
+    tz_str = g_time_zone_get_identifier (tz);
+    tz_str_len = strlen (tz_str);
+    size += tz_str_len + 1;
+  }
+
+  guint8 *ptr = gst_byte_array_interface_append (data, size);
+  if (ptr == NULL)
+    return FALSE;
+
+  GstByteWriter bw;
+  gboolean success = TRUE;
+  gst_byte_writer_init_with_data (&bw, ptr, size, FALSE);
+
+  success &= gst_byte_writer_put_uint32_le (&bw, tcmeta->tc.config.fps_n);
+  success &= gst_byte_writer_put_uint32_le (&bw, tcmeta->tc.config.fps_d);
+  G_STATIC_ASSERT_EXPR (sizeof (tcmeta->tc.config.flags) == 4);
+  success &= gst_byte_writer_put_uint32_le (&bw, tcmeta->tc.config.flags);
+
+  success &=
+      gst_byte_writer_put_uint8 (&bw,
+      tcmeta->tc.config.latest_daily_jam != NULL);
+  if (tcmeta->tc.config.latest_daily_jam) {
+    success &=
+        gst_byte_writer_put_int32_le (&bw,
+        g_date_time_get_year (tcmeta->tc.config.latest_daily_jam));
+    success &=
+        gst_byte_writer_put_int32_le (&bw,
+        g_date_time_get_month (tcmeta->tc.config.latest_daily_jam));
+    success &=
+        gst_byte_writer_put_int32_le (&bw,
+        g_date_time_get_day_of_month (tcmeta->tc.config.latest_daily_jam));
+    success &=
+        gst_byte_writer_put_int32_le (&bw,
+        g_date_time_get_hour (tcmeta->tc.config.latest_daily_jam));
+    success &=
+        gst_byte_writer_put_int32_le (&bw,
+        g_date_time_get_minute (tcmeta->tc.config.latest_daily_jam));
+    success &=
+        gst_byte_writer_put_float64_le (&bw,
+        g_date_time_get_seconds (tcmeta->tc.config.latest_daily_jam));
+
+    success &= gst_byte_writer_put_uint16_le (&bw, tz_str_len);
+    success &=
+        gst_byte_writer_put_data (&bw, (const guint8 *) tz_str, tz_str_len);
+  }
+
+  success &= gst_byte_writer_put_uint32_le (&bw, tcmeta->tc.hours);
+  success &= gst_byte_writer_put_uint32_le (&bw, tcmeta->tc.minutes);
+  success &= gst_byte_writer_put_uint32_le (&bw, tcmeta->tc.seconds);
+  success &= gst_byte_writer_put_uint32_le (&bw, tcmeta->tc.frames);
+  success &= gst_byte_writer_put_uint32_le (&bw, tcmeta->tc.field_count);
+
+  g_assert (success);
+
+  return TRUE;
+}
+
+static GstMeta *
+gst_video_time_code_meta_deserialize (const GstMetaInfo * info,
+    GstBuffer * buffer, const guint8 * data, gsize size, guint8 version)
+{
+  GstVideoTimeCodeMeta *tcmeta = NULL;
+  GstVideoTimeCode tc;
+  guint8 has_daily_jam;
+
+  if (version != 0)
+    return NULL;
+
+  GstByteReader br;
+  gboolean success = TRUE;
+  gst_byte_reader_init (&br, data, size);
+
+  success &= gst_byte_reader_get_uint32_le (&br, &tc.config.fps_n);
+  success &= gst_byte_reader_get_uint32_le (&br, &tc.config.fps_d);
+  G_STATIC_ASSERT_EXPR (sizeof (tcmeta->tc.config.flags) == 4);
+  success &= gst_byte_reader_get_uint32_le (&br, (guint32 *) & tc.config.flags);
+  success &= gst_byte_reader_get_uint8 (&br, &has_daily_jam);
+  if (!success)
+    return NULL;
+
+  if (has_daily_jam) {
+    gint year, month, day, hour, minute;
+    gdouble second;
+    guint16 tz_str_len;
+    const gchar *tz_str;
+    GTimeZone *tz;
+
+    success &= gst_byte_reader_get_int32_le (&br, &year);
+    success &= gst_byte_reader_get_int32_le (&br, &month);
+    success &= gst_byte_reader_get_int32_le (&br, &day);
+    success &= gst_byte_reader_get_int32_le (&br, &hour);
+    success &= gst_byte_reader_get_int32_le (&br, &minute);
+    success &= gst_byte_reader_get_float64_le (&br, &second);
+    success &= gst_byte_reader_get_uint16_le (&br, &tz_str_len);
+    if (!success)
+      return NULL;
+
+    success &=
+        gst_byte_reader_get_data (&br, tz_str_len, (const guint8 **) &tz_str);
+    if (!success || tz_str[tz_str_len - 1] != '\0')
+      return NULL;
+
+    tz = g_time_zone_new_identifier (tz_str);
+    if (!tz)
+      return NULL;
+
+    tc.config.latest_daily_jam =
+        g_date_time_new (tz, year, month, day, hour, minute, second);
+    g_clear_pointer (&tz, (GDestroyNotify) g_time_zone_unref);
+    if (!tc.config.latest_daily_jam)
+      return NULL;
+  }
+
+  success &= gst_byte_reader_get_uint32_le (&br, &tc.hours);
+  success &= gst_byte_reader_get_uint32_le (&br, &tc.minutes);
+  success &= gst_byte_reader_get_uint32_le (&br, &tc.seconds);
+  success &= gst_byte_reader_get_uint32_le (&br, &tc.frames);
+  success &= gst_byte_reader_get_uint32_le (&br, &tc.field_count);
+  if (!success)
+    return NULL;
+
+  tcmeta = gst_buffer_add_video_time_code_meta (buffer, &tc);
+
+  g_clear_pointer (&tc.config.latest_daily_jam,
+      (GDestroyNotify) g_date_time_unref);
+
+  return (GstMeta *) tcmeta;
+}
+
 const GstMetaInfo *
 gst_video_time_code_meta_get_info (void)
 {
@@ -1269,12 +1413,14 @@ gst_video_time_code_meta_get_info (void)
 
   if (g_once_init_enter ((GstMetaInfo **) & meta_info)) {
     const GstMetaInfo *mi =
-        gst_meta_register (GST_VIDEO_TIME_CODE_META_API_TYPE,
+        gst_meta_register_serializable (GST_VIDEO_TIME_CODE_META_API_TYPE,
         "GstVideoTimeCodeMeta",
         sizeof (GstVideoTimeCodeMeta),
         gst_video_time_code_meta_init,
         gst_video_time_code_meta_free,
-        gst_video_time_code_meta_transform);
+        gst_video_time_code_meta_transform,
+        gst_video_time_code_meta_serialize,
+        gst_video_time_code_meta_deserialize);
     g_once_init_leave ((GstMetaInfo **) & meta_info, (GstMetaInfo *) mi);
   }
   return meta_info;
