@@ -478,22 +478,28 @@ _gst_value_transform_g_value_array_string (const GValue * src_value,
   guint alen;
 
   array = src_value->data[0].v_pointer;
-  alen = array->n_values;
 
-  /* estimate minimum string length to minimise re-allocs in GString */
-  s = g_string_sized_new (2 + (10 * alen) + 2);
-  g_string_append (s, begin);
-  for (i = 0; i < alen; i++) {
-    list_value = g_value_array_get_nth (array, i);
+  if (NULL == array) {
+    s = g_string_new (begin);
+    g_string_append (s, end);
+  } else {
+    alen = array->n_values;
 
-    if (i != 0) {
-      g_string_append_len (s, ", ", 2);
+    /* estimate minimum string length to minimise re-allocs in GString */
+    s = g_string_sized_new (2 + (10 * alen) + 2);
+    g_string_append (s, begin);
+    for (i = 0; i < alen; i++) {
+      list_value = g_value_array_get_nth (array, i);
+
+      if (i != 0) {
+        g_string_append_len (s, ", ", 2);
+      }
+      list_s = g_strdup_value_contents (list_value);
+      g_string_append (s, list_s);
+      g_free (list_s);
     }
-    list_s = g_strdup_value_contents (list_value);
-    g_string_append (s, list_s);
-    g_free (list_s);
+    g_string_append (s, end);
   }
-  g_string_append (s, end);
 
   dest_value->data[0].v_pointer = g_string_free (s, FALSE);
 }
