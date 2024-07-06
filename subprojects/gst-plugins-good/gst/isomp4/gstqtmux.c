@@ -5756,6 +5756,7 @@ check_field (GQuark field_id, const GValue * value, gpointer user_data)
     if (field_is_in (field_id,
             "codec_data", "tier", "level", "profile",
             "chroma-site", "chroma-format", "bit-depth-luma", "colorimetry",
+            "pixel-aspect-ratio",
             /* TODO: this may require a separate track but gst, vlc, ffmpeg and
              * browsers work with this so... */
             "width", "height", NULL)) {
