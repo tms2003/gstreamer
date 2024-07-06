@@ -38,6 +38,9 @@
 
 #ifndef GST_DISABLE_GST_TRACER_HOOKS
 
+GST_DEBUG_CATEGORY (tracer_debug);
+#define GST_CAT_DEFAULT tracer_debug
+
 /* tracer quarks */
 
 /* These strings must match order and number declared in the GstTracerQuarkId
@@ -72,6 +75,9 @@ _priv_gst_tracing_init (void)
 {
   gint i = 0;
   const gchar *env = g_getenv ("GST_TRACERS");
+
+  GST_DEBUG_CATEGORY_INIT (tracer_debug, "GST_TRACER",
+      GST_DEBUG_FG_BLUE, "tracing subsystem");
 
   /* We initialize the tracer sub system even if the end
    * user did not activate it through the env variable
