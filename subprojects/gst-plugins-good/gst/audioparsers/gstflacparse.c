@@ -559,19 +559,28 @@ gst_flac_parse_frame_header_is_valid (GstFlacParse * flacparse,
     goto error;
   }
 
-  /* Sanity check sample number against blocking strategy, as it seems
-     some files claim fixed block size but supply sample numbers,
-     rather than block numbers. */
-  if (blocking_strategy == 0 && flacparse->block_size != 0) {
+  /* The blocksize strategy bit was introduced in 2007. Sadly, many
+   * linux distros still ship a Flake version from before that. Flake
+   * is an alternative FLAC encoder that is able to produce variable
+   * blocksize files. This code here detects such files. See also:
+   * https://www.ietf.org/archive/id/draft-ietf-cellar-flac-08.html#name-addition-of-block-size-stra */
+  if (blocking_strategy == 0 && sample_number > 0) {
     if (!flacparse->strategy_checked) {
-      if (block_size == sample_number) {
-        GST_WARNING_OBJECT (flacparse, "This file claims fixed block size, "
-            "but seems to be lying: assuming variable block size");
+      /* Minimum blocksize is 16, so if coded number jumps with 16 or
+       * more at the start of the file, this is probably a variable
+       * blocksize file */
+      if (flacparse->sample_number < sample_number
+          && sample_number - flacparse->sample_number > 15) {
+        GST_INFO_OBJECT (flacparse,
+            "Variable blocksize file following pre-2007 FLAC format found");
         flacparse->force_variable_block_size = TRUE;
+        flacparse->blocking_strategy = 1;
         blocking_strategy = 1;
       }
       flacparse->strategy_checked = TRUE;
     }
+  } else if (blocking_strategy == 1) {
+    flacparse->strategy_checked = TRUE;
   }
 
   /* documentation says:
@@ -804,7 +813,6 @@ gst_flac_parse_handle_frame (GstBaseParse * parse,
     guint next;
 
     flacparse->offset = GST_BUFFER_OFFSET (buffer);
-    flacparse->blocking_strategy = 0;
     flacparse->sample_number = 0;
 
     GST_DEBUG_OBJECT (flacparse, "Found sync code");
@@ -914,6 +922,9 @@ gst_flac_parse_handle_streaminfo (GstFlacParse * flacparse, GstBuffer * buffer)
     GST_WARNING_OBJECT (flacparse, "Invalid maximum block size: %u",
         flacparse->max_blocksize);
   }
+
+  if (flacparse->min_blocksize < flacparse->max_blocksize)
+    flacparse->force_variable_block_size = TRUE;
 
   if (!gst_bit_reader_get_bits_uint32 (&reader, &flacparse->min_framesize, 24))
     goto error;
@@ -1689,7 +1700,6 @@ gst_flac_parse_parse_frame (GstBaseParse * parse, GstBaseParseFrame * frame,
             flacparse->min_framesize));
 
     flacparse->offset = -1;
-    flacparse->blocking_strategy = 0;
     flacparse->sample_number = 0;
     res = GST_FLOW_OK;
   }
