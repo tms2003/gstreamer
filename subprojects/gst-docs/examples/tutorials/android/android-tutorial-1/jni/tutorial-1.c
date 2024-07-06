@@ -7,7 +7,7 @@
  * Java Bindings
  */
 static jstring
-gst_native_get_gstreamer_info (JNIEnv * env, jobject thiz)
+gst_native_get_gstreamer_info (JNIEnv *env, jobject thiz)
 {
   char *version_utf8 = gst_version_string ();
   jstring *version_jstring = (*env)->NewStringUTF (env, version_utf8);
@@ -20,8 +20,8 @@ static JNINativeMethod native_methods[] = {
       (void *) gst_native_get_gstreamer_info}
 };
 
-jint
-JNI_OnLoad (JavaVM * vm, void *reserved)
+JNIEXPORT jint
+JNI_OnLoad (JavaVM *vm, void *reserved)
 {
   JNIEnv *env = NULL;
 

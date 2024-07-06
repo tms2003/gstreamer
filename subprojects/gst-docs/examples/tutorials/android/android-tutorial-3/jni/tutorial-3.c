@@ -91,7 +91,7 @@ get_jni_env (void)
 
 /* Change the content of the UI's TextView */
 static void
-set_ui_message (const gchar * message, CustomData * data)
+set_ui_message (const gchar *message, CustomData *data)
 {
   JNIEnv *env = get_jni_env ();
   GST_DEBUG ("Setting message to: %s", message);
@@ -106,7 +106,7 @@ set_ui_message (const gchar * message, CustomData * data)
 
 /* Retrieve errors from the bus and show them on the UI */
 static void
-error_cb (GstBus * bus, GstMessage * msg, CustomData * data)
+error_cb (GstBus *bus, GstMessage *msg, CustomData *data)
 {
   GError *err;
   gchar *debug_info;
@@ -125,7 +125,7 @@ error_cb (GstBus * bus, GstMessage * msg, CustomData * data)
 
 /* Notify UI about pipeline state changes */
 static void
-state_changed_cb (GstBus * bus, GstMessage * msg, CustomData * data)
+state_changed_cb (GstBus *bus, GstMessage *msg, CustomData *data)
 {
   GstState old_state, new_state, pending_state;
   gst_message_parse_state_changed (msg, &old_state, &new_state, &pending_state);
@@ -141,7 +141,7 @@ state_changed_cb (GstBus * bus, GstMessage * msg, CustomData * data)
 /* Check if all conditions are met to report GStreamer as initialized.
  * These conditions will change depending on the application */
 static void
-check_initialization_complete (CustomData * data)
+check_initialization_complete (CustomData *data)
 {
   JNIEnv *env = get_jni_env ();
   if (!data->initialized && data->native_window && data->main_loop) {
@@ -240,7 +240,7 @@ app_function (void *userdata)
 
 /* Instruct the native code to create its internal data structure, pipeline and thread */
 static void
-gst_native_init (JNIEnv * env, jobject thiz)
+gst_native_init (JNIEnv *env, jobject thiz)
 {
   CustomData *data = g_new0 (CustomData, 1);
   SET_CUSTOM_DATA (env, thiz, custom_data_field_id, data);
@@ -255,7 +255,7 @@ gst_native_init (JNIEnv * env, jobject thiz)
 
 /* Quit the main loop, remove the native thread and free resources */
 static void
-gst_native_finalize (JNIEnv * env, jobject thiz)
+gst_native_finalize (JNIEnv *env, jobject thiz)
 {
   CustomData *data = GET_CUSTOM_DATA (env, thiz, custom_data_field_id);
   if (!data)
@@ -274,7 +274,7 @@ gst_native_finalize (JNIEnv * env, jobject thiz)
 
 /* Set pipeline to PLAYING state */
 static void
-gst_native_play (JNIEnv * env, jobject thiz)
+gst_native_play (JNIEnv *env, jobject thiz)
 {
   CustomData *data = GET_CUSTOM_DATA (env, thiz, custom_data_field_id);
   if (!data)
@@ -285,7 +285,7 @@ gst_native_play (JNIEnv * env, jobject thiz)
 
 /* Set pipeline to PAUSED state */
 static void
-gst_native_pause (JNIEnv * env, jobject thiz)
+gst_native_pause (JNIEnv *env, jobject thiz)
 {
   CustomData *data = GET_CUSTOM_DATA (env, thiz, custom_data_field_id);
   if (!data)
@@ -296,7 +296,7 @@ gst_native_pause (JNIEnv * env, jobject thiz)
 
 /* Static class initializer: retrieve method and field IDs */
 static jboolean
-gst_native_class_init (JNIEnv * env, jclass klass)
+gst_native_class_init (JNIEnv *env, jclass klass)
 {
   custom_data_field_id =
       (*env)->GetFieldID (env, klass, "native_custom_data", "J");
@@ -318,7 +318,7 @@ gst_native_class_init (JNIEnv * env, jclass klass)
 }
 
 static void
-gst_native_surface_init (JNIEnv * env, jobject thiz, jobject surface)
+gst_native_surface_init (JNIEnv *env, jobject thiz, jobject surface)
 {
   CustomData *data = GET_CUSTOM_DATA (env, thiz, custom_data_field_id);
   if (!data)
@@ -348,7 +348,7 @@ gst_native_surface_init (JNIEnv * env, jobject thiz, jobject surface)
 }
 
 static void
-gst_native_surface_finalize (JNIEnv * env, jobject thiz)
+gst_native_surface_finalize (JNIEnv *env, jobject thiz)
 {
   CustomData *data = GET_CUSTOM_DATA (env, thiz, custom_data_field_id);
   if (!data)
@@ -379,8 +379,8 @@ static JNINativeMethod native_methods[] = {
 };
 
 /* Library initializer */
-jint
-JNI_OnLoad (JavaVM * vm, void *reserved)
+JNIEXPORT jint
+JNI_OnLoad (JavaVM *vm, void *reserved)
 {
   JNIEnv *env = NULL;
 

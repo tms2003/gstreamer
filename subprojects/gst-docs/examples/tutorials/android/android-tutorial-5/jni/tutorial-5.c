@@ -109,7 +109,7 @@ get_jni_env (void)
 
 /* Change the content of the UI's TextView */
 static void
-set_ui_message (const gchar * message, CustomData * data)
+set_ui_message (const gchar *message, CustomData *data)
 {
   JNIEnv *env = get_jni_env ();
   GST_DEBUG ("Setting message to: %s", message);
@@ -124,7 +124,7 @@ set_ui_message (const gchar * message, CustomData * data)
 
 /* Tell the application what is the current position and clip duration */
 static void
-set_current_ui_position (gint position, gint duration, CustomData * data)
+set_current_ui_position (gint position, gint duration, CustomData *data)
 {
   JNIEnv *env = get_jni_env ();
   (*env)->CallVoidMethod (env, data->app, set_current_position_method_id,
@@ -138,7 +138,7 @@ set_current_ui_position (gint position, gint duration, CustomData * data)
 /* If we have pipeline and it is running, query the current position and clip duration and inform
  * the application */
 static gboolean
-refresh_ui (CustomData * data)
+refresh_ui (CustomData *data)
 {
   gint64 current = -1;
   gint64 position;
@@ -175,7 +175,7 @@ static gboolean delayed_seek_cb (CustomData * data);
 /* Perform seek, if we are not too close to the previous seek. Otherwise, schedule the seek for
  * some time in the future. */
 static void
-execute_seek (gint64 desired_position, CustomData * data)
+execute_seek (gint64 desired_position, CustomData *data)
 {
   gint64 diff;
 
@@ -216,7 +216,7 @@ execute_seek (gint64 desired_position, CustomData * data)
 
 /* Delayed seek callback. This gets called by the timer setup in the above function. */
 static gboolean
-delayed_seek_cb (CustomData * data)
+delayed_seek_cb (CustomData *data)
 {
   GST_DEBUG ("Doing delayed seek to %" GST_TIME_FORMAT,
       GST_TIME_ARGS (data->desired_position));
@@ -226,7 +226,7 @@ delayed_seek_cb (CustomData * data)
 
 /* Retrieve errors from the bus and show them on the UI */
 static void
-error_cb (GstBus * bus, GstMessage * msg, CustomData * data)
+error_cb (GstBus *bus, GstMessage *msg, CustomData *data)
 {
   GError *err;
   gchar *debug_info;
@@ -246,7 +246,7 @@ error_cb (GstBus * bus, GstMessage * msg, CustomData * data)
 
 /* Called when the End Of the Stream is reached. Just move to the beginning of the media and pause. */
 static void
-eos_cb (GstBus * bus, GstMessage * msg, CustomData * data)
+eos_cb (GstBus *bus, GstMessage *msg, CustomData *data)
 {
   data->target_state = GST_STATE_PAUSED;
   data->is_live |=
@@ -257,7 +257,7 @@ eos_cb (GstBus * bus, GstMessage * msg, CustomData * data)
 
 /* Called when the duration of the media changes. Just mark it as unknown, so we re-query it in the next UI refresh. */
 static void
-duration_cb (GstBus * bus, GstMessage * msg, CustomData * data)
+duration_cb (GstBus *bus, GstMessage *msg, CustomData *data)
 {
   data->duration = GST_CLOCK_TIME_NONE;
 }
@@ -265,7 +265,7 @@ duration_cb (GstBus * bus, GstMessage * msg, CustomData * data)
 /* Called when buffering messages are received. We inform the UI about the current buffering level and
  * keep the pipeline paused until 100% buffering is reached. At that point, set the desired state. */
 static void
-buffering_cb (GstBus * bus, GstMessage * msg, CustomData * data)
+buffering_cb (GstBus *bus, GstMessage *msg, CustomData *data)
 {
   gint percent;
 
@@ -287,7 +287,7 @@ buffering_cb (GstBus * bus, GstMessage * msg, CustomData * data)
 
 /* Called when the clock is lost */
 static void
-clock_lost_cb (GstBus * bus, GstMessage * msg, CustomData * data)
+clock_lost_cb (GstBus *bus, GstMessage *msg, CustomData *data)
 {
   if (data->target_state >= GST_STATE_PLAYING) {
     gst_element_set_state (data->pipeline, GST_STATE_PAUSED);
@@ -297,7 +297,7 @@ clock_lost_cb (GstBus * bus, GstMessage * msg, CustomData * data)
 
 /* Retrieve the video sink's Caps and tell the application about the media size */
 static void
-check_media_size (CustomData * data)
+check_media_size (CustomData *data)
 {
   JNIEnv *env = get_jni_env ();
   GstElement *video_sink;
@@ -330,7 +330,7 @@ check_media_size (CustomData * data)
 
 /* Notify UI about pipeline state changes */
 static void
-state_changed_cb (GstBus * bus, GstMessage * msg, CustomData * data)
+state_changed_cb (GstBus *bus, GstMessage *msg, CustomData *data)
 {
   GstState old_state, new_state, pending_state;
   gst_message_parse_state_changed (msg, &old_state, &new_state, &pending_state);
@@ -360,7 +360,7 @@ state_changed_cb (GstBus * bus, GstMessage * msg, CustomData * data)
 /* Check if all conditions are met to report GStreamer as initialized.
  * These conditions will change depending on the application */
 static void
-check_initialization_complete (CustomData * data)
+check_initialization_complete (CustomData *data)
 {
   JNIEnv *env = get_jni_env ();
   if (!data->initialized && data->native_window && data->main_loop) {
@@ -470,7 +470,7 @@ app_function (void *userdata)
 
 /* Instruct the native code to create its internal data structure, pipeline and thread */
 static void
-gst_native_init (JNIEnv * env, jobject thiz)
+gst_native_init (JNIEnv *env, jobject thiz)
 {
   CustomData *data = g_new0 (CustomData, 1);
   data->desired_position = GST_CLOCK_TIME_NONE;
@@ -487,7 +487,7 @@ gst_native_init (JNIEnv * env, jobject thiz)
 
 /* Quit the main loop, remove the native thread and free resources */
 static void
-gst_native_finalize (JNIEnv * env, jobject thiz)
+gst_native_finalize (JNIEnv *env, jobject thiz)
 {
   CustomData *data = GET_CUSTOM_DATA (env, thiz, custom_data_field_id);
   if (!data)
@@ -506,7 +506,7 @@ gst_native_finalize (JNIEnv * env, jobject thiz)
 
 /* Set playbin2's URI */
 void
-gst_native_set_uri (JNIEnv * env, jobject thiz, jstring uri)
+gst_native_set_uri (JNIEnv *env, jobject thiz, jstring uri)
 {
   CustomData *data = GET_CUSTOM_DATA (env, thiz, custom_data_field_id);
   if (!data || !data->pipeline)
@@ -525,7 +525,7 @@ gst_native_set_uri (JNIEnv * env, jobject thiz, jstring uri)
 
 /* Set pipeline to PLAYING state */
 static void
-gst_native_play (JNIEnv * env, jobject thiz)
+gst_native_play (JNIEnv *env, jobject thiz)
 {
   CustomData *data = GET_CUSTOM_DATA (env, thiz, custom_data_field_id);
   if (!data)
@@ -539,7 +539,7 @@ gst_native_play (JNIEnv * env, jobject thiz)
 
 /* Set pipeline to PAUSED state */
 static void
-gst_native_pause (JNIEnv * env, jobject thiz)
+gst_native_pause (JNIEnv *env, jobject thiz)
 {
   CustomData *data = GET_CUSTOM_DATA (env, thiz, custom_data_field_id);
   if (!data)
@@ -553,7 +553,7 @@ gst_native_pause (JNIEnv * env, jobject thiz)
 
 /* Instruct the pipeline to seek to a different position */
 void
-gst_native_set_position (JNIEnv * env, jobject thiz, int milliseconds)
+gst_native_set_position (JNIEnv *env, jobject thiz, int milliseconds)
 {
   CustomData *data = GET_CUSTOM_DATA (env, thiz, custom_data_field_id);
   if (!data)
@@ -570,7 +570,7 @@ gst_native_set_position (JNIEnv * env, jobject thiz, int milliseconds)
 
 /* Static class initializer: retrieve method and field IDs */
 static jboolean
-gst_native_class_init (JNIEnv * env, jclass klass)
+gst_native_class_init (JNIEnv *env, jclass klass)
 {
   custom_data_field_id =
       (*env)->GetFieldID (env, klass, "native_custom_data", "J");
@@ -597,7 +597,7 @@ gst_native_class_init (JNIEnv * env, jclass klass)
 }
 
 static void
-gst_native_surface_init (JNIEnv * env, jobject thiz, jobject surface)
+gst_native_surface_init (JNIEnv *env, jobject thiz, jobject surface)
 {
   CustomData *data = GET_CUSTOM_DATA (env, thiz, custom_data_field_id);
   if (!data)
@@ -627,7 +627,7 @@ gst_native_surface_init (JNIEnv * env, jobject thiz, jobject surface)
 }
 
 static void
-gst_native_surface_finalize (JNIEnv * env, jobject thiz)
+gst_native_surface_finalize (JNIEnv *env, jobject thiz)
 {
   CustomData *data = GET_CUSTOM_DATA (env, thiz, custom_data_field_id);
   if (!data)
@@ -660,8 +660,8 @@ static JNINativeMethod native_methods[] = {
 };
 
 /* Library initializer */
-jint
-JNI_OnLoad (JavaVM * vm, void *reserved)
+JNIEXPORT jint
+JNI_OnLoad (JavaVM *vm, void *reserved)
 {
   JNIEnv *env = NULL;
 
