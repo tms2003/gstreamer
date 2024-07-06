@@ -777,7 +777,7 @@ _packetize_sit (GstMpegtsSection * section)
     if (!sit->splice_time_specified) {
       *data++ = 0x7f;
     } else {
-      *data++ = 0xf2 | ((sit->splice_time >> 32) & 0x1);
+      *data++ = 0xfe | ((sit->splice_time >> 32) & 0x1);
       GST_WRITE_UINT32_BE (data, sit->splice_time & 0xffffffff);
       data += 4;
     }
