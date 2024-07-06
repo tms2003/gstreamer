@@ -231,6 +231,8 @@ struct _GstV4l2Object {
   
   guint max_width;
   guint max_height;
+
+  gboolean seek;
 };
 
 struct _GstV4l2ObjectClassHelper {
