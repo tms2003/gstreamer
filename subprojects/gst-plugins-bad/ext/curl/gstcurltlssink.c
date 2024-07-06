@@ -69,7 +69,8 @@ enum
   PROP_CA_CERT,
   PROP_CA_PATH,
   PROP_CRYPTO_ENGINE,
-  PROP_INSECURE
+  PROP_INSECURE,
+  PROP_PINNED_PUBLICKEY
 };
 
 
@@ -131,6 +132,11 @@ gst_curl_tls_sink_class_init (GstCurlTlsSinkClass * klass)
           "Perform insecure SSL connections",
           "Allow curl to perform insecure SSL connections",
           DEFAULT_INSECURE, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+  g_object_class_install_property (gobject_class, PROP_PINNED_PUBLICKEY,
+      g_param_spec_string ("pinned-publickey",
+          "Set pinned public key",
+          "Pin server certificate validation to only validate against specific public key",
+          NULL, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   gst_type_mark_as_plugin_api (GST_TYPE_CURL_TLS_SINK, 0);
 }
@@ -142,6 +148,7 @@ gst_curl_tls_sink_init (GstCurlTlsSink * sink)
   sink->ca_path = NULL;
   sink->crypto_engine = NULL;
   sink->insecure = DEFAULT_INSECURE;
+  sink->pinned_publickey = NULL;
 }
 
 static void
@@ -154,6 +161,7 @@ gst_curl_tls_sink_finalize (GObject * gobject)
   g_free (this->ca_cert);
   g_free (this->ca_path);
   g_free (this->crypto_engine);
+  g_free (this->pinned_publickey);
 
   G_OBJECT_CLASS (parent_class)->finalize (gobject);
 }
@@ -194,6 +202,11 @@ gst_curl_tls_sink_set_property (GObject * object, guint prop_id,
         sink->insecure = g_value_get_boolean (value);
         GST_DEBUG_OBJECT (sink, "insecure set to %d", sink->insecure);
         break;
+      case PROP_PINNED_PUBLICKEY:
+        sink->pinned_publickey = g_value_dup_string (value);
+        GST_DEBUG_OBJECT (sink, "pinned_publickey set to %s",
+            sink->pinned_publickey);
+        break;
     }
 
     GST_OBJECT_UNLOCK (sink);
@@ -225,6 +238,9 @@ gst_curl_tls_sink_get_property (GObject * object, guint prop_id,
       break;
     case PROP_INSECURE:
       g_value_set_boolean (value, sink->insecure);
+      break;
+    case PROP_PINNED_PUBLICKEY:
+      g_value_set_string (value, sink->pinned_publickey);
       break;
     default:
       GST_DEBUG_OBJECT (sink, "invalid property id");
@@ -327,6 +343,18 @@ gst_curl_tls_sink_set_options_unlocked (GstCurlBaseSink * bcsink)
             curl_easy_strerror (res));
         return FALSE;
       }
+    }
+  }
+
+  if (sink->pinned_publickey != NULL && strlen (sink->pinned_publickey)) {
+    GST_DEBUG ("setting pinned public key");
+    res =
+        curl_easy_setopt (bcsink->curl, CURLOPT_PINNEDPUBLICKEY,
+        sink->pinned_publickey);
+    if (res != CURLE_OK) {
+      bcsink->error = g_strdup_printf ("failed to set pinned public key: %s",
+          curl_easy_strerror (res));
+      return FALSE;
     }
   }
 
