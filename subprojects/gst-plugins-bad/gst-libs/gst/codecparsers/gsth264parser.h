@@ -75,25 +75,25 @@ G_BEGIN_DECLS
 
 /**
  * GstH264Profile:
- * @GST_H264_PROFILE_BASELINE: Baseline profile (A.2.1)
- * @GST_H264_PROFILE_MAIN: Main profile (A.2.2)
- * @GST_H264_PROFILE_EXTENDED: Extended profile (A.2.3)
- * @GST_H264_PROFILE_HIGH: High profile (A.2.4),
+ * @GST_H264_PROFILE_BASELINE: Baseline profile (ISO/IEC 14496-10:2020 A.2.1)
+ * @GST_H264_PROFILE_MAIN: Main profile (ISO/IEC 14496-10:2020 A.2.2)
+ * @GST_H264_PROFILE_EXTENDED: Extended profile (ISO/IEC 14496-10:2020 A.2.3)
+ * @GST_H264_PROFILE_HIGH: High profile (ISO/IEC 14496-10:2020 A.2.4),
  * or Progressive High profile (A.2.4.1), or Constrained High profile (A.2.4.2)
  * depending on constraint_set4_flag and constraint_set5_flag
- * @GST_H264_PROFILE_HIGH10: High 10 profile (A.2.5) or High 10 Intra
+ * @GST_H264_PROFILE_HIGH10: High 10 profile (ISO/IEC 14496-10:2020 A.2.5) or High 10 Intra
  *   profile (A.2.8), or Progressive High 10 profile (A.2.5.1) depending on
  *   constraint_set3_flag and constraint_set4_flag
- * @GST_H264_PROFILE_HIGH_422: High 4:2:2 profile (A.2.6) or High
+ * @GST_H264_PROFILE_HIGH_422: High 4:2:2 profile (ISO/IEC 14496-10:2020 A.2.6) or High
  *   4:2:2 Intra profile (A.2.9), depending on constraint_set3_flag
- * @GST_H264_PROFILE_HIGH_444: High 4:4:4 Predictive profile (A.2.7)
+ * @GST_H264_PROFILE_HIGH_444: High 4:4:4 Predictive profile (ISO/IEC 14496-10:2020 A.2.7)
  *   or High 4:4:4 Intra profile (A.2.10), depending on the value of
  *   constraint_set3_flag
- * @GST_H264_PROFILE_MULTIVIEW_HIGH: Multiview High profile (H.10.1.1)
- * @GST_H264_PROFILE_STEREO_HIGH: Stereo High profile (H.10.1.2)
- * @GST_H264_PROFILE_SCALABLE_BASELINE: Scalable Baseline profile (G.10.1.1)
- * @GST_H264_PROFILE_SCALABLE_HIGH: Scalable High profile (G.10.1.2)
- *   or Scalable High Intra profile (G.10.1.3), depending on the value
+ * @GST_H264_PROFILE_MULTIVIEW_HIGH: Multiview High profile (ISO/IEC 14496-10:2020 G.6.1.1)
+ * @GST_H264_PROFILE_STEREO_HIGH: Stereo High profile ((ISO/IEC 14496-10:2020 G.6.1.2)
+ * @GST_H264_PROFILE_SCALABLE_BASELINE: Scalable Baseline profile (ISO/IEC 14496-10:2020 F.6.1.1)
+ * @GST_H264_PROFILE_SCALABLE_HIGH: Scalable High profile (ISO/IEC 14496-10:2020 F.6.1.2)
+ *   or Scalable High Intra profile (F.6.1.3), depending on the value
  *   of constraint_set3_flag
  *
  * H.264 Profiles.
@@ -136,7 +136,7 @@ typedef enum {
  * @GST_H264_NAL_AU_DELIMITER: Access unit (AU) delimiter nal unit
  * @GST_H264_NAL_SEQ_END: End of sequence nal unit
  * @GST_H264_NAL_STREAM_END: End of stream nal unit
- * @GST_H264_NAL_FILLER_DATA: Filler data nal lunit
+ * @GST_H264_NAL_FILLER_DATA: Filler data nal unit
  * @GST_H264_NAL_SPS_EXT: Sequence parameter set (SPS) extension NAL unit
  * @GST_H264_NAL_PREFIX_UNIT: Prefix NAL unit
  * @GST_H264_NAL_SUBSET_SPS: Subset sequence parameter set (SSPS) NAL unit
@@ -194,8 +194,8 @@ typedef enum
 /**
  * GstH264NalUnitExtensionType:
  * @GST_H264_NAL_EXTENSION_NONE: No NAL unit header extension is available
- * @GST_H264_NAL_EXTENSION_SVC: NAL unit header extension for SVC (Annex G)
- * @GST_H264_NAL_EXTENSION_MVC: NAL unit header extension for MVC (Annex H)
+ * @GST_H264_NAL_EXTENSION_SVC: NAL unit header extension for SVC (ISO/IEC 14496-10:2020 Annex F)
+ * @GST_H264_NAL_EXTENSION_MVC: NAL unit header extension for MVC (ISO/IEC 14496-10:2020 Annex G)
  *
  * Indicates the type of H.264 NAL unit extension.
  *
@@ -276,15 +276,15 @@ typedef enum
 
 /**
  * GstH264SEIPayloadType:
- * @GST_H264_SEI_BUF_PERIOD: Buffering Period SEI Message
- * @GST_H264_SEI_PIC_TIMING: Picture Timing SEI Message
- * @GST_H264_SEI_REGISTERED_USER_DATA: Registered user data (D.2.5)
- * @GST_H264_SEI_RECOVERY_POINT: Recovery Point SEI Message (D.2.7)
- * @GST_H264_SEI_STEREO_VIDEO_INFO: stereo video info SEI message (Since: 1.6)
+ * @GST_H264_SEI_BUF_PERIOD: Buffering Period SEI Message (ISO/IEC 14496-10:2020 D.2.2)
+ * @GST_H264_SEI_PIC_TIMING: Picture Timing SEI Message (ISO/IEC 14496-10:2020 D.2.3)
+ * @GST_H264_SEI_REGISTERED_USER_DATA: Registered user data (ISO/IEC 14496-10:2020 D.2.6)
+ * @GST_H264_SEI_RECOVERY_POINT: Recovery Point SEI Message (ISO/IEC 14496-10:2020 D.2.8)
+ * @GST_H264_SEI_STEREO_VIDEO_INFO: stereo video info SEI message (ISO/IEC 14496-10:2020 D.2.23) (Since: 1.6)
  * @GST_H264_SEI_FRAME_PACKING: Frame Packing Arrangement (FPA) message that
- *     contains the 3D arrangement for stereoscopic 3D video (Since: 1.6)
- * @GST_H264_SEI_MASTERING_DISPLAY_COLOUR_VOLUME: Mastering display colour volume information SEI message (D.2.29) (Since: 1.18)
- * @GST_H264_SEI_CONTENT_LIGHT_LEVEL: Content light level information SEI message (D.2.31) (Since: 1.18)
+ *     contains the 3D arrangement for stereoscopic 3D video (ISO/IEC 14496-10:2020 D.2.26) (Since: 1.6)
+ * @GST_H264_SEI_MASTERING_DISPLAY_COLOUR_VOLUME: Mastering display colour volume information SEI message (ISO/IEC 14496-10:2020 D.2.29) (Since: 1.18)
+ * @GST_H264_SEI_CONTENT_LIGHT_LEVEL: Content light level information SEI message (ISO/IEC 14496-10:2020 D.2.31) (Since: 1.18)
  * @GST_H264_SEI_UNHANDLED_PAYLOAD: Unhandled SEI message. This may or may not
  *     be defined by spec (Since 1.18)
  * ...
