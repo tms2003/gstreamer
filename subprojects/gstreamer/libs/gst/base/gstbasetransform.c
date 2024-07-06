@@ -1330,21 +1330,14 @@ gst_base_transform_setcaps (GstBaseTransform * trans, GstPad * pad,
 
   prev_incaps = gst_pad_get_current_caps (trans->sinkpad);
   prev_outcaps = gst_pad_get_current_caps (trans->srcpad);
-  if (prev_incaps && prev_outcaps && gst_caps_is_equal (prev_incaps, incaps)
-      && gst_caps_is_equal (prev_outcaps, outcaps)) {
-    GST_DEBUG_OBJECT (trans,
-        "New caps equal to old ones: %" GST_PTR_FORMAT " -> %" GST_PTR_FORMAT,
-        incaps, outcaps);
-    ret = TRUE;
-  } else {
-    /* call configure now */
-    if (!(ret = gst_base_transform_configure_caps (trans, incaps, outcaps)))
-      goto failed_configure;
 
-    if (!prev_outcaps || !gst_caps_is_equal (outcaps, prev_outcaps))
-      /* let downstream know about our caps */
-      ret = gst_pad_set_caps (trans->srcpad, outcaps);
-  }
+  /* call configure now */
+  if (!(ret = gst_base_transform_configure_caps (trans, incaps, outcaps)))
+    goto failed_configure;
+
+  /* let downstream know about our caps */
+  if (!prev_outcaps || !gst_caps_is_equal (outcaps, prev_outcaps))
+    ret = gst_pad_set_caps (trans->srcpad, outcaps);
 
   if (ret) {
     /* try to get a pool when needed */
