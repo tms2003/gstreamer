@@ -259,6 +259,31 @@ gst_rtsp_sdp_make_media (GstSDPMessage * sdp, GstSDPInfo * info,
     address = g_strdup (addr->address);
     ttl = addr->ttl;
     gst_rtsp_address_free (addr);
+
+    /* for source-specific multicast (RFC 4570) */
+    gboolean is_ssm = FALSE;
+    if (info->is_ipv6) {
+      /* Untested method of determining if the address is in the ff3x::/32 subnet
+       * Disabled until tested
+       */
+      // gchar **ip6_addr;
+      // ip6_addr = g_strsplit (address, ":", 0);
+      // is_ssm = strncmp ((ip6_addr[0], "ff3", 3) == 0 &&
+      //   ( strcmp (ip6_addr[1], "0000") == 0 || strcmp (ip6_addr[1], "") == 0 );
+      // g_strfreev(ip6_addr);
+      is_ssm = FALSE;
+    } else {
+      is_ssm = strncmp (address, "232.", 4) == 0;
+    }
+    gchar *filter;
+    if (is_ssm) {
+      filter =
+          g_strdup_printf ("incl %s %s %s %s", "IN", addrtype, address,
+          info->server_ip);
+      gst_sdp_media_add_attribute (smedia, "source-filter", filter);
+      g_free (filter);
+    }
+
   } else {
     ttl = 16;
     if (info->is_ipv6)
