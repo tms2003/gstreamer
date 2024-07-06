@@ -1093,6 +1093,14 @@ if build_gstgl
   # case-insensitive FS would include gst-libs/gl/egl/egl.h as EGL/egl.h.
   common_args += '-I@0@'.format(meson.current_build_dir())
 
+  system = host_machine.system()
+
+  if system in ['linux', 'android']
+    common_args += [
+      '-D_GNU_SOURCE',
+    ]
+  endif
+
   gstgl = library('gstgl-' + api_version,
     gl_sources, gl_egl_sources, gl_x11_sources, gl_wayland_sources, gl_viv_fb_sources, gl_priv_sources, gl_enumtypes_c, gl_enumtypes_h,
     c_args : common_args,

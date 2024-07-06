@@ -8,9 +8,18 @@ udp_sources = [
   'gstudpnetutils.c'
 ]
 
+system = host_machine.system()
+
+compile_args = []
+if system in ['linux', 'android']
+  compile_args += [
+    '-D_GNU_SOURCE',
+  ]
+endif
+
 gstudp = library('gstudp',
   udp_sources,
-  c_args : gst_plugins_good_args,
+  c_args : gst_plugins_good_args + compile_args,
   include_directories : [configinc, libsinc],
   dependencies : [gst_dep, gstbase_dep, gstnet_dep, gio_dep],
   install : true,
