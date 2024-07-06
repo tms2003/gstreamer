@@ -6,6 +6,7 @@ if not tracer_hooks
 endif
 
 gst_tracers_sources = [
+  'gstbufferrate.c',
   'gstlatency.c',
   'gstleaks.c',
   'gststats.c',
