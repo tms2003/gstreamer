@@ -243,6 +243,14 @@ gst_element_register (GstPlugin * plugin, const gchar * name, guint rank,
   /* provide info needed during class structure setup */
   g_type_set_qdata (type, __gst_elementclass_factory, factory);
   klass = GST_ELEMENT_CLASS (g_type_class_ref (type));
+  /* If we have unreffed the feature clear the element factory in the element
+   * class structure. It will be appropriately re-initialised when
+   * instantiating an object of the same type.
+   *
+   * See: gst_element_factory_create_with_properties for more. */
+  if (existing_feature) {       /* this means we have unreffed the feature! */
+    g_atomic_pointer_set (&klass->elementfactory, NULL);
+  }
 
   CHECK_METADATA_FIELD (klass, name, GST_ELEMENT_METADATA_LONGNAME);
   CHECK_METADATA_FIELD (klass, name, GST_ELEMENT_METADATA_KLASS);
