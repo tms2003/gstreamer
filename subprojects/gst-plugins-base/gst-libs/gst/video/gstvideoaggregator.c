@@ -1106,7 +1106,15 @@ gst_video_aggregator_find_best_format (GstVideoAggregator * vagg,
       *best_info = pad->info;
       best_format_number = format_number;
     } else if (format_number > best_format_number) {
-      *best_info = pad->info;
+      /* Remember the info for the desired format, or if the desired format is
+       * unchanged, remember the format info of the largest contributing input
+       */
+      if ((GST_VIDEO_INFO_FORMAT (best_info) !=
+              GST_VIDEO_INFO_FORMAT (&pad->info)) ||
+          (best_info->width * best_info->height <
+              pad->info.width * pad->info.height)) {
+        *best_info = pad->info;
+      }
       best_format_number = format_number;
     }
   }
