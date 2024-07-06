@@ -1151,7 +1151,6 @@ gst_v4l2src_create (GstPushSrc * src, GstBuffer ** buf)
   GstV4l2Src *v4l2src = GST_V4L2SRC (src);
   GstV4l2Object *obj = v4l2src->v4l2object;
   GstFlowReturn ret;
-  GstClock *clock;
   GstClockTime abs_time, base_time, timestamp, duration;
   GstClockTime delay;
   GstMessage *qos_msg;
@@ -1197,26 +1196,9 @@ gst_v4l2src_create (GstPushSrc * src, GstBuffer ** buf)
   timestamp = GST_BUFFER_TIMESTAMP (*buf);
   duration = obj->duration;
 
-  /* timestamps, LOCK to get clock and base time. */
+  /* timestamps, get base time. */
   /* FIXME: element clock and base_time is rarely changing */
-  GST_OBJECT_LOCK (v4l2src);
-  if ((clock = GST_ELEMENT_CLOCK (v4l2src))) {
-    /* we have a clock, get base time and ref clock */
-    base_time = GST_ELEMENT (v4l2src)->base_time;
-    gst_object_ref (clock);
-  } else {
-    /* no clock, can't set timestamps */
-    base_time = GST_CLOCK_TIME_NONE;
-  }
-  GST_OBJECT_UNLOCK (v4l2src);
-
-  /* sample pipeline clock */
-  if (clock) {
-    abs_time = gst_clock_get_time (clock);
-    gst_object_unref (clock);
-  } else {
-    abs_time = GST_CLOCK_TIME_NONE;
-  }
+  base_time = gst_element_get_base_time (GST_ELEMENT (v4l2src));
 
 retry:
   if (!v4l2src->has_bad_timestamp && timestamp != GST_CLOCK_TIME_NONE) {
@@ -1280,6 +1262,9 @@ retry:
 
   /* set buffer metadata */
 
+  /* sample pipeline clock */
+  abs_time = gst_element_get_current_clock_time (GST_ELEMENT (v4l2src));
+
   if (G_LIKELY (abs_time != GST_CLOCK_TIME_NONE)) {
     /* the time now is the time of the clock minus the base time */
     timestamp = abs_time - base_time;
@@ -1288,7 +1273,7 @@ retry:
     if (timestamp > delay)
       timestamp -= delay;
     else
-      timestamp = 0;
+      goto retry;
   } else {
     timestamp = GST_CLOCK_TIME_NONE;
   }
