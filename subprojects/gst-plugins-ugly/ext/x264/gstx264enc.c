@@ -2668,7 +2668,7 @@ gst_x264_enc_encode_frame (GstX264Enc * encoder, x264_picture_t * pic_in,
       if (encoder->intra_refresh)
         encoder->vtable->x264_encoder_intra_refresh (encoder->x264enc);
       else
-        pic_in->i_type = X264_TYPE_IDR;
+        pic_in->i_type = X264_TYPE_KEYFRAME;
     }
   }
   GST_OBJECT_UNLOCK (encoder);
