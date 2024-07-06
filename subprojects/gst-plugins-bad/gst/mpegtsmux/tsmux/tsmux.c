@@ -91,11 +91,6 @@
  * at which PCR should be calculated */
 #define PCR_BYTE_OFFSET 11
 
-/* HACK: We use a fixed buffering offset for the PCR at the moment -
- * this is the amount 'in advance' of the stream that the PCR sits.
- * 1/8 second atm */
-#define TSMUX_PCR_OFFSET (TSMUX_CLOCK_FREQ / 8)
-
 /* Base for all written PCR and DTS/PTS,
  * so we have some slack to go backwards */
 #define CLOCK_BASE (TSMUX_CLOCK_FREQ * 10 * 360)
@@ -153,6 +148,7 @@ tsmux_new (void)
   mux->si_interval = TSMUX_DEFAULT_SI_INTERVAL;
 
   mux->pcr_interval = TSMUX_DEFAULT_PCR_INTERVAL;
+  mux->pcr_offset = TSMUX_DEFAULT_PCR_OFFSET;
 
   mux->next_si_pcr = -1;
 
@@ -256,6 +252,22 @@ tsmux_set_pcr_interval (TsMux * mux, guint freq)
   g_return_if_fail (mux != NULL);
 
   mux->pcr_interval = freq;
+}
+
+/**
+ * tsmux_set_pcr_offset:
+ * @mux: a #TsMux
+ * @freq: a new PCR offset
+ *
+ * Set the buffering offset (in cycles of the 90kHz clock),
+ * which is the amount 'in advance' of the stream that the PCR sits.
+ */
+void
+tsmux_set_pcr_offset (TsMux * mux, gint64 offset)
+{
+  g_return_if_fail (mux != NULL);
+
+  mux->pcr_offset = offset;
 }
 
 /**
@@ -1320,13 +1332,13 @@ tsmux_write_null_ts_header (guint8 * buf)
 }
 
 static gint64
-ts_to_pcr (gint64 ts)
+ts_to_pcr (TsMux * mux, gint64 ts)
 {
   if (ts == G_MININT64) {
     return 0;
   }
 
-  return (ts - TSMUX_PCR_OFFSET) * (TSMUX_SYS_CLOCK_FREQ / TSMUX_CLOCK_FREQ);
+  return (ts - mux->pcr_offset) * (TSMUX_SYS_CLOCK_FREQ / TSMUX_CLOCK_FREQ);
 }
 
 /* Calculate the PCR to write into the current packet */
@@ -1334,7 +1346,7 @@ static gint64
 get_current_pcr (TsMux * mux, gint64 cur_ts)
 {
   if (!mux->bitrate)
-    return ts_to_pcr (cur_ts);
+    return ts_to_pcr (mux, cur_ts);
 
   if (mux->first_pcr_ts == G_MININT64) {
     g_assert (cur_ts != G_MININT64);
@@ -1342,7 +1354,7 @@ get_current_pcr (TsMux * mux, gint64 cur_ts)
     GST_DEBUG ("First PCR offset is %" G_GUINT64_FORMAT, cur_ts);
   }
 
-  return ts_to_pcr (mux->first_pcr_ts) +
+  return ts_to_pcr (mux, mux->first_pcr_ts) +
       gst_util_uint64_scale ((mux->n_bytes + PCR_BYTE_OFFSET) * 8,
       TSMUX_SYS_CLOCK_FREQ, mux->bitrate);
 }
@@ -1352,7 +1364,7 @@ static gint64
 get_next_pcr (TsMux * mux, gint64 cur_ts)
 {
   if (!mux->bitrate)
-    return ts_to_pcr (cur_ts);
+    return ts_to_pcr (mux, cur_ts);
 
   if (mux->first_pcr_ts == G_MININT64) {
     g_assert (cur_ts != G_MININT64);
@@ -1360,7 +1372,7 @@ get_next_pcr (TsMux * mux, gint64 cur_ts)
     GST_DEBUG ("First PCR offset is %" G_GUINT64_FORMAT, cur_ts);
   }
 
-  return ts_to_pcr (mux->first_pcr_ts) +
+  return ts_to_pcr (mux, mux->first_pcr_ts) +
       gst_util_uint64_scale ((mux->n_bytes + TSMUX_PACKET_LENGTH +
           PCR_BYTE_OFFSET) * 8, TSMUX_SYS_CLOCK_FREQ, mux->bitrate);
 }

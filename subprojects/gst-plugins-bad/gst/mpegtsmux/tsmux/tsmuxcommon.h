@@ -111,6 +111,8 @@ G_BEGIN_DECLS
 #define TSMUX_DEFAULT_SCTE_35_NULL_INTERVAL (TSMUX_CLOCK_FREQ * 300)
 /* Bitrate (bits per second) */
 #define TSMUX_DEFAULT_BITRATE      0
+/* PCR offset (1/8th sec) */
+#define TSMUX_DEFAULT_PCR_OFFSET   (TSMUX_CLOCK_FREQ / 8)
 
 typedef struct TsMuxPacketInfo TsMuxPacketInfo;
 typedef struct TsMuxProgram TsMuxProgram;
