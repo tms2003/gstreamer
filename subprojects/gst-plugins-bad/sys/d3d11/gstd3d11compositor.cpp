@@ -1733,6 +1733,10 @@ gst_d3d11_compositor_decide_allocation (GstAggregator * agg, GstQuery * query)
     return FALSE;
   }
 
+  /* Use d3d11 pool if downstream supports video meta, because d3d11 memory
+   * allows CPU access. In this way, we can avoid per frame CPU copy */
+  self->downstream_supports_d3d11 |= gst_query_find_allocation_meta (query,
+      GST_VIDEO_META_API_TYPE, nullptr);
   use_d3d11_pool = self->downstream_supports_d3d11;
 
   n = gst_query_get_n_allocation_pools (query);
