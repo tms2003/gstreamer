@@ -173,8 +173,6 @@ struct GstBaseTsMux {
 
   /* write callback handling/state */
   GstFlowReturn last_flow_ret;
-  GQueue streamheader;
-  gboolean streamheader_sent;
   gboolean is_delta;
   gboolean is_header;
   GstClockTime last_ts;

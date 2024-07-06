@@ -320,41 +320,6 @@ stream_data_free (StreamData * data)
 
 #define parent_class gst_base_ts_mux_parent_class
 
-static void
-gst_base_ts_mux_set_header_on_caps (GstBaseTsMux * mux)
-{
-  GstBuffer *buf;
-  GstStructure *structure;
-  GValue array = { 0 };
-  GValue value = { 0 };
-  GstCaps *caps;
-
-  caps = gst_pad_get_pad_template_caps (GST_AGGREGATOR_SRC_PAD (mux));
-
-  caps = gst_caps_make_writable (caps);
-  structure = gst_caps_get_structure (caps, 0);
-
-  gst_structure_set (structure, "packetsize", G_TYPE_INT, mux->packet_size,
-      NULL);
-
-  g_value_init (&array, GST_TYPE_ARRAY);
-
-  GST_LOG_OBJECT (mux, "setting %u packets into streamheader",
-      g_queue_get_length (&mux->streamheader));
-
-  while ((buf = GST_BUFFER (g_queue_pop_head (&mux->streamheader)))) {
-    g_value_init (&value, GST_TYPE_BUFFER);
-    gst_value_take_buffer (&value, buf);
-    gst_value_array_append_value (&array, &value);
-    g_value_unset (&value);
-  }
-
-  gst_structure_set_value (structure, "streamheader", &array);
-  gst_aggregator_set_src_caps (GST_AGGREGATOR (mux), caps);
-  g_value_unset (&array);
-  gst_caps_unref (caps);
-}
-
 static gboolean
 steal_si_section (GstMpegtsSectionType * type, TsMuxSection * section,
     TsMux * mux)
@@ -368,7 +333,6 @@ steal_si_section (GstMpegtsSectionType * type, TsMuxSection * section,
 static void
 gst_base_ts_mux_reset (GstBaseTsMux * mux, gboolean alloc)
 {
-  GstBuffer *buf;
   GstBaseTsMuxClass *klass = GST_BASE_TS_MUX_GET_CLASS (mux);
   GHashTable *si_sections = NULL;
   GList *l;
@@ -379,7 +343,6 @@ gst_base_ts_mux_reset (GstBaseTsMux * mux, gboolean alloc)
   mux->is_delta = TRUE;
   mux->is_header = FALSE;
 
-  mux->streamheader_sent = FALSE;
   mux->pending_key_unit_ts = GST_CLOCK_TIME_NONE;
   gst_event_replace (&mux->force_key_unit_event, NULL);
 
@@ -399,9 +362,6 @@ gst_base_ts_mux_reset (GstBaseTsMux * mux, gboolean alloc)
     g_hash_table_destroy (mux->programs);
   }
   mux->programs = g_hash_table_new (g_direct_hash, g_direct_equal);
-
-  while ((buf = GST_BUFFER (g_queue_pop_head (&mux->streamheader))))
-    gst_buffer_unref (buf);
 
   gst_event_replace (&mux->force_key_unit_event, NULL);
   gst_buffer_replace (&mux->out_buffer, NULL);
@@ -1060,28 +1020,6 @@ new_packet_common_init (GstBaseTsMux * mux, GstBuffer * buf, guint8 * data,
 {
   /* Packets should be at least 188 bytes, but check anyway */
   g_assert (len >= 2 || !data);
-
-  if (!mux->streamheader_sent && data) {
-    guint pid = ((data[1] & 0x1f) << 8) | data[2];
-    /* if it's a PAT or a PMT */
-    if (pid == 0x00 || (pid >= TSMUX_START_PMT_PID && pid < TSMUX_START_ES_PID)) {
-      GstBuffer *hbuf;
-
-      if (!buf) {
-        hbuf = gst_buffer_new_and_alloc (len);
-        gst_buffer_fill (hbuf, 0, data, len);
-      } else {
-        hbuf = gst_buffer_copy (buf);
-      }
-      GST_LOG_OBJECT (mux,
-          "Collecting packet with pid 0x%04x into streamheaders", pid);
-
-      g_queue_push_tail (&mux->streamheader, hbuf);
-    } else if (!g_queue_is_empty (&mux->streamheader)) {
-      gst_base_ts_mux_set_header_on_caps (mux);
-      mux->streamheader_sent = TRUE;
-    }
-  }
 
   if (buf) {
     if (mux->is_header) {
