@@ -96,6 +96,7 @@ struct _GstRTSPServerPrivate
   /* the clients that are connected */
   GList *clients;
   guint clients_cookie;
+  gint max_clients;
 };
 
 #define DEFAULT_ADDRESS         "0.0.0.0"
@@ -103,6 +104,7 @@ struct _GstRTSPServerPrivate
 /* #define DEFAULT_ADDRESS         "::0" */
 #define DEFAULT_SERVICE         "8554"
 #define DEFAULT_BACKLOG         5
+#define DEFAULT_MAX_CLIENTS     -1
 
 /* Define to use the SO_LINGER option so that the server sockets can be resused
  * sooner. Disabled for now because it is not very well implemented by various
@@ -116,6 +118,8 @@ enum
   PROP_SERVICE,
   PROP_BOUND_PORT,
   PROP_BACKLOG,
+  PROP_MAX_CLIENTS,
+  PROP_ACTIVE_CLIENTS,
 
   PROP_SESSION_POOL,
   PROP_MOUNT_POINTS,
@@ -240,6 +244,30 @@ gst_rtsp_server_class_init (GstRTSPServerClass * klass)
           "Limitation of Content-Length",
           0, G_MAXUINT, G_MAXUINT, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
+  /**
+   * GstRTSPServer::max-clients:
+   *
+   * The maximum number of connected clients that the server can handle. If
+   * this number is exceeded the server will begin to close connections to
+   * connecting clients as a means of rate limiting the number of clients.
+   * Set to -1 for an unlimited number of clients.
+   */
+  g_object_class_install_property (gobject_class, PROP_MAX_CLIENTS,
+      g_param_spec_int ("max-clients", "Maximum number of clients",
+          "The maximum number of clients (-1 == unlimited)",
+          -1, G_MAXINT, DEFAULT_MAX_CLIENTS,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  /**
+   * GstRTSPServer::active-clients:
+   *
+   * The amount of connected clients to this server.
+   */
+  g_object_class_install_property (gobject_class, PROP_ACTIVE_CLIENTS,
+      g_param_spec_int ("active-clients", "Active clients",
+          "The number of active clients",
+          -1, G_MAXINT, 0, G_PARAM_READABLE | G_PARAM_STATIC_STRINGS));
+
   gst_rtsp_server_signals[SIGNAL_CLIENT_CONNECTED] =
       g_signal_new ("client-connected", G_TYPE_FROM_CLASS (gobject_class),
       G_SIGNAL_RUN_LAST, G_STRUCT_OFFSET (GstRTSPServerClass, client_connected),
@@ -262,6 +290,7 @@ gst_rtsp_server_init (GstRTSPServer * server)
   priv->service = g_strdup (DEFAULT_SERVICE);
   priv->socket = NULL;
   priv->backlog = DEFAULT_BACKLOG;
+  priv->max_clients = DEFAULT_MAX_CLIENTS;
   priv->session_pool = gst_rtsp_session_pool_new ();
   priv->mount_points = gst_rtsp_mount_points_new ();
   priv->content_length_limit = G_MAXUINT;
@@ -589,6 +618,27 @@ gst_rtsp_server_set_mount_points (GstRTSPServer * server,
     g_object_unref (old);
 }
 
+/**
+ * gst_rtsp_server_set_max_clients:
+ * @server: a #GstRTSPServer
+ * @clients: the maximum number of clients
+ *
+ * configure the maximum number of allowed clients to @server.
+ */
+void
+gst_rtsp_server_set_max_clients (GstRTSPServer * server, gint clients)
+{
+  GstRTSPServerPrivate *priv;
+
+  g_return_if_fail (GST_IS_RTSP_SERVER (server));
+
+  priv = server->priv;
+
+  GST_RTSP_SERVER_LOCK (server);
+  GST_ERROR_OBJECT (server, "Setting max clients to: %d", clients);
+  priv->max_clients = clients;
+  GST_RTSP_SERVER_UNLOCK (server);
+}
 
 /**
  * gst_rtsp_server_get_mount_points:
@@ -612,6 +662,56 @@ gst_rtsp_server_get_mount_points (GstRTSPServer * server)
   GST_RTSP_SERVER_LOCK (server);
   if ((result = priv->mount_points))
     g_object_ref (result);
+  GST_RTSP_SERVER_UNLOCK (server);
+
+  return result;
+}
+
+/**
+ * gst_rtsp_server_get_max_clients:
+ * @server: a #GstRTSPServer
+ *
+ * Get the maximum number of clients to @server.
+ *
+ * Returns: the maximum number of clients to @server.
+ */
+gint
+gst_rtsp_server_get_max_clients (GstRTSPServer * server)
+{
+  GstRTSPServerPrivate *priv;
+  gint result = -1;
+
+  g_return_val_if_fail (GST_IS_RTSP_SERVER (server), result);
+
+  priv = server->priv;
+
+  GST_RTSP_SERVER_LOCK (server);
+  result = priv->max_clients;
+  GST_RTSP_SERVER_UNLOCK (server);
+
+  return result;
+}
+
+/**
+ * gst_rtsp_server_get_active_clients:
+ * @server: a #GstRTSPServer
+ *
+ * Get the active number of clients to @server.
+ *
+ * Returns: the active number of clients to @server.
+ */
+gint
+gst_rtsp_server_get_active_clients (GstRTSPServer * server)
+{
+  GstRTSPServerPrivate *priv;
+  gint result = -1;
+
+  g_return_val_if_fail (GST_IS_RTSP_SERVER (server), result);
+
+  priv = server->priv;
+
+  GST_RTSP_SERVER_LOCK (server);
+  result = g_list_length (priv->clients);
   GST_RTSP_SERVER_UNLOCK (server);
 
   return result;
@@ -807,6 +907,12 @@ gst_rtsp_server_get_property (GObject * object, guint propid,
     case PROP_MOUNT_POINTS:
       g_value_take_object (value, gst_rtsp_server_get_mount_points (server));
       break;
+    case PROP_MAX_CLIENTS:
+      g_value_set_int (value, gst_rtsp_server_get_max_clients (server));
+      break;
+    case PROP_ACTIVE_CLIENTS:
+      g_value_set_int (value, gst_rtsp_server_get_active_clients (server));
+      break;
     case PROP_CONTENT_LENGTH_LIMIT:
       g_value_set_uint (value,
           gst_rtsp_server_get_content_length_limit (server));
@@ -837,6 +943,9 @@ gst_rtsp_server_set_property (GObject * object, guint propid,
       break;
     case PROP_MOUNT_POINTS:
       gst_rtsp_server_set_mount_points (server, g_value_get_object (value));
+      break;
+    case PROP_MAX_CLIENTS:
+      gst_rtsp_server_set_max_clients (server, g_value_get_int (value));
       break;
     case PROP_CONTENT_LENGTH_LIMIT:
       gst_rtsp_server_set_content_length_limit (server,
@@ -1181,9 +1290,14 @@ gst_rtsp_server_transfer_connection (GstRTSPServer * server, GSocket * socket,
     const gchar * ip, gint port, const gchar * initial_buffer)
 {
   GstRTSPClient *client = NULL;
+  GstRTSPServerPrivate *priv = server->priv;
   GstRTSPServerClass *klass;
   GstRTSPConnection *conn;
   GstRTSPResult res;
+
+  if (priv->max_clients >= 0
+      && g_list_length (priv->clients) >= priv->max_clients)
+    goto too_many_clients;
 
   klass = GST_RTSP_SERVER_GET_CLASS (server);
 
@@ -1205,6 +1319,12 @@ gst_rtsp_server_transfer_connection (GstRTSPServer * server, GSocket * socket,
   return TRUE;
 
   /* ERRORS */
+too_many_clients:
+  {
+    GST_INFO_OBJECT (server, "Too many clients, closing connection");
+    g_object_unref (socket);
+    return FALSE;
+  }
 client_failed:
   {
     GST_ERROR_OBJECT (server, "failed to create a client");
@@ -1254,6 +1374,10 @@ gst_rtsp_server_io_func (GSocket * socket, GIOCondition condition,
     ctx.auth = priv->auth;
     gst_rtsp_context_push_current (&ctx);
 
+    if (priv->max_clients >= 0
+        && g_list_length (priv->clients) >= priv->max_clients)
+      goto too_many_clients;
+
     if (!gst_rtsp_auth_check (GST_RTSP_AUTH_CHECK_CONNECT))
       goto connection_refused;
 
@@ -1287,6 +1411,12 @@ accept_failed:
         socket, str);
     g_free (str);
     /* We haven't pushed the context yet, so just return */
+    goto exit_no_ctx;
+  }
+too_many_clients:
+  {
+    GST_INFO_OBJECT (server, "Too many clients, closing connection");
+    gst_rtsp_connection_free (conn);
     goto exit_no_ctx;
   }
 connection_refused:
