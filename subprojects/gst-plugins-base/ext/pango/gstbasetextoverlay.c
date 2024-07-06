@@ -44,6 +44,7 @@
  */
 
 #define DEFAULT_PROP_TEXT 	""
+#define DEFAULT_PROP_SAVE_LAST_TEXT  FALSE
 #define DEFAULT_PROP_SHADING	FALSE
 #define DEFAULT_PROP_VALIGNMENT	GST_BASE_TEXT_OVERLAY_VALIGN_BASELINE
 #define DEFAULT_PROP_HALIGNMENT	GST_BASE_TEXT_OVERLAY_HALIGN_CENTER
@@ -98,6 +99,7 @@ enum
   PROP_SILENT,
   PROP_LINE_ALIGNMENT,
   PROP_WAIT_TEXT,
+  PROP_SAVE_LAST_TEXT,
   PROP_AUTO_ADJUST_SIZE,
   PROP_VERTICAL_RENDER,
   PROP_SCALE_MODE,
@@ -601,6 +603,12 @@ gst_base_text_overlay_class_init (GstBaseTextOverlayClass * klass)
           "Whether to wait for subtitles",
           DEFAULT_PROP_WAIT_TEXT, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
+  g_object_class_install_property (G_OBJECT_CLASS (klass), PROP_SAVE_LAST_TEXT,
+      g_param_spec_boolean ("save-last-text", "Save Last Text",
+          "Save the last received text from object",
+          DEFAULT_PROP_SAVE_LAST_TEXT,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
   g_object_class_install_property (G_OBJECT_CLASS (klass),
       PROP_AUTO_ADJUST_SIZE, g_param_spec_boolean ("auto-resize", "auto resize",
           "Automatically adjust font size to screen-size.",
@@ -681,6 +689,7 @@ gst_base_text_overlay_finalize (GObject * object)
   GstBaseTextOverlay *overlay = GST_BASE_TEXT_OVERLAY (object);
 
   g_free (overlay->default_text);
+  g_free (overlay->last_text);
 
   if (overlay->composition) {
     gst_video_overlay_composition_unref (overlay->composition);
@@ -794,6 +803,8 @@ gst_base_text_overlay_init (GstBaseTextOverlay * overlay,
   overlay->auto_adjust_size = DEFAULT_PROP_AUTO_ADJUST_SIZE;
 
   overlay->default_text = g_strdup (DEFAULT_PROP_TEXT);
+  overlay->last_text = NULL;
+  overlay->save_last_text = DEFAULT_PROP_SAVE_LAST_TEXT;
   overlay->need_render = TRUE;
   overlay->text_image = NULL;
   overlay->use_vertical_render = DEFAULT_PROP_VERTICAL_RENDER;
@@ -1162,6 +1173,9 @@ gst_base_text_overlay_set_property (GObject * object, guint prop_id,
       break;
     case PROP_WAIT_TEXT:
       overlay->wait_text = g_value_get_boolean (value);
+      break;
+    case PROP_SAVE_LAST_TEXT:
+      overlay->save_last_text = g_value_get_boolean (value);
       break;
     case PROP_AUTO_ADJUST_SIZE:
       overlay->auto_adjust_size = g_value_get_boolean (value);
@@ -3027,6 +3041,10 @@ wait_for_text_buf:
             }
             GST_DEBUG_OBJECT (overlay, "Rendering text '%*s'", text_len, text);
             gst_base_text_overlay_render_text (overlay, text, text_len);
+
+            if (overlay->save_last_text) {
+              overlay->last_text = g_strdup (text);
+            }
           } else {
             GST_DEBUG_OBJECT (overlay, "No text to render (empty buffer)");
             gst_base_text_overlay_render_text (overlay, " ", 1);
@@ -3094,7 +3112,15 @@ wait_for_text_buf:
       } else {
         GST_BASE_TEXT_OVERLAY_UNLOCK (overlay);
         GST_LOG_OBJECT (overlay, "no need to wait for a text buffer");
-        ret = gst_pad_push (overlay->srcpad, buffer);
+
+        if (overlay->save_last_text && overlay->last_text != NULL) {
+          gint text_len = strlen (overlay->last_text);
+          gst_base_text_overlay_render_text (overlay, overlay->last_text,
+              text_len);
+          ret = gst_base_text_overlay_push_frame (overlay, buffer);
+        } else {
+          ret = gst_pad_push (overlay->srcpad, buffer);
+        }
       }
     }
   }
