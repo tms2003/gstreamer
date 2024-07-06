@@ -8345,6 +8345,14 @@ error_out:
 }
 
 static void
+_release_webrtc_transceiver (GstWebRTCRTPTransceiver * transceiver)
+{
+  WebRTCTransceiver *trans = WEBRTC_TRANSCEIVER (transceiver);
+  gst_clear_caps (&trans->last_configured_caps);
+  gst_object_unref (trans);
+}
+
+static void
 gst_webrtc_bin_release_pad (GstElement * element, GstPad * pad)
 {
   GstWebRTCBin *webrtc = GST_WEBRTC_BIN (element);
@@ -8356,7 +8364,7 @@ gst_webrtc_bin_release_pad (GstElement * element, GstPad * pad)
    * a possibly dead transceiver */
   PC_LOCK (webrtc);
   if (webrtc_pad->trans)
-    gst_object_unref (webrtc_pad->trans);
+    _release_webrtc_transceiver (webrtc_pad->trans);
   webrtc_pad->trans = NULL;
   gst_caps_replace (&webrtc_pad->received_caps, NULL);
   PC_UNLOCK (webrtc);
