@@ -102,6 +102,7 @@ enum
   SIGNAL_UNDERRUN,
   SIGNAL_RUNNING,
   SIGNAL_OVERRUN,
+  SIGNAL_OVERRUNS,
   SIGNAL_PUSHING,
   LAST_SIGNAL
 };
@@ -122,7 +123,9 @@ enum
   PROP_MIN_THRESHOLD_TIME,
   PROP_LEAKY,
   PROP_SILENT,
-  PROP_FLUSH_ON_EOS
+  PROP_FLUSH_ON_EOS,
+  PROP_OVERRUNS,
+  PROP_IS_FULL
 };
 
 /* default property values */
@@ -302,6 +305,17 @@ gst_queue_class_init (GstQueueClass * klass)
       G_STRUCT_OFFSET (GstQueueClass, overrun), NULL, NULL,
       NULL, G_TYPE_NONE, 0);
   /**
+   * GstQueue::overruns:
+   * @queue: the queue instance
+   * @overruns: the total number of overruns
+   *
+   * Reports the total number of overruns.
+   */
+  gst_queue_signals[SIGNAL_OVERRUNS] =
+      g_signal_new ("overruns", G_TYPE_FROM_CLASS (klass), G_SIGNAL_RUN_FIRST,
+      G_STRUCT_OFFSET (GstQueueClass, overruns), NULL, NULL,
+      NULL, G_TYPE_NONE, 1, G_TYPE_UINT64);
+  /**
    * GstQueue::pushing:
    * @queue: the queue instance
    *
@@ -405,6 +419,29 @@ gst_queue_class_init (GstQueueClass * klass)
           G_PARAM_READWRITE | GST_PARAM_MUTABLE_PLAYING |
           G_PARAM_STATIC_STRINGS));
 
+  /*
+   * queue:overruns:
+   *
+   * Tracks the total number of overruns observed.
+   *
+   * Since: 1.24
+   */
+  g_object_class_install_property (gobject_class, PROP_OVERRUNS,
+      g_param_spec_uint64 ("overruns", "Queue overruns",
+          "Total number of queue overruns",
+          0, G_MAXUINT64, 0, G_PARAM_READABLE | G_PARAM_STATIC_STRINGS));
+
+  /*
+   * queue:is-full:
+   *
+   * Indicates whether the queue is full.
+   *
+   * Since: 1.24
+   */
+  g_object_class_install_property (gobject_class, PROP_IS_FULL,
+      g_param_spec_boolean ("is-full", "Is full",
+          "Queue is full", FALSE, G_PARAM_READABLE | G_PARAM_STATIC_STRINGS));
+
   gobject_class->finalize = gst_queue_finalize;
 
   gst_element_class_set_static_metadata (gstelement_class,
@@ -460,6 +497,9 @@ gst_queue_init (GstQueue * queue)
 
   queue->leaky = GST_QUEUE_NO_LEAK;
   queue->srcresult = GST_FLOW_FLUSHING;
+
+  queue->overruns = 0;
+  queue->is_full = FALSE;
 
   g_mutex_init (&queue->qlock);
   g_cond_init (&queue->item_add);
@@ -776,6 +816,9 @@ gst_queue_locked_flush (GstQueue * queue, gboolean full)
   queue->sinktime = queue->srctime = GST_CLOCK_STIME_NONE;
   queue->sink_start_time = GST_CLOCK_STIME_NONE;
   queue->sink_tainted = queue->src_tainted = FALSE;
+
+  queue->overruns = 0;
+  queue->is_full = FALSE;
 
   /* we deleted a lot of something */
   GST_QUEUE_SIGNAL_DEL (queue);
@@ -1174,12 +1217,17 @@ gst_queue_is_empty (GstQueue * queue)
 static gboolean
 gst_queue_is_filled (GstQueue * queue)
 {
-  return (((queue->max_size.buffers > 0 &&
+  gboolean is_full = FALSE;
+
+  is_full = (((queue->max_size.buffers > 0 &&
               queue->cur_level.buffers >= queue->max_size.buffers) ||
           (queue->max_size.bytes > 0 &&
               queue->cur_level.bytes >= queue->max_size.bytes) ||
           (queue->max_size.time > 0 &&
               queue->cur_level.time >= queue->max_size.time)));
+  queue->is_full = is_full;
+
+  return is_full;
 }
 
 static void
@@ -1264,8 +1312,11 @@ gst_queue_chain_buffer_or_list (GstPad * pad, GstObject * parent,
    * We always handle events and they don't count in our statistics. */
   while (gst_queue_is_filled (queue)) {
     if (!queue->silent) {
+      queue->overruns++;
       GST_QUEUE_MUTEX_UNLOCK (queue);
       g_signal_emit (queue, gst_queue_signals[SIGNAL_OVERRUN], 0);
+      g_signal_emit (queue, gst_queue_signals[SIGNAL_OVERRUNS], 0,
+          queue->overruns);
       GST_QUEUE_MUTEX_LOCK_CHECK (queue, out_flushing);
       /* we recheck, the signal could have changed the thresholds */
       if (!gst_queue_is_filled (queue))
@@ -1948,6 +1999,12 @@ gst_queue_get_property (GObject * object,
       break;
     case PROP_FLUSH_ON_EOS:
       g_value_set_boolean (value, queue->flush_on_eos);
+      break;
+    case PROP_OVERRUNS:
+      g_value_set_uint64 (value, queue->overruns);
+      break;
+    case PROP_IS_FULL:
+      g_value_set_boolean (value, queue->is_full);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);

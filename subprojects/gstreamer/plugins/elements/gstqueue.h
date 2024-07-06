@@ -139,6 +139,9 @@ struct _GstQueue {
   GstQuery *last_handled_query;
 
   gboolean flush_on_eos; /* flush on EOS */
+
+  guint64 overruns;
+  gboolean is_full;
 };
 
 struct _GstQueueClass {
@@ -149,6 +152,7 @@ struct _GstQueueClass {
   void (*underrun)      (GstQueue *queue);
   void (*running)       (GstQueue *queue);
   void (*overrun)       (GstQueue *queue);
+  void (*overruns)      (GstQueue *queue);
 
   void (*pushing)       (GstQueue *queue);
 };
