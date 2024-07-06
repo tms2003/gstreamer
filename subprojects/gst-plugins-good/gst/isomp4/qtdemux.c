@@ -8996,6 +8996,7 @@ qtdemux_parse_node (GstQTDemux * qtdemux, GNode * node, const guint8 * buffer,
       case FOURCC_dvhe:
       case FOURCC_mjp2:
       case FOURCC_encv:
+      case FOURCC_vvc1:
       {
         guint32 version;
         guint32 str_len;
@@ -12376,6 +12377,52 @@ qtdemux_parse_trak (GstQTDemux * qtdemux, GNode * trak)
             }
             break;
           }
+          case FOURCC_vvc1:
+          {
+            guint len = QT_UINT32 (stsd_entry_data);
+            len = len <= 0x56 ? 0 : len - 0x56;
+            const guint8 *vvc_data = stsd_entry_data + 0x56;
+
+            /* find vvc */
+            while (len >= 0x8) {
+              guint size;
+
+              if (QT_UINT32 (vvc_data) <= 0x8)
+                size = 0;
+              else if (QT_UINT32 (vvc_data) <= len)
+                size = QT_UINT32 (vvc_data) - 0x8;
+              else
+                size = len - 0x8;
+
+              if (size < 1)
+                /* No real data, so break out */
+                break;
+
+              switch (QT_FOURCC (vvc_data + 0x4)) {
+                case FOURCC_vvcC:
+                {
+                  /* parse, if found */
+                  GstBuffer *buf;
+
+                  GST_DEBUG_OBJECT (qtdemux, "found vvcC codec_data in stsd");
+
+                  /* TODO: set level, tier and profile in caps */
+
+                  buf = gst_buffer_new_and_alloc (size);
+                  gst_buffer_fill (buf, 0, vvc_data + 0x8, size);
+                  gst_caps_set_simple (entry->caps,
+                      "codec_data", GST_TYPE_BUFFER, buf, NULL);
+                  gst_buffer_unref (buf);
+                  break;
+                }
+                default:
+                  break;
+              }
+              len -= size + 8;
+              vvc_data += size + 8;
+            }
+            break;
+          }
           case FOURCC_mp4v:
           case FOURCC_MP4V:
           case FOURCC_fmp4:
@@ -15649,6 +15696,12 @@ qtdemux_video_caps (GstQTDemux * qtdemux, QtDemuxStream * stream,
       _codec ("H.265 / HEVC");
       caps = gst_caps_new_simple ("video/x-h265",
           "stream-format", G_TYPE_STRING, "hev1",
+          "alignment", G_TYPE_STRING, "au", NULL);
+      break;
+    case FOURCC_vvc1:
+      _codec ("H.266 / VVC");
+      caps = gst_caps_new_simple ("video/x-h266",
+          "stream-format", G_TYPE_STRING, "vvc1",
           "alignment", G_TYPE_STRING, "au", NULL);
       break;
     case FOURCC_rle_:
