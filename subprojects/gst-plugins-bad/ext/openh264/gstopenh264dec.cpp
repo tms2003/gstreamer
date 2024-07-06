@@ -74,9 +74,8 @@ GST_STATIC_PAD_TEMPLATE ("sink",
     GST_PAD_SINK,
     GST_PAD_ALWAYS,
     GST_STATIC_CAPS
-    ("video/x-h264, stream-format=(string)byte-stream, alignment=(string)au, "
-      SUPPORTED_PROFILE_STR
-    ));
+    ("video/x-h264, stream-format=(string)byte-stream, alignment=(string){ au, nal }, "
+        SUPPORTED_PROFILE_STR));
 
 static GstStaticPadTemplate gst_openh264dec_src_template =
 GST_STATIC_PAD_TEMPLATE ("src",
@@ -220,6 +219,8 @@ gst_openh264dec_set_format (GstVideoDecoder * decoder,
     GstVideoCodecState * state)
 {
   GstOpenh264Dec *openh264dec = GST_OPENH264DEC (decoder);
+  const GstStructure *s;
+  const gchar *alignment;
 
   GST_DEBUG_OBJECT (openh264dec, "input caps: %" GST_PTR_FORMAT, state->caps);
 
@@ -228,6 +229,19 @@ gst_openh264dec_set_format (GstVideoDecoder * decoder,
     openh264dec->input_state = NULL;
   }
   openh264dec->input_state = gst_video_codec_state_ref (state);
+
+  s = gst_caps_get_structure (state->caps, 0);
+  alignment = gst_structure_get_string (s, "alignment");
+
+  if (g_str_equal (alignment, "nal")) {
+    GST_DEBUG_OBJECT (openh264dec,
+        "enable subframe mode  because alignment == nal");
+    gst_video_decoder_set_subframe_mode (decoder, TRUE);
+  } else {
+    GST_DEBUG_OBJECT (openh264dec,
+        "disable subframe mode  because alignment != nal");
+    gst_video_decoder_set_subframe_mode (decoder, FALSE);
+  }
 
   return TRUE;
 }
@@ -323,13 +337,13 @@ gst_openh264dec_handle_frame (GstVideoDecoder * decoder,
     }
 
     gst_video_codec_frame_unref (frame);
-    frame = NULL;
 
     /* No output available yet */
     if (dst_buf_info.iBufferStatus != 1) {
       GST_LOG_OBJECT (decoder, "No buffer decoded yet");
       return GST_FLOW_OK;
     }
+    frame = NULL;
   }
 
   GST_LOG_OBJECT (decoder, "Got back frame with frame ref %" G_GUINT64_FORMAT,

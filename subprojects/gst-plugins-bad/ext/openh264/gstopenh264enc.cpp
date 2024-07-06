@@ -187,6 +187,8 @@ static gboolean openh264enc_element_init (GstPlugin * plugin);
 #define DEFAULT_QP_MIN             0
 #define DEFAULT_QP_MAX             51
 
+#define ALIGNMENT "{ au, nal }"
+
 enum
 {
   PROP_0,
@@ -226,10 +228,10 @@ GST_STATIC_PAD_TEMPLATE ("src",
     GST_PAD_ALWAYS,
     GST_STATIC_CAPS
     ("video/x-h264, "
-      "stream-format=(string)\"byte-stream\", alignment=(string)\"au\","
-      "profile = (string) { constrained-baseline, baseline, main, constrained-high, high }"
-    )
-);
+        "stream-format=(string)\"byte-stream\", alignment=(string)" ALIGNMENT
+        ","
+        "profile = (string) { constrained-baseline, baseline, main, constrained-high, high }")
+    );
 
 /* class initialization */
 
@@ -835,7 +837,7 @@ gst_openh264enc_set_format (GstVideoEncoder * encoder,
         openh264enc->slice_mode);
     slice_mode = SM_SINGLE_SLICE;
   }
-
+  GST_DEBUG_OBJECT (openh264enc, "slice_mode: %d %d", slice_mode, n_slices);
 #if OPENH264_MAJOR == 1 && OPENH264_MINOR < 6
   enc_params.sSpatialLayers[0].sSliceCfg.uiSliceMode = slice_mode;
   enc_params.sSpatialLayers[0].sSliceCfg.sSliceArgument.uiSliceNum = n_slices;
@@ -859,6 +861,11 @@ gst_openh264enc_set_format (GstVideoEncoder * encoder,
   }
 
   openh264enc->encoder->SetOption (ENCODER_OPTION_DATAFORMAT, &video_format);
+
+  if (openh264enc->num_slices == 1)
+    gst_caps_set_simple (outcaps, "alignment", G_TYPE_STRING, "au", NULL);
+  else
+    gst_caps_set_simple (outcaps, "alignment", G_TYPE_STRING, "nal", NULL);
 
   output_state = gst_video_encoder_set_output_state (encoder, outcaps, state);
   gst_video_codec_state_unref (output_state);
@@ -887,8 +894,12 @@ gst_openh264enc_handle_frame (GstVideoEncoder * encoder,
   gint ret;
   SFrameBSInfo frame_info;
   gfloat fps;
+  GstMapInfo map;
   gint i, j;
   gsize buf_length = 0;
+  GList *headers = NULL;
+  GstFlowReturn flow_ret = GST_FLOW_OK;
+
 
   GST_OBJECT_LOCK (openh264enc);
 
@@ -1020,31 +1031,83 @@ gst_openh264enc_handle_frame (GstVideoEncoder * encoder,
   } else {
     GST_VIDEO_CODEC_FRAME_UNSET_SYNC_POINT (frame);
   }
+  GST_DEBUG_OBJECT (openh264enc, "Layernum %d", frame_info.iLayerNum);
 
-  for (i = 0; i < frame_info.iLayerNum; i++) {
-    for (j = 0; j < frame_info.sLayerInfo[i].iNalCount; j++) {
-      buf_length += frame_info.sLayerInfo[i].pNalLengthInByte[j];
+  if (openh264enc->num_slices > 1) {
+    for (i = 0; i < frame_info.iLayerNum; i++) {
+      gsize layer_size = buf_length = 0;
+      GST_DEBUG_OBJECT (openh264enc, "NAL count %d and layer type %d",
+          frame_info.sLayerInfo[i].iNalCount,
+          frame_info.sLayerInfo[i].uiLayerType);
+      if (frame_info.sLayerInfo[i].uiLayerType == NON_VIDEO_CODING_LAYER) {
+        GList *headers = NULL;
+        for (j = 0; j < frame_info.sLayerInfo[i].iNalCount; j++) {
+          GstBuffer *hdr;
+          buf_length = frame_info.sLayerInfo[i].pNalLengthInByte[j];
+          hdr = gst_buffer_new_and_alloc (buf_length);
+          GST_BUFFER_FLAG_SET (hdr, GST_BUFFER_FLAG_HEADER);
+          gst_buffer_map (hdr, &map, GST_MAP_WRITE);
+          memcpy (map.data, frame_info.sLayerInfo[i].pBsBuf + layer_size,
+              buf_length);
+          gst_buffer_unmap (hdr, &map);
+          layer_size += buf_length;
+          headers = g_list_append (headers, hdr);
+        }
+        gst_video_encoder_set_headers (encoder, headers);
+      } else {
+        for (j = 0; j < frame_info.sLayerInfo[i].iNalCount; j++) {
+          buf_length = frame_info.sLayerInfo[i].pNalLengthInByte[j];
+          frame->output_buffer =
+              gst_video_encoder_allocate_output_buffer (encoder, buf_length);
+          gst_buffer_map (frame->output_buffer, &map, GST_MAP_WRITE);
+          memcpy (map.data, frame_info.sLayerInfo[i].pBsBuf + layer_size,
+              buf_length);
+          layer_size += buf_length;
+          gst_buffer_unmap (frame->output_buffer, &map);
+          if (j < frame_info.sLayerInfo[i].iNalCount - 1) {
+            flow_ret = gst_video_encoder_finish_subframe (encoder, frame);
+          } else {
+            flow_ret = gst_video_encoder_finish_frame (encoder, frame);
+          }
+        }
+      }
     }
-  }
-
-  frame->output_buffer =
-      gst_video_encoder_allocate_output_buffer (encoder, buf_length);
-
-
-  buf_length = 0;
-  for (i = 0; i < frame_info.iLayerNum; i++) {
-    gsize layer_size = 0;
-    for (j = 0; j < frame_info.sLayerInfo[i].iNalCount; j++) {
-      layer_size += frame_info.sLayerInfo[i].pNalLengthInByte[j];
+  } else {
+    for (i = 0; i < frame_info.iLayerNum; i++) {
+      GST_DEBUG_OBJECT (openh264enc, "NAL count %d and layer type %d",
+          frame_info.sLayerInfo[i].iNalCount,
+          frame_info.sLayerInfo[i].uiLayerType);
+      for (j = 0; j < frame_info.sLayerInfo[i].iNalCount; j++) {
+        buf_length += frame_info.sLayerInfo[i].pNalLengthInByte[j];
+      }
     }
-    gst_buffer_fill (frame->output_buffer, buf_length, frame_info.sLayerInfo[i].pBsBuf, layer_size);
-    buf_length += layer_size;
+
+    frame->output_buffer =
+        gst_video_encoder_allocate_output_buffer (encoder, buf_length);
+
+
+    buf_length = 0;
+    for (i = 0; i < frame_info.iLayerNum; i++) {
+      gsize layer_size = 0;
+      for (j = 0; j < frame_info.sLayerInfo[i].iNalCount; j++) {
+        layer_size += frame_info.sLayerInfo[i].pNalLengthInByte[j];
+      }
+      gst_buffer_fill (frame->output_buffer, buf_length,
+          frame_info.sLayerInfo[i].pBsBuf, layer_size);
+      buf_length += layer_size;
+    }
+
+    /*Set headers from the frame_info */
+    if (headers)
+      gst_video_encoder_set_headers (encoder, headers);
+
+    flow_ret = gst_video_encoder_finish_frame (encoder, frame);
   }
 
   GST_LOG_OBJECT (openh264enc, "openh264 picture %scoded OK!",
       (ret != cmResultSuccess) ? "NOT " : "");
 
-  return gst_video_encoder_finish_frame (encoder, frame);
+  return flow_ret;
 }
 
 static GstFlowReturn
