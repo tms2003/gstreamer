@@ -706,7 +706,7 @@ QtGLVideoItemInterface::setBuffer (GstBuffer * buffer)
 void
 QtGLVideoItem::onSceneGraphInitialized ()
 {
-  if (this->window() == NULL)
+  if (this->priv == NULL || this->window() == NULL)
     return;
 
   GST_DEBUG ("%p scene graph initialization with Qt GL context %p", this,
