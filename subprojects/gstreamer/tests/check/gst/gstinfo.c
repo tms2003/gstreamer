@@ -54,6 +54,24 @@ printf_extension_log_func (GstDebugCategory * category,
   }
 }
 
+static void
+info_ptr_format_validate_logged (const char *str, ...)
+{
+  va_list var_args;
+
+  fail_unless_equals_int (g_list_length (messages), 1);
+
+  va_start (var_args, str);
+  for (; str; str = va_arg (var_args, char *))
+  {
+    fail_unless (strstr ((char *) messages->data, str) != NULL);
+  }
+  va_end (var_args);
+
+  g_list_free_full (messages, (GDestroyNotify) g_free);
+  messages = NULL;
+}
+
 /* check our GST_PTR_FORMAT printf extension stuff */
 GST_START_TEST (info_ptr_format_printf_extension)
 {
@@ -64,8 +82,10 @@ GST_START_TEST (info_ptr_format_printf_extension)
 
   gst_debug_set_threshold_from_string ("LOG", TRUE);
 
+  save_messages = TRUE;
   /* NULL object */
   GST_LOG ("NULL: %" GST_PTR_FORMAT, (gpointer) NULL);
+  info_ptr_format_validate_logged ("NULL: (NULL)", NULL);
 
   /* structure */
   {
@@ -77,6 +97,10 @@ GST_START_TEST (info_ptr_format_printf_extension)
 
     GST_LOG ("STRUCTURE: %" GST_PTR_FORMAT, s);
     gst_structure_free (s);
+
+    info_ptr_format_validate_logged ("STRUCTURE: ", "foo/bar",
+        "number=(int)1",
+        "string=(string)s", "float-number=(double)424242.4", NULL);
   }
 
   /* message */
@@ -90,6 +114,10 @@ GST_START_TEST (info_ptr_format_printf_extension)
 
     GST_LOG ("MESSAGE: %" GST_PTR_FORMAT, msg);
     gst_message_unref (msg);
+
+    info_ptr_format_validate_logged ("MESSAGE: ", "redirect",
+        "new-location=(string)http://foobar.com/r0x0r.ogg",
+        "minimum-bitrate=(int)56000", NULL);
   }
 
   /* buffer and buffer list */
@@ -97,45 +125,89 @@ GST_START_TEST (info_ptr_format_printf_extension)
     GstBufferList *list;
     GstBuffer *buf;
 
-    buf = gst_buffer_new_allocate (NULL, 42, NULL);
+#define FIXTURE_BUFFER_MEM_SIZE 123
+#define FIXTURE_BUFFERLIST_MEM_SIZE 200
+
+    buf = gst_buffer_new_allocate (NULL, FIXTURE_BUFFER_MEM_SIZE, NULL);
     GST_BUFFER_PTS (buf) = 5 * GST_SECOND;
     GST_BUFFER_DURATION (buf) = GST_SECOND;
     GST_LOG ("BUFFER: %" GST_PTR_FORMAT, buf);
 
+    info_ptr_format_validate_logged ("BUFFER: ", "buffer: 0x",
+        "pts 0:00:05.000000000", "dur 0:00:01.000000000", "size "
+        G_STRINGIFY (FIXTURE_BUFFER_MEM_SIZE), NULL);
+
     list = gst_buffer_list_new ();
     gst_buffer_list_add (list, buf);
-    buf = gst_buffer_new_allocate (NULL, 58, NULL);
+    buf =
+        gst_buffer_new_allocate (NULL,
+        (FIXTURE_BUFFERLIST_MEM_SIZE - FIXTURE_BUFFER_MEM_SIZE), NULL);
     gst_buffer_list_add (list, buf);
     GST_LOG ("BUFFERLIST: %" GST_PTR_FORMAT, list);
     gst_buffer_list_unref (list);
+
+    info_ptr_format_validate_logged
+        ("BUFFERLIST: bufferlist: 0x", "2 buffers",
+        "pts 0:00:05.000000000",
+        "size " G_STRINGIFY (FIXTURE_BUFFERLIST_MEM_SIZE), NULL);
   }
 
-#if 0
-  /* TODO: GObject */
+  /* GObject */
   {
+    GTypeInfo dummy_info = {.class_size = sizeof (GObjectClass),
+      .instance_size = sizeof (GObject)
+    };
+    GType gobj_t = g_type_register_static (G_TYPE_OBJECT,
+        "TestGObjectDerived",
+        &dummy_info,
+        0);
+    GObject *obj = g_object_new (gobj_t, NULL);
     GST_LOG ("GOBJECT: %" GST_PTR_FORMAT, obj);
+    g_object_unref (obj);
+    info_ptr_format_validate_logged ("GOBJECT: <TestGObjectDerived@", NULL);
   }
 
-  /* TODO: GstObject */
+  /* GstObject */
   {
+    GTypeInfo dummy_info = {.class_size = sizeof (GstObjectClass),
+      .instance_size = sizeof (GstObject)
+    };
+    GType gstobj_t = g_type_register_static (GST_TYPE_OBJECT,
+        "TestGstObjectDerived",
+        &dummy_info,
+        0);
+
+    GObject *obj = g_object_new (gstobj_t, "name", "TestName", NULL);
     GST_LOG ("GSTOBJECT: %" GST_PTR_FORMAT, obj);
+    g_object_unref (obj);
+    info_ptr_format_validate_logged ("GSTOBJECT: <TestName>", NULL);
   }
 
-  /* TODO: GstPad */
+  /* GstPad */
   {
+    static GstStaticPadTemplate tmpl =
+        GST_STATIC_PAD_TEMPLATE ("src", GST_PAD_SRC, GST_PAD_ALWAYS,
+        GST_STATIC_CAPS_ANY);
+    GstPad *pad = gst_pad_new_from_static_template (&tmpl, "testsrc");
     GST_LOG ("PAD: %" GST_PTR_FORMAT, pad);
+    gst_object_unref (pad);
+    info_ptr_format_validate_logged ("PAD: <'':testsrc>", NULL);
   }
 
-  /* TODO: GstCaps */
+  /* GstCaps */
   {
-    GST_LOG ("PAD: %" GST_PTR_FORMAT, pad);
+    GstCaps *caps = gst_caps_new_simple ("test", "doubts", G_TYPE_INT, 0, NULL);
+    GST_LOG ("CAPS: %" GST_PTR_FORMAT, caps);
+    gst_caps_unref (caps);
+    info_ptr_format_validate_logged ("CAPS: test, doubts=(int)0", NULL);
   }
-#endif
 
   /* clean up */
   gst_debug_set_default_threshold (GST_LEVEL_NONE);
   gst_debug_add_log_function (gst_debug_log_default, NULL, NULL);
   gst_debug_remove_log_function (printf_extension_log_func);
+
+  save_messages = FALSE;
 }
 
 GST_END_TEST;
