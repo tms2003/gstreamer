@@ -80,7 +80,8 @@ enum
   PROP_START_INDEX,
   PROP_STOP_INDEX,
   PROP_CAPS,
-  PROP_LOOP
+  PROP_LOOP,
+  PROP_HOLD
 };
 
 #define DEFAULT_LOCATION "%05d"
@@ -179,6 +180,11 @@ gst_multi_file_src_class_init (GstMultiFileSrcClass * klass)
   g_object_class_install_property (gobject_class, PROP_LOOP,
       g_param_spec_boolean ("loop", "Loop",
           "Whether to repeat from the beginning when all files have been read.",
+          FALSE, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+  g_object_class_install_property (gobject_class, PROP_HOLD,
+      g_param_spec_boolean ("hold", "Hold",
+          "Whether to hold on the last file when all files have been read "
+          "( loop will be set to 0 when hold=1 ).",
           FALSE, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   gobject_class->dispose = gst_multi_file_src_dispose;
@@ -349,6 +355,11 @@ gst_multi_file_src_set_property (GObject * object, guint prop_id,
     case PROP_LOOP:
       src->loop = g_value_get_boolean (value);
       break;
+    case PROP_HOLD:
+      src->hold = g_value_get_boolean (value);
+      if (src->hold)
+        src->loop = FALSE;
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -379,6 +390,9 @@ gst_multi_file_src_get_property (GObject * object, guint prop_id,
       break;
     case PROP_LOOP:
       g_value_set_boolean (value, src->loop);
+      break;
+    case PROP_HOLD:
+      g_value_set_boolean (value, src->hold);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -421,7 +435,9 @@ gst_multi_file_src_create (GstPushSrc * src, GstBuffer ** buffer)
 
   if (multifilesrc->stop_index != -1 &&
       multifilesrc->index > multifilesrc->stop_index) {
-    if (multifilesrc->loop)
+    if (multifilesrc->hold)
+      multifilesrc->index--;
+    else if (multifilesrc->loop)
       multifilesrc->index = multifilesrc->start_index;
     else
       return GST_FLOW_EOS;
@@ -443,9 +459,12 @@ gst_multi_file_src_create (GstPushSrc * src, GstBuffer ** buffer)
       if (error != NULL)
         g_error_free (error);
 
-      if (multifilesrc->loop) {
+      if ((multifilesrc->hold) || (multifilesrc->loop)) {
         error = NULL;
-        multifilesrc->index = multifilesrc->start_index;
+        if (multifilesrc->hold)
+          multifilesrc->index--;
+        else
+          multifilesrc->index = multifilesrc->start_index;
 
         filename = gst_multi_file_src_get_filename (multifilesrc);
         ret = g_file_get_contents (filename, &data, &size, &error);
