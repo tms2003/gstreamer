@@ -23,13 +23,17 @@
 /* aspectratiocrop uses videocrop. sync caps changes between both */
 #define VIDEO_CROP_CAPS                                \
   GST_VIDEO_CAPS_MAKE ("{" \
-	VIDEO_CROP_FORMATS_PACKED_SIMPLE "," \
-	VIDEO_CROP_FORMATS_PACKED_COMPLEX "," \
-	VIDEO_CROP_FORMATS_PLANAR "," \
-	VIDEO_CROP_FORMATS_SEMI_PLANAR "}") "; " \
+    VIDEO_CROP_FORMATS_PACKED_SIMPLE "," \
+    VIDEO_CROP_FORMATS_PACKED_COMPLEX "," \
+    VIDEO_CROP_FORMATS_PLANAR "," \
+    VIDEO_CROP_FORMATS_SEMI_PLANAR "}") "; " \
   "video/x-raw(ANY), " \
          "width = " GST_VIDEO_SIZE_RANGE ", " \
          "height = " GST_VIDEO_SIZE_RANGE ", " \
-         "framerate = " GST_VIDEO_FPS_RANGE
+         "framerate = " GST_VIDEO_FPS_RANGE ", " \
+         "format = {" VIDEO_CROP_FORMATS_PACKED_SIMPLE "," \
+           VIDEO_CROP_FORMATS_PACKED_COMPLEX "," \
+           VIDEO_CROP_FORMATS_PLANAR "," \
+           VIDEO_CROP_FORMATS_SEMI_PLANAR "}"
 
 #endif /* __GST_VIDEO_CROP_PRIVATE_H__ */
