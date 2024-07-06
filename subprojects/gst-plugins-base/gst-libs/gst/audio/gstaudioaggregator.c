@@ -317,11 +317,48 @@ gst_audio_aggregator_pad_update_conversion_info (GstAudioAggregatorPad *
 }
 
 static GstBuffer *
+converter_convert_buffer (GstAudioConverter * converter, GstAudioInfo * in_info,
+    GstAudioInfo * out_info, GstBuffer * inbuffer)
+{
+  gint insize, outsize;
+  gsize insamples, outsamples;
+  GstMapInfo inmap, outmap;
+  GstBuffer *outbuffer;
+
+  if (converter == NULL || gst_audio_converter_is_passthrough (converter))
+    return gst_buffer_ref (inbuffer);
+
+  insize = gst_buffer_get_size (inbuffer);
+  insamples = insize / in_info->bpf;
+  outsamples = gst_audio_converter_get_out_frames (converter, insamples);
+  outsize = outsamples * out_info->bpf;
+
+  outbuffer = gst_buffer_new_allocate (NULL, outsize, NULL);
+
+  /* We create a perfectly similar buffer, except obviously for
+   * its converted contents */
+  gst_buffer_copy_into (outbuffer, inbuffer,
+      GST_BUFFER_COPY_FLAGS | GST_BUFFER_COPY_TIMESTAMPS | GST_BUFFER_COPY_META,
+      0, -1);
+
+  gst_buffer_map (inbuffer, &inmap, GST_MAP_READ);
+  gst_buffer_map (outbuffer, &outmap, GST_MAP_WRITE);
+
+  gst_audio_converter_samples (converter, GST_AUDIO_CONVERTER_FLAG_NONE,
+      (gpointer *) & inmap.data, insamples, (gpointer *) & outmap.data,
+      outsamples);
+
+  gst_buffer_unmap (inbuffer, &inmap);
+  gst_buffer_unmap (outbuffer, &outmap);
+
+  return outbuffer;
+}
+
+static GstBuffer *
 gst_audio_aggregator_convert_pad_convert_buffer (GstAudioAggregatorPad *
     aaggpad, GstAudioInfo * in_info, GstAudioInfo * out_info,
     GstBuffer * input_buffer)
 {
-  GstBuffer *res;
   GstAudioAggregatorConvertPad *aaggcpad =
       GST_AUDIO_AGGREGATOR_CONVERT_PAD (aaggpad);
 
@@ -330,38 +367,8 @@ gst_audio_aggregator_convert_pad_convert_buffer (GstAudioAggregatorPad *
     return NULL;
   }
 
-  if (aaggcpad->priv->converter) {
-    gint insize = gst_buffer_get_size (input_buffer);
-    gsize insamples = insize / in_info->bpf;
-    gsize outsamples =
-        gst_audio_converter_get_out_frames (aaggcpad->priv->converter,
-        insamples);
-    gint outsize = outsamples * out_info->bpf;
-    GstMapInfo inmap, outmap;
-
-    res = gst_buffer_new_allocate (NULL, outsize, NULL);
-
-    /* We create a perfectly similar buffer, except obviously for
-     * its converted contents */
-    gst_buffer_copy_into (res, input_buffer,
-        GST_BUFFER_COPY_FLAGS | GST_BUFFER_COPY_TIMESTAMPS |
-        GST_BUFFER_COPY_META, 0, -1);
-
-    gst_buffer_map (input_buffer, &inmap, GST_MAP_READ);
-    gst_buffer_map (res, &outmap, GST_MAP_WRITE);
-
-    gst_audio_converter_samples (aaggcpad->priv->converter,
-        GST_AUDIO_CONVERTER_FLAG_NONE,
-        (gpointer *) & inmap.data, insamples,
-        (gpointer *) & outmap.data, outsamples);
-
-    gst_buffer_unmap (input_buffer, &inmap);
-    gst_buffer_unmap (res, &outmap);
-  } else {
-    res = gst_buffer_ref (input_buffer);
-  }
-
-  return res;
+  return converter_convert_buffer (aaggcpad->priv->converter, in_info, out_info,
+      input_buffer);
 }
 
 static void
@@ -1204,7 +1211,8 @@ gst_audio_aggregator_fixate_src_caps (GstAggregator * agg, GstCaps * caps)
 /* Must be called with OBJECT_LOCK taken */
 static gboolean
 gst_audio_aggregator_update_converters (GstAudioAggregator * aagg,
-    GstAudioInfo * new_info, GstAudioInfo * old_info)
+    GstAudioInfo * new_info, GstAudioInfo * old_info,
+    GstAudioConverter * converter)
 {
   GList *l;
 
@@ -1220,8 +1228,8 @@ gst_audio_aggregator_update_converters (GstAudioAggregator * aagg,
      * format */
     if (aaggpad->priv->buffer) {
       GstBuffer *new_converted_buffer =
-          gst_audio_aggregator_convert_buffer (aagg, GST_PAD (aaggpad),
-          old_info, new_info, aaggpad->priv->buffer);
+          converter_convert_buffer (converter, old_info, new_info,
+          aaggpad->priv->buffer);
       gst_buffer_replace (&aaggpad->priv->buffer, new_converted_buffer);
       if (new_converted_buffer)
         gst_buffer_unref (new_converted_buffer);
@@ -1253,8 +1261,22 @@ gst_audio_aggregator_negotiated_src_caps (GstAggregator * agg, GstCaps * caps)
     GstAudioInfo old_info = srcpad->info;
     GstAudioAggregatorPadClass *srcpad_klass =
         GST_AUDIO_AGGREGATOR_PAD_GET_CLASS (agg->srcpad);
+    GstAudioConverter *converter = NULL;
 
     GST_INFO_OBJECT (aagg, "setting caps to %" GST_PTR_FORMAT, caps);
+
+    if (old_info.finfo->format != GST_AUDIO_FORMAT_UNKNOWN) {
+      converter =
+          gst_audio_converter_new (GST_AUDIO_CONVERTER_FLAG_NONE, &old_info,
+          &info, NULL);
+      if (converter == NULL) {
+        GST_ERROR_OBJECT (aagg, "Failed to create converter for caps change");
+        GST_OBJECT_UNLOCK (aagg);
+        GST_AUDIO_AGGREGATOR_UNLOCK (aagg);
+        return FALSE;
+      }
+    }
+
     gst_caps_replace (&aagg->current_caps, caps);
 
     if (old_info.rate != info.rate)
@@ -1262,7 +1284,9 @@ gst_audio_aggregator_negotiated_src_caps (GstAggregator * agg, GstCaps * caps)
 
     memcpy (&srcpad->info, &info, sizeof (info));
 
-    if (!gst_audio_aggregator_update_converters (aagg, &info, &old_info)) {
+    if (!gst_audio_aggregator_update_converters (aagg, &info, &old_info,
+            converter)) {
+      gst_audio_converter_free (converter);
       GST_OBJECT_UNLOCK (aagg);
       GST_AUDIO_AGGREGATOR_UNLOCK (aagg);
       return FALSE;
@@ -1276,11 +1300,12 @@ gst_audio_aggregator_negotiated_src_caps (GstAggregator * agg, GstCaps * caps)
       GstBuffer *converted;
 
       converted =
-          gst_audio_aggregator_convert_buffer (aagg, agg->srcpad, &old_info,
-          &info, aagg->priv->current_buffer);
+          converter_convert_buffer (converter, &old_info, &info,
+          aagg->priv->current_buffer);
       gst_buffer_unref (aagg->priv->current_buffer);
       aagg->priv->current_buffer = converted;
       if (!converted) {
+        gst_audio_converter_free (converter);
         GST_OBJECT_UNLOCK (aagg);
         GST_AUDIO_AGGREGATOR_UNLOCK (aagg);
         return FALSE;
@@ -1289,6 +1314,8 @@ gst_audio_aggregator_negotiated_src_caps (GstAggregator * agg, GstCaps * caps)
 
     /* Force recalculating in aggregate */
     aagg->priv->samples_per_buffer = 0;
+
+    gst_audio_converter_free (converter);
   }
 
   GST_OBJECT_UNLOCK (aagg);
