@@ -48,12 +48,6 @@ if host_system == 'windows'
   endif
 
   platform_deps += [gstd3d11_dep, winmm_lib]
-else
-  if amf_option.enabled()
-    error('amf plugin supports only Windows')
-  else
-    subdir_done()
-  endif
 endif
 
 if cxx.get_id() != 'msvc'

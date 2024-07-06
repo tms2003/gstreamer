@@ -1671,7 +1671,7 @@ gst_amf_h265_enc_check_reconfigure (GstAmfEncoder * encoder)
 }
 
 static GstAmfH265EncClassData *
-gst_amf_h265_enc_create_class_data (GstD3D11Device * device,
+gst_amf_h265_enc_create_class_data (GST_AMF_PLATFORM_DEVICE * device,
     AMFComponent * comp)
 {
   AMF_RESULT result;
@@ -1765,11 +1765,14 @@ gst_amf_h265_enc_create_class_data (GstD3D11Device * device,
     if (type == AMF_MEMORY_DX11)
       d3d11_supported = TRUE;
   }
-
+#ifdef G_OS_WIN32
   if (!d3d11_supported) {
     GST_WARNING_OBJECT (device, "D3D11 is not supported");
     return nullptr;
   }
+#else
+  (void) d3d11_supported;
+#endif // G_OS_WIN32
 
   result = amf_caps->GetOutputCaps (&out_iocaps);
   if (result != AMF_OK) {
@@ -1953,15 +1956,22 @@ gst_amf_h265_enc_create_class_data (GstD3D11Device * device,
 
   system_caps = gst_caps_from_string (sink_caps_str.c_str ());
   sink_caps = gst_caps_copy (system_caps);
+#ifdef G_OS_WIN32
   gst_caps_set_features (sink_caps, 0,
       gst_caps_features_new (GST_CAPS_FEATURE_MEMORY_D3D11_MEMORY, nullptr));
+#else
+  gst_caps_set_features (sink_caps, 0,
+      gst_caps_features_new (GST_CAPS_FEATURE_MEMORY_SYSTEM_MEMORY, nullptr));
+#endif // G_OS_WIN32
   gst_caps_append (sink_caps, system_caps);
 
   cdata = g_new0 (GstAmfH265EncClassData, 1);
   cdata->sink_caps = sink_caps;
   cdata->src_caps = gst_caps_from_string (src_caps_str.c_str ());
   cdata->dev_caps = dev_caps;
+#ifdef G_OS_WIN32
   g_object_get (device, "adapter-luid", &cdata->adapter_luid, nullptr);
+#endif // G_OS_WIN32
 
   GST_MINI_OBJECT_FLAG_SET (cdata->sink_caps,
       GST_MINI_OBJECT_FLAG_MAY_BE_LEAKED);
@@ -1975,7 +1985,7 @@ gst_amf_h265_enc_create_class_data (GstD3D11Device * device,
 }
 
 void
-gst_amf_h265_enc_register_d3d11 (GstPlugin * plugin, GstD3D11Device * device,
+gst_amf_h265_enc_register (GstPlugin * plugin, GST_AMF_PLATFORM_DEVICE * device,
     gpointer context, guint rank)
 {
   GstAmfH265EncClassData *cdata;
