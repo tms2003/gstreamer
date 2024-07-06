@@ -60,6 +60,8 @@ static GstClockTime calculate_skew (MpegTSPacketizer2 * packetizer,
 static void _close_current_group (MpegTSPCR * pcrtable);
 static void record_pcr (MpegTSPacketizer2 * packetizer, MpegTSPCR * pcrtable,
     guint64 pcr, guint64 offset);
+static void mpegts_packetizer_count_packet (MpegTSPacketizer2 * packetizer,
+    MpegTSPacketizerPacket * packet);
 
 #define CONTINUITY_UNSET 255
 #define VERSION_NUMBER_UNSET 255
@@ -277,6 +279,9 @@ mpegts_packetizer_init (MpegTSPacketizer2 * packetizer)
   packetizer->last_pts = GST_CLOCK_TIME_NONE;
   packetizer->last_dts = GST_CLOCK_TIME_NONE;
   packetizer->extra_shift = 0;
+
+  g_mutex_init (&packetizer->pid_stats_lock);
+  packetizer->pid_stats = NULL;
 }
 
 static void
@@ -304,6 +309,9 @@ mpegts_packetizer_dispose (GObject * object)
     packetizer->empty = TRUE;
 
     flush_observations (packetizer);
+
+    mpegts_packetizer_set_packet_counts_enabled (packetizer, FALSE);
+    g_mutex_clear (&packetizer->pid_stats_lock);
   }
 
   if (G_OBJECT_CLASS (mpegts_packetizer_parent_class)->dispose)
@@ -505,6 +513,7 @@ mpegts_packetizer_parse_packet (MpegTSPacketizer2 * packetizer,
   else
     packet->payload = NULL;
 
+  mpegts_packetizer_count_packet (packetizer, packet);
   return PACKET_OK;
 }
 
@@ -2604,4 +2613,85 @@ mpegts_packetizer_set_current_pcr_offset (MpegTSPacketizer2 * packetizer,
           GST_TIME_ARGS (PCRTIME_TO_GSTTIME (tgroup->pcr_offset)));
   }
   PACKETIZER_GROUP_UNLOCK (packetizer);
+}
+
+void
+mpegts_packetizer_set_packet_counts_enabled (MpegTSPacketizer2 * packetizer,
+    gboolean enabled)
+{
+  g_mutex_lock (&packetizer->pid_stats_lock);
+
+  if (enabled && !packetizer->pid_stats)
+    packetizer->pid_stats = g_array_new (FALSE, FALSE, sizeof (MpegTSPIDStats));
+  else if (!enabled && packetizer->pid_stats)
+    g_clear_pointer (&packetizer->pid_stats, g_array_unref);
+
+  g_mutex_unlock (&packetizer->pid_stats_lock);
+}
+
+static void
+mpegts_packetizer_count_packet (MpegTSPacketizer2 * packetizer,
+    MpegTSPacketizerPacket * packet)
+{
+  GArray *array;
+  gint16 pid;
+  MpegTSPIDStats *stats = NULL;
+  gint i;
+
+  if (!packetizer->pid_stats)
+    return;
+
+  g_mutex_lock (&packetizer->pid_stats_lock);
+
+  array = packetizer->pid_stats;
+  if (!array)
+    goto out;
+
+  pid = packet->pid;
+
+  for (i = 0; i < array->len; i++) {
+    stats = &g_array_index (array, MpegTSPIDStats, i);
+
+    if (stats->pid == pid)
+      break;
+  }
+
+  if (i == array->len) {
+    MpegTSPIDStats new_stats = {.pid = pid };
+    g_array_append_val (array, new_stats);
+    stats = &g_array_index (array, MpegTSPIDStats, i);
+  }
+
+  stats->packets += 1;
+
+out:
+  g_mutex_unlock (&packetizer->pid_stats_lock);
+}
+
+GstStructure *
+mpegts_packetizer_get_packet_counts (MpegTSPacketizer2 * packetizer)
+{
+  GArray *array;
+  GstStructure *s;
+  gint i;
+
+  s = gst_structure_new_empty ("application/x-gst-mpegts-packet-counts");
+
+  g_mutex_lock (&packetizer->pid_stats_lock);
+
+  array = packetizer->pid_stats;
+  if (!array)
+    goto out;
+
+  for (i = 0; i < array->len; i++) {
+    MpegTSPIDStats *stats = &g_array_index (array, MpegTSPIDStats, i);
+    gchar field_name[7];
+
+    g_snprintf (field_name, sizeof field_name, "0x%04x", stats->pid);
+    gst_structure_set (s, field_name, G_TYPE_UINT64, stats->packets, NULL);
+  }
+
+out:
+  g_mutex_unlock (&packetizer->pid_stats_lock);
+  return s;
 }
