@@ -492,9 +492,10 @@ class GstMRMover:
     def push_branch(self, branch):
         fprint(
             f"-> Pushing branch {branch} to remote {self.gl.user.username}...")
-        if self.git("push", "--no-verify", self.gl.user.username, branch,
+        refspec = f"{branch}:refs/heads/{branch}"
+        if self.git("push", "--no-verify", self.gl.user.username, refspec,
                     interaction_message=f"pushing {branch} to {self.gl.user.username} with:\n  "
-                    f" `$git push {self.gl.user.username} {branch}`") == "SKIP":
+                    f" `$git push {self.gl.user.username} {refspec}`") == "SKIP":
             fprint(yellow("'SKIPPED' (couldn't push)"), nested=False)
 
             return False
