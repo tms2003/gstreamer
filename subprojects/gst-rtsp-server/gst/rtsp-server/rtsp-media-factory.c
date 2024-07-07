@@ -441,7 +441,7 @@ gst_rtsp_media_factory_get_property (GObject * object, guint propid,
       break;
     case PROP_STOP_ON_DISCONNECT:
       g_value_set_boolean (value,
-          gst_rtsp_media_factory_is_stop_on_disonnect (factory));
+          gst_rtsp_media_factory_is_stop_on_disconnect (factory));
       break;
     case PROP_CLOCK:
       g_value_take_object (value, gst_rtsp_media_factory_get_clock (factory));
@@ -1319,17 +1319,40 @@ gst_rtsp_media_factory_set_stop_on_disconnect (GstRTSPMediaFactory * factory,
 }
 
 /**
+ * gst_rtsp_media_factory_is_stop_on_disonnect:
+ * @factory: a #GstRTSPMediaFactory
+ *
+ * Get if media created from this factory should be stopped when a client
+ * disconnects without sending TEARDOWN.
+ *
+ * Deprecated: Use gst_rtsp_media_factory_is_stop_on_disconnect() instead.
+ *
+ * Returns: %TRUE if the media will be stopped when a client disconnects
+ *     without sending TEARDOWN.
+ */
+#ifndef GST_REMOVE_DEPRECATED
+G_GNUC_BEGIN_IGNORE_DEPRECATIONS gboolean
+gst_rtsp_media_factory_is_stop_on_disonnect (GstRTSPMediaFactory * factory)
+{
+  return gst_rtsp_media_factory_is_stop_on_disconnect (factory);
+}
+G_GNUC_END_IGNORE_DEPRECATIONS
+#endif
+
+/**
  * gst_rtsp_media_factory_is_stop_on_disconnect:
  * @factory: a #GstRTSPMediaFactory
  *
  * Get if media created from this factory should be stopped when a client
  * disconnects without sending TEARDOWN.
  *
+ * Since: 1.20
+ *
  * Returns: %TRUE if the media will be stopped when a client disconnects
  *     without sending TEARDOWN.
  */
 gboolean
-gst_rtsp_media_factory_is_stop_on_disonnect (GstRTSPMediaFactory * factory)
+gst_rtsp_media_factory_is_stop_on_disconnect (GstRTSPMediaFactory * factory)
 {
   GstRTSPMediaFactoryPrivate *priv;
   gboolean result;
