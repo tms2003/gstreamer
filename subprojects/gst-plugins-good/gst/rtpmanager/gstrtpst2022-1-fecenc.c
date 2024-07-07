@@ -105,6 +105,8 @@ typedef struct
   gboolean xored_marker;
   gboolean xored_padding;
   gboolean xored_extension;
+  guint16 xored_extension_bits;
+  guint8 *xored_extension_data;
 
   guint16 seq_base;
 
@@ -177,6 +179,22 @@ struct _GstRTPST_2022_1_FecEnc
   /* Column FEC packets must be delayed to make them more resilient
    * to loss bursts, we store them here */
   GQueue queued_column_packets;
+
+  /* The usage, by senders and receivers, of the following bits shall
+   * be defined by the associated video/audio transport standards:
+   *
+   * [..]
+   *
+   * The Extension (X) bit, with the additional constraint that the
+   * extension bit and the length of the extension shall be constant
+   * for the duration of the session.
+   *
+   * We thus track the value of the extension bit and the length of
+   * the extension for the first packet, and error out if any subsequent
+   * packet differs.
+   */
+  gboolean has_extension;
+  guint extension_wordlen;
 };
 
 #define RTP_CAPS "application/x-rtp"
@@ -217,6 +235,10 @@ free_fec_packet (FecPacket * packet)
 {
   if (packet->xored_payload)
     g_free (packet->xored_payload);
+
+  if (packet->xored_extension_data)
+    g_free (packet->xored_extension_data);
+
   g_free (packet);
 }
 
@@ -243,6 +265,13 @@ _xor_mem (guint8 * restrict dst, const guint8 * restrict src, gsize length)
 static void
 fec_packet_update (FecPacket * fec, GstRTPBuffer * rtp)
 {
+  guint16 extension_bits;
+  gpointer extension_data;
+  guint extension_wordlen = 0;
+
+  gst_rtp_buffer_get_extension_data (rtp, &extension_bits, &extension_data,
+      &extension_wordlen);
+
   if (fec->n_packets == 0) {
     fec->seq_base = gst_rtp_buffer_get_seq (rtp);
     fec->payload_len = gst_rtp_buffer_get_payload_len (rtp);
@@ -253,6 +282,11 @@ fec_packet_update (FecPacket * fec, GstRTPBuffer * rtp)
     fec->xored_padding = gst_rtp_buffer_get_padding (rtp);
     fec->xored_extension = gst_rtp_buffer_get_extension (rtp);
     fec->xored_payload = g_malloc (sizeof (guint8) * fec->payload_len);
+
+    fec->xored_extension_bits = extension_bits;
+    fec->xored_extension_data = g_malloc (extension_wordlen * 4);
+    memcpy (fec->xored_extension_data, extension_data, extension_wordlen * 4);
+
     memcpy (fec->xored_payload, gst_rtp_buffer_get_payload (rtp),
         fec->payload_len);
   } else {
@@ -273,6 +307,9 @@ fec_packet_update (FecPacket * fec, GstRTPBuffer * rtp)
     fec->xored_padding ^= gst_rtp_buffer_get_padding (rtp);
     fec->xored_extension ^= gst_rtp_buffer_get_extension (rtp);
     _xor_mem (fec->xored_payload, gst_rtp_buffer_get_payload (rtp), plen);
+
+    fec->xored_extension_bits ^= extension_bits;
+    _xor_mem (fec->xored_extension_data, extension_data, extension_wordlen * 4);
   }
 
   fec->n_packets += 1;
@@ -306,6 +343,7 @@ queue_fec_packet (GstRTPST_2022_1_FecEnc * enc, FecPacket * fec, gboolean row)
   GstRTPBuffer rtp = GST_RTP_BUFFER_INIT;
   GstBitWriter bits;
   guint8 *data;
+  gpointer extension_data;
 
   gst_rtp_buffer_map (buffer, GST_MAP_WRITE, &rtp);
   data = gst_rtp_buffer_get_payload (&rtp);
@@ -337,10 +375,21 @@ queue_fec_packet (GstRTPST_2022_1_FecEnc * enc, FecPacket * fec, gboolean row)
   gst_rtp_buffer_set_padding (&rtp, fec->xored_padding);
   gst_rtp_buffer_set_extension (&rtp, fec->xored_extension);
 
+  gst_rtp_buffer_set_extension_data (&rtp, fec->xored_extension_bits,
+      enc->extension_wordlen);
+
+  gst_rtp_buffer_get_extension_data (&rtp, NULL, &extension_data, NULL);
+
+  memcpy (extension_data, fec->xored_extension_data,
+      enc->extension_wordlen * 4);
+
   /* We're sending it out immediately */
   if (row)
     gst_rtp_buffer_set_timestamp (&rtp, enc->last_media_timestamp);
 
+  gst_rtp_buffer_unmap (&rtp);
+
+  gst_rtp_buffer_map (buffer, GST_MAP_WRITE, &rtp);
   gst_rtp_buffer_unmap (&rtp);
 
   /* We can send row FEC packets immediately, column packets need
@@ -416,6 +465,34 @@ gst_rtpst_2022_1_fecenc_sink_chain (GstPad * pad, GstObject * parent,
   if (gst_rtp_buffer_get_ssrc (&rtp) != 0) {
     GST_ERROR_OBJECT (enc, "Chained buffer must have SSRC == 0");
     goto error;
+  }
+
+  if (!enc->last_media_seqnum_set) {
+    enc->extension_wordlen = 0;
+    enc->has_extension =
+        gst_rtp_buffer_get_extension_data (&rtp, NULL, NULL,
+        &enc->extension_wordlen);
+  } else {
+    gboolean has_extension;
+    guint extension_wordlen = 0;
+
+    has_extension =
+        gst_rtp_buffer_get_extension_data (&rtp, NULL, NULL,
+        &extension_wordlen);
+
+    if (has_extension != enc->has_extension) {
+      GST_ERROR_OBJECT (enc,
+          "Extension bit must be constant for the duration of the session (%d != %d)",
+          has_extension, enc->has_extension);
+      goto error;
+    }
+
+    if (extension_wordlen != enc->extension_wordlen) {
+      GST_ERROR_OBJECT (enc,
+          "Extension length must be constant for the duration of the session (%u != %u)",
+          extension_wordlen, enc->extension_wordlen);
+      goto error;
+    }
   }
 
   if (enc->last_media_seqnum_set
