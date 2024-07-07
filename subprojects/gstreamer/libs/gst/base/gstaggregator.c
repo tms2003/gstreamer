@@ -3298,7 +3298,16 @@ gst_aggregator_pad_chain_internal (GstAggregator * self,
       apply_buffer (aggpad, buffer, head);
       aggpad->priv->num_buffers++;
       buffer = NULL;
-      SRC_BROADCAST (self);
+
+      /* Temporarily release pad/object lock to check if now all pads are
+       * ready and the source pad task can be woken up */
+      PAD_UNLOCK (aggpad);
+      GST_OBJECT_UNLOCK (self);
+      if (gst_aggregator_check_pads_ready (self, NULL)) {
+        SRC_BROADCAST (self);
+      }
+      GST_OBJECT_LOCK (self);
+      PAD_LOCK (aggpad);
       break;
     }
 
