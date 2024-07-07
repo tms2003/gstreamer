@@ -1,6 +1,6 @@
 /* GstHarness - A test-harness for GStreamer testing
  *
- * Copyright (C) 2012-2015 Pexip <pexip.com>
+ * Copyright (C) 2012-2022 Pexip <pexip.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -183,6 +183,9 @@ GST_CHECK_API
 GstFlowReturn  gst_harness_push (GstHarness * h, GstBuffer * buffer);
 
 GST_CHECK_API
+GstFlowReturn gst_harness_push_list (GstHarness * h, GstBufferList * buffer_list);
+
+GST_CHECK_API
 GstBuffer *    gst_harness_pull (GstHarness * h);
 
 GST_CHECK_API
@@ -217,6 +220,12 @@ GBytes *       gst_harness_take_all_data_as_bytes (GstHarness * h);
 
 GST_CHECK_API
 GstClockTime   gst_harness_get_last_pushed_timestamp (GstHarness * h);
+
+GST_CHECK_API
+GstBufferList * gst_harness_pull_list (GstHarness * h);
+
+GST_CHECK_API
+GstBufferList *gst_harness_try_pull_list (GstHarness * h);
 
 /* downstream events */
 
