@@ -4345,7 +4345,8 @@ do_expected_timeout (GstRtpJitterBuffer * jitterbuffer, RtpTimer * timer,
           "period", G_TYPE_UINT, rtx_retry_period_ms,
           "deadline", G_TYPE_UINT, rtx_deadline_ms,
           "packet-spacing", G_TYPE_UINT64, priv->packet_spacing,
-          "avg-rtt", G_TYPE_UINT, avg_rtx_rtt_ms, NULL));
+          "avg-rtt", G_TYPE_UINT, avg_rtx_rtt_ms, 
+          "ssrc", G_TYPE_UINT, priv->last_ssrc, NULL));
   g_queue_push_tail (events, event);
   GST_DEBUG_OBJECT (jitterbuffer, "Request RTX: %" GST_PTR_FORMAT, event);
 
