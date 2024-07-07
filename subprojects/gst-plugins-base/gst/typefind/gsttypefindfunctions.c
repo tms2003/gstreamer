@@ -424,6 +424,40 @@ uri_type_find (GstTypeFind * tf, gpointer unused)
   }
 }
 
+/* There are 9 required tables in Truetype:
+ * https://developer.apple.com/fonts/TrueType-Reference-Manual/RM06/Chap6.html
+ * Check them, and if we get all 9, we have a TrueType font */
+static GstStaticCaps ttf_caps = GST_STATIC_CAPS ("application/x-ttf");
+
+#define TTF_CAPS (gst_static_caps_get(&ttf_caps))
+static void
+ttf_type_find (GstTypeFind * tf, gpointer unused)
+{
+  static const char *table_names[] =
+      { "cmap", "glyf", "head", "hhea", "hmtx", "loca", "maxp", "name",
+    "post"
+  };
+  const guint8 *data = NULL, *ptr;
+  const size_t len = 1024;
+  size_t n;
+  guint32 found = 0;
+
+  data = gst_type_find_peek (tf, 0, len);
+  if (!data)
+    return;
+
+  for (ptr = data; ptr < data + len - 4; ++ptr) {
+    for (n = 0; n < G_N_ELEMENTS (table_names); ++n) {
+      if (!memcmp (ptr, table_names[n], 4))
+        found |= 1 << n;
+    }
+  }
+
+  GST_DEBUG ("TTF tables found: %x", found);
+  if (found == 0x1ff)
+    gst_type_find_suggest (tf, GST_TYPE_FIND_MAXIMUM, TTF_CAPS);
+}
+
 /*** application/itc ***/
 static GstStaticCaps itc_caps = GST_STATIC_CAPS ("application/itc");
 #define ITC_CAPS (gst_static_caps_get(&itc_caps))
@@ -6092,6 +6126,15 @@ GST_TYPE_FIND_REGISTER_DEFINE (utf32, "text/utf-32", GST_RANK_MARGINAL,
     utf32_type_find, "txt", UTF32_CAPS, NULL, NULL);
 GST_TYPE_FIND_REGISTER_DEFINE (uri, "text/uri-list", GST_RANK_MARGINAL,
     uri_type_find, "ram", URI_CAPS, NULL, NULL);
+GST_TYPE_FIND_REGISTER_DEFINE (plugin, "application/x-ttf", GST_RANK_PRIMARY,
+    ttf_type_find, "ttf", TTF_CAPS, NULL, NULL);
+#if 0
+GST_TYPE_FIND_REGISTER_START_WITH_DEFINE (plugin, "application/x-font-ttf",
+      GST_RANK_SECONDARY, "ttf", "\x00\x01\x00\x00\x00", 5,
+      GST_TYPE_FIND_LIKELY);
+GST_TYPE_FIND_REGISTER_START_WITH_DEFINE (plugin, "application/x-font-otf",
+      GST_RANK_SECONDARY, "otf", "OTTO", 4, GST_TYPE_FIND_LIKELY);
+#endif
 GST_TYPE_FIND_REGISTER_DEFINE (itc, "application/itc", GST_RANK_SECONDARY,
     itc_type_find, "itc", ITC_CAPS, NULL, NULL);
 GST_TYPE_FIND_REGISTER_DEFINE (hls, "application/x-hls", GST_RANK_MARGINAL,
