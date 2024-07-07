@@ -73,6 +73,8 @@ struct _GstGaussianBlur
   float *kernel_sum;
   float *tempim;
   gint16 *smoothedim;
+  gboolean fixed_kernel;
+  gboolean fixed_kernel_built;
 };
 
 struct _GstGaussianBlurClass
