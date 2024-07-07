@@ -45,6 +45,7 @@ typedef struct {
   gint add_count;         /* how often this address has been added */
 
   GSocketAddress *addr;
+  GList *addrs;
   gchar *host;
   gint port;
 

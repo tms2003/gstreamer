@@ -443,51 +443,37 @@ static GstUDPClient *
 gst_udp_client_new (GstMultiUDPSink * sink, const gchar * host, gint port)
 {
   GstUDPClient *client;
+  GList *addrs = NULL;
   GInetAddress *addr;
-  GSocketAddress *sockaddr;
-  GResolver *resolver;
   GError *err = NULL;
 
-  sockaddr = g_inet_socket_address_new_from_string (host, port);
-  if (!sockaddr) {
-    GList *results;
+  addr = g_inet_address_new_from_string (host);
+  if (addr) {
+    addrs = g_list_append (addrs, addr);
+  } else {
+    GResolver *resolver;
 
     resolver = g_resolver_get_default ();
-    results =
-        g_resolver_lookup_by_name (resolver, host, sink->cancellable, &err);
-    if (!results)
-      goto name_resolve;
-    addr = G_INET_ADDRESS (g_object_ref (results->data));
-    sockaddr = g_inet_socket_address_new (addr, port);
-
-    g_resolver_free_addresses (results);
+    addrs = g_resolver_lookup_by_name (resolver, host, sink->cancellable, &err);
     g_object_unref (resolver);
-    g_object_unref (addr);
-  }
-  addr = g_inet_socket_address_get_address (G_INET_SOCKET_ADDRESS (sockaddr));
-#ifndef GST_DISABLE_GST_DEBUG
-  {
-    gchar *ip = g_inet_address_to_string (addr);
 
-    GST_DEBUG_OBJECT (sink, "IP address for host %s is %s", host, ip);
-    g_free (ip);
+    if (!addrs)
+      goto name_resolve;
   }
-#endif
 
   client = g_new0 (GstUDPClient, 1);
   client->ref_count = 1;
   client->add_count = 0;
   client->host = g_strdup (host);
   client->port = port;
-  client->addr = sockaddr;
+  client->addrs = addrs;
+  client->addr = NULL;
 
   return client;
 
 name_resolve:
   {
     g_clear_error (&err);
-    g_object_unref (resolver);
-
     return NULL;
   }
 }
@@ -497,8 +483,10 @@ static void
 gst_udp_client_unref (GstUDPClient * client)
 {
   if (--client->ref_count == 0) {
-    g_object_unref (client->addr);
+    if (client->addr)
+      g_object_unref (client->addr);
     g_free (client->host);
+    g_resolver_free_addresses (client->addrs);
     g_free (client);
   }
 }
@@ -1177,16 +1165,40 @@ static gboolean
 gst_multiudpsink_configure_client (GstMultiUDPSink * sink,
     GstUDPClient * client)
 {
-  GInetSocketAddress *saddr = G_INET_SOCKET_ADDRESS (client->addr);
-  GInetAddress *addr = g_inet_socket_address_get_address (saddr);
-  GSocketFamily family = g_socket_address_get_family (G_SOCKET_ADDRESS (saddr));
+  GInetAddress *addr;
+  GSocketFamily family = G_SOCKET_FAMILY_INVALID;
   GSocket *socket;
   GError *err = NULL;
+  GList *i;
+  gboolean sock_v6_supports_v4 = FALSE;
 
   GST_DEBUG_OBJECT (sink, "configuring client %p", client);
 
-  if (family == G_SOCKET_FAMILY_IPV6 && !sink->used_socket_v6)
+  if (sink->used_socket_v6)
+    sock_v6_supports_v4 = g_socket_speaks_ipv4 (sink->used_socket_v6);
+
+  for (i = client->addrs; i != NULL; i = i->next) {
+    addr = G_INET_ADDRESS (i->data);
+    family = g_inet_address_get_family (addr);
+    if (family == G_SOCKET_FAMILY_IPV6 && sink->used_socket_v6)
+      break;
+    if (family == G_SOCKET_FAMILY_IPV4 && (sink->used_socket
+            || sock_v6_supports_v4))
+      break;
+  }
+  if (i == NULL)
     goto invalid_family;
+
+#ifndef GST_DISABLE_GST_DEBUG
+  {
+    gchar *ip = g_inet_address_to_string (i->data);
+    GST_DEBUG_OBJECT (sink, "IP address for host %s is %s", client->host, ip);
+    g_free (ip);
+  }
+#endif
+
+  g_clear_object (&client->addr);
+  client->addr = g_inet_socket_address_new (i->data, client->port);
 
   /* Select socket to send from for this address */
   if (family == G_SOCKET_FAMILY_IPV6 || !sink->used_socket)
@@ -1229,6 +1241,30 @@ invalid_family:
         ("Invalid address family (got %d)", family));
     return FALSE;
   }
+}
+
+static GSocketFamily
+gst_udp_client_get_family (GstUDPClient * client)
+{
+  return client->addr ? g_socket_address_get_family (client->addr) :
+      g_inet_address_get_family (client->addrs->data);
+}
+
+static gint
+gst_udp_client_compare_socket_family (GstUDPClient * a, GstUDPClient * b)
+{
+  GSocketFamily fa = gst_udp_client_get_family (a);
+  GSocketFamily fb = gst_udp_client_get_family (b);
+
+  if (fa == fb)
+    return 0;
+
+  /* a should go before b */
+  if (fa == G_SOCKET_FAMILY_IPV4 && fb == G_SOCKET_FAMILY_IPV6)
+    return -1;
+
+  /* b should go before a */
+  return 1;
 }
 
 /* create a socket for sending to remote machine */
@@ -1350,6 +1386,23 @@ gst_multiudpsink_start (GstBaseSink * bsink)
         g_object_unref (bind_iaddr);
         if (err != NULL)
           goto bind_error;
+
+        /* Bound to any address, but might not have an actual IP address assigned */
+        {
+          GSocketAddress *addr = g_inet_socket_address_new_from_string ("::1", 9);      // discard
+          gssize rc =
+              g_socket_send_to (sink->used_socket_v6, addr, "", 0, NULL, &err);
+          g_object_unref (addr);
+
+          /* Doesn't seem to be a GIOError equivalent */
+          if (rc == -1 && errno == EADDRNOTAVAIL && err) {
+            g_object_unref (sink->used_socket_v6);
+            sink->used_socket_v6 = NULL;
+            GST_INFO_OBJECT (sink, "IPv6 socket disabled, unable to send: %s",
+                err->message);
+            g_clear_error (&err);
+          }
+        }
       }
     }
   }
@@ -1440,14 +1493,33 @@ gst_multiudpsink_start (GstBaseSink * bsink)
   gst_multiudpsink_setup_qos_dscp (sink, sink->used_socket);
   gst_multiudpsink_setup_qos_dscp (sink, sink->used_socket_v6);
 
+  sink->num_v4_unique = 0;
+  sink->num_v4_all = 0;
+  sink->num_v6_unique = 0;
+  sink->num_v6_all = 0;
+
   /* look for multicast clients and join multicast groups appropriately
      set also ttl and multicast loopback delivery appropriately  */
   for (clients = sink->clients; clients; clients = g_list_next (clients)) {
+    GSocketFamily family;
     client = (GstUDPClient *) clients->data;
 
     if (!gst_multiudpsink_configure_client (sink, client))
       return FALSE;
+
+    family = g_socket_address_get_family (client->addr);
+
+    if (family == G_SOCKET_FAMILY_IPV4) {
+      ++sink->num_v4_unique;
+      sink->num_v4_all += client->add_count;
+    } else {
+      ++sink->num_v6_unique;
+      sink->num_v6_all += client->add_count;
+    }
   }
+  /* re-sort the clients now that we've established the socket family */
+  sink->clients = g_list_sort (sink->clients,
+      (GCompareFunc) gst_udp_client_compare_socket_family);
   return TRUE;
 
   /* ERRORS */
@@ -1513,28 +1585,10 @@ gst_multiudpsink_stop (GstBaseSink * bsink)
   return TRUE;
 }
 
-static gint
-gst_udp_client_compare_socket_family (GstUDPClient * a, GstUDPClient * b)
-{
-  GSocketFamily fa = g_socket_address_get_family (a->addr);
-  GSocketFamily fb = g_socket_address_get_family (b->addr);
-
-  if (fa == fb)
-    return 0;
-
-  /* a should go before b */
-  if (fa == G_SOCKET_FAMILY_IPV4 && fb == G_SOCKET_FAMILY_IPV6)
-    return -1;
-
-  /* b should go before a */
-  return 1;
-}
-
 static void
 gst_multiudpsink_add_internal (GstMultiUDPSink * sink, const gchar * host,
     gint port, gboolean lock)
 {
-  GSocketFamily family;
   GstUDPClient *client;
   GstUDPClient udpclient;
   GList *find;
@@ -1560,16 +1614,12 @@ gst_multiudpsink_add_internal (GstMultiUDPSink * sink, const gchar * host,
   if (find) {
     client = (GstUDPClient *) find->data;
 
-    family = g_socket_address_get_family (client->addr);
-
     GST_DEBUG_OBJECT (sink, "found %d existing clients with host %s, port %d",
         client->add_count, host, port);
   } else {
     client = gst_udp_client_new (sink, host, port);
     if (!client)
       goto error;
-
-    family = g_socket_address_get_family (client->addr);
 
     client->connect_time = g_get_real_time () * GST_USECOND;
 
@@ -1583,18 +1633,23 @@ gst_multiudpsink_add_internal (GstMultiUDPSink * sink, const gchar * host,
     sink->clients = g_list_insert_sorted (sink->clients, client,
         (GCompareFunc) gst_udp_client_compare_socket_family);
 
-    if (family == G_SOCKET_FAMILY_IPV4)
-      ++sink->num_v4_unique;
-    else
-      ++sink->num_v6_unique;
   }
 
   ++client->add_count;
+  if (sink->used_socket) {
+    GSocketFamily family = g_socket_address_get_family (client->addr);
 
-  if (family == G_SOCKET_FAMILY_IPV4)
-    ++sink->num_v4_all;
-  else
-    ++sink->num_v6_all;
+    if (client->add_count == 1) {
+      if (family == G_SOCKET_FAMILY_IPV4)
+        ++sink->num_v4_unique;
+      else
+        ++sink->num_v6_unique;
+    }
+    if (family == G_SOCKET_FAMILY_IPV4)
+      ++sink->num_v4_all;
+    else
+      ++sink->num_v6_all;
+  }
 
   if (lock)
     g_mutex_unlock (&sink->client_lock);
@@ -1625,7 +1680,7 @@ gst_multiudpsink_add (GstMultiUDPSink * sink, const gchar * host, gint port)
 void
 gst_multiudpsink_remove (GstMultiUDPSink * sink, const gchar * host, gint port)
 {
-  GSocketFamily family;
+  GSocketFamily family = G_SOCKET_FAMILY_INVALID;
   GList *find;
   GstUDPClient udpclient;
   GstUDPClient *client;
@@ -1646,43 +1701,48 @@ gst_multiudpsink_remove (GstMultiUDPSink * sink, const gchar * host, gint port)
 
   --client->add_count;
 
-  family = g_socket_address_get_family (client->addr);
-  if (family == G_SOCKET_FAMILY_IPV4)
-    --sink->num_v4_all;
-  else
-    --sink->num_v6_all;
+  if (client->addr) {
+    /* Client has been configured. Otherwise it's not counted yet */
+    family = g_socket_address_get_family (client->addr);
+    if (family == G_SOCKET_FAMILY_IPV4)
+      --sink->num_v4_all;
+    else if (family == G_SOCKET_FAMILY_IPV6)
+      --sink->num_v6_all;
+  }
 
   if (client->add_count == 0) {
-    GInetSocketAddress *saddr = G_INET_SOCKET_ADDRESS (client->addr);
-    GInetAddress *addr = g_inet_socket_address_get_address (saddr);
-    GSocket *socket;
-
-    /* Select socket to send from for this address */
-    if (family == G_SOCKET_FAMILY_IPV6 || !sink->used_socket)
-      socket = sink->used_socket_v6;
-    else
-      socket = sink->used_socket;
-
     GST_DEBUG_OBJECT (sink, "remove client with host %s, port %d", host, port);
 
     client->disconnect_time = g_get_real_time () * GST_USECOND;
 
-    if (socket && sink->auto_multicast
-        && g_inet_address_get_is_multicast (addr)) {
-      GError *err = NULL;
+    if (client->addr) {
+      GInetSocketAddress *saddr = G_INET_SOCKET_ADDRESS (client->addr);
+      GInetAddress *addr = g_inet_socket_address_get_address (saddr);
+      GSocket *socket;
 
-      if (!g_socket_leave_multicast_group (socket, addr, FALSE,
-              sink->multi_iface, &err)) {
-        GST_DEBUG_OBJECT (sink, "Failed to leave multicast group: %s",
-            err->message);
-        g_clear_error (&err);
+      if (family == G_SOCKET_FAMILY_IPV4)
+        --sink->num_v4_unique;
+      else if (family == G_SOCKET_FAMILY_IPV6)
+        --sink->num_v6_unique;
+
+      /* Select socket to send from for this address */
+      if (family == G_SOCKET_FAMILY_IPV6 || !sink->used_socket)
+        socket = sink->used_socket_v6;
+      else
+        socket = sink->used_socket;
+
+      if (socket && sink->auto_multicast
+          && g_inet_address_get_is_multicast (addr)) {
+        GError *err = NULL;
+
+        if (!g_socket_leave_multicast_group (socket, addr, FALSE,
+                sink->multi_iface, &err)) {
+          GST_DEBUG_OBJECT (sink, "Failed to leave multicast group: %s",
+              err->message);
+          g_clear_error (&err);
+        }
       }
     }
-
-    if (family == G_SOCKET_FAMILY_IPV4)
-      --sink->num_v4_unique;
-    else
-      --sink->num_v6_unique;
 
     /* Keep state consistent for streaming thread, so remove from client list,
      * but keep it around until after the signal has been emitted, in case a

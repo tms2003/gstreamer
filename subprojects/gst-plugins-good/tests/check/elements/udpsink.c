@@ -210,7 +210,6 @@ GST_START_TEST (test_udpsink_dscp)
   GstElement *udpsink;
   GError *error = NULL;
   GSocket *sock4, *sock6;
-  gboolean have_ipv6;
 
   sock4 =
       g_socket_new (G_SOCKET_FAMILY_IPV4, G_SOCKET_TYPE_DATAGRAM,
@@ -220,14 +219,18 @@ GST_START_TEST (test_udpsink_dscp)
   sock6 =
       g_socket_new (G_SOCKET_FAMILY_IPV6, G_SOCKET_TYPE_DATAGRAM,
       G_SOCKET_PROTOCOL_UDP, &error);
-  have_ipv6 = sock6 != NULL && error == NULL;
-  g_clear_error (&error);
+  if (sock6 == NULL
+      && g_error_matches (error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED)) {
+    /* IPv6 not supported on this machine */
+    g_clear_error (&error);
+  } else {
+    fail_unless (sock6 != NULL && error == NULL);
+  }
 
   udpsink = gst_check_setup_element ("udpsink");
   g_signal_emit_by_name (udpsink, "add", "127.0.0.1", 5554, NULL);
   g_object_set (udpsink, "socket", sock4, NULL);
-
-  if (have_ipv6)
+  if (sock6)
     g_object_set (udpsink, "socket-v6", sock6, NULL);
 
   ASSERT_SET_STATE (udpsink, GST_STATE_READY, GST_STATE_CHANGE_SUCCESS);
@@ -239,7 +242,8 @@ GST_START_TEST (test_udpsink_dscp)
 
   gst_object_unref (udpsink);
   g_object_unref (sock4);
-  g_clear_object (&sock6);
+  if (sock6)
+    g_object_unref (sock6);
 }
 
 GST_END_TEST;
