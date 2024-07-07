@@ -132,5 +132,7 @@ typedef enum
 #define GST_TYPE_AV_CODEC_COMPLIANCE (gst_av_codec_compliance_get_type())
 GType gst_av_codec_compliance_get_type (void);
 
+void
+gst_ffmpeg_caps_set_framed (GstCaps * caps);
 
 #endif /* __GST_FFMPEG_UTILS_H__ */

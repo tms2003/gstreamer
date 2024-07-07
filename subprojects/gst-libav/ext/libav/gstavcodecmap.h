@@ -51,7 +51,7 @@ GstCaps *
 gst_ffmpeg_codectype_to_audio_caps (AVCodecContext *context,
                               enum AVCodecID codec_id,
 				    gboolean encode,
-				    AVCodec *codec);
+				    const AVCodec *codec);
 GstCaps *
 gst_ffmpeg_codectype_to_video_caps (AVCodecContext *context,
                               enum AVCodecID codec_id,
@@ -102,6 +102,10 @@ enum AVPixelFormat gst_ffmpeg_videoformat_to_pixfmt (GstVideoFormat format);
 
 GstAudioFormat gst_ffmpeg_smpfmt_to_audioformat (enum AVSampleFormat sample_fmt,
                                                  GstAudioLayout * layout);
+
+GstCaps *
+gst_ffmpeg_make_parser_src_caps (const AVCodecContext *context,
+    const char *mime_type);
 
 /*
  * _formatid_to_caps () is meant for muxers/demuxers, it

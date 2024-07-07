@@ -323,7 +323,7 @@ gst_ffmpeg_video_set_pix_fmts (GstCaps * caps, const enum AVPixelFormat *fmts)
  * but I'm too lazy today. Maybe later.
  */
 static GstCaps *
-gst_ff_vid_caps_new (AVCodecContext * context, const AVCodec * codec,
+gst_ff_vid_caps_new (const AVCodecContext * context, const AVCodec * codec,
     enum AVCodecID codec_id, gboolean encode, const char *mimetype,
     const char *fieldname, ...)
 {
@@ -621,7 +621,7 @@ gst_ffmpeg_audio_set_sample_fmts (GstCaps * caps,
 /* same for audio - now with channels/sample rate
  */
 static GstCaps *
-gst_ff_aud_caps_new (AVCodecContext * context, AVCodec * codec,
+gst_ff_aud_caps_new (const AVCodecContext * context, const AVCodec * codec,
     enum AVCodecID codec_id, gboolean encode, const char *mimetype,
     const char *fieldname, ...)
 {
@@ -773,6 +773,14 @@ gst_ff_aud_caps_new (AVCodecContext * context, AVCodec * codec,
         maxchannels = 65535;
         n_rates = G_N_ELEMENTS (l_rates);
         rates = l_rates;
+        break;
+      }
+      case AV_CODEC_ID_G723_1:
+      {
+        const static gint l_rates[] = { 8000 };
+        n_rates = G_N_ELEMENTS (l_rates);
+        rates = l_rates;
+        maxchannels = 1;
         break;
       }
       default:
@@ -2542,6 +2550,17 @@ gst_ffmpeg_codecid_to_caps (enum AVCodecID codec_id,
         g_value_unset (&arr);
       }
       break;
+    case AV_CODEC_ID_G723_1:
+      if (encode) {
+        caps = gst_ff_aud_caps_new (context, NULL, codec_id, encode,
+            "audio/G723", "rate", G_TYPE_INT, 8000, "channels", G_TYPE_INT, 1,
+            NULL);
+      } else {
+        caps = gst_ff_aud_caps_new (context, NULL, codec_id, encode,
+            "audio/G723", "rate", G_TYPE_INT, 8000, "channels",
+            GST_TYPE_INT_RANGE, 1, 2, NULL);
+      }
+      break;
     default:
       GST_DEBUG ("Unknown codec ID %d, please add mapping here", codec_id);
       break;
@@ -2687,7 +2706,7 @@ gst_ffmpeg_smpfmt_to_audioformat (enum AVSampleFormat sample_fmt,
 
 static GstCaps *
 gst_ffmpeg_smpfmt_to_caps (enum AVSampleFormat sample_fmt,
-    AVCodecContext * context, AVCodec * codec, enum AVCodecID codec_id)
+    AVCodecContext * context, const AVCodec * codec, enum AVCodecID codec_id)
 {
   GstCaps *caps = NULL;
   GstAudioFormat format;
@@ -2727,7 +2746,7 @@ caps_has_field (GstCaps * caps, const gchar * field)
 
 GstCaps *
 gst_ffmpeg_codectype_to_audio_caps (AVCodecContext * context,
-    enum AVCodecID codec_id, gboolean encode, AVCodec * codec)
+    enum AVCodecID codec_id, gboolean encode, const AVCodec * codec)
 {
   GstCaps *caps = NULL;
 
@@ -2751,6 +2770,23 @@ gst_ffmpeg_codectype_to_audio_caps (AVCodecContext * context,
   }
 
   return caps;
+}
+
+GstCaps *
+gst_ffmpeg_make_parser_src_caps (const AVCodecContext * context,
+    const char *mime_type)
+{
+  switch (context->codec_type) {
+    case AVMEDIA_TYPE_AUDIO:
+      return gst_ff_aud_caps_new (context, context->codec, context->codec_id,
+          FALSE, mime_type, "framed", G_TYPE_BOOLEAN, TRUE, NULL);
+    case AVMEDIA_TYPE_VIDEO:
+      return gst_ff_vid_caps_new (context, context->codec, context->codec_id,
+          FALSE, mime_type, "framed", G_TYPE_BOOLEAN, TRUE, NULL);
+    default:
+      ;
+  }
+  return NULL;
 }
 
 GstCaps *

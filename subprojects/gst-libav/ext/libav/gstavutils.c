@@ -528,3 +528,10 @@ gst_av_codec_compliance_get_type (void)
 
   return (GType) compliance_type;
 }
+
+void
+gst_ffmpeg_caps_set_framed (GstCaps * caps)
+{
+  g_assert (caps != NULL);
+  gst_caps_set_simple (caps, "framed", G_TYPE_BOOLEAN, TRUE, NULL);
+}
