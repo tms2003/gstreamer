@@ -1428,6 +1428,19 @@ gst_download_buffer_handle_src_event (GstPad * pad, GstObject * parent,
 
       res = gst_pad_push_event (dlbuf->sinkpad, event);
       break;
+    case GST_EVENT_SEEK:{
+      GstSeekFlags flags;
+      gst_event_parse_seek (event, NULL, NULL, &flags, NULL, NULL, NULL, NULL);
+      if (!(flags & GST_SEEK_FLAG_FLUSH)) {
+        GST_DOWNLOAD_BUFFER_MUTEX_LOCK (dlbuf);
+        GST_DEBUG_OBJECT (dlbuf, "non-flushing seek, unlocking getrange()");
+        dlbuf->srcresult = GST_FLOW_FLUSHING;
+        GST_DOWNLOAD_BUFFER_SIGNAL_ADD (dlbuf, -1);
+        GST_DOWNLOAD_BUFFER_MUTEX_UNLOCK (dlbuf);
+      }
+      res = gst_pad_push_event (dlbuf->sinkpad, event);
+      break;
+    }
     default:
       res = gst_pad_push_event (dlbuf->sinkpad, event);
       break;
