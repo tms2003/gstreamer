@@ -54,12 +54,19 @@ struct _GstKMSSink {
   gint crtc_id;
   gint plane_id;
   guint pipe;
+  gboolean force_legacy;
+  /* used by atomic kms */
+  GData *conn_props;
+  GData *crtc_props;
+  GHashTable *plane_res;
 
   /* crtc data */
   guint16 hdisplay, vdisplay;
+  /* Only be used by the legacy part to store the buffer for a CRTC */
   guint32 buffer_id;
 
   /* capabilities */
+  gboolean has_atomic;
   gboolean has_prime_import;
   gboolean has_prime_export;
   gboolean has_async_page_flip;
@@ -78,6 +85,7 @@ struct _GstKMSSink {
   guint last_width;
   guint last_height;
   GstBuffer *last_buffer;
+  /* only used by legacy kms */
   GstMemory *tmp_kmsmem;
 
   gchar *devname;
@@ -100,11 +108,12 @@ struct _GstKMSSink {
 
 #ifdef HAVE_DRM_HDR
   /* HDR mastering related structure */
-  gboolean no_infoframe;
+  gboolean has_hdr_prop;
   gboolean has_hdr_info;
+  /* legacy api need this flag */
   gboolean has_sent_hdrif;
-  guint32 edidPropID;
-  guint32 hdrPropID;
+  /* blob for atomic api */
+  guint hdr_blob_id;
   gchar colorimetry;
   GstVideoMasteringDisplayInfo hdr_minfo;
   GstVideoContentLightLevel hdr_cll;

@@ -28,6 +28,7 @@
 #endif
 
 #include <drm_fourcc.h>
+#include <gst/allocators/gstdmabuf.h>
 
 #include "gstkmsutils.h"
 
@@ -52,6 +53,10 @@ static const struct
 
   /* 16bits/c YUV 4:2:0 */
   DEF_FMT (P010, P010_10LE),
+#ifdef HAVE_DRM_HDR
+  /* 10bits/c YUV 4:2:0 */
+  DEF_FMT (NV15, NV12_10LE40),
+#endif
 
   /* YUV 4:4:4 */
   DEF_FMT (NV24, NV24),
@@ -129,6 +134,9 @@ gst_drm_bpp_from_drm (guint32 drmfmt)
       bpp = 8;
       break;
     case DRM_FORMAT_P010:
+#ifdef HAVE_DRM_HDR
+    case DRM_FORMAT_NV15:
+#endif
       bpp = 10;
       break;
     case DRM_FORMAT_UYVY:
@@ -164,6 +172,9 @@ gst_drm_height_from_drm (guint32 drmfmt, guint32 height)
     case DRM_FORMAT_NV21:
     case DRM_FORMAT_P010:
     case DRM_FORMAT_P016:
+#ifdef HAVE_DRM_HDR
+    case DRM_FORMAT_NV15:
+#endif
       ret = height * 3 / 2;
       break;
     case DRM_FORMAT_NV16:
@@ -198,7 +209,7 @@ GstCaps *
 gst_kms_sink_caps_template_fill (void)
 {
   gint i;
-  GstCaps *caps;
+  GstCaps *caps, *dma_caps;
   GstStructure *template;
 
   caps = gst_caps_new_empty ();
@@ -210,6 +221,13 @@ gst_kms_sink_caps_template_fill (void)
         "framerate", GST_TYPE_FRACTION_RANGE, 0, 1, G_MAXINT, 1, NULL);
     gst_caps_append_structure (caps, template);
   }
+
+  /* Always assume the DMA buffer importing is supported */
+  dma_caps = gst_caps_copy (caps);
+  gst_caps_set_features_simple (dma_caps,
+      gst_caps_features_new (GST_CAPS_FEATURE_MEMORY_DMABUF, NULL));
+  gst_caps_append (caps, dma_caps);
+
   return gst_caps_simplify (caps);
 }
 

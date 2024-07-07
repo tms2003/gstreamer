@@ -30,6 +30,7 @@
 #include <fcntl.h>
 #include <xf86drm.h>
 #include <xf86drmMode.h>
+#include <drm_fourcc.h>
 #include <stdlib.h>
 #include <sys/mman.h>
 #include <unistd.h>
@@ -352,6 +353,7 @@ gst_kms_allocator_add_fb (GstKMSAllocator * alloc, GstKMSMemory * kmsmem,
 {
   gint i, ret;
   gint num_planes = GST_VIDEO_INFO_N_PLANES (vinfo);
+  guint64 modifiers[4] = { 0, };
   guint32 w, h, fmt;
   guint32 pitches[4] = { 0, };
   guint32 offsets[4] = { 0, };
@@ -371,8 +373,9 @@ gst_kms_allocator_add_fb (GstKMSAllocator * alloc, GstKMSMemory * kmsmem,
   GST_DEBUG_OBJECT (alloc, "bo handles: %d, %d, %d, %d", bo_handles[0],
       bo_handles[1], bo_handles[2], bo_handles[3]);
 
-  ret = drmModeAddFB2 (alloc->priv->fd, w, h, fmt, bo_handles, pitches,
-      offsets, &kmsmem->fb_id, 0);
+  ret = drmModeAddFB2WithModifiers (alloc->priv->fd, w, h, fmt, bo_handles,
+      pitches, offsets, modifiers, &kmsmem->fb_id,
+      modifiers[0] ? DRM_MODE_FB_MODIFIERS : DRM_FORMAT_MOD_LINEAR);
   if (ret) {
     GST_ERROR_OBJECT (alloc, "Failed to bind to framebuffer: %s (%d)",
         g_strerror (errno), errno);
