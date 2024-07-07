@@ -441,12 +441,13 @@ gst_d3d12_encoder_src_query (GstVideoEncoder * encoder, GstQuery * query)
 }
 
 static GstBufferPool *
-gst_d3d12_encoder_create_upload_pool (GstD3D12Encoder * self)
+gst_d3d12_encoder_create_upload_pool (GstD3D12Encoder * self,
+    GstVideoFormat format)
 {
   auto priv = self->priv;
   GstVideoInfo info;
 
-  gst_video_info_set_format (&info, GST_VIDEO_FORMAT_NV12,
+  gst_video_info_set_format (&info, format,
       priv->config.resolution.Width, priv->config.resolution.Height);
   auto caps = gst_video_info_to_caps (&info);
   auto pool = gst_d3d12_buffer_pool_new (self->device);
@@ -609,7 +610,7 @@ gst_d3d12_encoder_set_format (GstVideoEncoder * encoder,
   auto & resource_req = priv->resource_req;
   resource_req.Codec = klass->codec;
   resource_req.Profile = config.profile_desc;
-  resource_req.InputFormat = DXGI_FORMAT_NV12;
+  resource_req.InputFormat = config.encoder_format;
   resource_req.PictureTargetResolution = config.resolution;
   auto hr = video_device->CheckFeatureSupport
       (D3D12_FEATURE_VIDEO_ENCODER_RESOURCE_REQUIREMENTS,
@@ -628,7 +629,7 @@ gst_d3d12_encoder_set_format (GstVideoEncoder * encoder,
   }
 
   auto device = gst_d3d12_device_get_device_handle (self->device);
-  priv->format_info.Format = DXGI_FORMAT_NV12;
+  priv->format_info.Format = config.encoder_format;
   hr = device->CheckFeatureSupport (D3D12_FEATURE_FORMAT_INFO,
       &priv->format_info, sizeof (priv->format_info));
   if (!gst_d3d12_result (hr, self->device)) {
@@ -686,7 +687,8 @@ gst_d3d12_encoder_set_format (GstVideoEncoder * encoder,
       resource_req.MaxEncoderOutputMetadataBufferSize,
       resolved_metadata_size, bitstream_size, ASYNC_DEPTH);
 
-  session->upload_pool = gst_d3d12_encoder_create_upload_pool (self);
+  session->upload_pool = gst_d3d12_encoder_create_upload_pool (self,
+      GST_VIDEO_INFO_FORMAT (&state->info));
   if (!session->upload_pool)
     return FALSE;
 
@@ -1417,7 +1419,7 @@ gst_d3d12_encoder_handle_frame (GstVideoEncoder * encoder,
 
   meta_in_args.EncoderCodec = klass->codec;
   meta_in_args.EncoderProfile = config.profile_desc;
-  meta_in_args.EncoderInputFormat = DXGI_FORMAT_NV12;
+  meta_in_args.EncoderInputFormat = config.encoder_format;
   meta_in_args.EncodedPictureEffectiveResolution = config.resolution;
   meta_in_args.HWLayoutMetadata.pBuffer = metadata.Get ();
   meta_in_args.HWLayoutMetadata.Offset = 0;
