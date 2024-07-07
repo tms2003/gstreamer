@@ -385,38 +385,32 @@ gst_vp9_enc_get_property (GObject * object, guint prop_id, GValue * value,
 }
 
 static vpx_color_space_t
-gst_vp9_get_vpx_colorspace (GstVPXEnc * encoder, GstVideoColorimetry * in_cinfo,
+gst_vp9_get_vpx_colorspace (GstVPXEnc * encoder, GstVideoColorimetry * cinfo,
     GstVideoFormat format)
 {
   vpx_color_space_t colorspace = VPX_CS_UNKNOWN;
-  GstVideoColorimetry cinfo = *in_cinfo;
-  gchar *colorimetry_str;
   guint i;
 
   /* *INDENT-OFF* */
   static const struct
   {
-    const gchar *str;
+    GstVideoColorMatrix matrix;
     vpx_color_space_t vpx_color_space;
   } colorimetry_map[] = {
     {
-    GST_VIDEO_COLORIMETRY_BT601, VPX_CS_BT_601}, {
-    GST_VIDEO_COLORIMETRY_BT709, VPX_CS_BT_709}, {
-    GST_VIDEO_COLORIMETRY_SMPTE240M, VPX_CS_SMPTE_240}, {
-    GST_VIDEO_COLORIMETRY_BT2020, VPX_CS_BT_2020}
+    GST_VIDEO_COLOR_MATRIX_UNKNOWN, VPX_CS_UNKNOWN}, {
+    GST_VIDEO_COLOR_MATRIX_RGB, VPX_CS_SRGB}, {
+    GST_VIDEO_COLOR_MATRIX_BT709, VPX_CS_BT_709}, {
+    GST_VIDEO_COLOR_MATRIX_BT601, VPX_CS_BT_601}, {
+    GST_VIDEO_COLOR_MATRIX_SMPTE240M, VPX_CS_SMPTE_240}, {
+    GST_VIDEO_COLOR_MATRIX_BT2020, VPX_CS_BT_2020}
   };
   /* *INDENT-ON* */
 
-  /* We support any range, all mapped CSC are by default reduced range. */
-  cinfo.range = GST_VIDEO_COLOR_RANGE_16_235;
-  colorimetry_str = gst_video_colorimetry_to_string (&cinfo);
-
-  if (colorimetry_str != NULL) {
-    for (i = 0; i < G_N_ELEMENTS (colorimetry_map); ++i) {
-      if (g_strcmp0 (colorimetry_map[i].str, colorimetry_str) == 0) {
-        colorspace = colorimetry_map[i].vpx_color_space;
-        break;
-      }
+  for (i = 0; i < G_N_ELEMENTS (colorimetry_map); ++i) {
+    if (colorimetry_map[i].matrix == cinfo->matrix) {
+      colorspace = colorimetry_map[i].vpx_color_space;
+      break;
     }
   }
 
@@ -433,12 +427,10 @@ gst_vp9_get_vpx_colorspace (GstVPXEnc * encoder, GstVideoColorimetry * in_cinfo,
        */
       colorspace = VPX_CS_SRGB;
     } else {
-      GST_WARNING_OBJECT (encoder, "Unsupported colorspace \"%s\"",
-          GST_STR_NULL (colorimetry_str));
+      GST_WARNING_OBJECT (encoder, "Unsupported color matrix %d",
+          cinfo->matrix);
     }
   }
-
-  g_free (colorimetry_str);
 
   return colorspace;
 }
