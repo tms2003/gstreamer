@@ -2386,7 +2386,14 @@ gst_base_text_overlay_push_frame (GstBaseTextOverlay * overlay,
   video_frame = gst_buffer_make_writable (video_frame);
 
   if (overlay->attach_compo_to_buffer) {
+    GstVideoOverlayComposition *upstream_meta =
+        gst_buffer_get_video_overlay_composition_meta (video_frame);
+
     GST_DEBUG_OBJECT (overlay, "Attaching text overlay image to video buffer");
+    if (upstream_meta != NULL) {
+      gst_buffer_remove_video_overlay_composition_meta (video_frame,
+          upstream_meta);
+    }
     gst_buffer_add_video_overlay_composition_meta (video_frame,
         overlay->composition);
     /* FIXME: emulate shaded background box if want_shading=true */
