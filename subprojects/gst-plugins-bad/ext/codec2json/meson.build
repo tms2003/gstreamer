@@ -1,4 +1,5 @@
 codec2json_sources = files([
+  'gstcodec2json.c',
   'gstav12json.c',
   'gsth2642json.c',
   'gsth2652json.c',
