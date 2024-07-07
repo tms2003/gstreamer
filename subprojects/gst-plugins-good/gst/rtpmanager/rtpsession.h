@@ -260,7 +260,8 @@ struct _RTPSession {
 
   guint32       suggested_ssrc;
   gboolean      internal_ssrc_set;
-  gboolean      internal_ssrc_from_caps_or_property;
+  gboolean      internal_ssrc_from_caps;
+  gboolean      internal_ssrc_from_property;
 
   /* for sender/receiver counting */
   guint32       key;
