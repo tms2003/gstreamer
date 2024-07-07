@@ -11,6 +11,7 @@ rtpmanager_sources = [
   'gstrtphdrext-streamid.c',
   'gstrtpmux.c',
   'gstrtpptdemux.c',
+  'tokenbucket.c',
   'gstrtprtxqueue.c',
   'gstrtprtxreceive.c',
   'gstrtprtxsend.c',
