@@ -106,7 +106,7 @@ hup_handler (gpointer user_data)
     g_object_unref (pipeline);
   }
 
-  signal_watch_intr_id = 0;
+  signal_watch_hup_id = 0;
   return G_SOURCE_REMOVE;
 }
 #endif /* G_OS_UNIX */
