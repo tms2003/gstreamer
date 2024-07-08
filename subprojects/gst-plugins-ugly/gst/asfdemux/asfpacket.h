@@ -65,6 +65,11 @@ typedef enum {
 
 GstAsfDemuxParsePacketError gst_asf_demux_parse_packet (GstASFDemux * demux, GstBuffer * buf);
 
+gboolean                    gst_asf_packet_get_packet_times (GstASFDemux   * demux,
+                                                             GstBuffer     * buf,
+                                                             GstClockTime  * send_time,
+                                                             GstClockTime  * duration);
+
 #define gst_asf_payload_is_complete(payload) \
     ((payload)->buf_filled >= (payload)->mo_size)
 
