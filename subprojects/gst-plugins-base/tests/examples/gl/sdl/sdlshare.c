@@ -21,15 +21,16 @@
 #include "config.h"
 #endif
 
-#ifdef WIN32
+#ifdef _WIN32
 #include <windows.h>
 #endif
 
 #include <GL/gl.h>
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_opengl.h>
+#include <stdio.h>
 
-#ifndef WIN32
+#ifndef _WIN32
 #include <GL/glx.h>
 #include <SDL2/SDL_syswm.h>
 #include <gst/gl/x11/gstgldisplay_x11.h>
@@ -515,7 +516,7 @@ int
 main (int argc, char **argv)
 {
 
-#ifdef WIN32
+#ifdef _WIN32
   HGLRC gl_context = 0;
   HDC sdl_dc = 0;
 #else
@@ -530,6 +531,7 @@ main (int argc, char **argv)
   GstGLPlatform gl_platform;
   GError *err = NULL;
   GstGLAPI gl_api;
+  gboolean share_success = TRUE;
 
   /* Initialize SDL for video output */
   if (SDL_Init (SDL_INIT_VIDEO) < 0) {
@@ -562,7 +564,7 @@ main (int argc, char **argv)
 
   SDL_GL_MakeCurrent (sdl_window, sdl_gl_context);
 
-#ifdef WIN32
+#ifdef _WIN32
   gl_context = wglGetCurrentContext ();
   sdl_dc = wglGetCurrentDC ();
   gl_platform = GST_GL_PLATFORM_WGL;
@@ -619,35 +621,69 @@ main (int argc, char **argv)
   gst_caps_unref (caps);
 
   gst_element_set_state (GST_ELEMENT (pipeline), GST_STATE_PLAYING);
+#if GST_GL_HAVE_WINDOW_WIN32 && GST_GL_HAVE_PLATFORM_WGL
+  G_STMT_START {
+    /* If there's no wglCreateContextAttribsARB() support, then we would fallback to
+     * wglShareLists() which will fail with ERROR_BUSY (0xaa) if either of the GL
+     * contexts are current in any other thread.
+     *
+     * The workaround here is to temporarily disable Qt's GL context while we
+     * set up our own.
+     *
+     * Sometimes wglCreateContextAttribsARB()
+     * exists, but isn't functional (some Intel drivers), so it's easiest to do this
+     * unconditionally.
+     */
 
-  sdl_event_loop (bus);
+    /* retrieve Qt's GL device context as current device context */
+    HDC device = wglGetCurrentDC ();
 
-  gst_element_set_state (GST_ELEMENT (pipeline), GST_STATE_NULL);
-  gst_object_unref (pipeline);
+    sdl_gl_context = gst_gl_context_new (sdl_gl_display);
 
-  gst_object_unref (bus);
+    wglMakeCurrent (NULL, NULL);
+    if (!gst_gl_context_create (sdl_gl_context, sdl_context, &err)) {
+      GST_ERROR ("failed to create shared GL context: %s", err->message);
+      gst_clear_object (&sdl_context);
+      gst_clear_object (&sdl_gl_context);
+    }
+    wglMakeCurrent (device, (HGLRC) gl_context);
 
-  gst_gl_context_activate (sdl_context, FALSE);
-  gst_object_unref (sdl_context);
-  gst_object_unref (sdl_gl_display);
-  if (gst_context)
-    gst_object_unref (gst_context);
+    if (!sdl_gl_context)
+      share_success = FALSE;
 
-  /* make sure there is no pending gst gl buffer in the communication queues 
-   * between sdl and gst-gl
-   */
-  while (g_async_queue_length (queue_input_buf) > 0) {
-    GstVideoFrame *vframe =
-        (GstVideoFrame *) g_async_queue_pop (queue_input_buf);
-    gst_video_frame_unmap (vframe);
-    g_free (vframe);
-  }
+  } G_STMT_END;
+#endif
 
-  while (g_async_queue_length (queue_output_buf) > 0) {
-    GstVideoFrame *vframe =
-        (GstVideoFrame *) g_async_queue_pop (queue_output_buf);
-    gst_video_frame_unmap (vframe);
-    g_free (vframe);
+  if (share_success) {
+
+    sdl_event_loop (bus);
+
+    gst_element_set_state (GST_ELEMENT (pipeline), GST_STATE_NULL);
+    gst_object_unref (pipeline);
+
+    gst_object_unref (bus);
+    gst_gl_context_activate (sdl_context, FALSE);
+    gst_object_unref (sdl_context);
+    gst_object_unref (sdl_gl_display);
+    if (gst_context)
+      gst_object_unref (gst_context);
+
+    /* make sure there is no pending gst gl buffer in the communication queues 
+     * between sdl and gst-gl
+     */
+    while (g_async_queue_length (queue_input_buf) > 0) {
+      GstVideoFrame *vframe =
+          (GstVideoFrame *) g_async_queue_pop (queue_input_buf);
+      gst_video_frame_unmap (vframe);
+      g_free (vframe);
+    }
+
+    while (g_async_queue_length (queue_output_buf) > 0) {
+      GstVideoFrame *vframe =
+          (GstVideoFrame *) g_async_queue_pop (queue_output_buf);
+      gst_video_frame_unmap (vframe);
+      g_free (vframe);
+    }
   }
 
   SDL_GL_DeleteContext (gl_context);

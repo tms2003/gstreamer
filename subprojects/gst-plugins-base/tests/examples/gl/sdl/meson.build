@@ -5,13 +5,18 @@ have_sdl_gl = build_gstgl and (
     (enabled_gl_winsys.contains('x11') or enabled_gl_winsys.contains('win32'))
 )
 if sdl_dep.found() and have_sdl_gl
+  sdlmain_dep = disabler()
+  # We must also link to SDL2main.lib on Visual Studio-like as well
+  if cc.get_argument_syntax() == 'msvc'
+    sdlmain_dep = cc.find_library('SDL2main')
+  endif
   executable('sdlshare',
     'sdlshare.c',
     install: false,
-    dependencies : [gst_base_dep, gstgl_dep, sdl_dep, gl_dep, glx_dep])
+    dependencies : [gst_base_dep, gstgl_dep, sdl_dep, sdlmain_dep, gl_dep, glx_dep])
 
   executable('sdlshare2',
     'sdlshare2.c',
     install: false,
-    dependencies : [gst_base_dep, gstgl_dep, sdl_dep, gl_dep, glx_dep])
+    dependencies : [gst_base_dep, gstgl_dep, sdl_dep, sdlmain_dep, gl_dep, glx_dep])
 endif
