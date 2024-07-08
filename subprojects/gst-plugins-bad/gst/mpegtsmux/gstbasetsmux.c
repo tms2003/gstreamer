@@ -430,6 +430,12 @@ gst_base_ts_mux_reset (GstBaseTsMux * mux, gboolean alloc)
 
   mux->last_scte35_event_seqnum = GST_SEQNUM_INVALID;
 
+  if (mux->pending_scte35_sections) {
+    g_list_free_full (mux->pending_scte35_sections,
+        (GDestroyNotify) gst_mini_object_unref);
+    mux->pending_scte35_sections = NULL;
+  }
+
   if (klass->reset)
     klass->reset (mux);
 }
@@ -1464,11 +1470,20 @@ gst_base_ts_mux_aggregate_buffer (GstBaseTsMux * mux,
 
   GST_DEBUG_OBJECT (best, "Chose stream for output (PID: 0x%04x)", best->pid);
 
-  GST_OBJECT_LOCK (mux);
-  scte_section = mux->pending_scte35_section;
-  mux->pending_scte35_section = NULL;
-  GST_OBJECT_UNLOCK (mux);
-  if (G_UNLIKELY (scte_section)) {
+  while (TRUE) {
+    scte_section = NULL;
+    GST_OBJECT_LOCK (mux);
+    if (mux->pending_scte35_sections) {
+      scte_section = mux->pending_scte35_sections->data;
+      mux->pending_scte35_sections =
+          g_list_delete_link (mux->pending_scte35_sections,
+          mux->pending_scte35_sections);
+    }
+    GST_OBJECT_UNLOCK (mux);
+
+    if (G_LIKELY (!scte_section))
+      break;
+
     GST_DEBUG_OBJECT (mux, "Sending pending SCTE section");
     if (!tsmux_send_section (mux->tsmux, scte_section))
       GST_ERROR_OBJECT (mux, "Error sending SCTE section !");
@@ -2039,11 +2054,10 @@ handle_scte35_section (GstBaseTsMux * mux, GstEvent * event,
 
     GST_OBJECT_LOCK (mux);
     GST_DEBUG_OBJECT (mux, "Storing SCTE section");
-    if (mux->pending_scte35_section)
-      gst_mpegts_section_unref (mux->pending_scte35_section);
-    mux->pending_scte35_section =
+    mux->pending_scte35_sections =
+        g_list_prepend (mux->pending_scte35_sections,
         gst_mpegts_section_new (mux->scte35_pid, section_data,
-        section->section_length);
+            section->section_length));
     GST_OBJECT_UNLOCK (mux);
 
     gst_mpegts_section_unref (section);
@@ -2051,10 +2065,9 @@ handle_scte35_section (GstBaseTsMux * mux, GstEvent * event,
     GST_OBJECT_LOCK (mux);
     GST_DEBUG_OBJECT (mux, "Storing SCTE section");
     gst_mpegts_section_unref (section);
-    if (mux->pending_scte35_section)
-      gst_mpegts_section_unref (mux->pending_scte35_section);
-    mux->pending_scte35_section =
-        gst_mpegts_section_from_scte_sit (sit, mux->scte35_pid);;
+    mux->pending_scte35_sections =
+        g_list_prepend (mux->pending_scte35_sections,
+        gst_mpegts_section_from_scte_sit (sit, mux->scte35_pid));
     GST_OBJECT_UNLOCK (mux);
   }
 }
