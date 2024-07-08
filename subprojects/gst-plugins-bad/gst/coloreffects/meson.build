@@ -2,6 +2,7 @@ coloreffects_sources = [
   'gstplugin.c',
   'gstcoloreffects.c',
   'gstchromahold.c',
+  'cubelut.c'
 ]
 
 gstcoloreffects = library('gstcoloreffects',

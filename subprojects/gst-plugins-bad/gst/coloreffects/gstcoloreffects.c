@@ -1,5 +1,5 @@
 /* GStreamer
- * Copyright (C) <2010> Filippo Argiolas <filippo.argiolas@gmail.com>
+ * Copyright (C) 2010-2022 Filippo Argiolas <filippo.argiolas@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -37,7 +37,9 @@
 
 #include <gst/video/video.h>
 #include "gstcoloreffects.h"
+#include "cubelut.h"
 
+#define DEFAULT_PROP_CUBEINTERP GST_COLOR_EFFECTS_INTERP_TETRAHEDRAL
 #define DEFAULT_PROP_PRESET GST_COLOR_EFFECTS_PRESET_NONE
 
 GST_DEBUG_CATEGORY_STATIC (coloreffects_debug);
@@ -46,6 +48,9 @@ GST_DEBUG_CATEGORY_STATIC (coloreffects_debug);
 enum
 {
   PROP_0,
+  PROP_CUBELUT,
+  PROP_CUBEINTERP,
+  PROP_CUBEPRECOMP,
   PROP_PRESET
 };
 
@@ -54,8 +59,11 @@ G_DEFINE_TYPE (GstColorEffects, gst_color_effects, GST_TYPE_VIDEO_FILTER);
 GST_ELEMENT_REGISTER_DEFINE (coloreffects, "coloreffects",
     GST_RANK_NONE, gst_color_effects_get_type ());
 
+static void gst_color_effects_finalize (GstColorEffects * filter);
+
 #define CAPS_STR GST_VIDEO_CAPS_MAKE ("{ " \
     "ARGB, BGRA, ABGR, RGBA, xRGB, BGRx, xBGR, RGBx, RGB, BGR, AYUV }")
+
 
 static GstStaticPadTemplate gst_color_effects_src_template =
 GST_STATIC_PAD_TEMPLATE ("src",
@@ -70,6 +78,28 @@ GST_STATIC_PAD_TEMPLATE ("sink",
     GST_PAD_ALWAYS,
     GST_STATIC_CAPS (CAPS_STR)
     );
+
+#define GST_TYPE_COLOR_EFFECTS_INTERP (gst_color_effects_interp_get_type())
+static GType
+gst_color_effects_interp_get_type (void)
+{
+  static GType interp_type = 0;
+
+  static const GEnumValue interps[] = {
+    {GST_COLOR_EFFECTS_INTERP_NEAREST, "Nearest neighbour interpolation",
+        "nearest"},
+    {GST_COLOR_EFFECTS_INTERP_TRILINEAR, "Trilinear interpolation",
+        "trilinear"},
+    {GST_COLOR_EFFECTS_INTERP_TETRAHEDRAL, "Tetrahedral interpolation",
+        "tetrahedral"},
+    {0, NULL, NULL},
+  };
+
+  if (!interp_type) {
+    interp_type = g_enum_register_static ("GstColorEffectsInterp", interps);
+  }
+  return interp_type;
+}
 
 #define GST_TYPE_COLOR_EFFECTS_PRESET (gst_color_effects_preset_get_type())
 static GType
@@ -311,6 +341,8 @@ gst_color_effects_transform_rgb (GstColorEffects * filter,
   guint32 luma;
   gint offsets[3];
   guint8 *data;
+  guint8 in[3];
+  guint8 out[3];
 
   data = GST_VIDEO_FRAME_PLANE_DATA (frame, 0);
   offsets[0] = GST_VIDEO_FRAME_COMP_POFFSET (frame, 0);
@@ -325,13 +357,21 @@ gst_color_effects_transform_rgb (GstColorEffects * filter,
   row_wrap = row_stride - pixel_stride * width;
 
   /* transform */
-
   for (i = 0; i < height; i++) {
     for (j = 0; j < width; j++) {
       r = data[offsets[0]];
       g = data[offsets[1]];
       b = data[offsets[2]];
-      if (filter->map_luma) {
+      if (filter->lut != NULL) {
+        in[0] = r;
+        in[1] = g;
+        in[2] = b;
+        cube_lut_transform (filter->lut, in, out);
+        data[offsets[0]] = out[0];
+        data[offsets[1]] = out[1];
+        data[offsets[2]] = out[2];
+        //}
+      } else if (filter->map_luma) {
         /* BT. 709 coefficients in B8 fixed point */
         /* 0.2126 R + 0.7152 G + 0.0722 B */
         luma = ((r << 8) * 54) + ((g << 8) * 183) + ((b << 8) * 19);
@@ -369,6 +409,8 @@ gst_color_effects_transform_ayuv (GstColorEffects * filter,
   gint y, u, v;
   gint offsets[3];
   guint8 *data;
+  guint8 in[3];
+  guint8 out[3];
 
   data = GST_VIDEO_FRAME_PLANE_DATA (frame, 0);
   offsets[0] = GST_VIDEO_FRAME_COMP_POFFSET (frame, 0);
@@ -412,13 +454,25 @@ gst_color_effects_transform_ayuv (GstColorEffects * filter,
         g = CLAMP (g, 0, 255);
         b = CLAMP (b, 0, 255);
 
-        /* map each color component to the correspondent lut color */
-        /* src.r |-> table[r].r */
-        /* src.g |-> table[g].g */
-        /* src.b |-> table[b].b */
-        r = filter->table[r * 3];
-        g = filter->table[g * 3 + 1];
-        b = filter->table[b * 3 + 2];
+        if (filter->lut != NULL) {
+          in[0] = r;
+          in[1] = g;
+          in[2] = b;
+          cube_lut_transform (filter->lut, in, out);
+          r = out[0];
+          g = out[1];
+          b = out[2];
+
+          // GST_INFO("in: %d %d %d, out: %d %d %d", in[0], in[1], in[2], out[0], out[1], out[2]);
+        } else {
+          /* map each color component to the correspondent lut color */
+          /* src.r |-> table[r].r */
+          /* src.g |-> table[g].g */
+          /* src.b |-> table[b].b */
+          r = filter->table[r * 3];
+          g = filter->table[g * 3 + 1];
+          b = filter->table[b * 3 + 2];
+        }
 
         y = APPLY_MATRIX (cog_rgb_to_ycbcr_matrix_8bit_sdtv, 0, r, g, b);
         u = APPLY_MATRIX (cog_rgb_to_ycbcr_matrix_8bit_sdtv, 1, r, g, b);
@@ -486,7 +540,7 @@ gst_color_effects_transform_frame_ip (GstVideoFilter * vfilter,
     goto not_negotiated;
 
   /* do nothing if there is no table ("none" preset) */
-  if (filter->table == NULL)
+  if ((filter->table == NULL) && (filter->lut == NULL))
     return GST_FLOW_OK;
 
   GST_OBJECT_LOCK (filter);
@@ -507,6 +561,54 @@ gst_color_effects_set_property (GObject * object, guint prop_id,
   GstColorEffects *filter = GST_COLOR_EFFECTS (object);
 
   switch (prop_id) {
+    case PROP_CUBELUT:
+      GST_OBJECT_LOCK (filter);
+      filter->lut_filename = g_value_get_string (value);
+      if (g_file_test (filter->lut_filename,
+              G_FILE_TEST_IS_REGULAR | G_FILE_TEST_EXISTS)) {
+        GST_INFO ("found Cube LUT file: %s", filter->lut_filename);
+        filter->lut = cube_lut_new (filter->lut_filename);
+      } else {
+        GST_WARNING ("Couldn't load Cube LUT file: %s", filter->lut_filename);
+      }
+      GST_OBJECT_UNLOCK (filter);
+      break;
+    case PROP_CUBEINTERP:
+      GST_OBJECT_LOCK (filter);
+      if (filter->lut == NULL) {
+        GST_WARNING ("Interpolation can only be set with a Cube LUT");
+      } else {
+        filter->lut_interp_type = g_value_get_enum (value);
+        switch (filter->lut_interp_type) {
+          case GST_COLOR_EFFECTS_INTERP_NEAREST:
+            g_object_set (filter->lut, "interpolation", CUBE_LUT_INTERP_NEAREST,
+                NULL);
+            break;
+          case GST_COLOR_EFFECTS_INTERP_TRILINEAR:
+            g_object_set (filter->lut, "interpolation",
+                CUBE_LUT_INTERP_TRILINEAR, NULL);
+            break;
+          case GST_COLOR_EFFECTS_INTERP_TETRAHEDRAL:
+            g_object_set (filter->lut, "interpolation",
+                CUBE_LUT_INTERP_TETRAHEDRAL, NULL);
+            break;
+          default:
+            g_assert_not_reached ();
+        }
+      }
+      GST_OBJECT_UNLOCK (filter);
+      break;
+    case PROP_CUBEPRECOMP:
+      GST_OBJECT_LOCK (filter);
+      if (filter->lut == NULL) {
+        GST_WARNING
+            ("Ignoring LUT precompute property as no Cube LUT has been loaded");
+      } else {
+        g_object_set (filter->lut, "precomp", g_value_get_boolean (value),
+            NULL);
+      }
+      GST_OBJECT_UNLOCK (filter);
+      break;
     case PROP_PRESET:
       GST_OBJECT_LOCK (filter);
       filter->preset = g_value_get_enum (value);
@@ -554,6 +656,21 @@ gst_color_effects_get_property (GObject * object, guint prop_id, GValue * value,
   GstColorEffects *filter = GST_COLOR_EFFECTS (object);
 
   switch (prop_id) {
+    case PROP_CUBELUT:
+      GST_OBJECT_LOCK (filter);
+      g_value_set_string (value, filter->lut_filename);
+      GST_OBJECT_UNLOCK (filter);
+      break;
+    case PROP_CUBEINTERP:
+      GST_OBJECT_LOCK (filter);
+      g_value_set_enum (value, filter->lut_interp_type);
+      GST_OBJECT_UNLOCK (filter);
+      break;
+    case PROP_CUBEPRECOMP:
+      GST_OBJECT_LOCK (filter);
+      g_value_set_boolean (value, filter->lut_precomp);
+      GST_OBJECT_UNLOCK (filter);
+      break;
     case PROP_PRESET:
       GST_OBJECT_LOCK (filter);
       g_value_set_enum (value, filter->preset);
@@ -577,7 +694,20 @@ gst_color_effects_class_init (GstColorEffectsClass * klass)
 
   gobject_class->set_property = gst_color_effects_set_property;
   gobject_class->get_property = gst_color_effects_get_property;
+  gobject_class->finalize = (GObjectFinalizeFunc) gst_color_effects_finalize;
 
+  g_object_class_install_property (gobject_class, PROP_CUBELUT,
+      g_param_spec_string ("cubelut", "CubeLUT",
+          "Load 3D Look-up Table from .cube file. If defined overrides preset property.",
+          NULL, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+  g_object_class_install_property (gobject_class, PROP_CUBEINTERP,
+      g_param_spec_enum ("cubelut-interp", "Cube LUT Interpolation",
+          "3D Cube interpolation type", GST_TYPE_COLOR_EFFECTS_INTERP,
+          DEFAULT_PROP_CUBEINTERP, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+  g_object_class_install_property (gobject_class, PROP_CUBEPRECOMP,
+      g_param_spec_boolean ("cubelut-precomp", "Precompute Cube LUT",
+          "Interpolate Cube LUT over the full range of RGB pixel values. Bigger memory footprint but faster video processing.",
+          FALSE, G_PARAM_READWRITE));
   g_object_class_install_property (gobject_class, PROP_PRESET,
       g_param_spec_enum ("preset", "Preset", "Color effect preset to use",
           GST_TYPE_COLOR_EFFECTS_PRESET, DEFAULT_PROP_PRESET,
@@ -605,5 +735,16 @@ gst_color_effects_init (GstColorEffects * filter)
 {
   filter->preset = GST_COLOR_EFFECTS_PRESET_NONE;
   filter->table = NULL;
-  filter->map_luma = TRUE;
+  filter->map_luma = FALSE;
+  filter->lut = NULL;
+  filter->lut_precomp = FALSE;
+}
+
+static void
+gst_color_effects_finalize (GstColorEffects * filter)
+{
+  if (filter->lut != NULL) {
+    g_object_unref (filter->lut);
+  }
+  G_OBJECT_CLASS (parent_class)->finalize ((GObject *) filter);
 }

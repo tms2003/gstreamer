@@ -1,5 +1,5 @@
 /* GStreamer
- * Copyright (C) <2010> Filippo Argiolas <filippo.argiolas@gmail.com>
+ * Copyright (C) 2010-2022 Filippo Argiolas <filippo.argiolas@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -23,8 +23,10 @@
 #include <gst/gst.h>
 #include <gst/video/video.h>
 #include <gst/video/gstvideofilter.h>
+#include "cubelut.h"
 
 G_BEGIN_DECLS
+
 #define GST_TYPE_COLOR_EFFECTS \
   (gst_color_effects_get_type())
 #define GST_COLOR_EFFECTS(obj) \
@@ -59,6 +61,20 @@ typedef enum
   GST_COLOR_EFFECTS_PRESET_YELLOWBLUE,
 } GstColorEffectsPreset;
 
+
+/**
+ * GstColorEffectsInterp:
+ @GST_COLOR_EFFECTS_INTERP_NEAREST: Cube LUT nearest neighbour interpolation (fastest)
+ @GST_COLOR_EFFECTS_INTERP_TRILINEAR: Cube LUT trilinear interpolation
+ @GST_COLOR_EFFECTS_INTERP_TETRAHEDRAL: Cube LUT tetrahedral interpolation
+ */
+typedef enum
+{
+  GST_COLOR_EFFECTS_INTERP_NEAREST = CUBE_LUT_INTERP_NEAREST,
+  GST_COLOR_EFFECTS_INTERP_TRILINEAR = CUBE_LUT_INTERP_TRILINEAR,
+  GST_COLOR_EFFECTS_INTERP_TETRAHEDRAL = CUBE_LUT_INTERP_TETRAHEDRAL
+} GstColorEffectsInterp;
+
 /**
  * GstColorEffects:
  *
@@ -72,6 +88,11 @@ struct _GstColorEffects
   GstColorEffectsPreset preset;
   const guint8 *table;
   gboolean map_luma;
+
+  const gchar *lut_filename;
+  CubeLUT *lut;
+  GstColorEffectsInterp lut_interp_type;
+  gboolean lut_precomp;
 
   /* video format */
   GstVideoFormat format;
