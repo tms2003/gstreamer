@@ -26,6 +26,7 @@
 
 #include "gstv4l2codecdevice.h"
 #include "gstv4l2decoder.h"
+#include "gstv4l2encoder.h"
 
 #define GST_TYPE_V4L2_CODEC_ALLOCATOR gst_v4l2_codec_allocator_get_type ()
 G_DECLARE_FINAL_TYPE (GstV4l2CodecAllocator, gst_v4l2_codec_allocator,
@@ -36,9 +37,11 @@ GstV4l2CodecAllocator  *gst_v4l2_codec_allocator_new (GstV4l2Decoder * decoder,
                                                       GstPadDirection direction,
                                                       guint num_buffers);
 
+GstV4l2CodecAllocator  *gst_v4l2_codec_encoder_allocator_new (GstV4l2Encoder * encoder,
+                                                              GstPadDirection direction,
+                                                              guint num_buffers);
+
 GstMemory              *gst_v4l2_codec_allocator_alloc (GstV4l2CodecAllocator * allocator);
-
-
 
 gboolean                gst_v4l2_codec_allocator_create_buffer (GstV4l2CodecAllocator * self);
 

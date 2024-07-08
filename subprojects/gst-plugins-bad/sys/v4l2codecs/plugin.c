@@ -25,11 +25,14 @@
 #include "gstv4l2codecav1dec.h"
 #include "gstv4l2codecdevice.h"
 #include "gstv4l2codech264dec.h"
+#include "gstv4l2codech264enc.h"
 #include "gstv4l2codech265dec.h"
 #include "gstv4l2codecmpeg2dec.h"
 #include "gstv4l2codecvp8dec.h"
+#include "gstv4l2codecvp8enc.h"
 #include "gstv4l2codecvp9dec.h"
 #include "gstv4l2decoder.h"
+#include "gstv4l2encoder.h"
 #include "linux/v4l2-controls.h"
 #include "linux/media.h"
 
@@ -97,6 +100,42 @@ register_video_decoder (GstPlugin * plugin, GstV4l2CodecDevice * device)
   g_object_unref (decoder);
 }
 
+static void
+register_video_encoder (GstPlugin * plugin, GstV4l2CodecDevice * device)
+{
+  GstV4l2Encoder *encoder = gst_v4l2_encoder_new (device);
+  gint i;
+  guint32 fmt;
+
+  if (!gst_v4l2_encoder_open (encoder)) {
+    g_object_unref (encoder);
+    return;
+  }
+
+  for (i = 0; gst_v4l2_encoder_enum_src_formats (encoder, i, &fmt); i++) {
+    switch (fmt) {
+      case V4L2_PIX_FMT_VP8_FRAME:
+        GST_INFO_OBJECT (encoder, "Registering %s as VP8 Encoder",
+            device->name);
+        gst_v4l2_codec_vp8_enc_register (plugin, encoder, device,
+            GST_RANK_PRIMARY + 1);
+        break;
+      case V4L2_PIX_FMT_H264_SLICE:
+        GST_INFO_OBJECT (encoder, "Registering %s as H264 Encoder",
+            device->name);
+        gst_v4l2_codec_h264_enc_register (plugin, encoder, device,
+            GST_RANK_PRIMARY + 1);
+        break;
+      default:
+        GST_FIXME_OBJECT (encoder, "%" GST_FOURCC_FORMAT " is not supported.",
+            GST_FOURCC_ARGS (fmt));
+        break;
+    }
+  }
+
+  g_object_unref (encoder);
+}
+
 static gboolean
 plugin_init (GstPlugin * plugin)
 {
@@ -118,6 +157,9 @@ plugin_init (GstPlugin * plugin)
 
     if (device->function == MEDIA_ENT_F_PROC_VIDEO_DECODER)
       register_video_decoder (plugin, device);
+
+    if (device->function == MEDIA_ENT_F_PROC_VIDEO_ENCODER)
+      register_video_encoder (plugin, device);
   }
 
   gst_v4l2_codec_device_list_free (devices);
