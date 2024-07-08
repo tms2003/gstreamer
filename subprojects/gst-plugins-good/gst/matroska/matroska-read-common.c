@@ -309,6 +309,12 @@ gst_matroska_decode_content_encodings (GArray * encodings)
         == 0)
       continue;
 
+#ifndef WEBM_CENC_ENCRYPTION
+    /* Encryption not supported yet */
+    if (enc->type != 0)
+      return GST_FLOW_ERROR;
+#endif
+
     /* Other than ENCODING_COMPRESSION not handled here */
     if (enc->type != GST_MATROSKA_ENCODING_COMPRESSION)
       continue;
@@ -2950,6 +2956,9 @@ gst_matroska_read_common_read_track_encoding (GstMatroskaReadCommon * common,
     GstEbmlRead * ebml, GstMatroskaTrackContext * context)
 {
   GstMatroskaTrackEncoding enc = { 0, };
+#ifdef WEBM_CENC_ENCRYPTION
+  GstMatroskaTrackEncryption encryption = {0};
+#endif
   GstFlowReturn ret;
   guint32 id;
 
@@ -3124,9 +3133,65 @@ gst_matroska_read_common_read_track_encoding (GstMatroskaReadCommon * common,
               GST_DEBUG_OBJECT (common->sinkpad,
                   "ContentEncAlgo: %" G_GUINT64_FORMAT, num);
               enc.enc_algo = num;
-
+#ifdef WEBM_CENC_ENCRYPTION
+              encryption.algo = num;
+#endif
               break;
             }
+#ifdef WEBM_CENC_ENCRYPTION
+            case GST_MATROSKA_ID_CONTENTSIGNATURE:{
+              guint8 *data;
+              guint64 size;
+
+              if ((ret =
+                      gst_ebml_read_binary (ebml, &id, &data,
+                          &size)) != GST_FLOW_OK) {
+                break;
+              }
+              GST_DEBUG_OBJECT (common->sinkpad,
+                  "ContentSignature of size %" G_GUINT64_FORMAT, size);
+              encryption.signature = data;
+              encryption.signature_length = size;
+              break;
+            }
+            case GST_MATROSKA_ID_CONTENTSIGKEYID:{
+              guint8 *data;
+              guint64 size;
+
+              if ((ret =
+                      gst_ebml_read_binary (ebml, &id, &data,
+                          &size)) != GST_FLOW_OK) {
+                break;
+              }
+              GST_DEBUG_OBJECT (common->sinkpad,
+                  "ContentSigKeyID of size %" G_GUINT64_FORMAT, size);
+              encryption.sig_keyid = data;
+              encryption.sig_keyid_length = size;
+              break;
+            }
+            case GST_MATROSKA_ID_CONTENTSIGALGO:{
+              guint64 num;
+
+              if ((ret = gst_ebml_read_uint (ebml, &id, &num)) != GST_FLOW_OK) {
+                break;
+              }
+              GST_DEBUG_OBJECT (common->sinkpad,
+                  "ContentSigAlgo: %" G_GUINT64_FORMAT, num);
+              encryption.sig_algo = num;
+              break;
+            }
+            case GST_MATROSKA_ID_CONTENTSIGHASHALGO:{
+              guint64 num;
+
+              if ((ret = gst_ebml_read_uint (ebml, &id, &num)) != GST_FLOW_OK) {
+                break;
+              }
+              GST_DEBUG_OBJECT (common->sinkpad,
+                  "ContentSigHashAlgo: %" G_GUINT64_FORMAT, num);
+              encryption.sig_hash_algo = num;
+              break;
+            }
+#endif
             case GST_MATROSKA_ID_CONTENTENCAESSETTINGS:{
 
               DEBUG_ELEMENT_START (common, ebml, "ContentEncAESSettings");
@@ -3157,6 +3222,9 @@ gst_matroska_read_common_read_track_encoding (GstMatroskaReadCommon * common,
                     GST_DEBUG_OBJECT (common->sinkpad,
                         "ContentEncAESSettings: %" G_GUINT64_FORMAT, num);
                     enc.enc_cipher_mode = num;
+                    #ifdef WEBM_CENC_ENCRYPTION
+                    encryption.cipher_mode = num;
+                    #endif
                     break;
                   }
                   default:
@@ -3182,6 +3250,13 @@ gst_matroska_read_common_read_track_encoding (GstMatroskaReadCommon * common,
                           &size)) != GST_FLOW_OK) {
                 break;
               }
+#ifdef WEBM_CENC_ENCRYPTION
+              GST_DEBUG_OBJECT (common->sinkpad,
+                  "ContentEncKeyID of size %" G_GUINT64_FORMAT, size);
+              encryption.enc_kid = data;
+              encryption.enc_kid_length = size;
+              break;
+#else
               GST_DEBUG_OBJECT (common->sinkpad,
                   "ContentEncrypt KeyID length : %" G_GUINT64_FORMAT, size);
               keyId_buf = gst_buffer_new_wrapped (data, size);
@@ -3202,6 +3277,7 @@ gst_matroska_read_common_read_track_encoding (GstMatroskaReadCommon * common,
                   GST_TYPE_BUFFER, keyId_buf, NULL);
 
               gst_buffer_unref (keyId_buf);
+#endif
               break;
             }
             default:
@@ -3230,6 +3306,10 @@ gst_matroska_read_common_read_track_encoding (GstMatroskaReadCommon * common,
 
   g_array_append_val (context->encodings, enc);
 
+#ifdef WEBM_CENC_ENCRYPTION
+  g_array_append_val (context->encryptions, encryption);
+#endif
+
   return ret;
 }
 
@@ -3249,7 +3329,10 @@ gst_matroska_read_common_read_track_encodings (GstMatroskaReadCommon * common,
 
   context->encodings =
       g_array_sized_new (FALSE, FALSE, sizeof (GstMatroskaTrackEncoding), 1);
-
+#ifdef WEBM_CENC_ENCRYPTION
+  context->encryptions =
+      g_array_sized_new (FALSE, FALSE, sizeof (GstMatroskaTrackEncryption), 1);
+#endif
   while (ret == GST_FLOW_OK && gst_ebml_read_has_remaining (ebml, 1, TRUE)) {
     if ((ret = gst_ebml_peek_id (ebml, &id)) != GST_FLOW_OK)
       break;

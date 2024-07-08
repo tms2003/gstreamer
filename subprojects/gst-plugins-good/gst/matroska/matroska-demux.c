@@ -455,6 +455,144 @@ gst_matroska_decode_buffer (GstMatroskaTrackContext * context, GstBuffer * buf)
   return out_buf;
 }
 
+#ifdef WEBM_CENC_ENCRYPTION
+static gsize
+gst_matroska_demux_parse_protection_meta (GstMatroskaDemux * demux,
+GstMatroskaTrackContext * context, GstBuffer * buf)
+{
+  gboolean isEncrypted = FALSE;
+  gboolean isSubSampled = FALSE;
+  guint8 signalByte;
+  gsize encryptedOffset = 0;
+
+  gst_buffer_extract (buf, encryptedOffset, (gpointer)&signalByte, 1);
+  encryptedOffset += 1;  // Signal Byte
+
+  isEncrypted = ((signalByte & 0x01) != 0);
+  isSubSampled = ((signalByte & 0x02) != 0);
+  GST_DEBUG_OBJECT (context->pad, "Signal Byte: 0x%02x, isEncrypted %d isSubSampled %d", signalByte, isEncrypted, isSubSampled);
+
+  if (isEncrypted) {
+    guint8 *ivData = NULL;
+    // refer to https://www.webmproject.org/docs/webm-encryption/, IV should be treated as an unsigned 64 bit number
+    guint8 ivSize = 8;
+    GstBuffer *ivBuffer;
+    GstBuffer *kidBuffer;
+    GstBuffer *subsampleBuffer;
+    guint8 subSamplePairCount = 0;
+    guint8 *subSampleData = NULL;
+    GstByteWriter *writer;
+
+    GstMatroskaTrackEncryption *encrytion =
+      &g_array_index (context->encryptions, GstMatroskaTrackEncryption, 0);
+
+    if (demux->crypto_info)
+      gst_structure_free (demux->crypto_info);
+
+    demux->crypto_info = gst_structure_new ("application/x-cenc",
+                                            "iv_size", G_TYPE_UINT, ivSize,
+                                            "encrypted", G_TYPE_BOOLEAN, (encrytion->cipher_mode != 0),
+                                            NULL);
+    // iv_buffer
+    ivData = (guint8 *) g_malloc (ivSize);
+    gst_buffer_extract (buf, encryptedOffset, (gpointer)ivData, ivSize);
+    encryptedOffset += ivSize;    // iv_size
+
+    ivBuffer = gst_buffer_new_wrapped ((gpointer)ivData, ivSize);
+    gst_structure_set (demux->crypto_info, "iv", GST_TYPE_BUFFER, ivBuffer, NULL);
+    gst_buffer_unref (ivBuffer);
+
+    // kid_buf
+    GST_INFO_OBJECT (context->pad, "enc_kid_length %d", encrytion->enc_kid_length);
+    if (encrytion->enc_kid && encrytion->enc_kid_length > 0) {
+      kidBuffer = gst_buffer_new_wrapped (g_memdup (encrytion->enc_kid, encrytion->enc_kid_length), encrytion->enc_kid_length);
+      gst_structure_set (demux->crypto_info, "kid", GST_TYPE_BUFFER, kidBuffer, NULL);
+      gst_buffer_unref (kidBuffer);
+    }
+
+    if (isSubSampled) {
+      guint8 num_partition = 0;
+      guint8 *partitions_offset = NULL;
+      GstByteReader *reader;
+      guint16 position = 0;
+      guint32 baseOffset = 0;
+      guint32 partitionOffset = 0;
+      guint32 frameDataSize = 0;
+
+      gst_buffer_extract (buf, encryptedOffset, (gpointer)&num_partition, 1);
+      encryptedOffset += 1;    //  num_partition
+
+      partitions_offset = (guint8 *) g_malloc (num_partition * 4);
+      gst_buffer_extract (buf, encryptedOffset, (gpointer)partitions_offset, num_partition * 4);
+      encryptedOffset += (num_partition * 4);   // a series of 32-bit integers for byte offsets of such partitions
+
+      // to parse subsample info
+      frameDataSize = gst_buffer_get_size (buf) - encryptedOffset;
+
+      // num_partition should be with (num_partition + 1) sections
+      // and round to nearest subSamplePairCount as ((num_partition + 1) + 1) / 2
+      subSamplePairCount = (num_partition + 2) / 2;
+      subSampleData = (guint8 *) g_malloc0 (6 * subSamplePairCount);
+
+      reader = gst_byte_reader_new (partitions_offset, 4 * num_partition);
+      writer = gst_byte_writer_new_with_data (subSampleData, 6 * subSamplePairCount, TRUE);
+
+      // Here is an example with 4 partitions (5 sections):
+      //   "clear |1 cipher |2 clear |3 cipher |4 clear"
+      // With the first and the last implicit partition included:
+      //   "|0 clear |1 cipher |2 clear |3 cipher |4 clear |5"
+      //   where partition_offset_0 = 0, partition_offset_5 = frame_data_size
+      //
+      // There are three subsamples in the above example:
+      //   Subsample0.clear_bytes = partition_offset_1 - partition_offset_0
+      //   Subsample0.cipher_bytes = partition_offset_2 - partition_offset_1
+      //   ....
+      //   Subsample2.clear_bytes = partition_offset_5 - partition_offset_4
+      //   Subsample2.cipher_bytes = 0
+      for (position = 0, baseOffset = 0; position <= num_partition; position++) {
+        guint32 sampleSize = 0;
+
+        gst_byte_reader_get_uint32_be (reader, &partitionOffset);
+
+        if (position == num_partition) {
+          sampleSize = frameDataSize - baseOffset;
+        } else {
+          sampleSize = partitionOffset - baseOffset;
+        }
+
+        if (position % 2 == 0) {
+            // clear
+            gst_byte_writer_put_uint16_be (writer, (guint16)sampleSize);
+        } else {
+            // encrypted
+            gst_byte_writer_put_uint32_be (writer, sampleSize);
+        }
+
+        baseOffset = partitionOffset;
+      }
+      gst_byte_reader_free (reader);
+      gst_byte_writer_free (writer);
+
+    } else {
+      subSamplePairCount = 1;
+      subSampleData = (guint8 *) g_malloc0 (6 * subSamplePairCount);
+
+      writer = gst_byte_writer_new_with_data (subSampleData, 6 * subSamplePairCount, TRUE);
+      gst_byte_writer_put_uint16_be (writer, 0);     // clear
+      gst_byte_writer_put_uint32_be (writer, gst_buffer_get_size (buf)- encryptedOffset);  // encrypted
+      gst_byte_writer_free (writer);
+    }
+
+    subsampleBuffer = gst_buffer_new_wrapped ((gpointer)subSampleData, 6 * subSamplePairCount);
+    gst_structure_set (demux->crypto_info, "subsample_count", G_TYPE_UINT, subSamplePairCount,
+                                           "subsamples", GST_TYPE_BUFFER, subsampleBuffer, NULL);
+    gst_buffer_unref (subsampleBuffer);
+  }
+
+  return encryptedOffset;
+}
+#endif
+
 static void
 gst_matroska_demux_add_stream_headers_to_caps (GstMatroskaDemux * demux,
     GstBufferList * list, GstCaps * caps)
@@ -1648,7 +1786,7 @@ gst_matroska_demux_parse_stream (GstMatroskaDemux * demux, GstEbmlRead * ebml,
       enc = &g_array_index (context->encodings, GstMatroskaTrackEncoding, i);
       if (enc->type == GST_MATROSKA_ENCODING_ENCRYPTION /* encryption */ ) {
         GstStructure *s = gst_caps_get_structure (caps, 0);
-        if (!gst_structure_has_name (s, "application/x-webm-enc")) {
+        if (!gst_structure_has_name (s, "application/x-cenc")) {
           gst_structure_set (s, "original-media-type", G_TYPE_STRING,
               gst_structure_get_name (s), NULL);
           gst_structure_set (s, "encryption-algorithm", G_TYPE_STRING,
@@ -1659,7 +1797,14 @@ gst_matroska_demux_parse_stream (GstMatroskaDemux * demux, GstEbmlRead * ebml,
           gst_structure_set (s, "cipher-mode", G_TYPE_STRING,
               gst_matroska_track_encryption_cipher_mode_name
               (enc->enc_cipher_mode), NULL);
-          gst_structure_set_name (s, "application/x-webm-enc");
+          if (demux->sysid_string && demux->pssh) {
+            if (!gst_structure_has_name (s, "application/x-cenc")) {
+              gst_structure_set (s,
+                                 GST_PROTECTION_SYSTEM_ID_CAPS_FIELD, G_TYPE_STRING, demux->sysid_string,
+                                 NULL);
+              gst_structure_set_name (s, "application/x-cenc");
+            }
+          }
         }
       }
     }
@@ -1715,6 +1860,19 @@ gst_matroska_demux_add_stream (GstMatroskaDemux * demux,
       /* we should already have quit by now */
       g_assert_not_reached ();
   }
+
+#ifdef WEBM_CENC_ENCRYPTION
+  if (demux->sysid_string && demux->pssh) {
+    GstStructure *s = gst_caps_get_structure (context->caps, 0);
+    if (!gst_structure_has_name (s, "application/x-cenc")) {
+      gst_structure_set (s,
+                         "original-media-type", G_TYPE_STRING, gst_structure_get_name (s),
+                         GST_PROTECTION_SYSTEM_ID_CAPS_FIELD, G_TYPE_STRING, demux->sysid_string,
+                         NULL);
+      gst_structure_set_name (s, "application/x-cenc");
+    }
+  }
+#endif
 
   /* the pad in here */
   context->pad = gst_pad_new_from_template (templ, padname);
@@ -1791,6 +1949,15 @@ gst_matroska_demux_add_stream (GstMatroskaDemux * demux,
 
   gst_element_add_pad (GST_ELEMENT (demux), context->pad);
   gst_flow_combiner_add_pad (demux->flowcombiner, context->pad);
+
+#ifdef WEBM_CENC_ENCRYPTION
+  if (demux->sysid_string && demux->pssh) {
+    GST_DEBUG_OBJECT (context->pad, "Sending protection event with id %s data size %"
+      G_GSIZE_FORMAT, demux->sysid_string, gst_buffer_get_size (demux->pssh));
+    gst_pad_push_event (context->pad,
+      gst_event_new_protection (demux->sysid_string, demux->pssh, NULL));
+  }
+#endif
 
   g_free (padname);
 }
@@ -3311,6 +3478,16 @@ gst_matroska_demux_handle_src_event (GstPad * pad, GstObject * parent,
       res = FALSE;
       break;
 
+    case GST_EVENT_PROTECTION:
+    {
+      const gchar *system_id = NULL;
+      gst_event_parse_protection (event, &system_id, NULL, NULL);
+      GST_DEBUG_OBJECT (demux, "Received protection event for system ID %s",
+          system_id);
+      res = gst_pad_push_event (demux->common.sinkpad, event);
+      break;
+    }
+
     case GST_EVENT_LATENCY:
     default:
       res = gst_pad_push_event (demux->common.sinkpad, event);
@@ -3697,6 +3874,18 @@ gst_matroska_demux_sync_streams (GstMatroskaDemux * demux)
       gst_pad_push_event (context->pad, event);
       GST_OBJECT_LOCK (demux);
     }
+#ifdef WEBM_CENC_ENCRYPTION
+   if (demux->sysid_string && demux->pssh) {
+     GstStructure *s = gst_caps_get_structure (context->caps, 0);
+     if (!gst_structure_has_name (s, "application/x-cenc")) {
+       gst_structure_set (s,
+                          "original-media-type", G_TYPE_STRING, gst_structure_get_name (s),
+                          GST_PROTECTION_SYSTEM_ID_CAPS_FIELD, G_TYPE_STRING, demux->sysid_string,
+                          NULL);
+       gst_structure_set_name (s, "application/x-cenc");
+     }
+   }
+#endif
   }
 
   GST_OBJECT_UNLOCK (demux);
@@ -4824,8 +5013,28 @@ gst_matroska_demux_parse_blockgroup_or_simpleblock (GstMatroskaDemux * demux,
       if (invisible_frame)
         GST_BUFFER_FLAG_SET (sub, GST_BUFFER_FLAG_DECODE_ONLY);
 
-      if (stream->encodings != NULL && stream->encodings->len > 0)
+#ifdef WEBM_CENC_ENCRYPTION
+        // Implement meta data parsing by https://www.webmproject.org/docs/webm-encryption/
+        // it supported AES, "ContentEncAlgo (Supported AES value = 5)"
+        // if ContentEncAlgo is not AES, not run gst_matroska_demux_parse_protection_meta
+        GstMatroskaTrackEncryption *encrytion = NULL;
+        if (stream->encryptions != NULL && stream->encryptions->len > 0) {
+          encrytion = &g_array_index (stream->encryptions, GstMatroskaTrackEncryption, 0);
+        }
+        if (encrytion != NULL && encrytion->algo == 5) {
+          gsize dataOffset = 0;
+          GST_DEBUG_OBJECT (demux, "cenc stream with size %" G_GSIZE_FORMAT, gst_buffer_get_size (sub));
+          dataOffset = gst_matroska_demux_parse_protection_meta (demux, stream, sub);
+
+          // to take data part only
+          gst_buffer_resize (sub, dataOffset, -1);
+          GST_DEBUG_OBJECT (demux, "after parsing encryptedOffset %" G_GSIZE_FORMAT", sub size %" G_GSIZE_FORMAT, dataOffset, gst_buffer_get_size (sub));
+        }
+        else
+#endif
+      if (stream->encodings != NULL && stream->encodings->len > 0) {
         sub = gst_matroska_decode_buffer (stream, sub);
+	  }
 
       if (sub == NULL) {
         GST_WARNING_OBJECT (demux, "Decoding buffer failed");
@@ -5071,6 +5280,15 @@ gst_matroska_demux_parse_blockgroup_or_simpleblock (GstMatroskaDemux * demux,
           g_free (blockadd);
         }
       }
+
+#ifdef WEBM_CENC_ENCRYPTION
+      if (demux->crypto_info) {
+        GST_INFO_OBJECT (stream->pad, "crypto info %" GST_PTR_FORMAT, demux->crypto_info);
+        // gst_buffer_add_protection_meta takes ownership of stream->crypto_info
+        if (gst_buffer_add_protection_meta (sub, demux->crypto_info) != NULL)
+          demux->crypto_info = NULL;
+      }
+#endif
 
       ret = gst_pad_push (stream->pad, sub);
 
@@ -6346,6 +6564,32 @@ gst_matroska_demux_handle_sink_event (GstPad * pad, GstObject * parent,
       GST_OBJECT_UNLOCK (demux);
       /* fall-through */
     }
+#ifdef WEBM_CENC_ENCRYPTION
+    case GST_EVENT_PROTECTION:
+    {
+      const gchar *system_id;
+      GstBuffer *pssh;
+
+      if (demux->sysid_string) {
+        GST_WARNING_OBJECT (demux, "there is more than one sysid %s", demux->sysid_string);
+        g_free (demux->sysid_string);
+      }
+      if (demux->pssh) {
+        GST_WARNING_OBJECT (demux, "there is more than one pssh");
+        gst_buffer_unref (demux->pssh);
+      }
+
+      // Get data from event
+      gst_event_parse_protection (event, &system_id, &pssh, NULL);
+      demux->sysid_string = g_strdup (system_id);
+      demux->pssh = gst_buffer_copy (pssh);
+      GST_DEBUG_OBJECT (demux, "Received protection event for system ID %s data size %" G_GSIZE_FORMAT,
+        demux->sysid_string, gst_buffer_get_size (demux->pssh));
+      gst_event_unref (event);
+      break;
+    }
+#endif
+
     default:
       res = gst_pad_event_default (pad, parent, event);
       break;
