@@ -1023,13 +1023,27 @@ gst_jpeg_turbo_parse_ext_fmt_convert (GstJpegDec * dec, gint * clrspc)
 {
   GstCaps *peer_caps, *dec_caps;
 
+  dec->format_convert = FALSE;
+
+  /*
+   * For some widths jpeglib requires more horizontal padding than I420
+   * provides. In those cases libjpeg-turbo SIMD optimization is not an
+   * option.
+   */
+  if (G_UNLIKELY (dec->cinfo.output_width % (dec->cinfo.max_h_samp_factor *
+              DCTSIZE) != 0
+          || dec->cinfo.comp_info[0].h_samp_factor != 2
+          || dec->cinfo.comp_info[1].h_samp_factor != 1
+          || dec->cinfo.comp_info[2].h_samp_factor != 1)) {
+    return;
+  }
+
   dec_caps = gst_static_caps_get (&gst_jpeg_dec_src_pad_template.static_caps);
   peer_caps =
       gst_pad_peer_query_caps (GST_VIDEO_DECODER_SRC_PAD (dec), dec_caps);
   gst_caps_unref (dec_caps);
 
   GST_DEBUG ("Received caps from peer: %" GST_PTR_FORMAT, peer_caps);
-  dec->format_convert = FALSE;
   if (!gst_caps_is_empty (peer_caps)) {
     GstStructure *peerstruct;
     const gchar *peerformat;
