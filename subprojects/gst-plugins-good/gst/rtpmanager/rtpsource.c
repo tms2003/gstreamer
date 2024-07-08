@@ -1949,6 +1949,20 @@ rtp_source_add_conflicting_address (RTPSource * src,
 }
 
 /**
+ * rtp_source_timeout_conflicting_addresses:
+ * @src: The source the packet came in
+ * @time: The time when the last packet arrived
+ *
+ * Removes addresses from conflict table older than a certain amount of time 
+ */
+void
+rtp_source_timeout_conflicting_addresses (RTPSource * src, GstClockTime time)
+{
+  src->conflicting_addresses =
+      timeout_conflicting_addresses (src->conflicting_addresses, time);
+}
+
+/**
  * rtp_source_timeout:
  * @src: The #RTPSource
  * @current_time: The current time

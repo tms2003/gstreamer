@@ -279,6 +279,9 @@ gboolean        rtp_source_find_conflicting_address (RTPSource * src,
 void            rtp_source_add_conflicting_address (RTPSource * src,
                                                 GSocketAddress *address,
                                                 GstClockTime time);
+                                                
+void            rtp_source_timeout_conflicting_addresses (RTPSource * src, 
+                                                GstClockTime time);
 
 gboolean        find_conflicting_address       (GList * conflicting_address,
                                                 GSocketAddress * address,
