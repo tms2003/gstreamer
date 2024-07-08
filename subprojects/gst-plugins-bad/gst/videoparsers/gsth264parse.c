@@ -3885,6 +3885,17 @@ gst_h264_parse_src_event (GstBaseParse * parse, GstEvent * event)
       res = GST_BASE_PARSE_CLASS (parent_class)->src_event (parse, event);
       break;
     }
+    case GST_EVENT_RECONFIGURE:
+    {
+      // On pipelines build for multi-video track containers using independent
+      // parser for each track, but with the decoder element present after an 
+      // input switch element connected to the parsers, the decoder may not 
+      // have the correct codec info when a track switch occurs.
+      // Ensure codec info is sent downstream after such changes
+      h264parse->push_codec = TRUE;
+      res = GST_BASE_PARSE_CLASS (parent_class)->src_event (parse, event);
+      break;
+    }
     default:
       res = GST_BASE_PARSE_CLASS (parent_class)->src_event (parse, event);
       break;
