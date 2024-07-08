@@ -350,7 +350,7 @@ gst_matroska_demux_reset (GstElement * element)
   demux->last_cluster_offset = 0;
   demux->index_offset = 0;
   demux->seekable = FALSE;
-  demux->need_segment = FALSE;
+  demux->need_segment = TRUE;
   demux->upstream_format_is_time = FALSE;
   demux->segment_seqnum = 0;
   demux->requested_seek_time = GST_CLOCK_TIME_NONE;
@@ -4665,7 +4665,12 @@ gst_matroska_demux_parse_blockgroup_or_simpleblock (GstMatroskaDemux * demux,
       }
     } else {
       lace_time = GST_CLOCK_TIME_NONE;
+
+      /* Drops buffers before a valid cluster */
+      if (demux->need_segment)
+        goto done;
     }
+
     /* Send the GST_PROTECTION event */
     while ((protect_event = g_queue_pop_head (&stream->protection_event_queue))) {
       GST_TRACE_OBJECT (demux, "pushing protection event for stream %d:%s",
