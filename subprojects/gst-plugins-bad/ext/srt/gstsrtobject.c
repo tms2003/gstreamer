@@ -621,7 +621,7 @@ gst_srt_object_install_properties_helper (GObjectClass * gobject_class)
    */
   g_object_class_install_property (gobject_class, PROP_LOCALPORT,
       g_param_spec_uint ("localport", "Local port",
-          "Local port to bind", 0,
+          "Local port to bind (0 = allocate)", 0,
           65535, GST_SRT_DEFAULT_PORT,
           G_PARAM_READWRITE | GST_PARAM_MUTABLE_READY |
           G_PARAM_STATIC_STRINGS));
@@ -1382,7 +1382,9 @@ gst_srt_object_open_internal (GstSRTObject * srtobject, GError ** error)
         " setting listener mode", addr_str);
   }
 
-  port = gst_uri_get_port (srtobject->uri);
+  if (!gst_structure_get_uint (srtobject->parameters, "localport", &port)) {
+    port = gst_uri_get_port (srtobject->uri);
+  }
 
   GST_DEBUG_OBJECT (srtobject->element,
       "Opening SRT socket with parameters: %" GST_PTR_FORMAT,
@@ -1407,6 +1409,24 @@ gst_srt_object_open_internal (GstSRTObject * srtobject, GError ** error)
   } else {
     ret =
         gst_srt_object_connect (srtobject, connection_mode, sa, sa_len, error);
+  }
+
+  if (ret && port == 0) {
+    struct sockaddr_in addr;
+    socklen_t len;
+
+    len = sizeof (addr);
+    if (srt_getsockname (srtobject->sock, (struct sockaddr *) &addr,
+            (int *) &len) < 0) {
+      ret = FALSE;
+      g_set_error (error, GST_RESOURCE_ERROR,
+          GST_RESOURCE_ERROR_OPEN_READ_WRITE,
+          "Could not retrieve allocated port");
+    }
+    gst_structure_set (srtobject->parameters, "localport",
+        G_TYPE_UINT, (guint) g_ntohs (addr.sin_port), NULL);
+    GST_DEBUG_OBJECT (srtobject->element, "localport bound to %d",
+        g_ntohs (addr.sin_port));
   }
 
 out:

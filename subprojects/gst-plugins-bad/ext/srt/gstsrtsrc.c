@@ -26,6 +26,11 @@
  * srtsrc is a network source that reads [SRT](http://www.srtalliance.org/)
  * packets from the network.
  *
+ * When in listener or rendezvouz mode the srtsrc element supports automatic
+ * port allocation. This can be achieved by setting the #GstSRTSrc:localport
+ * property to 0. After setting the srtsrc to PAUSED, the allocated port can
+ * be obtained by reading the #GstSRTSrc:localport property.
+ *
  * ## Examples
  * |[
  * gst-launch-1.0 -v srtsrc uri="srt://127.0.0.1:7001" ! fakesink

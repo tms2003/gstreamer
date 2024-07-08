@@ -26,6 +26,11 @@
  * srtsink is a network sink that sends [SRT](http://www.srtalliance.org/)
  * packets to the network.
  *
+ * When in listener or rendezvouz mode the srtsink element supports automatic
+ * port allocation. This can be achieved by setting the #GstSRTSink:localport
+ * property to 0. After setting the srtsink to PAUSED, the allocated port can
+ * be obtained by reading the #GstSRTSink:localport property.
+ *
  * ## Examples</title>
  *
  * |[

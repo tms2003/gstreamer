@@ -24,25 +24,15 @@
 static const gchar elements[][8] = { "srtsrc", "srtsink" };
 
 static void
-check_play (const gchar * src_uri,
+check_play (GstHarness * h_src,
     GstSRTConnectionMode src_mode,
-    const gchar * sink_uri, GstSRTConnectionMode sink_mode)
+    GstHarness * h_sink, GstSRTConnectionMode sink_mode)
 {
-  GstHarness *h_src, *h_sink;
   GstStructure *stats;
   gint64 packets_received;
   GstBuffer *in_buf, *out_buf;
-  gchar *src_launchline, *sink_launchline;
   GstElement *src_element;
   guint8 data[1316] = { 0 };
-
-  sink_launchline = g_strdup_printf ("srtsink uri=%s", sink_uri);
-  h_sink = gst_harness_new_parse (sink_launchline);
-  g_free (sink_launchline);
-
-  src_launchline = g_strdup_printf ("srtsrc name=src uri=%s", src_uri);
-  h_src = gst_harness_new_parse (src_launchline);
-  g_free (src_launchline);
 
   gst_harness_set_src_caps_str (h_sink, "video/mpegts");
 
@@ -97,6 +87,25 @@ check_play (const gchar * src_uri,
   gst_object_unref (src_element);
   gst_harness_teardown (h_src);
   gst_harness_teardown (h_sink);
+}
+
+static void
+check_play_uri (const gchar * src_uri,
+    GstSRTConnectionMode src_mode,
+    const gchar * sink_uri, GstSRTConnectionMode sink_mode)
+{
+  gchar *src_launchline, *sink_launchline;
+  GstHarness *h_src, *h_sink;
+
+  sink_launchline = g_strdup_printf ("srtsink uri=%s", sink_uri);
+  h_sink = gst_harness_new_parse (sink_launchline);
+  g_free (sink_launchline);
+
+  src_launchline = g_strdup_printf ("srtsrc name=src uri=%s", src_uri);
+  h_src = gst_harness_new_parse (src_launchline);
+  g_free (src_launchline);
+
+  check_play (h_src, src_mode, h_sink, sink_mode);
 }
 
 GST_START_TEST (test_create_and_unref)
@@ -156,7 +165,7 @@ GST_END_TEST;
 
 GST_START_TEST (test_src_caller_sink_listener)
 {
-  check_play ("srt://127.0.0.1:3434?mode=caller",
+  check_play_uri ("srt://127.0.0.1:3434?mode=caller",
       GST_SRT_CONNECTION_MODE_CALLER,
       "srt://:3434?mode=listener", GST_SRT_CONNECTION_MODE_LISTENER);
 }
@@ -165,9 +174,39 @@ GST_END_TEST;
 
 GST_START_TEST (test_src_listener_sink_caller)
 {
-  check_play ("srt://:4242?mode=listener",
+  check_play_uri ("srt://:4242?mode=listener",
       GST_SRT_CONNECTION_MODE_LISTENER,
       "srt://127.0.0.1:4242?mode=caller", GST_SRT_CONNECTION_MODE_CALLER);
+}
+
+GST_END_TEST;
+
+GST_START_TEST (test_src_allocate_port)
+{
+  GstHarness *h_src, *h_sink;
+  GstElement *src;
+  gchar *sink_launchline;
+  gint local_port = 0;
+
+  h_src = gst_harness_new_parse ("srtsrc name=src localport=0 mode=listener");
+  g_assert_nonnull (h_src);
+
+  src = gst_bin_get_by_name (GST_BIN (h_src->element), "src");
+  gst_element_set_state (src, GST_STATE_PAUSED);
+  g_object_get (src, "localport", &local_port, NULL);
+  g_object_unref (src);
+
+  GST_INFO ("srtsrc localport = %d", local_port);
+  g_assert_cmpint (local_port, !=, 0);
+
+  sink_launchline =
+      g_strdup_printf ("srtsink uri=srt://127.0.0.1:%u?mode=caller",
+      local_port);
+  h_sink = gst_harness_new_parse (sink_launchline);
+  g_free (sink_launchline);
+
+  check_play (h_src, GST_SRT_CONNECTION_MODE_LISTENER, h_sink,
+      GST_SRT_CONNECTION_MODE_CALLER);
 }
 
 GST_END_TEST;
@@ -185,6 +224,7 @@ srt_suite (void)
       G_N_ELEMENTS (elements));
   tcase_add_test (tc_chain, test_src_caller_sink_listener);
   tcase_add_test (tc_chain, test_src_listener_sink_caller);
+  tcase_add_test (tc_chain, test_src_allocate_port);
 
   return s;
 }
