@@ -357,6 +357,17 @@ typedef gboolean (*GstCapsFilterMapFunc) (GstCapsFeatures *features,
                                           gpointer user_data);
 
 
+/**
+ * GstCapsSortFunc:
+ * @a: a structure.
+ * @b: a structure to compare with.
+ *
+ * Returns; negative value if a < b; zero if a = b; positive value if a > b.4
+ *
+ * Since: 1.26
+ */
+typedef int (*GstCapsSortFunc) (const GstStructure *a, const GstStructure *b);
+
 GST_API
 GType             gst_caps_get_type                (void);
 
@@ -525,6 +536,10 @@ GstCaps *         gst_caps_simplify                (GstCaps *caps) G_GNUC_WARN_U
 
 GST_API
 GstCaps *         gst_caps_fixate                  (GstCaps *caps) G_GNUC_WARN_UNUSED_RESULT;
+
+GST_API
+GstCaps *         gst_caps_sort                    (GstCaps *caps, GstCapsSortFunc func);
+
 
 /* utility */
 

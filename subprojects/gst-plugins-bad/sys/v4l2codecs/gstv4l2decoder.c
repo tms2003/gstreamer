@@ -78,6 +78,7 @@ struct _GstV4l2Decoder
   GstVecDeque *request_pool;
   GstVecDeque *pending_requests;
   guint version;
+  GstVideoInfo *info;
 
   enum v4l2_buf_type src_buf_type;
   enum v4l2_buf_type sink_buf_type;
@@ -90,6 +91,7 @@ struct _GstV4l2Decoder
 
   /* detected features */
   gboolean supports_holding_capture;
+  gboolean supports_remove_buffers;
 };
 
 G_DEFINE_TYPE_WITH_CODE (GstV4l2Decoder, gst_v4l2_decoder, GST_TYPE_OBJECT,
@@ -167,6 +169,11 @@ gst_v4l2_decoder_open (GstV4l2Decoder * self)
 {
   gint ret;
   struct v4l2_capability querycap;
+  struct v4l2_create_buffers createbufs = {
+    .count = 0,
+    .memory = V4L2_MEMORY_MMAP,
+  };
+
   guint32 capabilities;
 
   self->media_fd = open (self->media_device, 0);
@@ -210,6 +217,20 @@ gst_v4l2_decoder_open (GstV4l2Decoder * self)
     gst_v4l2_decoder_close (self);
     return FALSE;
   }
+
+  createbufs.format.type = self->sink_buf_type;
+  ret = ioctl (self->video_fd, VIDIOC_CREATE_BUFS, &createbufs);
+  if (ret < 0) {
+    GST_ERROR_OBJECT (self, "VIDIOC_CREATE_BUFS failed: %s",
+        g_strerror (errno));
+    gst_v4l2_decoder_close (self);
+    return FALSE;
+  }
+
+  if (createbufs.capabilities & V4L2_BUF_CAP_SUPPORTS_REMOVE_BUFS)
+    self->supports_remove_buffers = TRUE;
+  else
+    self->supports_remove_buffers = FALSE;
 
   self->opened = TRUE;
 
@@ -531,7 +552,32 @@ gst_v4l2_decoder_enum_src_formats (GstV4l2Decoder * self,
 
   GST_DEBUG_OBJECT (self, "Probed caps: %" GST_PTR_FORMAT, caps);
 
-  return caps;
+  return gst_v4l2_sort_caps (caps);
+}
+
+gboolean
+gst_v4l2_decoder_remove_buffers (GstV4l2Decoder * self,
+    GstPadDirection direction, guint index, guint num_buffers)
+{
+  gint ret;
+  struct v4l2_remove_buffers remove_bufs = {
+    .type = direction_to_buffer_type (self, direction),
+    .index = index,
+    .count = num_buffers,
+  };
+
+  if (!self->supports_remove_buffers)
+    return FALSE;
+
+  GST_DEBUG_OBJECT (self, "remove buffers %d from index %d", remove_bufs.count,
+      remove_bufs.index);
+  ret = ioctl (self->video_fd, VIDIOC_REMOVE_BUFS, &remove_bufs);
+  if (ret < 0) {
+    GST_ERROR_OBJECT (self, "VIDIOC_REMOVE_BUF failed: %s", g_strerror (errno));
+    return FALSE;
+  }
+
+  return TRUE;
 }
 
 gboolean
@@ -611,6 +657,10 @@ gst_v4l2_decoder_select_src_format (GstV4l2Decoder * self, GstCaps * caps,
       gst_video_format_to_string (vinfo->finfo->format),
       vinfo->width, vinfo->height);
 
+  if (self->info)
+    gst_video_info_free (self->info);
+  self->info = gst_video_info_copy (vinfo);
+
   return TRUE;
 }
 
@@ -657,14 +707,43 @@ gst_v4l2_decoder_request_buffers (GstV4l2Decoder * self,
     return ret;
   }
 
+  return reqbufs.count;
+}
+
+gint
+gst_v4l2_decoder_create_buffers (GstV4l2Decoder * self,
+    GstPadDirection direction, guint num_buffers)
+{
+  gint ret;
+  struct v4l2_create_buffers createbufs = {
+    .count = num_buffers,
+    .memory = V4L2_MEMORY_MMAP,
+    .format.type = direction_to_buffer_type (self, direction),
+  };
+
+  GST_DEBUG_OBJECT (self, "Creating %u buffers", num_buffers);
+
+  ret = ioctl (self->video_fd, VIDIOC_G_FMT, &createbufs.format);
+  if (ret < 0) {
+    GST_ERROR_OBJECT (self, "VIDIOC_G_FMT failed: %s", g_strerror (errno));
+    return ret;
+  }
+
+  ret = ioctl (self->video_fd, VIDIOC_CREATE_BUFS, &createbufs);
+  if (ret < 0) {
+    GST_ERROR_OBJECT (self, "VIDIOC_CREATE_BUFS failed: %s",
+        g_strerror (errno));
+    return ret;
+  }
+
   if (direction == GST_PAD_SINK) {
-    if (reqbufs.capabilities & V4L2_BUF_CAP_SUPPORTS_M2M_HOLD_CAPTURE_BUF)
+    if (createbufs.capabilities & V4L2_BUF_CAP_SUPPORTS_M2M_HOLD_CAPTURE_BUF)
       self->supports_holding_capture = TRUE;
     else
       self->supports_holding_capture = FALSE;
   }
 
-  return reqbufs.count;
+  return createbufs.index;
 }
 
 gboolean
@@ -1186,6 +1265,19 @@ guint
 gst_v4l2_decoder_get_render_delay (GstV4l2Decoder * self)
 {
   return self->render_delay;
+}
+
+/**
+ * gst_v4l2_decoder_has_remove_bufs:
+ * @self: a #GstV4l2Decoder pointer
+ *
+ * Returns: TRUE if the video decoder driver allows to remove
+ * buffers from CAPTURE queue.
+ */
+gboolean
+gst_v4l2_decoder_has_remove_bufs (GstV4l2Decoder * self)
+{
+  return self->supports_remove_buffers;
 }
 
 GstV4l2Request *

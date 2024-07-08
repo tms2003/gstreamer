@@ -1842,6 +1842,37 @@ GST_START_TEST (test_fixed)
 
 GST_END_TEST;
 
+static gint
+test_rate_sorting (const GstStructure * a, const GstStructure * b)
+{
+  gint a_rate, b_rate;
+
+  gst_structure_get_int (a, "rate", &a_rate);
+  gst_structure_get_int (b, "rate", &b_rate);
+
+  return a_rate - b_rate;
+}
+
+GST_START_TEST (test_sort_rate)
+{
+  GstCaps *caps, *result;
+
+  caps =
+      gst_caps_from_string
+      ("audio/x-raw,rate=44100; audio/x-raw,rate=45000; audio/x-raw,rate=22000; audio/x-raw,rate=33000;");
+  result =
+      gst_caps_from_string
+      ("audio/x-raw,rate=45000; audio/x-raw,rate=44100; audio/x-raw,rate=33000; audio/x-raw,rate=22000;");
+
+  caps = gst_caps_sort (caps, test_rate_sorting);
+  fail_unless (gst_caps_is_equal (caps, result));
+
+  gst_caps_unref (caps);
+  gst_caps_unref (result);
+}
+
+GST_END_TEST;
+
 static Suite *
 gst_caps_suite (void)
 {
@@ -1880,6 +1911,7 @@ gst_caps_suite (void)
   tcase_add_test (tc_chain, test_equality);
   tcase_add_test (tc_chain, test_remains_any);
   tcase_add_test (tc_chain, test_fixed);
+  tcase_add_test (tc_chain, test_sort_rate);
 
   return s;
 }
