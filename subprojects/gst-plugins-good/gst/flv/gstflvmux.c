@@ -132,7 +132,6 @@ static void gst_flv_mux_reset_pad (GstFlvMuxPad * pad);
 static void gst_flv_mux_pad_finalize (GObject * object);
 
 static gboolean gst_flv_mux_start (GstAggregator * aggregator);
-static GstFlowReturn gst_flv_mux_flush (GstAggregator * aggregator);
 static GstClockTime gst_flv_mux_get_next_time (GstAggregator * aggregator);
 static GstFlowReturn gst_flv_mux_write_eos (GstFlvMux * mux);
 static GstFlowReturn gst_flv_mux_write_header (GstFlvMux * mux);
@@ -319,7 +318,6 @@ gst_flv_mux_class_init (GstFlvMuxClass * klass)
   gstaggregator_class->start = GST_DEBUG_FUNCPTR (gst_flv_mux_start);
   gstaggregator_class->aggregate = GST_DEBUG_FUNCPTR (gst_flv_mux_aggregate);
   gstaggregator_class->sink_event = GST_DEBUG_FUNCPTR (gst_flv_mux_sink_event);
-  gstaggregator_class->flush = GST_DEBUG_FUNCPTR (gst_flv_mux_flush);
   gstaggregator_class->get_next_time =
       GST_DEBUG_FUNCPTR (gst_flv_mux_get_next_time);
   gstaggregator_class->negotiate = NULL;
@@ -376,16 +374,6 @@ gst_flv_mux_pad_finalize (GObject * object)
   gst_flv_mux_reset_pad (pad);
 
   G_OBJECT_CLASS (gst_flv_mux_pad_parent_class)->finalize (object);
-}
-
-static GstFlowReturn
-gst_flv_mux_flush (GstAggregator * aggregator)
-{
-  /* TODO: What is the right behaviour on flush? Should we just ignore it ?
-   * This still needs to be defined. */
-
-  gst_flv_mux_reset (GST_ELEMENT (aggregator));
-  return GST_FLOW_OK;
 }
 
 static gboolean
