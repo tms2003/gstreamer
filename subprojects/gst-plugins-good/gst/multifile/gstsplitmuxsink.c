@@ -1763,7 +1763,10 @@ handle_mq_output (GstPad * pad, GstPadProbeInfo * info, MqStreamCtx * ctx)
 
         peer = gst_pad_get_peer (pad);
         if (peer) {
-          gboolean ok = gst_pad_send_event (peer, gst_event_ref (event));
+          gboolean ok;
+
+          ctx->caps_change = TRUE;
+          ok = gst_pad_send_event (peer, gst_event_ref (event));
 
           gst_object_unref (peer);
 
@@ -1776,7 +1779,6 @@ handle_mq_output (GstPad * pad, GstPadProbeInfo * info, MqStreamCtx * ctx)
         /* This is in the case the muxer doesn't allow this change of caps */
         GST_SPLITMUX_LOCK (splitmux);
         locked = TRUE;
-        ctx->caps_change = TRUE;
 
         if (splitmux->output_state != SPLITMUX_OUTPUT_STATE_START_NEXT_FILE) {
           GST_DEBUG_OBJECT (splitmux,
@@ -2200,6 +2202,39 @@ fail_muxer:
   return GST_FLOW_ERROR;
 }
 
+static gboolean
+handle_error_message (GstSplitMuxSink * splitmux,
+    GstMessage * message, GError * gerror)
+{
+  if (g_error_matches (gerror, GST_STREAM_ERROR, GST_STREAM_ERROR_FORMAT) ||
+      g_error_matches (gerror, GST_STREAM_ERROR, GST_STREAM_ERROR_MUX)) {
+    GList *item;
+    gboolean caps_change = FALSE;
+
+    GST_SPLITMUX_LOCK (splitmux);
+
+    for (item = splitmux->contexts; item; item = item->next) {
+      MqStreamCtx *ctx = item->data;
+
+      if (ctx->caps_change) {
+        caps_change = TRUE;
+        break;
+      }
+    }
+
+    GST_SPLITMUX_UNLOCK (splitmux);
+
+    if (caps_change) {
+      GST_LOG_OBJECT (splitmux,
+          "Ignoring warning change from child %" GST_PTR_FORMAT
+          " while switching caps", GST_MESSAGE_SRC (message));
+      gst_message_unref (message);
+      return TRUE;
+    }
+  }
+  return FALSE;
+}
+
 static void
 bus_handler (GstBin * bin, GstMessage * message)
 {
@@ -2287,32 +2322,16 @@ bus_handler (GstBin * bin, GstMessage * message)
       GError *gerror = NULL;
 
       gst_message_parse_warning (message, &gerror, NULL);
+      if (handle_error_message (splitmux, message, gerror))
+        return;
+      break;
+    }
+    case GST_MESSAGE_ERROR:{
+      GError *gerror = NULL;
 
-      if (g_error_matches (gerror, GST_STREAM_ERROR, GST_STREAM_ERROR_FORMAT)) {
-        GList *item;
-        gboolean caps_change = FALSE;
-
-        GST_SPLITMUX_LOCK (splitmux);
-
-        for (item = splitmux->contexts; item; item = item->next) {
-          MqStreamCtx *ctx = item->data;
-
-          if (ctx->caps_change) {
-            caps_change = TRUE;
-            break;
-          }
-        }
-
-        GST_SPLITMUX_UNLOCK (splitmux);
-
-        if (caps_change) {
-          GST_LOG_OBJECT (splitmux,
-              "Ignoring warning change from child %" GST_PTR_FORMAT
-              " while switching caps", GST_MESSAGE_SRC (message));
-          gst_message_unref (message);
-          return;
-        }
-      }
+      gst_message_parse_error (message, &gerror, NULL);
+      if (handle_error_message (splitmux, message, gerror))
+        return;
       break;
     }
     default:
