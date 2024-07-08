@@ -190,11 +190,13 @@ gst_plugin_scanner_path = join_paths(gst_plugin_scanner_dir, 'gst-plugin-scanner
 #   gst-launch alsasrc device="hw:2" ! fakesink
 #   gst-launch fakesrc ! alsasink device="hw:2"
 #
+# shout2send:
+#   racy leak of sink->conn
 # need a way to figure out value for the device property
 state_ignore_elements = '''aasink autoaudiosrc autoaudiosink autovideosrc
  autovideosink cacasink cairotextoverlay gtkglsink gtksink jackaudiosrc
  jackaudiosink osssrc osssink osxaudiosink osxaudiosrc osxvideosrc osxvideosink
- pulsesink pulsesrc pulsemixer v4l2src'''
+ pulsesink pulsesrc pulsemixer shout2send v4l2src'''
 
 # FIXME: check, also + PTHREAD_CFLAGS
 test_deps = [gst_dep, gstbase_dep, gstnet_dep, gstcheck_dep, gstaudio_dep,
