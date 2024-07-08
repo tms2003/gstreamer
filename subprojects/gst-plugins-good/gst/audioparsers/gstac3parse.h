@@ -64,6 +64,8 @@ struct _GstAc3Parse {
   gboolean              sent_codec_tag;
   gint                  align;
   GstPadChainFunction   baseparse_chainfunc;
+  gint                  sub_stream_idx;
+  gint                  sub_stream_num;
 };
 
 /**
