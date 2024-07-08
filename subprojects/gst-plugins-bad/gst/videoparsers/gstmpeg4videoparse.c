@@ -498,6 +498,18 @@ next:
     case (GST_MPEG4_PARSER_ERROR):
       /* if draining, take all */
       if (GST_BASE_PARSE_DRAINING (parse)) {
+        /* need decide intra_frame */
+        if (mp4vparse->vop_offset >= 0) {
+          if (G_LIKELY (size > mp4vparse->vop_offset + 1)) {
+            mp4vparse->intra_frame =
+              ((data[mp4vparse->vop_offset + 1] >> 6 & 0x3) == 0);
+          } else {
+            GST_WARNING_OBJECT (mp4vparse, "no data following VOP startcode");
+            mp4vparse->intra_frame = FALSE;
+          }
+          GST_LOG_OBJECT (mp4vparse, "is intra %d %d",
+              mp4vparse->intra_frame, mp4vparse->vop_offset);
+        }
         framesize = size;
         ret = TRUE;
       } else {
