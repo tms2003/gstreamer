@@ -71,9 +71,6 @@
 
 #ifdef G_OS_WIN32
 #include <windows.h>
-#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_APP) && !WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP)
-#define GST_WINAPI_ONLY_APP
-#endif
 #endif
 
 #define GST_CAT_DEFAULT GST_CAT_PLUGIN_LOADING
@@ -846,9 +843,10 @@ _priv_gst_plugin_load_file_for_registry (const gchar * filename,
         GST_PLUGIN_ERROR_MODULE, "Dynamic loading not supported");
     goto return_error;
   }
-#if defined(GST_WINAPI_ONLY_APP)
-  /* plugins loaded by filename by Universal Windows Platform apps do not use
-   * an actual file with a path, they use a packaged (asset) library */
+#if defined(G_OS_WIN32)
+  /* In case that application uses packaged library (UWP, WinUI3 for example),
+   * plugins will be loaded by filename, and the filename is not the actual path 
+   */
   file_status.st_mtime = 0;
   file_status.st_size = 0;
 #else
