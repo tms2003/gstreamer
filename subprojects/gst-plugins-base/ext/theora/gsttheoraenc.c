@@ -943,15 +943,13 @@ theora_enc_handle_frame (GstVideoEncoder * benc, GstVideoCodecFrame * frame)
     while ((result =
             th_encode_flushheader (enc->encoder, &enc->comment, &op)) > 0) {
       buf = theora_enc_buffer_from_header_packet (enc, &op);
-      buffers = g_list_prepend (buffers, buf);
+      buffers = g_list_append (buffers, buf);
     }
     if (result < 0) {
       g_list_foreach (buffers, (GFunc) gst_buffer_unref, NULL);
       g_list_free (buffers);
       goto encoder_disabled;
     }
-
-    buffers = g_list_reverse (buffers);
 
     /* mark buffers and put on caps */
     caps = gst_caps_new_empty_simple ("video/x-theora");

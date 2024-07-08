@@ -160,22 +160,19 @@ GST_START_TEST (test_granulepos_offset)
 
   /* header packets should have timestamp == NONE, granulepos 0, IN_CAPS */
   buffer = gst_buffer_straw_get_buffer (bin, pad);
-  check_buffer_timestamp (buffer, GST_CLOCK_TIME_NONE);
-  check_buffer_duration (buffer, GST_CLOCK_TIME_NONE);
+  check_buffer_timestamp (buffer, TIMESTAMP_OFFSET);
   check_buffer_granulepos (buffer, 0);
   check_buffer_is_header (buffer, TRUE);
   gst_buffer_unref (buffer);
 
   buffer = gst_buffer_straw_get_buffer (bin, pad);
-  check_buffer_timestamp (buffer, GST_CLOCK_TIME_NONE);
-  check_buffer_duration (buffer, GST_CLOCK_TIME_NONE);
+  check_buffer_timestamp (buffer, TIMESTAMP_OFFSET);
   check_buffer_granulepos (buffer, 0);
   check_buffer_is_header (buffer, TRUE);
   gst_buffer_unref (buffer);
 
   buffer = gst_buffer_straw_get_buffer (bin, pad);
-  check_buffer_timestamp (buffer, GST_CLOCK_TIME_NONE);
-  check_buffer_duration (buffer, GST_CLOCK_TIME_NONE);
+  check_buffer_timestamp (buffer, TIMESTAMP_OFFSET);
   check_buffer_granulepos (buffer, 0);
   check_buffer_is_header (buffer, TRUE);
   gst_buffer_unref (buffer);
@@ -253,22 +250,22 @@ GST_START_TEST (test_continuity)
 
   /* header packets should have timestamp == NONE, granulepos 0 */
   buffer = gst_buffer_straw_get_buffer (bin, pad);
-  check_buffer_timestamp (buffer, GST_CLOCK_TIME_NONE);
-  check_buffer_duration (buffer, GST_CLOCK_TIME_NONE);
+  check_buffer_timestamp (buffer, 0);
+  check_buffer_duration (buffer, GST_SECOND / 10);
   check_buffer_granulepos (buffer, 0);
   check_buffer_is_header (buffer, TRUE);
   gst_buffer_unref (buffer);
 
   buffer = gst_buffer_straw_get_buffer (bin, pad);
-  check_buffer_timestamp (buffer, GST_CLOCK_TIME_NONE);
-  check_buffer_duration (buffer, GST_CLOCK_TIME_NONE);
+  check_buffer_timestamp (buffer, 0);
+  check_buffer_duration (buffer, GST_SECOND / 10);
   check_buffer_granulepos (buffer, 0);
   check_buffer_is_header (buffer, TRUE);
   gst_buffer_unref (buffer);
 
   buffer = gst_buffer_straw_get_buffer (bin, pad);
-  check_buffer_timestamp (buffer, GST_CLOCK_TIME_NONE);
-  check_buffer_duration (buffer, GST_CLOCK_TIME_NONE);
+  check_buffer_timestamp (buffer, 0);
+  check_buffer_duration (buffer, GST_SECOND / 10);
   check_buffer_granulepos (buffer, 0);
   check_buffer_is_header (buffer, TRUE);
   gst_buffer_unref (buffer);
