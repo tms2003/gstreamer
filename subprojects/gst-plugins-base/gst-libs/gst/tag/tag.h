@@ -297,6 +297,27 @@ G_BEGIN_DECLS
 #define GST_TAG_CAPTURING_WHITE_BALANCE       "capturing-white-balance"
 
 /**
+ * GST_TAG_CAPTURING_LIGHT_SOURCE:
+ *
+ * Light source used when capturing an image. (string)
+ *
+ * The allowed values are:
+ *   "unknown"
+ *   "daylight"
+ *   "fluorescent"
+ *   "tungsten"
+ *   "flash"
+ *   "fine-weather"
+ *   "cloudy-weather"
+ *   "shade"
+ *   "daylight-fluorescent"
+ *   "day-white-fluorescent"
+ *   "cool-white-fluorescent"
+ *   "white-fluorescent"
+ */
+#define GST_TAG_CAPTURING_LIGHT_SOURCE        "capturing-light-source"
+
+/**
  * GST_TAG_CAPTURING_CONTRAST:
  *
  * Direction of contrast processing applied when capturing an image. (string)
