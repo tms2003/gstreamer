@@ -536,7 +536,17 @@ _enqueue_sample (GstAVSampleVideoSink * av_sink, GstBuffer *buf)
     return FALSE;
   }
 
-  if (GST_VIDEO_INFO_N_PLANES (&v_frame->info) == 1) {
+  // the pixelbuffer MUST be backed with IOSurface to work on non macOS platforms
+#if HAVE_IOS
+  NSDictionary *emptyDict = @{};
+  const void *keys[1] = { kCVPixelBufferIOSurfacePropertiesKey };
+  const void *values[1] = { (__bridge CFDictionaryRef)emptyDict };
+  CFDictionaryRef surfaceio_attachments = CFDictionaryCreate(NULL, keys, values, 1, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+#else
+  CFDictionaryRef surfaceio_attachments = NULL;
+#endif
+    
+  if (GST_VIDEO_INFO_N_PLANES (&v_frame->info) == 1 && surfaceio_attachments == NULL) {
     /* single plane */
     if (kCVReturnSuccess != CVPixelBufferCreateWithBytes (NULL,
         GST_VIDEO_INFO_WIDTH (&v_frame->info),
@@ -563,21 +573,52 @@ _enqueue_sample (GstAVSampleVideoSink * av_sink, GstBuffer *buf)
       strides[i] = GST_VIDEO_INFO_COMP_STRIDE (&v_frame->info, i);
     }
 
-    if (kCVReturnSuccess != CVPixelBufferCreateWithPlanarBytes (NULL,
-        GST_VIDEO_INFO_WIDTH (&v_frame->info),
-        GST_VIDEO_INFO_HEIGHT (&v_frame->info),
-        _cv_pixel_format_type_from_video_format (GST_VIDEO_INFO_FORMAT (&v_frame->info)),
-         /* have to put something for these two parameters otherwise
-          * the callback is not called resulting in a big leak */
-        v_frame, v_frame->info.size,
-        GST_VIDEO_INFO_N_PLANES (&v_frame->info), v_frame->data,
-        widths, heights, strides,
-        (CVPixelBufferReleasePlanarBytesCallback) _unmap_planar_frame,
-        v_frame, NULL, &pbuf)) {
-      GST_ERROR_OBJECT (av_sink, "Error creating Core Video pixel buffer");
-      gst_video_frame_unmap (v_frame);
-      g_free (v_frame);
-      return FALSE;
+    if(surfaceio_attachments == NULL) {
+      if (kCVReturnSuccess != CVPixelBufferCreateWithPlanarBytes (NULL,
+            GST_VIDEO_INFO_WIDTH (&v_frame->info),
+            GST_VIDEO_INFO_HEIGHT (&v_frame->info),
+            _cv_pixel_format_type_from_video_format (GST_VIDEO_INFO_FORMAT (&v_frame->info)),
+             /* have to put something for these two parameters otherwise
+              * the callback is not called resulting in a big leak */
+            v_frame, v_frame->info.size,
+            GST_VIDEO_INFO_N_PLANES (&v_frame->info), v_frame->data,
+            widths, heights, strides,
+            (CVPixelBufferReleasePlanarBytesCallback) _unmap_planar_frame,
+            v_frame, NULL, &pbuf)) {
+          GST_ERROR_OBJECT (av_sink, "Error creating Core Video pixel buffer");
+          gst_video_frame_unmap (v_frame);
+          g_free (v_frame);
+          return FALSE;
+      }
+     } else {
+       if(kCVReturnSuccess != CVPixelBufferCreate(kCFAllocatorDefault,
+                  widths[0],
+                  heights[0],
+                  _cv_pixel_format_type_from_video_format (GST_VIDEO_INFO_FORMAT (&v_frame->info)),
+                  surfaceio_attachments,
+                  &pbuf)) {
+                            GST_ERROR_OBJECT (av_sink, "Error creating Core Video pixel buffer");
+                            gst_video_frame_unmap (v_frame);
+                            g_free (v_frame);
+                            CFRelease(surfaceio_attachments);
+                            return GST_FLOW_ERROR;
+           }
+              
+           gint destPlanes = MAX(1, (gint)CVPixelBufferGetPlaneCount(pbuf));
+           gint srcPlanes = GST_VIDEO_INFO_N_PLANES (&v_frame->info);
+           CVPixelBufferLockBaseAddress(pbuf, 0);
+
+           if(srcPlanes == destPlanes) {
+               for(int i = 0; i < srcPlanes; i++) {
+                   uint8_t *destPlane = CVPixelBufferGetBaseAddressOfPlane(pbuf, i);
+                   memcpy(destPlane, GST_VIDEO_FRAME_PLANE_DATA (v_frame, i), GST_VIDEO_FRAME_PLANE_STRIDE (v_frame, i) * heights[i]);
+               }
+           } else {
+               GST_ERROR_OBJECT (av_sink, "invalid plane to plane copy");
+           }
+
+           gst_video_frame_unmap (v_frame);
+           CVPixelBufferUnlockBaseAddress(pbuf, 0);
     }
   }
 
@@ -666,6 +707,12 @@ _enqueue_sample (GstAVSampleVideoSink * av_sink, GstBuffer *buf)
   CFRelease (pbuf);
   CFRelease (sample_buf);
 
+  if(surfaceio_attachments) {
+    /* when iosurface backed, the pixelbuffer free callback is not called -
+        we need to free the frame now */
+    g_free (v_frame);
+  }
+    
   return TRUE;
 }
 
