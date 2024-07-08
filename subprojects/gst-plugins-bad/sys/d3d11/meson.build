@@ -64,7 +64,7 @@ if not d3d11_wgc_option.disabled()
       #include<windows.h>
       #include<winstring.h>
       #include<roapi.h>
-      #include<windows.graphics.capture.h>,
+      #include<windows.graphics.capture.h>
       #include<windows.graphics.capture.interop.h>
       #include<windows.graphics.directx.direct3d11.h>
       #include<windows.graphics.directx.direct3d11.interop.h>
