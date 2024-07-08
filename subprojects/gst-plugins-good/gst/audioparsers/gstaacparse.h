@@ -86,6 +86,8 @@ struct _GstAacParse {
 
   gint last_parsed_sample_rate;
   gint last_parsed_channels;
+  GstClockTime last_timestamp;
+  GstClockTime last_duration;
 };
 
 /**

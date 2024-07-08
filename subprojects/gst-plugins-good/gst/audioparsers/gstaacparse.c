@@ -1519,6 +1519,27 @@ exit:
   }
 
   if (ret && framesize <= map.size) {
+    buffer = frame->buffer;
+    if (!GST_CLOCK_TIME_IS_VALID (GST_BUFFER_DURATION (buffer))
+        && aacparse->header_type == DSPAAC_HEADER_NONE) {
+      /* FIXME: for non-raw streams we might have several AAC packets per
+       * GstBuffer */
+      GstClockTime duration =
+          gst_util_uint64_scale (aacparse->frame_samples, GST_SECOND,
+          aacparse->sample_rate);
+      GST_BUFFER_DURATION (buffer) = duration;
+    }
+    if (GST_CLOCK_TIME_IS_VALID (aacparse->last_duration)) {
+      if (!(GST_CLOCK_TIME_IS_VALID (GST_BUFFER_DTS_OR_PTS (buffer))) &&
+          aacparse->last_timestamp != GST_CLOCK_TIME_NONE) {
+        GstClockTime new_ts =
+            aacparse->last_timestamp + aacparse->last_duration;
+        GST_BUFFER_DTS (buffer) = new_ts;
+        GST_BUFFER_PTS (buffer) = new_ts;
+      }
+      aacparse->last_timestamp = GST_BUFFER_DTS_OR_PTS (buffer);
+    }
+    aacparse->last_duration = GST_BUFFER_DURATION (buffer);
     return gst_base_parse_finish_frame (parse, frame, framesize);
   }
 
@@ -1604,6 +1625,8 @@ gst_aac_parse_start (GstBaseParse * parse)
   aacparse->output_header_type = DSPAAC_HEADER_NOT_PARSED;
   aacparse->channels = 0;
   aacparse->sample_rate = 0;
+  aacparse->last_timestamp = GST_CLOCK_TIME_NONE;
+  aacparse->last_duration = GST_CLOCK_TIME_NONE;
   return TRUE;
 }
 
