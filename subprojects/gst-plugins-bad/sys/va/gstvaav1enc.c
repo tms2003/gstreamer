@@ -74,7 +74,7 @@ typedef struct _GstVaAV1EncFrame GstVaAV1EncFrame;
 
 enum
 {
-  PROP_KEYFRAME_INT = 1,
+  PROP_KEYFRAME_INT = GST_VA_ENC_PROP_MAX,
   PROP_GOLDEN_GROUP_SIZE,
   PROP_NUM_REF_FRAMES,
   PROP_HIERARCHICAL_LEVEL,
@@ -90,7 +90,6 @@ enum
   PROP_NUM_TILE_ROWS,
   PROP_TILE_GROUPS,
   PROP_MBBRC,
-  PROP_RATE_CONTROL,
   N_PROPERTIES
 };
 
@@ -478,27 +477,6 @@ _enc_frame (GstVideoCodecFrame * frame)
 
   return enc_frame;
 }
-
-#ifndef GST_DISABLE_GST_DEBUG
-static const gchar *
-_rate_control_get_name (guint32 rc_mode)
-{
-  GParamSpecEnum *spec;
-  guint i;
-
-  if (!(properties[PROP_RATE_CONTROL]
-          && G_IS_PARAM_SPEC_ENUM (properties[PROP_RATE_CONTROL])))
-    return NULL;
-
-  spec = G_PARAM_SPEC_ENUM (properties[PROP_RATE_CONTROL]);
-  for (i = 0; i < spec->enum_class->n_values; i++) {
-    if (spec->enum_class->values[i].value == rc_mode)
-      return spec->enum_class->values[i].value_nick;
-  }
-
-  return NULL;
-}
-#endif /* end of GST_DISABLE_GST_DEBUG */
 
 static GstVaAV1EncFrame *
 gst_va_av1_enc_frame_new (void)
@@ -2612,15 +2590,15 @@ _av1_ensure_rate_control (GstVaAV1Enc * self)
     rc_mode = gst_va_encoder_get_rate_control_mode (base->encoder,
         base->profile, GST_VA_BASE_ENC_ENTRYPOINT (base));
     if (!(rc_mode & rc_ctrl)) {
-      guint32 defval =
-          G_PARAM_SPEC_ENUM (properties[PROP_RATE_CONTROL])->default_value;
+      guint32 defval = G_PARAM_SPEC_ENUM (properties
+          [GST_VA_ENC_PROP_RATE_CONTROL])->default_value;
       GST_INFO_OBJECT (self, "The rate control mode %s is not supported, "
-          "fallback to %s mode", _rate_control_get_name (rc_ctrl),
-          _rate_control_get_name (defval));
+          "fallback to %s mode", gst_va_encoder_get_rate_control_name (rc_ctrl),
+          gst_va_encoder_get_rate_control_name (defval));
       self->rc.rc_ctrl_mode = defval;
 
       update_property_uint (base, &self->prop.rc_ctrl, self->rc.rc_ctrl_mode,
-          PROP_RATE_CONTROL);
+          GST_VA_ENC_PROP_RATE_CONTROL);
     }
   } else {
     self->rc.rc_ctrl_mode = VA_RC_NONE;
@@ -4163,12 +4141,8 @@ gst_va_av1_enc_init (GTypeInstance * instance, gpointer g_class)
   self->prop.tile_groups = 1;
   self->prop.mbbrc = 0;
 
-  if (properties[PROP_RATE_CONTROL]) {
-    self->prop.rc_ctrl =
-        G_PARAM_SPEC_ENUM (properties[PROP_RATE_CONTROL])->default_value;
-  } else {
-    self->prop.rc_ctrl = VA_RC_NONE;
-  }
+  self->prop.rc_ctrl = G_PARAM_SPEC_ENUM (properties
+      [GST_VA_ENC_PROP_RATE_CONTROL])->default_value;
 }
 
 static void
@@ -4243,7 +4217,7 @@ gst_va_av1_enc_set_property (GObject * object, guint prop_id,
       no_effect = FALSE;
       g_atomic_int_set (&GST_VA_BASE_ENC (self)->reconf, TRUE);
       break;
-    case PROP_RATE_CONTROL:
+    case GST_VA_ENC_PROP_RATE_CONTROL:
       self->prop.rc_ctrl = g_value_get_enum (value);
       no_effect = FALSE;
       g_atomic_int_set (&GST_VA_BASE_ENC (self)->reconf, TRUE);
@@ -4335,7 +4309,7 @@ gst_va_av1_enc_get_property (GObject * object, guint prop_id,
     case PROP_CPB_SIZE:
       g_value_set_uint (value, self->prop.cpb_size);
       break;
-    case PROP_RATE_CONTROL:
+    case GST_VA_ENC_PROP_RATE_CONTROL:
       g_value_set_enum (value, self->prop.rc_ctrl);
       break;
     case PROP_MBBRC:
@@ -4357,9 +4331,6 @@ gst_va_av1_enc_class_init (gpointer g_klass, gpointer class_data)
   GstElementClass *element_class = GST_ELEMENT_CLASS (g_klass);
   GstVideoEncoderClass *venc_class = GST_VIDEO_ENCODER_CLASS (g_klass);
   GstVaBaseEncClass *va_enc_class = GST_VA_BASE_ENC_CLASS (g_klass);
-  GstVaAV1EncClass *vaav1enc_class = GST_VA_AV1_ENC_CLASS (g_klass);
-  GstVaDisplay *display;
-  GstVaEncoder *encoder;
   struct CData *cdata = class_data;
   gchar *long_name;
   const gchar *name, *desc;
@@ -4418,27 +4389,6 @@ gst_va_av1_enc_class_init (gpointer g_klass, gpointer class_data)
   va_enc_class->encode_frame = GST_DEBUG_FUNCPTR (gst_va_av1_enc_encode_frame);
   va_enc_class->prepare_output =
       GST_DEBUG_FUNCPTR (gst_va_av1_enc_prepare_output);
-
-  {
-    display = gst_va_display_platform_new (va_enc_class->render_device_path);
-    encoder = gst_va_encoder_new (display, va_enc_class->codec,
-        va_enc_class->entrypoint);
-    if (gst_va_encoder_get_rate_control_enum (encoder,
-            vaav1enc_class->rate_control)) {
-      g_snprintf (vaav1enc_class->rate_control_type_name,
-          G_N_ELEMENTS (vaav1enc_class->rate_control_type_name) - 1,
-          "GstVaEncoderRateControl_%" GST_FOURCC_FORMAT "%s_%s",
-          GST_FOURCC_ARGS (va_enc_class->codec),
-          (va_enc_class->entrypoint == VAEntrypointEncSliceLP) ? "_LP" : "",
-          g_path_get_basename (va_enc_class->render_device_path));
-      vaav1enc_class->rate_control_type =
-          g_enum_register_static (vaav1enc_class->rate_control_type_name,
-          vaav1enc_class->rate_control);
-      gst_type_mark_as_plugin_api (vaav1enc_class->rate_control_type, 0);
-    }
-    gst_object_unref (encoder);
-    gst_object_unref (display);
-  }
 
   g_free (long_name);
   g_free (cdata->description);
@@ -4616,18 +4566,9 @@ gst_va_av1_enc_class_init (gpointer g_klass, gpointer class_data)
       "Macroblock level Bitrate Control. It is not compatible with CQP",
       GST_TYPE_VA_FEATURE, GST_VA_FEATURE_AUTO, param_flags);
 
-  if (vaav1enc_class->rate_control_type > 0) {
-    properties[PROP_RATE_CONTROL] = g_param_spec_enum ("rate-control",
-        "rate control mode",
-        "The desired rate control mode for the encoder",
-        vaav1enc_class->rate_control_type,
-        vaav1enc_class->rate_control[0].value,
-        GST_PARAM_CONDITIONALLY_AVAILABLE | GST_PARAM_MUTABLE_PLAYING
-        | param_flags);
-  } else {
-    n_props--;
-    properties[PROP_RATE_CONTROL] = NULL;
-  }
+  gst_va_base_enc_class_install_properties_helper (properties,
+      va_enc_class->codec, va_enc_class->entrypoint,
+      va_enc_class->render_device_path);
 
   g_object_class_install_properties (object_class, n_props, properties);
 

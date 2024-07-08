@@ -72,7 +72,7 @@ typedef struct _GstVaH265LevelLimits GstVaH265LevelLimits;
 
 enum
 {
-  PROP_KEY_INT_MAX = 1,
+  PROP_KEY_INT_MAX = GST_VA_ENC_PROP_MAX,
   PROP_BFRAMES,
   PROP_IFRAMES,
   PROP_NUM_REF_FRAMES,
@@ -92,7 +92,6 @@ enum
   PROP_AUD,
   PROP_NUM_TILE_COLS,
   PROP_NUM_TILE_ROWS,
-  PROP_RATE_CONTROL,
   N_PROPERTIES
 };
 
@@ -420,25 +419,6 @@ _h265_slice_type_name (GstH265SliceType type)
       return "I";
     default:
       g_assert_not_reached ();
-  }
-
-  return NULL;
-}
-
-static const gchar *
-_rate_control_get_name (guint32 rc_mode)
-{
-  GParamSpecEnum *spec;
-  guint i;
-
-  if (!(properties[PROP_RATE_CONTROL]
-          && G_IS_PARAM_SPEC_ENUM (properties[PROP_RATE_CONTROL])))
-    return NULL;
-
-  spec = G_PARAM_SPEC_ENUM (properties[PROP_RATE_CONTROL]);
-  for (i = 0; i < spec->enum_class->n_values; i++) {
-    if (spec->enum_class->values[i].value == rc_mode)
-      return spec->enum_class->values[i].value_nick;
   }
 
   return NULL;
@@ -3315,14 +3295,14 @@ _h265_ensure_rate_control (GstVaH265Enc * self)
     rc_mode = gst_va_encoder_get_rate_control_mode (base->encoder,
         base->profile, GST_VA_BASE_ENC_ENTRYPOINT (base));
     if (!(rc_mode & rc_ctrl)) {
-      guint32 defval =
-          G_PARAM_SPEC_ENUM (properties[PROP_RATE_CONTROL])->default_value;
+      guint32 defval = G_PARAM_SPEC_ENUM (properties
+          [GST_VA_ENC_PROP_RATE_CONTROL])->default_value;
       GST_INFO_OBJECT (self, "The rate control mode %s is not supported, "
-          "fallback to %s mode", _rate_control_get_name (rc_ctrl),
-          _rate_control_get_name (defval));
+          "fallback to %s mode", gst_va_encoder_get_rate_control_name (rc_ctrl),
+          gst_va_encoder_get_rate_control_name (defval));
       self->rc.rc_ctrl_mode = defval;
       update_property_uint (base, &self->prop.rc_ctrl,
-          self->rc.rc_ctrl_mode, PROP_RATE_CONTROL);
+          self->rc.rc_ctrl_mode, GST_VA_ENC_PROP_RATE_CONTROL);
     }
   } else {
     self->rc.rc_ctrl_mode = VA_RC_NONE;
@@ -4837,12 +4817,8 @@ gst_va_h265_enc_init (GTypeInstance * instance, gpointer g_class)
   self->prop.target_percentage = 66;
   self->prop.target_usage = 4;
   self->prop.cpb_size = 0;
-  if (properties[PROP_RATE_CONTROL]) {
-    self->prop.rc_ctrl =
-        G_PARAM_SPEC_ENUM (properties[PROP_RATE_CONTROL])->default_value;
-  } else {
-    self->prop.rc_ctrl = VA_RC_NONE;
-  }
+  self->prop.rc_ctrl = G_PARAM_SPEC_ENUM (properties
+      [GST_VA_ENC_PROP_RATE_CONTROL])->default_value;
 }
 
 static void
@@ -4947,7 +4923,7 @@ gst_va_h265_enc_set_property (GObject * object, guint prop_id,
     case PROP_NUM_TILE_ROWS:
       self->prop.num_tile_rows = g_value_get_uint (value);
       break;
-    case PROP_RATE_CONTROL:
+    case GST_VA_ENC_PROP_RATE_CONTROL:
       self->prop.rc_ctrl = g_value_get_enum (value);
       no_effect = FALSE;
       g_atomic_int_set (&GST_VA_BASE_ENC (self)->reconf, TRUE);
@@ -5058,7 +5034,7 @@ gst_va_h265_enc_get_property (GObject * object, guint prop_id,
     case PROP_NUM_TILE_ROWS:
       g_value_set_uint (value, self->prop.num_tile_rows);
       break;
-    case PROP_RATE_CONTROL:
+    case GST_VA_ENC_PROP_RATE_CONTROL:
       g_value_set_enum (value, self->prop.rc_ctrl);
       break;
     case PROP_CPB_SIZE:
@@ -5093,9 +5069,6 @@ gst_va_h265_enc_class_init (gpointer g_klass, gpointer class_data)
   GstElementClass *element_class = GST_ELEMENT_CLASS (g_klass);
   GstVideoEncoderClass *venc_class = GST_VIDEO_ENCODER_CLASS (g_klass);
   GstVaBaseEncClass *va_enc_class = GST_VA_BASE_ENC_CLASS (g_klass);
-  GstVaH265EncClass *vah265enc_class = GST_VA_H265_ENC_CLASS (g_klass);
-  GstVaDisplay *display;
-  GstVaEncoder *encoder;
   struct CData *cdata = class_data;
   gchar *long_name;
   const gchar *name, *desc;
@@ -5157,29 +5130,6 @@ gst_va_h265_enc_class_init (gpointer g_klass, gpointer class_data)
   va_enc_class->encode_frame = GST_DEBUG_FUNCPTR (gst_va_h265_enc_encode_frame);
   va_enc_class->prepare_output =
       GST_DEBUG_FUNCPTR (gst_va_h265_enc_prepare_output);
-
-  {
-    display = gst_va_display_platform_new (va_enc_class->render_device_path);
-    encoder = gst_va_encoder_new (display, va_enc_class->codec,
-        va_enc_class->entrypoint);
-    if (gst_va_encoder_get_rate_control_enum (encoder,
-            vah265enc_class->rate_control)) {
-      gchar *basename = g_path_get_basename (va_enc_class->render_device_path);
-      g_snprintf (vah265enc_class->rate_control_type_name,
-          G_N_ELEMENTS (vah265enc_class->rate_control_type_name) - 1,
-          "GstVaEncoderRateControl_%" GST_FOURCC_FORMAT "%s_%s",
-          GST_FOURCC_ARGS (va_enc_class->codec),
-          (va_enc_class->entrypoint == VAEntrypointEncSliceLP) ? "_LP" : "",
-          basename);
-      vah265enc_class->rate_control_type =
-          g_enum_register_static (vah265enc_class->rate_control_type_name,
-          vah265enc_class->rate_control);
-      gst_type_mark_as_plugin_api (vah265enc_class->rate_control_type, 0);
-      g_free (basename);
-    }
-    gst_object_unref (encoder);
-    gst_object_unref (display);
-  }
 
   g_free (long_name);
   g_free (cdata->description);
@@ -5390,17 +5340,9 @@ gst_va_h265_enc_class_init (gpointer g_klass, gpointer class_data)
       "number of tile rows", "The number of rows for tile encoding",
       1, MAX_ROW_TILES, 1, param_flags);
 
-  if (vah265enc_class->rate_control_type > 0) {
-    properties[PROP_RATE_CONTROL] = g_param_spec_enum ("rate-control",
-        "rate control mode", "The desired rate control mode for the encoder",
-        vah265enc_class->rate_control_type,
-        vah265enc_class->rate_control[0].value,
-        GST_PARAM_CONDITIONALLY_AVAILABLE | GST_PARAM_MUTABLE_PLAYING
-        | param_flags);
-  } else {
-    n_props--;
-    properties[PROP_RATE_CONTROL] = NULL;
-  }
+  gst_va_base_enc_class_install_properties_helper (properties,
+      va_enc_class->codec, va_enc_class->entrypoint,
+      va_enc_class->render_device_path);
 
   g_object_class_install_properties (object_class, n_props, properties);
 

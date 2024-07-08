@@ -94,6 +94,7 @@ gboolean               gst_va_encoder_get_packed_headers  (GstVaEncoder * self,
                                                            guint32 * packed_headers);
 gboolean              gst_va_encoder_get_rate_control_enum (GstVaEncoder * self,
                                                             GEnumValue ratectl[16]);
+const gchar *         gst_va_encoder_get_rate_control_name (guint32 rc_mode);
 gboolean              gst_va_encoder_add_param            (GstVaEncoder * self,
                                                            GstVaEncodePicture * pic,
                                                            VABufferType type,
