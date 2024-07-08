@@ -334,6 +334,8 @@ gst_aggregator_pad_flush (GstAggregatorPad * aggpad, GstAggregator * agg)
 
 /**
  * gst_aggregator_peek_next_sample:
+ * @agg: The #GstAggregator
+ * @aggpad: The #GstAggregatorPad
  *
  * Use this function to determine what input buffers will be aggregated
  * to produce the next output buffer. This should only be called from
@@ -349,12 +351,59 @@ gst_aggregator_pad_flush (GstAggregatorPad * aggpad, GstAggregator * agg)
 GstSample *
 gst_aggregator_peek_next_sample (GstAggregator * agg, GstAggregatorPad * aggpad)
 {
-  GstAggregatorClass *klass = GST_AGGREGATOR_GET_CLASS (agg);
+  GstAggregatorClass *klass;
+  g_return_val_if_fail (GST_IS_AGGREGATOR (agg), NULL);
+  g_return_val_if_fail (GST_IS_AGGREGATOR_PAD (aggpad), NULL);
+
+  klass = GST_AGGREGATOR_GET_CLASS (agg);
+
 
   if (klass->peek_next_sample)
     return (klass->peek_next_sample (agg, aggpad));
 
   return NULL;
+}
+
+/**
+ * gst_aggregator_set_next_sample:
+ * @agg: The #GstAggregator
+ * @aggpad: The #GstAggregatorPad
+ * @sample: (transfer full) (nullable): The #GstSample to use for the current aggregation
+ *
+ * Use this function to override the sample that will be aggregated
+ * to produce the next output buffer. This should only be called from
+ * a #GstAggregator::samples-selected handler, and can be used to provide
+ * a different sample for this single aggregation. It also allows to unset the
+ * sample or providing a sample when none is available.
+ *
+ * Note that not all subclasses of #GstAggregator implement this, and that not
+ * all subclasses support both buffers and buffer lists or replacing of the
+ * segment or caps via @sample.
+ *
+ * Returns: %TRUE if replacing the next sample was successful.
+ *
+ * Since: 1.20
+ */
+gboolean
+gst_aggregator_set_next_sample (GstAggregator * agg,
+    GstAggregatorPad * aggpad, GstSample * sample)
+{
+  GstAggregatorClass *klass;
+
+  g_return_val_if_fail (GST_IS_AGGREGATOR (agg), FALSE);
+  g_return_val_if_fail (GST_IS_AGGREGATOR_PAD (aggpad), FALSE);
+  g_return_val_if_fail (sample == NULL || GST_IS_SAMPLE (sample), FALSE);
+
+  klass = GST_AGGREGATOR_GET_CLASS (agg);
+
+  if (klass->set_next_sample) {
+    return klass->set_next_sample (agg, aggpad, sample);
+  } else {
+    GST_FIXME_OBJECT (agg,
+        "Subclass does not implement GstAggregator::set_next_sample");
+    gst_sample_unref (sample);
+    return FALSE;
+  }
 }
 
 /*************************************
@@ -3076,7 +3125,8 @@ gst_aggregator_class_init (GstAggregatorClass * klass)
    *
    * Signals that the #GstAggregator subclass has selected the next set
    * of input samples it will aggregate. Handlers may call
-   * gst_aggregator_peek_next_sample() at that point.
+   * gst_aggregator_peek_next_sample() and gst_aggregator_set_next_sample()
+   * at that point.
    *
    * Since: 1.18
    */

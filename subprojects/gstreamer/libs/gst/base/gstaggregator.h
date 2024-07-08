@@ -353,8 +353,19 @@ struct _GstAggregatorClass {
   GstSample *       (*peek_next_sample)         (GstAggregator *aggregator,
                                                  GstAggregatorPad * aggregator_pad);
 
+  /**
+   * GstAggregatorClass::set_next_sample:
+   *
+   * See gst_aggregator_set_next_sample().
+   *
+   * Since: 1.20
+   */
+  gboolean          (*set_next_sample)          (GstAggregator *aggregator,
+                                                 GstAggregatorPad * aggregator_pad,
+                                                 GstSample * sample);
+
   /*< private >*/
-  gpointer          _gst_reserved[GST_PADDING_LARGE-5];
+  gpointer          _gst_reserved[GST_PADDING_LARGE-6];
 };
 
 /************************************
@@ -419,6 +430,11 @@ void            gst_aggregator_update_segment       (GstAggregator              
 GST_BASE_API
 GstSample     * gst_aggregator_peek_next_sample     (GstAggregator *self,
                                                      GstAggregatorPad * pad);
+
+GST_BASE_API
+gboolean        gst_aggregator_set_next_sample      (GstAggregator *self,
+                                                     GstAggregatorPad * pad,
+                                                     GstSample *sample);
 
 GST_BASE_API
 void            gst_aggregator_selected_samples     (GstAggregator                * self,

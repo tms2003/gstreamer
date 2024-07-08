@@ -93,7 +93,10 @@ enum
 
 struct _GstVideoAggregatorPadPrivate
 {
-  GstBuffer *buffer;
+  GstBuffer *buffer, *replaced_buffer;
+  /* Flag to distinguish between replace buffer being NULL and it not having
+   * being replaced at all */
+  gboolean buffer_got_replaced;
   GstCaps *caps;
   GstVideoFrame prepared_frame;
 
@@ -189,6 +192,8 @@ _flush_pad (GstAggregatorPad * aggpad, GstAggregator * aggregator)
 
   gst_video_aggregator_reset_qos (vagg);
   gst_buffer_replace (&pad->priv->buffer, NULL);
+  gst_buffer_replace (&pad->priv->replaced_buffer, NULL);
+  pad->priv->buffer_got_replaced = FALSE;
   gst_caps_replace (&pad->priv->caps, NULL);
   pad->priv->start_time = -1;
   pad->priv->end_time = -1;
@@ -249,12 +254,47 @@ gst_video_aggregator_peek_next_sample (GstAggregator * agg,
   GstVideoAggregatorPad *vaggpad = GST_VIDEO_AGGREGATOR_PAD (aggpad);
   GstSample *res = NULL;
 
-  if (vaggpad->priv->buffer) {
+  if (vaggpad->priv->buffer_got_replaced) {
+    if (vaggpad->priv->replaced_buffer)
+      res = gst_sample_new (vaggpad->priv->replaced_buffer, vaggpad->priv->caps,
+          &aggpad->segment, NULL);
+  } else if (vaggpad->priv->buffer) {
     res = gst_sample_new (vaggpad->priv->buffer, vaggpad->priv->caps,
         &aggpad->segment, NULL);
   }
 
   return res;
+}
+
+static gboolean
+gst_video_aggregator_set_next_sample (GstAggregator * agg,
+    GstAggregatorPad * aggpad, GstSample * sample)
+{
+  GstVideoAggregatorPad *vaggpad = GST_VIDEO_AGGREGATOR_PAD (aggpad);
+  GstBuffer *buffer;
+  GstCaps *caps;
+
+  caps = gst_sample_get_caps (sample);
+  if (caps) {
+    if (!gst_caps_is_equal (caps, vaggpad->priv->caps)) {
+      GST_ERROR_OBJECT (aggpad, "Replaced sample has different caps");
+      return FALSE;
+    }
+  }
+
+  buffer = gst_sample_get_buffer (sample);
+  if (!buffer && gst_sample_get_buffer_list (sample)) {
+    GST_ERROR_OBJECT (aggpad,
+        "Replacing a buffer with a buffer list is not supported");
+    return FALSE;
+  }
+
+  GST_TRACE_OBJECT (aggpad, "Replacing buffer %p with %p",
+      vaggpad->priv->replaced_buffer, buffer);
+  gst_buffer_replace (&vaggpad->priv->replaced_buffer, buffer);
+  vaggpad->priv->buffer_got_replaced = TRUE;
+
+  return TRUE;
 }
 
 static void
@@ -341,7 +381,10 @@ gst_video_aggregator_pad_has_current_buffer (GstVideoAggregatorPad * pad)
 {
   g_return_val_if_fail (GST_IS_VIDEO_AGGREGATOR_PAD (pad), FALSE);
 
-  return pad->priv->buffer != NULL;
+  if (pad->priv->buffer_got_replaced)
+    return pad->priv->replaced_buffer != NULL;
+  else
+    return pad->priv->buffer != NULL;
 }
 
 /**
@@ -364,7 +407,8 @@ gst_video_aggregator_pad_get_current_buffer (GstVideoAggregatorPad * pad)
 {
   g_return_val_if_fail (GST_IS_VIDEO_AGGREGATOR_PAD (pad), NULL);
 
-  return pad->priv->buffer;
+  return pad->priv->buffer_got_replaced ? pad->priv->
+      replaced_buffer : pad->priv->buffer;
 }
 
 /**
@@ -1717,6 +1761,8 @@ gst_video_aggregator_reset (GstVideoAggregator * vagg)
     GstVideoAggregatorPad *p = l->data;
 
     gst_buffer_replace (&p->priv->buffer, NULL);
+    gst_buffer_replace (&p->priv->replaced_buffer, NULL);
+    p->priv->buffer_got_replaced = FALSE;
     gst_caps_replace (&p->priv->caps, NULL);
     p->priv->start_time = -1;
     p->priv->end_time = -1;
@@ -2034,10 +2080,15 @@ prepare_frames_start (GstElement * agg, GstPad * pad, gpointer user_data)
   GstVideoAggregatorPad *vpad = GST_VIDEO_AGGREGATOR_PAD_CAST (pad);
   GstVideoAggregatorPadClass *vaggpad_class =
       GST_VIDEO_AGGREGATOR_PAD_GET_CLASS (pad);
+  GstBuffer *buffer;
 
   memset (&vpad->priv->prepared_frame, 0, sizeof (GstVideoFrame));
 
-  if (vpad->priv->buffer == NULL || !vaggpad_class->prepare_frame_start)
+  buffer =
+      vpad->priv->buffer_got_replaced ? vpad->priv->
+      replaced_buffer : vpad->priv->buffer;
+
+  if (buffer == NULL || !vaggpad_class->prepare_frame_start)
     return TRUE;
 
   /* GAP event, nothing to do */
@@ -2051,7 +2102,7 @@ prepare_frames_start (GstElement * agg, GstPad * pad, gpointer user_data)
       && vaggpad_class->prepare_frame_finish, TRUE);
 
   vaggpad_class->prepare_frame_start (vpad, GST_VIDEO_AGGREGATOR_CAST (agg),
-      vpad->priv->buffer, &vpad->priv->prepared_frame);
+      buffer, &vpad->priv->prepared_frame);
 
   return TRUE;
 }
@@ -2062,15 +2113,20 @@ prepare_frames_finish (GstElement * agg, GstPad * pad, gpointer user_data)
   GstVideoAggregatorPad *vpad = GST_VIDEO_AGGREGATOR_PAD_CAST (pad);
   GstVideoAggregatorPadClass *vaggpad_class =
       GST_VIDEO_AGGREGATOR_PAD_GET_CLASS (pad);
+  GstBuffer *buffer;
 
-  if (vpad->priv->buffer == NULL || (!vaggpad_class->prepare_frame
+  buffer =
+      vpad->priv->buffer_got_replaced ? vpad->priv->
+      replaced_buffer : vpad->priv->buffer;
+
+  if (buffer == NULL || (!vaggpad_class->prepare_frame
           && !vaggpad_class->prepare_frame_start))
     return TRUE;
 
   /* GAP event, nothing to do */
-  if (vpad->priv->buffer &&
-      gst_buffer_get_size (vpad->priv->buffer) == 0 &&
-      GST_BUFFER_FLAG_IS_SET (vpad->priv->buffer, GST_BUFFER_FLAG_GAP)) {
+  if (buffer &&
+      gst_buffer_get_size (buffer) == 0 &&
+      GST_BUFFER_FLAG_IS_SET (buffer, GST_BUFFER_FLAG_GAP)) {
     return TRUE;
   }
 
@@ -2080,7 +2136,7 @@ prepare_frames_finish (GstElement * agg, GstPad * pad, gpointer user_data)
     return TRUE;
   } else {
     return vaggpad_class->prepare_frame (vpad, GST_VIDEO_AGGREGATOR_CAST (agg),
-        vpad->priv->buffer, &vpad->priv->prepared_frame);
+        buffer, &vpad->priv->prepared_frame);
   }
 }
 
@@ -2096,6 +2152,8 @@ clean_pad (GstElement * agg, GstPad * pad, gpointer user_data)
     vaggpad_class->clean_frame (vpad, vagg, &vpad->priv->prepared_frame);
 
   memset (&vpad->priv->prepared_frame, 0, sizeof (GstVideoFrame));
+  gst_buffer_replace (&vpad->priv->replaced_buffer, NULL);
+  vpad->priv->buffer_got_replaced = FALSE;
 
   return TRUE;
 }
@@ -2713,6 +2771,8 @@ gst_video_aggregator_release_pad (GstElement * element, GstPad * pad)
     gst_video_aggregator_reset (vagg);
 
   gst_buffer_replace (&vaggpad->priv->buffer, NULL);
+  gst_buffer_replace (&vaggpad->priv->replaced_buffer, NULL);
+  vaggpad->priv->buffer_got_replaced = FALSE;
   gst_caps_replace (&vaggpad->priv->caps, NULL);
   gst_caps_replace (&vaggpad->priv->pending_caps, NULL);
 
@@ -3087,6 +3147,7 @@ gst_video_aggregator_class_init (GstVideoAggregatorClass * klass)
   agg_class->decide_allocation = gst_video_aggregator_decide_allocation;
   agg_class->propose_allocation = gst_video_aggregator_propose_allocation;
   agg_class->peek_next_sample = gst_video_aggregator_peek_next_sample;
+  agg_class->set_next_sample = gst_video_aggregator_set_next_sample;
 
   klass->find_best_format = gst_video_aggregator_find_best_format;
   klass->create_output_buffer = gst_video_aggregator_create_output_buffer;
