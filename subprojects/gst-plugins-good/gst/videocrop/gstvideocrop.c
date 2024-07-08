@@ -847,6 +847,10 @@ gst_video_crop_set_info (GstVideoFilter * vfilter, GstCaps * in,
     case GST_VIDEO_FORMAT_GRAY16_LE:
     case GST_VIDEO_FORMAT_GRAY16_BE:
     case GST_VIDEO_FORMAT_AYUV:
+    case GST_VIDEO_FORMAT_Y210:
+    case GST_VIDEO_FORMAT_Y212_LE:
+    case GST_VIDEO_FORMAT_Y410:
+    case GST_VIDEO_FORMAT_Y412_LE:
       crop->packing = VIDEO_CROP_PIXEL_FORMAT_PACKED_SIMPLE;
       break;
     case GST_VIDEO_FORMAT_YVYU:
@@ -898,6 +902,9 @@ gst_video_crop_set_info (GstVideoFilter * vfilter, GstCaps * in,
     case GST_VIDEO_FORMAT_GBRA_12BE:
     case GST_VIDEO_FORMAT_GBRA_12LE:
     case GST_VIDEO_FORMAT_Y41B:
+    case GST_VIDEO_FORMAT_P010_10LE:
+    case GST_VIDEO_FORMAT_P012_LE:
+    case GST_VIDEO_FORMAT_P016_LE:
       crop->packing = VIDEO_CROP_PIXEL_FORMAT_PLANAR;
       break;
     case GST_VIDEO_FORMAT_NV12:
