@@ -2842,6 +2842,11 @@ gst_base_text_overlay_video_chain (GstPad * pad, GstObject * parent,
       GST_DEBUG_OBJECT (overlay, "GstVideoOverlayCompositionMeta found.");
       overlay->upstream_composition = composition_meta->overlay;
       overlay->need_render = TRUE;
+    } else {
+      GST_DEBUG_OBJECT (overlay, "Removing redundant composition meta %p",
+          composition_meta);
+      gst_buffer_remove_video_overlay_composition_meta (buffer,
+          composition_meta);
     }
   } else if (overlay->upstream_composition != NULL) {
     overlay->upstream_composition = NULL;
