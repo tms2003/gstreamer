@@ -207,8 +207,8 @@ static gboolean gst_switch_bin_select_path_for_caps (GstSwitchBin *
     switch_bin, GstCaps * caps);
 static gboolean gst_switch_bin_switch_to_path (GstSwitchBin * switch_bin,
     GstSwitchBinPath * switch_bin_path);
-static GstSwitchBinPath *gst_switch_bin_find_matching_path (GstSwitchBin *
-    switch_bin, GstCaps const *caps);
+static GstSwitchBinPath *gst_switch_bin_find_nth_matching_path (GstSwitchBin *
+    switch_bin, GstCaps const *caps, guint n);
 
 static void gst_switch_bin_set_sinkpad_block (GstSwitchBin * switch_bin,
     gboolean do_block);
@@ -677,22 +677,27 @@ gst_switch_bin_select_path_for_caps (GstSwitchBin * switch_bin, GstCaps * caps)
 
   gboolean ret;
   GstSwitchBinPath *path;
+  guint match_i = 0;
+  do {
+    path = gst_switch_bin_find_nth_matching_path (switch_bin, caps, match_i++);
+    if (path == NULL) {
+      /* No matching path found, the caps are incompatible. Report this and exit. */
 
-  path = gst_switch_bin_find_matching_path (switch_bin, caps);
-  if (path == NULL) {
-    /* No matching path found, the caps are incompatible. Report this and exit. */
+      GST_ELEMENT_ERROR (switch_bin, STREAM, WRONG_TYPE,
+          ("could not find compatible path"), ("sink caps: %" GST_PTR_FORMAT,
+              (gpointer) caps));
+      ret = FALSE;
+    } else {
+      /* Matching path found. Try to switch to it. */
 
-    GST_ELEMENT_ERROR (switch_bin, STREAM, WRONG_TYPE,
-        ("could not find compatible path"), ("sink caps: %" GST_PTR_FORMAT,
-            (gpointer) caps));
-    ret = FALSE;
-  } else {
-    /* Matching path found. Try to switch to it. */
-
-    GST_DEBUG_OBJECT (switch_bin, "found matching path \"%s\" (%p) - switching",
-        GST_OBJECT_NAME (path), (gpointer) path);
-    ret = gst_switch_bin_switch_to_path (switch_bin, path);
+      GST_DEBUG_OBJECT (switch_bin,
+          "found matching path \"%s\" (%p) - switching", GST_OBJECT_NAME (path),
+          (gpointer) path);
+      ret = gst_switch_bin_switch_to_path (switch_bin, path);
+    }
   }
+  while (path && !ret);
+
 
   if (ret && (caps != switch_bin->last_caps))
     gst_caps_replace (&(switch_bin->last_caps), caps);
@@ -774,7 +779,7 @@ gst_switch_bin_switch_to_path (GstSwitchBin * switch_bin,
 
       if (!gst_element_link (switch_bin->input_identity,
               switch_bin_path->element)) {
-        GST_ERROR_OBJECT (switch_bin,
+        GST_DEBUG_OBJECT (switch_bin,
             "linking the path element's sinkpad failed ; check if the path element's sink caps and the upstream elements connected to the switchbin's sinkpad match");
         ret = FALSE;
         goto finish;
@@ -823,12 +828,13 @@ finish:
 
 
 static GstSwitchBinPath *
-gst_switch_bin_find_matching_path (GstSwitchBin * switch_bin,
-    GstCaps const *caps)
+gst_switch_bin_find_nth_matching_path (GstSwitchBin * switch_bin,
+    GstCaps const *caps, guint n)
 {
   /* must be called with path lock held */
 
   guint i;
+  guint match_i = 0;
 
   for (i = 0; i < switch_bin->num_paths; ++i) {
     GstSwitchBinPath *path = switch_bin->paths[i];
@@ -838,8 +844,10 @@ gst_switch_bin_find_matching_path (GstSwitchBin * switch_bin,
      * gst_switch_bin_path_set_property () turns them into ANY caps. */
     g_assert (path->caps != NULL);
 
-    if (gst_caps_can_intersect (caps, path->caps))
-      return path;
+    if (gst_caps_can_intersect (caps, path->caps)) {
+      if (match_i++ == n)
+        return path;
+    }
   }
 
   return NULL;
@@ -1042,7 +1050,7 @@ gst_switch_bin_are_caps_acceptable (GstSwitchBin * switch_bin,
 {
   /* must be called with path lock held */
 
-  return (gst_switch_bin_find_matching_path (switch_bin, caps) != NULL);
+  return (gst_switch_bin_find_nth_matching_path (switch_bin, caps, 0) != NULL);
 }
 
 
