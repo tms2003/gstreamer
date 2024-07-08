@@ -29,12 +29,8 @@
  * ## Examples</title>
  *
  * |[
- * gst-launch-1.0 -v audiotestsrc ! srtsink uri=srt://host
- * ]| This pipeline shows how to serve SRT packets through the default port.
- *
- * |[
- * gst-launch-1.0 -v audiotestsrc ! srtsink uri=srt://:port
- * ]| This pipeline shows how to wait SRT callers.
+ * gst-launch-1.0 -v videotestsrc is-live=true ! x264enc tune=zerolatency ! queue ! mpegtsmux name=mux alignment=7 ! srtsink uri=srt://:7001/ audiotestsrc is-live=true ! avenc_aac ! mux.
+ * ]| This pipeline shows how to serve SRT packets
  *
  */
 
