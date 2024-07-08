@@ -1544,6 +1544,64 @@ gst_pulseringbuffer_commit (GstAudioRingBuffer * buf, guint64 * sample,
       pbuf->m_towrite = 0;
       pbuf->m_offset = offset;  /* keep track of current offset */
 
+      if (offset != pbuf->m_lastoffset) {
+        /* Check the position of the data to be written. If it's
+         * greater than the buffer boundary, need write silent data
+         * firstly in the current write index to avoid overflow */
+        const pa_buffer_attr *actual = pa_stream_get_buffer_attr (pbuf->stream);
+
+        while (TRUE) {
+          const pa_timing_info *info;
+          if ((info = pa_stream_get_timing_info (pbuf->stream))) {
+            /* Check read index is up-to-date */
+            if (!pbuf->corked && info->read_index_corrupt) {
+              continue;
+            }
+
+            if (pbuf->corked) {
+              /* we uncork when the read_index is too far behind write_index */
+              if (info->read_index + bufsize <= info->write_index) {
+                if (!gst_pulsering_set_corked (pbuf, FALSE, FALSE))
+                  goto uncork_failed;
+              }
+            }
+
+            size_t writeable = pa_stream_writable_size (pbuf->stream);
+            if (writeable == (size_t) -1)
+              goto writable_size_failed;
+
+            writeable /= bpf;
+            writeable *= bpf;
+            if (writeable < actual->minreq) {
+              GST_LOG_OBJECT (psink, "waiting for free space");
+              pa_threaded_mainloop_wait (mainloop);
+            }
+
+            if ((offset + out_samples * bpf) <=
+                (info->read_index + actual->maxlength)) {
+              /* The actual audio data that we need to write is not
+               * greater than the buffer boundary and we can write it */
+              break;
+            }
+
+            if (g_atomic_int_get (&psink->format_lost)) {
+              /* Sink format changed, give up and hope upstream renegotiates */
+              goto fake_done;
+            }
+
+            /* The actula audio data that we need to write is greater
+             * than the buffer boundary, write silent data instead */
+            pa_stream_begin_write (pbuf->stream, &pbuf->m_data, &writeable);
+            memset (pbuf->m_data, 0, writeable);
+            pa_stream_write (pbuf->stream, (uint8_t *) pbuf->m_data,
+                writeable, NULL, 0, PA_SEEK_RELATIVE);
+            GST_LOG_OBJECT (psink,
+                "flushing silent %u samples at offset %" G_GINT64_FORMAT,
+                (guint) writeable / bpf, info->write_index);
+          }
+        }
+      }
+
       /* get a buffer to write in for now on */
       for (;;) {
         pbuf->m_writable = pa_stream_writable_size (pbuf->stream);
