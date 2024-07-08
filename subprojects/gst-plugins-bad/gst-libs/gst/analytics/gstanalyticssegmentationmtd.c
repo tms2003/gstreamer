@@ -54,7 +54,7 @@ static const GstAnalyticsMtdImpl segmentation_impl = {
  * of the mask, GRAY8 mean that @masks value can take 256 values which mean
  * 256 segmented region can be represented.
  *
- * Since: 1.24
+ * Since: 1.26
  */
 typedef struct GstAnalyticsSegMtdData
 {
@@ -72,7 +72,7 @@ typedef struct GstAnalyticsSegMtdData
  *
  * Returns: A #GstAnalyticsMtdType type
  *
- * Since: 1.24
+ * Since: 1.26
  */
 GstAnalyticsMtdType
 gst_analytics_segmentation_mtd_get_mtd_type (void)
@@ -84,15 +84,13 @@ gst_analytics_segmentation_mtd_get_mtd_type (void)
  * gst_analytics_segmentation_mtd_get_mask:
  * @handle: Instance
  * @buffer: Buffer containing segmentation masks.
- * @vinfo: (out caller-allocates)(not nullable): Masks data stored in
- * video info
  *
  * Retrieve segmentation mask data. See #GstAnalyticsSegMtdData for more
  * details.
  *
  * Returns: TRUE on success, otherwise FALSE.
  *
- * Since: 1.24
+ * Since: 1.26
  */
 gboolean
 gst_analytics_segmentation_mtd_get_mask (GstAnalyticsSegmentationMtd * handle,
@@ -123,7 +121,7 @@ gst_analytics_segmentation_mtd_get_mask (GstAnalyticsSegmentationMtd * handle,
  *
  * Returns: TRUE if added successfully, otherwise FALSE
  *
- * Since: 1.24
+ * Since: 1.26
  */
 gboolean
 gst_analytics_relation_meta_add_segmentation_mtd (GstAnalyticsRelationMeta *
@@ -158,7 +156,6 @@ gst_analytics_relation_meta_add_segmentation_mtd (GstAnalyticsRelationMeta *
  * instance.
  * @buffer:(in)(transfer full): Buffer containing segmentation masks for a
  * region of the image.
- * @vinfo: (in): #GstVideoInfo describing masks data. Note that only GST_VIDEO_FORMAT_GRAY8, GST_VIDEO_FORMAT_GRAY16_BE, GST_VIDEO_FORMAT_GRAY16_LE are supported and each components represent an identifier for the segmentation group where the corresponding pixel from the region in the original buffer belongs to.
  * @x:(in): Region left most coordinate described by the mask
  * @y:(in): Region top most coordinate described by the mask.
  * @segmentation_type:(in): Segmentation type
@@ -168,7 +165,7 @@ gst_analytics_relation_meta_add_segmentation_mtd (GstAnalyticsRelationMeta *
  *
  * Returns: TRUE if added successfully, otherwise FALSE
  *
- * Since: 1.24
+ * Since: 1.26
  */
 gboolean
     gst_analytics_relation_meta_add_segmentation_region_mtd
