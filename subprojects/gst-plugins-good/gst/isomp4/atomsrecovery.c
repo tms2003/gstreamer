@@ -840,7 +840,8 @@ moov_recov_parse_buffers (MoovRecovFile * moovrf, MdatRecovFile * mdatrf,
           "Invalid trak id found in buffer entry");
       return FALSE;
     }
-    if (!mdat_recov_add_sample (mdatrf, entry.size))
+
+    if (!mdat_recov_add_sample (mdatrf, entry.size * entry.nsamples))
       break;
     trak_recov_data_add_sample (trak, &entry);
   }
@@ -973,7 +974,7 @@ moov_recov_write_file (MoovRecovFile * moovrf, MdatRecovFile * mdatrf,
   guint8 *stbl_children = NULL;
   guint32 longest_duration = 0;
   guint16 version;
-  guint remaining;
+  guint64 remaining;
 
   /* check the version */
   if (fseek (moovrf->file, 0, SEEK_SET) != 0) {
@@ -1185,13 +1186,33 @@ moov_recov_write_file (MoovRecovFile * moovrf, MdatRecovFile * mdatrf,
 
   if (remaining) {
     g_set_error (warn, ATOMS_RECOV_QUARK, ATOMS_RECOV_ERR_FILE,
-        "Samples in recovery file were not present on headers."
-        " Bytes lost: %u", remaining);
+        "Samples in headers were not found in data file.");
+    mdatrf->mdat_size -= remaining;
+    /* rewrite the mdat header */
+    if (mdatrf->mdat_header_size == 16) {
+      GST_WRITE_UINT32_BE (auxdata, 1);
+      GST_WRITE_UINT32_LE (auxdata + 4, FOURCC_mdat);
+      GST_WRITE_UINT64_BE (auxdata + 8, mdatrf->mdat_size);
+    } else if (mdatrf->mdat_header_size == 8) {
+      GST_WRITE_UINT32_BE (auxdata, mdatrf->mdat_size);
+      GST_WRITE_UINT32_LE (auxdata + 4, FOURCC_mdat);
+    }
+    if (fseek (outf, mdatrf->mdat_start, SEEK_SET) != 0) {
+      goto fail;
+    }
+    if (fwrite (auxdata, 1, mdatrf->mdat_header_size,
+            outf) != mdatrf->mdat_header_size) {
+      ATOMS_RECOV_OUTPUT_WRITE_ERROR (err);
+      goto fail;
+    }
+    remaining = mdatrf->mdat_size - mdatrf->mdat_header_size;
+    if (fseek (outf, remaining, SEEK_CUR) != 0) {
+      goto fail;
+    }
   } else if (!feof (mdatrf->file)) {
     g_set_error (warn, ATOMS_RECOV_QUARK, ATOMS_RECOV_ERR_FILE,
-        "Samples in headers were not found in data file.");
-    GST_FIXME ("Rewrite mdat size if we reach this to make the file"
-        " fully correct");
+        "Samples in recovery file were not present on headers."
+        " Bytes lost: %lu", remaining);
   }
 
   return TRUE;

@@ -244,6 +244,14 @@ gst_qt_moov_recover_run (void *data)
     goto end;
   }
 
+  /* now check if the mdat header size needs to be adjusted */
+  if ((mdat_recov->mdat_size > ((guint64) 0x0ffffffff))
+      && (mdat_recov->mdat_header_size == 8)) {
+    mdat_recov->mdat_header_size = 16;
+    mdat_recov->mdat_size += 8;
+    mdat_recov->mdat_start -= 8;
+  }
+
   GST_DEBUG_OBJECT (qtmr, "Writing fixed file to output");
   if (!moov_recov_write_file (moov_recov, mdat_recov, output, &err, &warn)) {
     goto end;

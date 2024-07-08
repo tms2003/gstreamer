@@ -2358,7 +2358,10 @@ atom_stsc_copy_data (AtomSTSC * stsc, guint8 ** buffer, guint64 * size,
 
     prop_copy_uint32 (entry->first_chunk, buffer, size, offset);
     prop_copy_uint32 (entry->samples_per_chunk, buffer, size, offset);
-    prop_copy_uint32 (entry->sample_description_index, buffer, size, offset);
+    if (entry->sample_description_index == 0)
+      prop_copy_uint32 (1, buffer, size, offset);
+    else
+      prop_copy_uint32 (entry->sample_description_index, buffer, size, offset);
   }
 
   atom_write_size (buffer, size, offset, original_offset);
@@ -3154,11 +3157,14 @@ atom_stsz_add_entry (AtomSTSZ * stsz, guint32 nsamples, guint32 size)
 {
   guint32 i;
 
-  stsz->table_size += nsamples;
+  if (nsamples > 1) {
+    stsz->sample_size = nsamples * size;
+  }
   if (stsz->sample_size != 0) {
     /* it is constant size, we don't need entries */
     return;
   }
+  stsz->table_size += nsamples;
   for (i = 0; i < nsamples; i++) {
     atom_array_append (&stsz->entries, size, 1024);
   }
