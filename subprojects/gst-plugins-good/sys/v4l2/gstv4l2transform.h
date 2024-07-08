@@ -46,6 +46,19 @@ G_BEGIN_DECLS
 typedef struct _GstV4l2Transform GstV4l2Transform;
 typedef struct _GstV4l2TransformClass GstV4l2TransformClass;
 
+typedef struct _GstSelectionTargets GstSelectionTargets ;
+struct _GstSelectionTargets
+{
+  GstVideoRectangle compose_capture_rect;
+  gboolean compose_capture_need_config;
+
+  GstVideoRectangle crop_capture_rect;
+  gboolean crop_capture_need_config;
+
+  GstVideoRectangle crop_output_rect;
+  gboolean crop_output_need_config;
+};
+
 struct _GstV4l2Transform
 {
   GstBaseTransform parent;
@@ -63,6 +76,8 @@ struct _GstV4l2Transform
   GstCaps *outcaps;
 
   gboolean disable_passthrough;
+
+  GstSelectionTargets selection_targets;
 };
 
 struct _GstV4l2TransformClass

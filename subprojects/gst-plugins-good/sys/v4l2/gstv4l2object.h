@@ -332,6 +332,7 @@ gboolean     gst_v4l2_object_is_raw (GstV4l2Object * obj);
 gboolean     gst_v4l2_object_set_crop (GstV4l2Object * obj, struct v4l2_rect *result);
 gboolean     gst_v4l2_object_get_crop_bounds (GstV4l2Object * obj, struct v4l2_rect *bounds);
 gboolean     gst_v4l2_object_get_crop_default (GstV4l2Object * obj, struct v4l2_rect *bounds);
+gboolean     gst_v4l2_object_set_compose (GstV4l2Object * obj, struct v4l2_rect *compose_rect);
 
 /* TODO Move to proper namespace */
 /* open/close the device */

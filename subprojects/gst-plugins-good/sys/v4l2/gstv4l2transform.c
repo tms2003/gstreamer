@@ -48,7 +48,8 @@ enum
 {
   PROP_0,
   V4L2_STD_OBJECT_PROPS,
-  PROP_DISABLE_PASSTHROUGH
+  PROP_DISABLE_PASSTHROUGH,
+  PROP_SELECTION_TARGETS,
 };
 
 typedef struct
@@ -63,6 +64,150 @@ G_DEFINE_ABSTRACT_TYPE (GstV4l2Transform, gst_v4l2_transform,
     GST_TYPE_BASE_TRANSFORM);
 
 static void
+gst_v4l2_transform_selection_targets_apply (GstV4l2Transform * self)
+{
+  GST_OBJECT_LOCK (self);
+
+
+  if (self->selection_targets.compose_capture_need_config == TRUE) {
+    struct v4l2_rect rect = {
+      .left = self->selection_targets.compose_capture_rect.x,
+      .top = self->selection_targets.compose_capture_rect.y,
+      .width = self->selection_targets.compose_capture_rect.w,
+      .height = self->selection_targets.compose_capture_rect.h,
+    };
+
+    gst_v4l2_object_set_compose (self->v4l2capture, &rect);
+
+    self->selection_targets.compose_capture_need_config = FALSE;
+    GST_DEBUG_OBJECT (self,
+        "Configure compose for capture. left/top/width/height: %d %d %u %u",
+        rect.left, rect.top, rect.width, rect.height);
+  }
+
+  if (self->selection_targets.crop_capture_need_config == TRUE) {
+    struct v4l2_rect rect = {
+      .left = self->selection_targets.crop_capture_rect.x,
+      .top = self->selection_targets.crop_capture_rect.y,
+      .width = self->selection_targets.crop_capture_rect.w,
+      .height = self->selection_targets.crop_capture_rect.h,
+    };
+
+    gst_v4l2_object_set_crop (self->v4l2capture, &rect);
+    self->selection_targets.crop_capture_need_config = FALSE;
+    GST_DEBUG_OBJECT (self,
+        "Configure crop for capture. left/top/width/height: %d %d %u %u",
+        rect.left, rect.top, rect.width, rect.height);
+  }
+
+  if (self->selection_targets.crop_output_need_config == TRUE) {
+    struct v4l2_rect rect = {
+      .left = self->selection_targets.crop_output_rect.x,
+      .top = self->selection_targets.crop_output_rect.y,
+      .width = self->selection_targets.crop_output_rect.w,
+      .height = self->selection_targets.crop_output_rect.h,
+    };
+
+    gst_v4l2_object_set_crop (self->v4l2output, &rect);
+    self->selection_targets.crop_output_need_config = FALSE;
+    GST_DEBUG_OBJECT (self,
+        "Configure crop for output. left/top/width/height: %d %d %u %u",
+        rect.left, rect.top, rect.width, rect.height);
+  }
+
+  GST_OBJECT_UNLOCK (self);
+}
+
+static void
+gst_v4l2_transform_selection_targets_config (GObject * object,
+    guint prop_id, const GValue * value, GParamSpec * pspec)
+{
+  const GstStructure *s = gst_value_get_structure (value);
+  GstV4l2Transform *self = GST_V4L2_TRANSFORM (object);
+
+  if (s != NULL) {
+    GST_OBJECT_LOCK (self);
+
+    if (s &&
+        gst_structure_has_field (s, "compose-capture-x") &&
+        gst_structure_has_field (s, "compose-capture-y") &&
+        gst_structure_has_field (s, "compose-capture-w") &&
+        gst_structure_has_field (s, "compose-capture-h")) {
+
+      gst_structure_get_int (s, "compose-capture-x",
+          &(self->selection_targets.compose_capture_rect.x));
+      gst_structure_get_int (s, "compose-capture-y",
+          &(self->selection_targets.compose_capture_rect.y));
+      gst_structure_get_int (s, "compose-capture-w",
+          &(self->selection_targets.compose_capture_rect.w));
+      gst_structure_get_int (s, "compose-capture-h",
+          &(self->selection_targets.compose_capture_rect.h));
+
+      self->selection_targets.compose_capture_need_config = TRUE;
+
+      GST_DEBUG_OBJECT (self,
+          "The compose configure for capture x,y,w,h : %d,%d,%d,%d",
+          self->selection_targets.compose_capture_rect.x,
+          self->selection_targets.compose_capture_rect.y,
+          self->selection_targets.compose_capture_rect.w,
+          self->selection_targets.compose_capture_rect.h);
+    }
+
+    if (s &&
+        gst_structure_has_field (s, "crop-capture-x") &&
+        gst_structure_has_field (s, "crop-capture-y") &&
+        gst_structure_has_field (s, "crop-capture-w") &&
+        gst_structure_has_field (s, "crop-capture-h")) {
+
+      gst_structure_get_int (s, "crop-capture-x",
+          &(self->selection_targets.crop_capture_rect.x));
+      gst_structure_get_int (s, "crop-capture-y",
+          &(self->selection_targets.crop_capture_rect.y));
+      gst_structure_get_int (s, "crop-capture-w",
+          &(self->selection_targets.crop_capture_rect.w));
+      gst_structure_get_int (s, "crop-capture-h",
+          &(self->selection_targets.crop_capture_rect.h));
+
+      self->selection_targets.crop_capture_need_config = TRUE;
+
+      GST_DEBUG_OBJECT (self,
+          "The crop configure for capture x,y,w,h : %d,%d,%d,%d",
+          self->selection_targets.crop_capture_rect.x,
+          self->selection_targets.crop_capture_rect.y,
+          self->selection_targets.crop_capture_rect.w,
+          self->selection_targets.crop_capture_rect.h);
+    }
+
+    if (s &&
+        gst_structure_has_field (s, "crop-output-x") &&
+        gst_structure_has_field (s, "crop-output-y") &&
+        gst_structure_has_field (s, "crop-output-w") &&
+        gst_structure_has_field (s, "crop-output-h")) {
+
+      gst_structure_get_int (s, "crop-output-x",
+          &(self->selection_targets.crop_output_rect.x));
+      gst_structure_get_int (s, "crop-output-y",
+          &(self->selection_targets.crop_output_rect.y));
+      gst_structure_get_int (s, "crop-output-w",
+          &(self->selection_targets.crop_output_rect.w));
+      gst_structure_get_int (s, "crop-output-h",
+          &(self->selection_targets.crop_output_rect.h));
+
+      self->selection_targets.crop_output_need_config = TRUE;
+
+      GST_DEBUG_OBJECT (self,
+          "The crop configure for output x,y,w,h : %d,%d,%d,%d",
+          self->selection_targets.crop_output_rect.x,
+          self->selection_targets.crop_output_rect.y,
+          self->selection_targets.crop_output_rect.w,
+          self->selection_targets.crop_output_rect.h);
+    }
+
+    GST_OBJECT_UNLOCK (self);
+  }
+}
+
+static void
 gst_v4l2_transform_set_property (GObject * object,
     guint prop_id, const GValue * value, GParamSpec * pspec)
 {
@@ -75,6 +220,10 @@ gst_v4l2_transform_set_property (GObject * object,
       break;
     case PROP_DISABLE_PASSTHROUGH:
       self->disable_passthrough = g_value_get_boolean (value);
+      break;
+    case PROP_SELECTION_TARGETS:
+      gst_v4l2_transform_selection_targets_config (object, prop_id, value,
+          pspec);
       break;
 
       /* By default, only set on output */
@@ -930,6 +1079,8 @@ gst_v4l2_transform_prepare_output_buffer (GstBaseTransform * trans,
       goto activate_failed;
   }
 
+  gst_v4l2_transform_selection_targets_apply (self);
+
   GST_DEBUG_OBJECT (self, "Queue input buffer");
   ret =
       gst_v4l2_buffer_pool_process (GST_V4L2_BUFFER_POOL (pool), &inbuf, NULL);
@@ -1172,6 +1323,46 @@ gst_v4l2_transform_class_init (GstV4l2TransformClass * klass)
       g_param_spec_boolean ("disable-passthrough", "Disable Passthrough",
           "Forces passing buffers through the converter", FALSE,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  /**
+   * GstV4l2Transform:selection-targets:
+   * According to v4l2 spec, we can do cropping or composing on capture/output
+   * https://docs.kernel.org/6.1/userspace-api/media/v4l/selection-api.html
+   *
+   * so, here we export a property named selection-targets, and this property is boxed type
+   * here is a example to set compose for capture
+   * v4l2convert selection-targets="cid,compose-capture-x=100, compose-capture-y=100
+   * compose-capture-w=300,compose-capture-h=200"
+   *
+   * contains following sub-properties:
+   * 1) properties to set compose for capture
+   * compose-capture-x
+   * compose-capture-y
+   * compose-capture-w
+   * compose-capture-h
+   *
+   * 2) properties to set crop for capture
+   * crop-capture-x
+   * crop-capture-y
+   * crop-capture-w
+   * crop-capture-h
+   *
+   * 3) properties to set crop for output
+   * crop-output-x
+   * crop-output-y
+   * crop-output-w
+   * crop-output-h
+   */
+  g_object_class_install_property (gobject_class, PROP_SELECTION_TARGETS,
+      g_param_spec_boxed ("selection-targets", "Selection Targets",
+          "Configure the cropping and composing regions. "
+          "A structure type containing one or more of the following groups of fields: "
+          "group 1) compose-capture-x, compose-capture-y, compose-capture-w, compose-capture-h. "
+          "group 2) crop-capture-x, crop-capture-y, crop-capture-w, crop-capture-h. "
+          "group 3) crop-output-x, crop-output-y, crop-output-w, crop-output-h. "
+          "eg: selection-targets=\"cid,compose-capture-x=100,compose-capture-y=100,"
+          "compose-capture-w=300,compose-capture-h=200\" ",
+          GST_TYPE_STRUCTURE, G_PARAM_WRITABLE | G_PARAM_STATIC_STRINGS));
 }
 
 static void
