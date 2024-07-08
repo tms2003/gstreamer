@@ -134,7 +134,7 @@ typedef struct
 } RTSPLTransMap;
 
 static const RTSPLTransMap ltrans[] = {
-  {"udp", GST_RTSP_LOWER_TRANS_UDP},
+  {"udp", GST_RTSP_LOWER_TRANS_UDP_MCAST},
   {"mcast", GST_RTSP_LOWER_TRANS_UDP_MCAST},
   {"tcp", GST_RTSP_LOWER_TRANS_TCP},
   {NULL, GST_RTSP_LOWER_TRANS_UNKNOWN}
