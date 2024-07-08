@@ -203,7 +203,7 @@ gst_gl_display_context_query (GstElement * element, GstGLDisplay ** display_ptr)
 #endif
 
 #if GST_GL_HAVE_WINDOW_WAYLAND
-  _gst_context_query (element, "GstWaylandDisplayHandleContextType");
+  _gst_context_query (element, "GstWlDisplayHandleContextType");
   if (*display_ptr)
     return;
 #endif
@@ -259,7 +259,7 @@ gst_gl_element_propagate_display_context (GstElement * element,
  *
  * This performs #GstContext queries (if necessary) for a winsys display
  * connection with %GST_GL_DISPLAY_CONTEXT_TYPE, "gst.x11.display.handle", and
- * "GstWaylandDisplayHandleContextType" stopping after the first successful
+ * "GstWlDisplayHandleContextType" stopping after the first successful
  * retrieval.
  *
  * This also performs a #GstContext query (if necessary) for an optional
@@ -357,7 +357,7 @@ gst_gl_handle_set_context (GstElement * element, GstContext * context,
   }
 #endif
 #if GST_GL_HAVE_WINDOW_WAYLAND
-  else if (g_strcmp0 (context_type, "GstWaylandDisplayHandleContextType") == 0) {
+  else if (g_strcmp0 (context_type, "GstWlDisplayHandleContextType") == 0) {
     const GstStructure *s;
     struct wl_display *display;
 
@@ -486,7 +486,7 @@ gst_gl_handle_context_query (GstElement * element, GstQuery * query,
 #endif
 #if GST_GL_HAVE_WINDOW_WAYLAND
   else if (display
-      && g_strcmp0 (context_type, "GstWaylandDisplayHandleContextType") == 0) {
+      && g_strcmp0 (context_type, "GstWlDisplayHandleContextType") == 0) {
     GstStructure *s;
 
     gst_query_parse_context (query, &old_context);
@@ -494,7 +494,7 @@ gst_gl_handle_context_query (GstElement * element, GstQuery * query,
     if (old_context)
       context = gst_context_copy (old_context);
     else
-      context = gst_context_new ("GstWaylandDisplayHandleContextType", TRUE);
+      context = gst_context_new ("GstWlDisplayHandleContextType", TRUE);
 
     if (gst_gl_display_get_handle_type (display) & GST_GL_DISPLAY_TYPE_WAYLAND) {
       struct wl_display *wayland_display =
