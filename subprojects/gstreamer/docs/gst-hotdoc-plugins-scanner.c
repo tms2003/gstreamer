@@ -113,13 +113,16 @@ _serialize_flags_default (GString * json, GType gtype, GValue * value)
 }
 
 static void
-_serialize_flags (GString * json, GType gtype)
+_serialize_flags (GString * json, GType gtype, GstPluginAPIFlags api_flags)
 {
   GFlagsValue *values = G_FLAGS_CLASS (g_type_class_ref (gtype))->values;
 
   g_string_append_printf (json, "%s\"%s\": { "
-      "\"kind\": \"flags\"," "\"values\": [", json->len ? "," : "",
-      g_type_name (gtype));
+      "\"kind\": \"flags\" ", json->len ? "," : "", g_type_name (gtype));
+  if (api_flags & GST_PLUGIN_API_FLAG_AUTO_GENERATED) {
+    g_string_append (json, ",\"auto-generated-type\": true");
+  }
+  g_string_append (json, ", \"values\": [");
 
   while (values[0].value_name) {
     gchar *value_name = json_strescape (values[0].value_name);
@@ -176,6 +179,9 @@ _serialize_enum (GString * json, GType gtype, GstPluginAPIFlags api_flags)
   g_string_append_printf (json, "%s\"%s\": { "
       "\"kind\": \"enum\"", json->len ? "," : "", g_type_name (gtype));
 
+  if (api_flags & GST_PLUGIN_API_FLAG_AUTO_GENERATED) {
+    g_string_append (json, ",\"auto-generated-type\": true");
+  }
   if (api_flags & GST_PLUGIN_API_FLAG_IGNORE_ENUM_MEMBERS) {
     g_string_append (json, ",\"ignore-enum-members\": true, \"values\": []}");
   } else {
@@ -270,7 +276,7 @@ _add_signals (GString * json, GString * other_types,
         if (g_type_is_a (query.param_types[j], G_TYPE_ENUM)) {
           _serialize_enum (other_types, query.param_types[j], api_flags);
         } else if (g_type_is_a (query.param_types[j], G_TYPE_FLAGS)) {
-          _serialize_flags (other_types, query.param_types[j]);
+          _serialize_flags (other_types, query.param_types[j], api_flags);
         } else if (g_type_is_a (query.param_types[j], G_TYPE_OBJECT)) {
           _serialize_object (other_types, seen_other_types,
               query.param_types[j], query.param_types[j]);
@@ -288,7 +294,7 @@ _add_signals (GString * json, GString * other_types,
       if (g_type_is_a (query.return_type, G_TYPE_ENUM)) {
         _serialize_enum (other_types, query.return_type, api_flags);
       } else if (g_type_is_a (query.return_type, G_TYPE_FLAGS)) {
-        _serialize_flags (other_types, query.return_type);
+        _serialize_flags (other_types, query.return_type, api_flags);
       } else if (g_type_is_a (query.return_type, G_TYPE_OBJECT)) {
         _serialize_object (other_types, seen_other_types, query.return_type,
             query.return_type);
@@ -404,7 +410,7 @@ _add_properties (GString * json, GString * other_types,
       if (G_IS_PARAM_SPEC_ENUM (spec)) {
         _serialize_enum (other_types, spec->value_type, api_flags);
       } else if (G_IS_PARAM_SPEC_FLAGS (spec)) {
-        _serialize_flags (other_types, spec->value_type);
+        _serialize_flags (other_types, spec->value_type, api_flags);
       } else if (G_IS_PARAM_SPEC_OBJECT (spec)) {
         GType inst_type = spec->value_type;
         GObject *obj = g_value_get_object (&value);

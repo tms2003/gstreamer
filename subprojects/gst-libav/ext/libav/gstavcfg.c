@@ -170,7 +170,7 @@ register_enum (const AVClass ** obj, const AVOption * top_opt)
     res = g_enum_register_static (enum_name_strip,
         &g_array_index (values, GEnumValue, 0));
 
-    gst_type_mark_as_plugin_api (res, 0);
+    gst_type_mark_as_plugin_api (res, GST_PLUGIN_API_FLAG_AUTO_GENERATED);
 
     g_array_free (values, FALSE);
   } else {
@@ -247,7 +247,7 @@ register_flags (const AVClass ** obj, const AVOption * top_opt)
         g_flags_register_static (flags_name_strip, &g_array_index (values,
             GFlagsValue, 0));
 
-    gst_type_mark_as_plugin_api (res, 0);
+    gst_type_mark_as_plugin_api (res, GST_PLUGIN_API_FLAG_AUTO_GENERATED);
     g_array_free (values, FALSE);
   } else
     g_array_free (values, TRUE);
