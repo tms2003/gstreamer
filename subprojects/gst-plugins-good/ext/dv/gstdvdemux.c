@@ -107,6 +107,10 @@
 GST_DEBUG_CATEGORY_STATIC (dvdemux_debug);
 #define GST_CAT_DEFAULT dvdemux_debug
 
+/* completely arbitrary timestamp format for easy timeoverlay compatibility */
+static GstStaticCaps ntp_reference_timestamp_caps =
+GST_STATIC_CAPS ("timestamp/x-ntp");
+
 static GstStaticPadTemplate sink_temp = GST_STATIC_PAD_TEMPLATE ("sink",
     GST_PAD_SINK,
     GST_PAD_ALWAYS,
@@ -1494,6 +1498,7 @@ gst_dvdemux_demux_frame (GstDVDemux * dvdemux, GstBuffer * buffer)
   GstMapInfo map;
   guint64 duration;
   GstSMPTETimeCode timecode;
+  struct tm rec_tm;
   int frame_number;
 
   if (dvdemux->need_segment) {
@@ -1556,6 +1561,27 @@ gst_dvdemux_demux_frame (GstDVDemux * dvdemux, GstBuffer * buffer)
   gst_buffer_map (buffer, &map, GST_MAP_READ);
   dv_parse_packs (dvdemux->decoder, map.data);
   gst_buffer_unmap (buffer, &map);
+
+  if (dv_get_recording_datetime_tm (dvdemux->decoder, &rec_tm)) {
+    GstClockTime ntp_timestamp;
+    GstCaps *ntp_caps = gst_static_caps_get (&ntp_reference_timestamp_caps);
+    GDateTime *ntp_epoch = g_date_time_new_utc (1900, 1, 1, 0, 0, 0);
+    GDateTime *rec_dt = g_date_time_new_utc (rec_tm.tm_year + 1900,
+        rec_tm.tm_mon + 1,
+        rec_tm.tm_mday,
+        rec_tm.tm_hour,
+        rec_tm.tm_min,
+        rec_tm.tm_sec);
+
+    ntp_timestamp = g_date_time_difference (rec_dt, ntp_epoch) * GST_USECOND;
+    gst_buffer_add_reference_timestamp_meta (buffer, ntp_caps, ntp_timestamp,
+        GST_CLOCK_TIME_NONE);
+
+    gst_caps_unref (ntp_caps);
+    g_date_time_unref (ntp_epoch);
+    g_date_time_unref (rec_dt);
+  }
+
   dvdemux->new_media = FALSE;
   if (gst_dvdemux_is_new_media (dvdemux, buffer) &&
       dvdemux->frames_since_new_media > 2) {
