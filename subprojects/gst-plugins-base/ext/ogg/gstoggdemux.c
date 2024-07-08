@@ -1607,7 +1607,12 @@ gst_ogg_demux_seek_back_after_push_duration_check_unlock (GstOggDemux * ogg)
   if (ogg->total_time == -1)
     ogg->push_disable_seeking = TRUE;
 
-  ogg->push_state = PUSH_PLAYING;
+  if (ogg->total_time == -1 && ogg->push_recheck_total_time) {
+    GST_INFO_OBJECT (ogg, "Repeat duration check instead of switch to playing");
+    ogg->push_state = PUSH_DURATION;
+  } else {
+    ogg->push_state = PUSH_PLAYING;
+  }
 
   /* If there is one, perform it. Otherwise, seek back at start to start
    * normal playback  */
@@ -1711,6 +1716,7 @@ gst_ogg_pad_handle_push_mode_state (GstOggPad * pad, ogg_page * page)
       GstClockTime t =
           gst_ogg_stream_get_end_time_for_granulepos (&pad->map, granpos);
 
+      ogg->push_recheck_total_time = FALSE;
       if (ogg->total_time == GST_CLOCK_TIME_NONE || t > ogg->total_time) {
         GST_DEBUG_OBJECT (ogg, "New total time: %" GST_TIME_FORMAT,
             GST_TIME_ARGS (t));
@@ -2476,7 +2482,8 @@ gst_ogg_demux_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
             ogg->seqnum = GST_EVENT_SEQNUM (event);
           }
 
-          if (!ogg->pullmode && !(ogg->push_seek_flags & GST_SEEK_FLAG_FLUSH)) {
+          if (!ogg->pullmode && !(ogg->push_seek_flags & GST_SEEK_FLAG_FLUSH)
+              && !ogg->push_recheck_total_time) {
             int i;
             GstOggChain *chain = ogg->current_chain;
 
@@ -5242,6 +5249,7 @@ gst_ogg_demux_change_state (GstElement * element, GstStateChange transition)
       ogg->running = FALSE;
       ogg->bitrate = 0;
       ogg->total_time = -1;
+      ogg->push_recheck_total_time = TRUE;
       GST_PUSH_LOCK (ogg);
       ogg->push_byte_offset = 0;
       ogg->push_byte_length = -1;

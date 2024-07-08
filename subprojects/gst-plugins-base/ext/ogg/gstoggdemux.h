@@ -158,6 +158,12 @@ struct _GstOggDemux
   GstClockTime total_time;
   gint bitrate;                 /* bitrate of the current chain */
 
+  /* in PUSH mode we sometimes receive EOS during PUSH_DURATION initial phase,
+   * if we would not do anything it would seek to 0, set to PUSH_PLAYING and
+   * we would end up with no total_time information. This variable guards such
+   * case, and one rerun of PUSH_DURATION is done. */
+  gboolean push_recheck_total_time;
+
   GstOggChain *current_chain;
   GstOggChain *building_chain;
 
