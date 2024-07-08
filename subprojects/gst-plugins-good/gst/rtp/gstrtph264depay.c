@@ -23,6 +23,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <stdint.h>
 
 #include <gst/base/gstbitreader.h>
 #include <gst/rtp/gstrtpbuffer.h>
@@ -41,14 +42,40 @@ GST_DEBUG_CATEGORY_STATIC (rtph264depay_debug);
 #define DEFAULT_ACCESS_UNIT   FALSE
 #define DEFAULT_WAIT_FOR_KEYFRAME FALSE
 #define DEFAULT_REQUEST_KEYFRAME FALSE
+#define DEFAULT_FLEXIBLE_RTP_NAL_AGGREGATION FALSE
 
 enum
 {
   PROP_0,
   PROP_WAIT_FOR_KEYFRAME,
   PROP_REQUEST_KEYFRAME,
+  PROP_FLEXIBLE_RTP_NAL_AGGREGATION
 };
 
+/* Copied from: https://github.com/GStreamer/gst-plugins-bad/blob/master/gst-libs/gst/codecparsers/gsth264parser.h */
+typedef enum
+{
+  GST_H264_NAL_UNKNOWN = 0,
+  GST_H264_NAL_SLICE = 1,
+  GST_H264_NAL_SLICE_DPA = 2,
+  GST_H264_NAL_SLICE_DPB = 3,
+  GST_H264_NAL_SLICE_DPC = 4,
+  GST_H264_NAL_SLICE_IDR = 5,
+  GST_H264_NAL_SEI = 6,
+  GST_H264_NAL_SPS = 7,
+  GST_H264_NAL_PPS = 8,
+  GST_H264_NAL_AU_DELIMITER = 9,
+  GST_H264_NAL_SEQ_END = 10,
+  GST_H264_NAL_STREAM_END = 11,
+  GST_H264_NAL_FILLER_DATA = 12,
+  GST_H264_NAL_SPS_EXT = 13,
+  GST_H264_NAL_PREFIX_UNIT = 14,
+  GST_H264_NAL_SUBSET_SPS = 15,
+  GST_H264_NAL_DEPTH_SPS = 16,
+  GST_H264_NAL_SLICE_AUX = 19,
+  GST_H264_NAL_SLICE_EXT = 20,
+  GST_H264_NAL_SLICE_DEPTH = 21
+} GstH264NalUnitType;
 
 /* 3 zero bytes syncword */
 static const guint8 sync_bytes[] = { 0, 0, 0, 1 };
@@ -126,6 +153,9 @@ gst_rtp_h264_depay_set_property (GObject * object, guint prop_id,
     case PROP_REQUEST_KEYFRAME:
       self->request_keyframe = g_value_get_boolean (value);
       break;
+    case PROP_FLEXIBLE_RTP_NAL_AGGREGATION:
+      self->flexible_rtp_nal_aggregation = g_value_get_boolean (value);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -144,6 +174,9 @@ gst_rtp_h264_depay_get_property (GObject * object, guint prop_id,
       break;
     case PROP_REQUEST_KEYFRAME:
       g_value_set_boolean (value, self->request_keyframe);
+      break;
+    case PROP_FLEXIBLE_RTP_NAL_AGGREGATION:
+      g_value_set_boolean (value, self->flexible_rtp_nal_aggregation);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -194,6 +227,25 @@ gst_rtp_h264_depay_class_init (GstRtpH264DepayClass * klass)
           DEFAULT_REQUEST_KEYFRAME,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
+  /*
+   * GstRtpH264Depay:flexible-rtp-nal-aggregation:
+   *
+   * Parse for multiple NALs in assembled H264 fragmentation units. 
+   *
+   * Setting this to TRUE will enable parsing for additional NALs
+   * that are attached onto the end of SPS NALs, in Annex-B / byte-stream format.
+   *
+   * This parsing will finish when a H.264 video frame is found or the end of the RTP frame 
+   * is reached. 
+   */
+  g_object_class_install_property (gobject_class,
+      PROP_FLEXIBLE_RTP_NAL_AGGREGATION,
+      g_param_spec_boolean ("flexible-rtp-nal-aggregation",
+          "Flexible NAL aggregation.",
+          "Allow flexibility in NAL aggregation from the RTP stream.",
+          DEFAULT_FLEXIBLE_RTP_NAL_AGGREGATION,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
   gst_element_class_add_static_pad_template (gstelement_class,
       &gst_rtp_h264_depay_src_template);
   gst_element_class_add_static_pad_template (gstelement_class,
@@ -226,6 +278,7 @@ gst_rtp_h264_depay_init (GstRtpH264Depay * rtph264depay)
       (GDestroyNotify) gst_buffer_unref);
   rtph264depay->wait_for_keyframe = DEFAULT_WAIT_FOR_KEYFRAME;
   rtph264depay->request_keyframe = DEFAULT_REQUEST_KEYFRAME;
+  rtph264depay->request_keyframe = DEFAULT_FLEXIBLE_RTP_NAL_AGGREGATION;
 }
 
 static void
@@ -1116,6 +1169,137 @@ short_nal:
   }
 }
 
+/* Copied from: https://github.com/FFmpeg/FFmpeg/blob/master/libavformat/avc.c */
+static const uint8_t *
+avc_find_startcode_internal (const uint8_t * p, const uint8_t * end)
+{
+  const uint8_t *a = p + 4 - ((intptr_t) p & 3);
+
+  for (end -= 3; p < a && p < end; p++) {
+    if (p[0] == 0 && p[1] == 0 && p[2] == 1)
+      return p;
+  }
+
+  for (end -= 3; p < end; p += 4) {
+    uint32_t x = *(const uint32_t *) p;
+/*      if ((x - 0x01000100) & (~x) & 0x80008000) little endian */
+/*      if ((x - 0x00010001) & (~x) & 0x00800080) big endian */
+    if ((x - 0x01010101) & (~x) & 0x80808080) { /* generic */
+      if (p[1] == 0) {
+        if (p[0] == 0 && p[2] == 1)
+          return p;
+        if (p[2] == 0 && p[3] == 1)
+          return p + 1;
+      }
+      if (p[3] == 0) {
+        if (p[2] == 0 && p[4] == 1)
+          return p + 2;
+        if (p[4] == 0 && p[5] == 1)
+          return p + 3;
+      }
+    }
+  }
+
+  for (end += 3; p < end; p++) {
+    if (p[0] == 0 && p[1] == 0 && p[2] == 1)
+      return p;
+  }
+
+  return end + 3;
+}
+
+/* Copied from: https://github.com/FFmpeg/FFmpeg/blob/master/libavformat/avc.c */
+const uint8_t *
+ff_avc_find_startcode (const uint8_t * p, const uint8_t * end)
+{
+  const uint8_t *out = avc_find_startcode_internal (p, end);
+  if (p < out && out < end && !out[-1])
+    out--;
+  return out;
+}
+
+static void
+gst_rtp_h264_process_all_nals_in_buffer (GstRtpH264Depay * rtph264depay,
+    GstBuffer * buffer, guint buffer_size)
+{
+  GstMapInfo map;
+  const uint8_t *buffer_start, *buffer_end, *nal_start, *nal_end;
+
+  uint8_t nalu_count = 0;
+  gst_buffer_map (buffer, &map, GST_MAP_WRITE);
+
+  buffer_start = map.data;
+  buffer_end = buffer_start + buffer_size;
+
+  /* Copy sync bytes into the start of the buffer */
+  memcpy (map.data, sync_bytes, sizeof (sync_bytes));
+  nal_start = buffer_start;
+
+  for (;;) {
+    GstBuffer *nal_buffer;
+    GstMapInfo nal_buffer_map;
+    uint8_t nal_type;
+    size_t nal_size;
+
+    while (nal_start < buffer_end && (*(nal_start++) == 0x00));
+    if (nal_start == buffer_end)
+      break;
+
+    nal_type = nal_start[0] & 0x1f;
+    GST_DEBUG_OBJECT (rtph264depay, "NAL type in aggregate scan is %d.",
+        nal_type);
+
+    switch (nal_type) {
+      case GST_H264_NAL_SLICE:
+      case GST_H264_NAL_SLICE_IDR:
+        /* Assume frame slice is the final NAL unit */
+        nal_end = buffer_end;
+        break;
+      case GST_H264_NAL_SPS:
+      case GST_H264_NAL_PPS:
+        nal_end = ff_avc_find_startcode (nal_start, buffer_end);
+        break;
+      default:
+        GST_WARNING_OBJECT (rtph264depay, "Skipping nal unit of type %d.",
+            nal_type);
+        nal_end = ff_avc_find_startcode (nal_start, buffer_end);
+        nal_start = nal_end;
+        continue;
+    }
+
+    GST_DEBUG_OBJECT (rtph264depay, "Processing nal unit of type %d.",
+        nal_type);
+
+    /* Create buffer for NAL unit and handle it */
+    nal_size = nal_end - nal_start;
+    nal_buffer = gst_buffer_new_and_alloc (nal_size + sizeof (sync_bytes));
+
+    gst_buffer_map (nal_buffer, &nal_buffer_map, GST_MAP_WRITE);
+
+    if (rtph264depay->byte_stream)
+      memcpy (nal_buffer_map.data, sync_bytes, sizeof (sync_bytes));
+    else {
+      nal_buffer_map.data[0] = (nal_size >> 24);
+      nal_buffer_map.data[1] = (nal_size >> 16);
+      nal_buffer_map.data[2] = (nal_size >> 8);
+      nal_buffer_map.data[3] = (nal_size);
+    }
+
+    memcpy (nal_buffer_map.data + sizeof (sync_bytes), nal_start, nal_size);
+    gst_buffer_unmap (nal_buffer, &nal_buffer_map);
+
+    gst_rtp_h264_depay_handle_nal (rtph264depay,
+        nal_buffer, rtph264depay->fu_timestamp, rtph264depay->fu_marker);
+
+    nal_start = nal_end;
+    nalu_count++;
+  }
+
+  gst_buffer_unmap (buffer, &map);
+  gst_buffer_unref (buffer);
+  rtph264depay->current_fu_type = 0;
+}
+
 static void
 gst_rtp_h264_finish_fragmentation_unit (GstRtpH264Depay * rtph264depay)
 {
@@ -1128,6 +1312,18 @@ gst_rtp_h264_finish_fragmentation_unit (GstRtpH264Depay * rtph264depay)
 
   gst_buffer_map (outbuf, &map, GST_MAP_WRITE);
   GST_DEBUG_OBJECT (rtph264depay, "output %d bytes", outsize);
+
+  if (rtph264depay->flexible_rtp_nal_aggregation) {
+    uint8_t nal_type = map.data[4] & 0x1f;
+    GST_DEBUG_OBJECT (rtph264depay, "FU nal type was %d.", nal_type);
+
+    /* Expect multiple NAL units attached to SPS units */
+    if (nal_type == 7) {
+      gst_buffer_unmap (outbuf, &map);
+      gst_rtp_h264_process_all_nals_in_buffer (rtph264depay, outbuf, outsize);
+      return;
+    }
+  }
 
   if (rtph264depay->byte_stream) {
     memcpy (map.data, sync_bytes, sizeof (sync_bytes));
