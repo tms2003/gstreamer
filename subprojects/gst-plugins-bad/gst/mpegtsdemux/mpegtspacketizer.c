@@ -2510,7 +2510,7 @@ calculate_points:
       lastpcr, lastoffset);
 
   res = firstoffset;
-  if (lastpcr != firstpcr)
+  if (lastpcr != firstpcr && querypcr > firstpcr)
     res += gst_util_uint64_scale (querypcr - firstpcr,
         lastoffset - firstoffset, lastpcr - firstpcr);
 
