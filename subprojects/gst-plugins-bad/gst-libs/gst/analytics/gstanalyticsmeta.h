@@ -120,7 +120,9 @@ typedef struct {
                                   gpointer data);
 
   /*< private >*/
-  gpointer _reserved[GST_PADDING_LARGE];
+  void (*mtd_meta_clear) (GstBuffer *buffer, GstAnalyticsRelationMeta *rmeta,
+                          GstAnalyticsMtd *mtd);
+  gpointer _reserved[GST_PADDING_LARGE - 1];
 } GstAnalyticsMtdImpl;
 
 GST_ANALYTICS_META_API
