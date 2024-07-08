@@ -71,6 +71,7 @@ struct _GstSrtpDec
   GstElement element;
 
   guint replay_window_size;
+  gboolean demux_rtcp;
 
   GstPad *rtp_sinkpad, *rtp_srcpad;
   GstPad *rtcp_sinkpad, *rtcp_srcpad;

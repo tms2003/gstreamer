@@ -162,7 +162,7 @@ gst_srtp_get_soft_limit_reached (void)
 /* Get SSRC from RTCP buffer
  */
 gboolean
-rtcp_buffer_get_ssrc (GstBuffer * buf, guint32 * ssrc)
+rtcp_buffer_get_ssrc (GstElement * filter, GstBuffer * buf, guint32 * ssrc)
 {
   gboolean ret = FALSE;
   GstRTCPBuffer rtcpbuf = GST_RTCP_BUFFER_INIT;
@@ -170,8 +170,11 @@ rtcp_buffer_get_ssrc (GstBuffer * buf, guint32 * ssrc)
 
   /* Get SSRC from RR or SR packet (RTCP) */
 
-  if (!gst_rtcp_buffer_map (buf, GST_MAP_READ, &rtcpbuf))
+  if (!gst_rtcp_buffer_map (buf, GST_MAP_READ, &rtcpbuf)) {
+    GST_WARNING_OBJECT (filter,
+        "[RTCP] Bad buffer: is_rtcp == TRUE but could not map");
     return FALSE;
+  }
 
   if (gst_rtcp_buffer_get_first_packet (&rtcpbuf, &packet)) {
     GstRTCPType type;
@@ -201,10 +204,21 @@ rtcp_buffer_get_ssrc (GstBuffer * buf, guint32 * ssrc)
           ret = TRUE;
           break;
         default:
+          GST_WARNING_OBJECT (filter,
+              "[RTCP] Bad packet: is_rtcp == TRUE but wrong type %d",
+              gst_rtcp_packet_get_type (&packet));
           break;
       }
     } while ((ret == FALSE) && (type != GST_RTCP_TYPE_INVALID) &&
         gst_rtcp_packet_move_to_next (&packet));
+
+    if (ret == FALSE) {
+      GST_WARNING_OBJECT (filter,
+          "[RTCP] Bad packet: is_rtcp == TRUE but could not find a valid packet in buffer");
+    }
+  } else {
+    GST_WARNING_OBJECT (filter,
+        "[RTCP] Bad buffer: is_rtcp == TRUE but could not get first packet");
   }
 
   gst_rtcp_buffer_unmap (&rtcpbuf);
