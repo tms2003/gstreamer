@@ -124,6 +124,15 @@ enum hdmi_eotf
 };
 
 static void
+_add_dmabuf_caps (GstCaps * caps)
+{
+  gst_caps_append_structure (caps,
+      gst_structure_copy (gst_caps_get_structure (caps, 0)));
+  gst_caps_set_features (caps, 0,
+      gst_caps_features_new_single (GST_CAPS_FEATURE_MEMORY_DMABUF));
+}
+
+static void
 gst_kms_populate_infoframe (struct hdr_output_metadata *pinfo_frame,
     GstVideoMasteringDisplayInfo * p_hdr_minfo,
     GstVideoContentLightLevel * p_hdr_cll,
@@ -1325,6 +1334,10 @@ gst_kms_sink_get_caps (GstBaseSink * bsink, GstCaps * filter)
 
   GST_OBJECT_UNLOCK (self);
 
+  if (self->has_prime_export) {
+    _add_dmabuf_caps (out_caps);
+  }
+
   GST_DEBUG_OBJECT (self, "Proposing caps %" GST_PTR_FORMAT, out_caps);
 
   if (filter) {
@@ -2323,6 +2336,8 @@ gst_kms_sink_class_init (GstKMSSinkClass * klass)
       "Sink/Video", GST_PLUGIN_DESC, "Víctor Jáquez <vjaquez@igalia.com>");
 
   caps = gst_kms_sink_caps_template_fill ();
+  _add_dmabuf_caps (caps);
+
   gst_element_class_add_pad_template (element_class,
       gst_pad_template_new ("sink", GST_PAD_SINK, GST_PAD_ALWAYS, caps));
   gst_caps_unref (caps);
