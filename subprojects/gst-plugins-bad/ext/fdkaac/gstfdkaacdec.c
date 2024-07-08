@@ -45,7 +45,12 @@ static GstStaticPadTemplate sink_template = GST_STATIC_PAD_TEMPLATE ("sink",
     GST_PAD_ALWAYS,
     GST_STATIC_CAPS ("audio/mpeg, "
         "mpegversion = (int) {2, 4}, "
-        "stream-format = (string) { adts, adif, raw }, " CHANNELS_CAPS_STR)
+        "stream-format = (string) { adts, adif, raw }, "
+        CHANNELS_CAPS_STR ";  "
+        "audio/mpeg, "
+        "mpegversion = (int) 4, "
+        "stream-format = (string) { latm-mcp0, latm-mcp1, loas }, "
+        CHANNELS_CAPS_STR)
     );
 
 static GstStaticPadTemplate src_template = GST_STATIC_PAD_TEMPLATE ("src",
@@ -126,6 +131,12 @@ gst_fdkaacdec_set_format (GstAudioDecoder * dec, GstCaps * caps)
     transport_format = TT_MP4_ADIF;
   } else if (strcmp (stream_format, "adts") == 0) {
     transport_format = TT_MP4_ADTS;
+  } else if (strcmp (stream_format, "loas") == 0) {
+    transport_format = TT_MP4_LOAS;
+  } else if (strcmp (stream_format, "latm-mcp0") == 0) {
+    transport_format = TT_MP4_LATM_MCP0;
+  } else if (strcmp (stream_format, "latm-mcp1") == 0) {
+    transport_format = TT_MP4_LATM_MCP1;
   } else {
     g_assert_not_reached ();
   }
@@ -136,7 +147,12 @@ gst_fdkaacdec_set_format (GstAudioDecoder * dec, GstCaps * caps)
     return FALSE;
   }
 
-  if (transport_format == TT_MP4_RAW) {
+  /*
+   * If out of band config data either AudioSpecificConfig or StreamMuxConfig
+   * is applicable with raw or LATM MCP0 respectively, aacDecoder_ConfigRaw
+   * must be called with this data before beginning the decoding process.
+   */
+  if (transport_format == TT_MP4_RAW || transport_format == TT_MP4_LATM_MCP0) {
     GstBuffer *codec_data = NULL;
     GstMapInfo map;
     guint8 *data;

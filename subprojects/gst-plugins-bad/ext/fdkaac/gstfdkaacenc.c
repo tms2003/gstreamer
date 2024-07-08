@@ -24,6 +24,7 @@
 #include "gstfdkaac.h"
 #include "gstfdkaacenc.h"
 
+#include <gst/base/gstbitwriter.h>
 #include <gst/pbutils/pbutils.h>
 
 #include <string.h>
@@ -31,7 +32,6 @@
 /* TODO:
  * - Add support for other AOT / profiles
  * - Signal encoder delay
- * - LOAS / LATM support
  */
 
 enum
@@ -39,12 +39,15 @@ enum
   PROP_0,
   PROP_AFTERBURNER,
   PROP_BITRATE,
+  PROP_HEADER_PERIOD,
   PROP_PEAK_BITRATE,
   PROP_RATE_CONTROL,
   PROP_VBR_PRESET,
 };
 
 #define DEFAULT_BITRATE (0)
+#define DEFAULT_HEADER_PERIOD (255)
+#define DEFAULT_HEADER_PERIOD_API (-1)
 #define DEFAULT_PEAK_BITRATE (0)
 #define DEFAULT_RATE_CONTROL (GST_FDK_AAC_RATE_CONTROL_CONSTANT_BITRATE)
 #define DEFAULT_VBR_PRESET (GST_FDK_AAC_VBR_PRESET_MEDIUM)
@@ -79,7 +82,7 @@ static GstStaticPadTemplate src_template = GST_STATIC_PAD_TEMPLATE ("src",
         "mpegversion = (int) 4, "
         "rate = (int) { " SAMPLE_RATES " }, "
         "channels = (int) {1, 2, 3, 4, 5, 6, 8}, "
-        "stream-format = (string) { adts, adif, raw }, "
+        "stream-format = (string) { adts, adif, raw, latm-mcp0, latm-mcp1, loas }, "
         "profile = (string) { lc, he-aac-v1, he-aac-v2, ld }, "
         "framed = (boolean) true")
     );
@@ -150,6 +153,7 @@ gst_fdkaacenc_set_property (GObject * object, guint prop_id,
     const GValue * value, GParamSpec * pspec)
 {
   GstFdkAacEnc *self = GST_FDKAACENC (object);
+  gint header_period;
 
   switch (prop_id) {
     case PROP_BITRATE:
@@ -157,6 +161,12 @@ gst_fdkaacenc_set_property (GObject * object, guint prop_id,
       break;
     case PROP_AFTERBURNER:
       self->afterburner = g_value_get_boolean (value);
+      break;
+    case PROP_HEADER_PERIOD:
+      header_period = g_value_get_int (value);
+      self->header_period =
+          (header_period ==
+          DEFAULT_HEADER_PERIOD_API) ? DEFAULT_HEADER_PERIOD : header_period;
       break;
     case PROP_PEAK_BITRATE:
       self->peak_bitrate = g_value_get_int (value);
@@ -179,6 +189,7 @@ gst_fdkaacenc_get_property (GObject * object, guint prop_id,
     GValue * value, GParamSpec * pspec)
 {
   GstFdkAacEnc *self = GST_FDKAACENC (object);
+  gint header_period;
 
   switch (prop_id) {
     case PROP_BITRATE:
@@ -186,6 +197,13 @@ gst_fdkaacenc_get_property (GObject * object, guint prop_id,
       break;
     case PROP_AFTERBURNER:
       g_value_set_boolean (value, self->afterburner);
+      break;
+    case PROP_HEADER_PERIOD:
+      header_period =
+          (self->header_period ==
+          DEFAULT_HEADER_PERIOD) ? DEFAULT_HEADER_PERIOD_API :
+          self->header_period;
+      g_value_set_int (value, header_period);
       break;
     case PROP_PEAK_BITRATE:
       g_value_set_int (value, self->peak_bitrate);
@@ -298,6 +316,7 @@ gst_fdkaacenc_set_format (GstAudioEncoder * enc, GstAudioInfo * info)
   AACENC_InfoStruct enc_info = { 0 };
   gint bitrate, signaling_mode;
   guint bitrate_mode;
+  guint8 audio_spec_conf[2] = { 0 };
 
   if (self->enc && !self->is_drained) {
     /* drain */
@@ -324,6 +343,23 @@ gst_fdkaacenc_set_format (GstAudioEncoder * enc, GstAudioInfo * info)
       } else if (strcmp (str, "raw") == 0) {
         GST_DEBUG_OBJECT (self, "use RAW format for output");
         transmux = 0;
+      } else if (strcmp (str, "loas") == 0) {
+        GST_DEBUG_OBJECT (self, "use LOAS format for output");
+        transmux = 10;
+      } else if (strcmp (str, "latm-mcp1") == 0) {
+        /*
+         * Enable TT_MP4_LATM_MCP1. Sets muxConfigPresent = 1. See Section 4.1 of
+         * RFC 3016.
+         */
+        GST_DEBUG_OBJECT (self, "use LATM MCP1 format for output");
+        transmux = 6;
+      } else if (strcmp (str, "latm-mcp0") == 0) {
+        /*
+         * Enable TT_MP4_LATM_MCP0. Sets muxConfigPresent = 0. See Section 4.1 of
+         * RFC 3016.
+         */
+        GST_DEBUG_OBJECT (self, "use LATM MCP0 format for output");
+        transmux = 7;
       }
     }
 
@@ -365,10 +401,26 @@ gst_fdkaacenc_set_format (GstAudioEncoder * enc, GstAudioInfo * info)
 
   /* Use explicit hierarchical signaling (2) with raw output stream-format
    * and implicit signaling (0) with ADTS/ADIF */
-  if (transmux == 0)
+  if (transmux == 0) {
     signaling_mode = 2;
-  else
+  } else if (transmux == 6 || transmux == 7 || transmux == 10) {
+    /*
+     * If HE-AACv1/v2 is being used for LATM/LOAS, AudioMuxVersion needs to
+     * be set to 1.
+     */
+    if (aot == AOT_PS || aot == AOT_SBR) {
+      if ((err = aacEncoder_SetParam (self->enc, AACENC_AUDIOMUXVER,
+                  1)) != AACENC_OK) {
+        GST_ERROR_OBJECT (self, "Unable to set audio mux version: %d", err);
+        return FALSE;
+      }
+      signaling_mode = 2;
+    } else {
+      signaling_mode = 0;
+    }
+  } else {
     signaling_mode = 0;
+  }
 
   if ((err = aacEncoder_SetParam (self->enc, AACENC_SIGNALING_MODE,
               signaling_mode)) != AACENC_OK) {
@@ -536,6 +588,14 @@ gst_fdkaacenc_set_format (GstAudioEncoder * enc, GstAudioInfo * info)
 
     GST_INFO_OBJECT (self, "Afterburner enabled");
   }
+
+  if ((err =
+          aacEncoder_SetParam (self->enc, AACENC_HEADER_PERIOD,
+              self->header_period)) != AACENC_OK) {
+    GST_ERROR_OBJECT (self, "Unable to set header period: %d", err);
+    return FALSE;
+  }
+
   if ((err = aacEncEncode (self->enc, NULL, NULL, NULL, NULL)) != AACENC_OK) {
     GST_ERROR_OBJECT (self, "Unable to initialize encoder: %d", err);
     return FALSE;
@@ -572,12 +632,60 @@ gst_fdkaacenc_set_format (GstAudioEncoder * enc, GstAudioInfo * info)
   } else if (transmux == 2) {
     gst_caps_set_simple (src_caps, "stream-format", G_TYPE_STRING, "adts",
         NULL);
+  } else if (transmux == 6 || transmux == 7 || transmux == 10) {
+    GstBitWriter bw;
+    guint rate = GST_AUDIO_INFO_RATE (info);
+    guint8 channels = GST_AUDIO_INFO_CHANNELS (info);
+    GstBuffer *codec_data;
+
+    /*
+     * Craft a AudioSpecificConfig manually to be used for setting level and
+     * profile later as when LATM_MCP0/1 is enabled enc_info.confBuf won't have
+     * AudioSpecificConfig but StreamMuxConfig. Since gst_codec_utils expects
+     * an AudioSpecificConfig to retrieve aot, rate and channel config
+     * information, it will fail. We pass this manually constructed
+     * AudioSpecificConfig when LATM is requested.
+     */
+    gst_bit_writer_init_with_data (&bw, audio_spec_conf,
+        sizeof (audio_spec_conf), FALSE);
+    gst_bit_writer_put_bits_uint8 (&bw, 2 /* AOT_AAC_LC */ , 5);
+    gst_bit_writer_put_bits_uint8 (&bw,
+        gst_codec_utils_aac_get_index_from_sample_rate (rate), 4);
+    gst_bit_writer_put_bits_uint8 (&bw, channels, 4);
+
+    codec_data =
+        gst_buffer_new_wrapped (g_memdup (enc_info.confBuf, enc_info.confSize),
+        enc_info.confSize);
+    /*
+     * For MCP0 the config is out of band, so set codec_data to
+     * StreamMuxConfig. For MCP1, the config is in band and need not be send
+     * via any out of band means like codec_data.
+     */
+    if (transmux == 6)
+      gst_caps_set_simple (src_caps, "stream-format", G_TYPE_STRING,
+          "latm-mcp1", NULL);
+    else if (transmux == 7)
+      gst_caps_set_simple (src_caps, "codec_data", GST_TYPE_BUFFER, codec_data,
+          "stream-format", G_TYPE_STRING, "latm-mcp0", NULL);
+    else
+      gst_caps_set_simple (src_caps, "stream-format", G_TYPE_STRING,
+          "loas", NULL);
+    gst_buffer_unref (codec_data);
   } else {
     g_assert_not_reached ();
   }
 
-  gst_codec_utils_aac_caps_set_level_and_profile (src_caps, enc_info.confBuf,
-      enc_info.confSize);
+  if (transmux != 6 && transmux != 7 && transmux != 10)
+    gst_codec_utils_aac_caps_set_level_and_profile (src_caps,
+        enc_info.confBuf, enc_info.confSize);
+  else
+    /*
+     * For LATM/LOAS, confBuf is StreamMuxConfig and not AudioSpecificConfig.
+     * In this case, pass in the manually constructed AudioSpecificConfig
+     * buffer above.
+     */
+    gst_codec_utils_aac_caps_set_level_and_profile (src_caps, audio_spec_conf,
+        sizeof (audio_spec_conf));
 
   /* The above only parses the "base" profile, which is always going to be LC.
    * Set actual profile. */
@@ -726,6 +834,11 @@ gst_fdkaacenc_init (GstFdkAacEnc * self)
   self->peak_bitrate = DEFAULT_PEAK_BITRATE;
   self->rate_control = DEFAULT_RATE_CONTROL;
   self->vbr_preset = DEFAULT_VBR_PRESET;
+  /*
+   * 0xFF: auto-mode. Default 10 for TT_MP4_ADTS, TT_MP4_LOAS and
+   * TT_MP4_LATM_MCP1 otherwise 0.
+   */
+  self->header_period = DEFAULT_HEADER_PERIOD;
 
   gst_audio_encoder_set_drainable (GST_AUDIO_ENCODER (self), TRUE);
 }
@@ -806,6 +919,19 @@ gst_fdkaacenc_class_init (GstFdkAacEncClass * klass)
       g_param_spec_enum ("vbr-preset", "Variable Bitrate Preset",
           "AAC Variable Bitrate configurations. Requires rate-control as vbr.",
           GST_FDK_AAC_VBR_PRESET, DEFAULT_VBR_PRESET,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  /**
+   * GstFdkAacEnc:header-period:
+   *
+   * Frame count period for sending in-band configuration buffers.
+   *
+   * Since: 1.22
+   */
+  g_object_class_install_property (object_class, PROP_HEADER_PERIOD,
+      g_param_spec_int ("header-period", "Frame count period",
+          "Frame count period for sending in-band configuration buffers. (-1: auto mode)",
+          -1, 254, DEFAULT_HEADER_PERIOD_API /* auto-mode */ ,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   gst_element_class_add_static_pad_template (element_class, &sink_template);
