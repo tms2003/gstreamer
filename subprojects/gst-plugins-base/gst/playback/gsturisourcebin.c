@@ -453,6 +453,8 @@ gst_uri_source_bin_class_init (GstURISourceBinClass * klass)
    *  "minimum-time-level"  G_TYPE_UINT64             Minimum of the current time levels
    *  "maximum-time-level"  G_TYPE_UINT64             Maximum of the current time levels
    *  "average-time-level"  G_TYPE_UINT64             Average of the current time levels
+   *  "number-of-queues"    G_TYPE_UINT               How many queues the levels were sampled
+   *                                                    from (Since 1.20)
    */
   g_object_class_install_property (gobject_class, PROP_STATISTICS,
       g_param_spec_boxed ("statistics", "Queue Statistics",
@@ -1046,7 +1048,8 @@ get_queue_statistics (GstURISourceBin * urisrc)
       "average-byte-level", G_TYPE_UINT, (guint) avg_byte_level,
       "minimum-time-level", G_TYPE_UINT64, (guint64) min_time_level,
       "maximum-time-level", G_TYPE_UINT64, (guint64) max_time_level,
-      "average-time-level", G_TYPE_UINT64, (guint64) avg_time_level, NULL);
+      "average-time-level", G_TYPE_UINT64, (guint64) avg_time_level,
+      "number-of-queues", G_TYPE_UINT, (guint) i, NULL);
 
   return ret;
 }
