@@ -3087,6 +3087,14 @@ gst_video_decoder_prepare_finish_frame (GstVideoDecoder *
         GST_TIME_ARGS (frame->pts));
   }
 
+  if (GST_CLOCK_TIME_IS_VALID (frame->pts) && frame->pts > min_pts) {
+    GST_DEBUG_OBJECT (decoder,
+        "PTS provided by frame is greater than earliest pending PTS (%"
+        GST_TIME_FORMAT " > %" GST_TIME_FORMAT ")",
+        GST_TIME_ARGS (frame->pts), GST_TIME_ARGS (min_pts));
+    priv->reordered_output = TRUE;
+  }
+
   /* if we detected reordered output, then PTS are void, however those were
    * obtained; bogus input, subclass etc */
   if (priv->reordered_output && !frames_without_pts) {
