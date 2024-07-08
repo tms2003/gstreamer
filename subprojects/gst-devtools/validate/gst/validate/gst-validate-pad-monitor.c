@@ -2205,6 +2205,8 @@ gst_validate_pad_monitor_check_right_buffer (GstValidatePadMonitor *
   gchar *checksum;
   GstBuffer *wanted_buf;
   GstMapInfo map, wanted_map;
+  GstVideoFrame cropped_frame;
+  GstVideoMeta *vmeta;
 
   gboolean ret = TRUE;
   GstPad *pad;
@@ -2267,7 +2269,27 @@ gst_validate_pad_monitor_check_right_buffer (GstValidatePadMonitor *
   }
 
   g_assert (gst_buffer_map (wanted_buf, &wanted_map, GST_MAP_READ));
-  g_assert (gst_buffer_map (buffer, &map, GST_MAP_READ));
+
+  vmeta = gst_buffer_get_video_meta (buffer);
+  if (vmeta) {
+    GstVideoInfo vinfo;
+    GstVideoFrame src;
+    GstBuffer *copy;
+
+    gst_video_info_set_format (&vinfo, vmeta->format, vmeta->width,
+        vmeta->height);
+    copy = gst_buffer_new_and_alloc (vinfo.size);
+
+    g_assert (gst_video_frame_map (&src, &vinfo, buffer, GST_MAP_READ));
+    g_assert (gst_video_frame_map (&cropped_frame, &vinfo, copy,
+            GST_MAP_READWRITE));
+    gst_buffer_unref (copy);
+    gst_video_frame_copy (&src, &cropped_frame);
+    gst_video_frame_unmap (&src);
+    map = *cropped_frame.map;
+  } else {
+    g_assert (gst_buffer_map (buffer, &map, GST_MAP_READ));
+  }
 
   checksum = g_compute_checksum_for_data (G_CHECKSUM_MD5,
       (const guchar *) map.data, map.size);
@@ -2280,7 +2302,12 @@ gst_validate_pad_monitor_check_right_buffer (GstValidatePadMonitor *
   }
 
   gst_buffer_unmap (wanted_buf, &wanted_map);
-  gst_buffer_unmap (buffer, &map);
+
+  if (vmeta)
+    gst_video_frame_unmap (&cropped_frame);
+  else
+    gst_buffer_unmap (buffer, &map);
+
   g_free (checksum);
   gst_object_unref (pad);
 
