@@ -182,16 +182,20 @@ struct _GstAggregator
  *                  should always chain up to the parent class virtual method.
  * @sink_event:     Optional.
  *                  Called when an event is received on a sink pad, the subclass
- *                  should always chain up.
+ *                  should always chain up unhandled cases to the parent class 
+ *                  virtual method.
  * @sink_query:     Optional.
  *                  Called when a query is received on a sink pad, the subclass
- *                  should always chain up.
+ *                  should always chain up unhandled cases to the parent class 
+ *                  virtual method.
  * @src_event:      Optional.
  *                  Called when an event is received on the src pad, the subclass
- *                  should always chain up.
+ *                  should always chain up unhandled cases to the parent class 
+ *                  virtual method.
  * @src_query:      Optional.
  *                  Called when a query is received on the src pad, the subclass
- *                  should always chain up.
+ *                  should always chain up unhandled cases to the parent class 
+ *                  virtual method.
  * @src_activate:   Optional.
  *                  Called when the src pad is activated, it will start/stop its
  *                  pad task right after that call.
@@ -242,10 +246,12 @@ struct _GstAggregator
  *             Negotiate the caps with the peer (Since: 1.18).
  * @sink_event_pre_queue: Optional.
  *                        Called when an event is received on a sink pad before queueing up
- *                        serialized events. The subclass should always chain up (Since: 1.18).
+ *                        serialized events. The subclass should always chain up unhandled 
+ *                        cases to the parent class virtual method (Since: 1.18).
  * @sink_query_pre_queue: Optional.
  *                        Called when a query is received on a sink pad before queueing up
- *                        serialized queries. The subclass should always chain up (Since: 1.18).
+ *                        serialized queries. The subclass should always chain up unhandled
+ *                        cases to the parent class virtual method (Since: 1.18).
  *
  * The aggregator base class will handle in a thread-safe way all manners of
  * concurrent flushes, seeks, pad additions and removals, leaving to the
