@@ -82,6 +82,7 @@ enum
   SIGNAL_GET_PLAYLIST_STREAM,
   SIGNAL_GET_FRAGMENT_STREAM,
   SIGNAL_DELETE_FRAGMENT,
+  SIGNAL_GET_FRAGMENT_LOCATION,
   SIGNAL_LAST
 };
 
@@ -185,6 +186,13 @@ gst_hls_sink2_get_fragment_stream (GstHlsSink2 * sink, const gchar * location)
   g_object_unref (file);
 
   return ostream;
+}
+
+static gchar *
+gst_hls_sink2_get_fragment_location (GstHlsSink2 * sink, guint fragment_id,
+    GstSample * sample)
+{
+  return g_strdup_printf (sink->location, fragment_id);
 }
 
 static void
@@ -302,18 +310,47 @@ gst_hls_sink2_class_init (GstHlsSink2Class * klass)
       g_signal_new ("delete-fragment", G_TYPE_FROM_CLASS (klass),
       G_SIGNAL_RUN_LAST, 0, NULL, NULL, NULL, G_TYPE_NONE, 1, G_TYPE_STRING);
 
+  /**
+   * GstHlsSink2::get-fragment-location:
+   * @sink: the #GstHlsSink2
+   * @fragment_id: the sequence number of the file to be created
+   * @first_sample: A #GstSample containing the first buffer
+   *   from the reference stream in the new file
+   * 
+   * Returns: the location to be used for the next output file. This must be
+   * a newly-allocated string which will be freed with g_free().
+   * 
+   * Since: 1.22
+   */
+  signals[SIGNAL_GET_FRAGMENT_LOCATION] =
+      g_signal_new ("get-fragment-location", G_TYPE_FROM_CLASS (klass),
+      G_SIGNAL_RUN_LAST,
+      G_STRUCT_OFFSET (GstHlsSink2Class, get_fragment_location),
+      g_signal_accumulator_first_wins, NULL, NULL, G_TYPE_STRING, 2,
+      G_TYPE_UINT, GST_TYPE_SAMPLE);
+
   klass->get_playlist_stream = gst_hls_sink2_get_playlist_stream;
   klass->get_fragment_stream = gst_hls_sink2_get_fragment_stream;
+  klass->get_fragment_location = gst_hls_sink2_get_fragment_location;
 }
 
 static gchar *
 on_format_location (GstElement * splitmuxsink, guint fragment_id,
-    GstHlsSink2 * sink)
+    GstSample * sample, GstHlsSink2 * sink)
 {
   GOutputStream *stream = NULL;
-  gchar *location;
+  gchar *location = NULL;
 
-  location = g_strdup_printf (sink->location, fragment_id);
+  g_signal_emit (sink, signals[SIGNAL_GET_FRAGMENT_LOCATION], 0, fragment_id,
+      sample, &location);
+
+  if (!location) {
+    GST_ELEMENT_ERROR (sink, RESOURCE, OPEN_WRITE,
+        (("Got no output location for fragment %d."), fragment_id), (NULL));
+    g_free (sink->current_location);
+    sink->current_location = NULL;
+  }
+
   g_signal_emit (sink, signals[SIGNAL_GET_FRAGMENT_STREAM], 0, location,
       &stream);
 
@@ -361,7 +398,7 @@ gst_hls_sink2_init (GstHlsSink2 * sink)
       "send-keyframe-requests", TRUE, "muxer", mux, "sink", sink->giostreamsink,
       "reset-muxer", FALSE, NULL);
 
-  g_signal_connect (sink->splitmuxsink, "format-location",
+  g_signal_connect (sink->splitmuxsink, "format-location-full",
       G_CALLBACK (on_format_location), sink);
 
   GST_OBJECT_FLAG_SET (sink, GST_ELEMENT_FLAG_SINK);
