@@ -11685,6 +11685,182 @@ qtdemux_parse_stereo_svmi_atom (GstQTDemux * qtdemux, QtDemuxStream * stream,
   return TRUE;
 }
 
+typedef enum
+{
+  MHAC_OK,
+  MHAC_CORRUPTED_DATA,
+  MHAC_UNSUPPORTED_VERSION
+} ParseMHAConfigResult;
+
+static ParseMHAConfigResult
+qtdemux_parse_mhaC_box (GstQTDemux * qtdemux, const guint8 * stsd_entry_data,
+    int offset, GstCaps * caps, gboolean mhaC_is_optional,
+    const gchar * sample_entry_name)
+{
+  gint len;
+  guint32 mhaC_size, mhaC_fourcc;
+  gint mhaC_data_offset;
+  gint mhaC_data_end;
+  gint configuration_version;
+  gint audio_profile_level_indication;
+  gint reference_channel_layout;
+  guint16 mpegh3da_config_length;
+  GstBuffer *mpegh3da_config_data;
+
+  /* These values (documented in ISO/IEC 23008-3, subclause 20.4.2) need to be
+   * read here:
+   *
+   * - configuration version (1 byte)
+   * - MPEG-H 3D audio profile level indication (1 byte)
+   * - reference channel layout (1 byte)
+   * - MPEG-H 3D audio configuration length (2 bytes)
+   *
+   * The mhaC box needs to be of this minimum size to be able to contain these
+   * values, so use this constant later for boundary checks.
+   */
+  const gint CONFIG_LENGTH_OFFSET = 1 + 1 + 1 + 2;
+
+  len = QT_UINT32 (stsd_entry_data);
+
+  if (G_UNLIKELY (len < (4 + 4))) {
+    if (!mhaC_is_optional) {
+      GST_ERROR_OBJECT (qtdemux, "%s sample entry does not contain sufficent"
+          " data for the mhaC box fourcc and size", sample_entry_name);
+      return MHAC_CORRUPTED_DATA;
+    } else {
+      return MHAC_OK;
+    }
+  }
+
+  mhaC_size = QT_UINT32 (stsd_entry_data + offset);
+  mhaC_fourcc = QT_FOURCC (stsd_entry_data + offset + 4);
+
+  if (G_UNLIKELY (mhaC_fourcc != FOURCC_mhaC)) {
+    if (!mhaC_is_optional) {
+      GST_ERROR_OBJECT (qtdemux, "%s sample entry does not contain"
+          " mhaC configuration box; actual fourCC: %" GST_FOURCC_FORMAT
+          " size: %" G_GUINT32_FORMAT, sample_entry_name,
+          GST_FOURCC_ARGS (mhaC_fourcc), mhaC_size);
+      return MHAC_CORRUPTED_DATA;
+    } else {
+      return MHAC_OK;
+    }
+  }
+
+  GST_DEBUG_OBJECT (qtdemux, "found MPEG-H 3D audio mhaC "
+      "configuration box; size: %" G_GUINT32_FORMAT, mhaC_size);
+
+  /* Keep track of where the mhaC box ends to be able to perform
+   * boundary checks while reading the config data. The "- (4 + 4)"
+   * is there to exclude the box size (4 bytes) and fourCC
+   * (4 bytes) that were already read above, because these two
+   * come factored in the length that is recorded in "len". */
+  mhaC_data_end = offset + len - (4 + 4);
+
+  /* Skip the box size (4 bytes) and fourCC (4 bytes). */
+  mhaC_data_offset = offset + 4 + 4;
+
+  if (G_UNLIKELY ((mhaC_data_offset + CONFIG_LENGTH_OFFSET) > mhaC_data_end)) {
+    GST_ERROR_OBJECT (qtdemux, "%s sample entry contains mhaC "
+        "configuration box, but there is insufficient data "
+        "in that box; minimum required size: %d actual size: %d",
+        sample_entry_name, CONFIG_LENGTH_OFFSET,
+        mhaC_data_end - mhaC_data_offset);
+    return MHAC_CORRUPTED_DATA;
+  }
+
+  configuration_version = QT_UINT8 (stsd_entry_data + mhaC_data_offset + 0);
+  if (configuration_version != 1) {
+    GST_INFO_OBJECT (qtdemux, "mhaC configuration box version "
+        "is %d, which is unsupported (expected version 1)",
+        configuration_version);
+    return MHAC_UNSUPPORTED_VERSION;
+  }
+
+  /* These profile levels are defined in ISO/IEC 23008-3, subclause 5.3.2.
+   * Levels always start at 1. */
+  audio_profile_level_indication = QT_UINT8 (stsd_entry_data +
+      mhaC_data_offset + 1);
+  switch (audio_profile_level_indication) {
+    case 0x01:
+    case 0x02:
+    case 0x03:
+    case 0x04:
+    case 0x05:
+      gst_caps_set_simple (caps, "profile", G_TYPE_STRING, "main",
+          "level", G_TYPE_INT, audio_profile_level_indication - 0x00, NULL);
+      break;
+    case 0x06:
+    case 0x07:
+    case 0x08:
+    case 0x09:
+    case 0x0A:
+      gst_caps_set_simple (caps, "profile", G_TYPE_STRING, "high",
+          "level", G_TYPE_INT, audio_profile_level_indication - 0x05, NULL);
+      break;
+    case 0x0B:
+    case 0x0C:
+    case 0x0D:
+    case 0x0E:
+    case 0x0F:
+      gst_caps_set_simple (caps, "profile", G_TYPE_STRING, "low-complexity",
+          "level", G_TYPE_INT, audio_profile_level_indication - 0x0A, NULL);
+      break;
+    case 0x10:
+    case 0x11:
+    case 0x12:
+    case 0x13:
+    case 0x14:
+      gst_caps_set_simple (caps, "profile", G_TYPE_STRING, "baseline",
+          "level", G_TYPE_INT, audio_profile_level_indication - 0x0F, NULL);
+      break;
+    default:
+      GST_INFO_OBJECT (qtdemux, "mhaC configuration box audio profile level "
+          "indication %#x is not supported", audio_profile_level_indication);
+      return MHAC_UNSUPPORTED_VERSION;
+  }
+
+  /* This layout is defined in ISO/IEC 23091-3. */
+  // TODO: Interpret this. May not be strictly necessary though because
+  // decoders typically do set the channel layout by themselves.
+  reference_channel_layout = QT_UINT8 (stsd_entry_data + mhaC_data_offset + 2);
+  GST_DEBUG_OBJECT (qtdemux, "mhaC configuration box reference channel "
+      "layout: %d", reference_channel_layout);
+
+  mpegh3da_config_length = QT_UINT16 (stsd_entry_data + mhaC_data_offset + 3);
+  if (G_UNLIKELY (mpegh3da_config_length == 0)) {
+    GST_WARNING_OBJECT (qtdemux, "mhaC configuration box contains"
+        " invalid configuration length 0");
+    return MHAC_CORRUPTED_DATA;
+  }
+
+  /* Move past the intial configuration fields that were just parsed.
+   * The offset should now be right at the mpeg3da config data. */
+  mhaC_data_offset += CONFIG_LENGTH_OFFSET;
+
+  if (G_UNLIKELY ((mhaC_data_offset + mpegh3da_config_length) > mhaC_data_end)) {
+    GST_ERROR_OBJECT (qtdemux, "stsd entry contains mhaC "
+        "configuration box, but the config data length is invalid; "
+        "indicated size: %" G_GUINT16_FORMAT " actual size: %d",
+        mpegh3da_config_length, mhaC_data_end - mhaC_data_offset);
+    return MHAC_CORRUPTED_DATA;
+  }
+
+  GST_DEBUG_OBJECT (qtdemux, "reading mpegh3da config data with %"
+      G_GUINT16_FORMAT " byte(s) and adding it to caps as codec_data",
+      mpegh3da_config_length);
+
+  mpegh3da_config_data = gst_buffer_new_allocate (NULL, mpegh3da_config_length,
+      NULL);
+  gst_buffer_fill (mpegh3da_config_data, 0, stsd_entry_data +
+      mhaC_data_offset, mpegh3da_config_length);
+  gst_caps_set_simple (caps, "codec_data", GST_TYPE_BUFFER,
+      mpegh3da_config_data, NULL);
+  gst_buffer_unref (mpegh3da_config_data);
+
+  return MHAC_OK;
+}
+
 /* parse the traks.
  * With each track we associate a new QtDemuxStream that contains all the info
  * about the trak.
@@ -13944,6 +14120,35 @@ qtdemux_parse_trak (GstQTDemux * qtdemux, GNode * trak)
             }
             break;
           }
+          case FOURCC_mha1:
+          {
+            switch (qtdemux_parse_mhaC_box (qtdemux, stsd_entry_data,
+                    offset, entry->caps, FALSE, "mha1")) {
+              case MHAC_CORRUPTED_DATA:
+                goto corrupt_file;
+              case MHAC_UNSUPPORTED_VERSION:
+                goto unknown_stream;
+              default:
+                break;
+            }
+            break;
+          }
+          case FOURCC_mhm1:
+          {
+            /* mhaC boxes are optional in mhm1 sample entries, since
+             * these contain MHAS audio data, and MHAS has in-band
+             * configuration data. */
+            switch (qtdemux_parse_mhaC_box (qtdemux, stsd_entry_data,
+                    offset, entry->caps, TRUE, "mhm1")) {
+              case MHAC_CORRUPTED_DATA:
+                goto corrupt_file;
+              case MHAC_UNSUPPORTED_VERSION:
+                goto unknown_stream;
+              default:
+                break;
+            }
+            break;
+          }
           case FOURCC_opus:
           case FOURCC_lpcm:
           case FOURCC_in24:
@@ -16172,6 +16377,23 @@ qtdemux_audio_caps (GstQTDemux * qtdemux, QtDemuxStream * stream,
       caps = gst_caps_new_empty_simple ("audio/x-ac4");
       break;
     }
+    case FOURCC_mha1:
+      /* There is currently no MIME type for MPEG-H mha1 data.
+       * Don't add framed=TRUE, since mha1 data must always
+       * come with frames pre-parsed by upstream (downstream
+       * won't be able to parse a raw mpeg3da stream). */
+      _codec ("MPEG-H 3D audio, mha1 samples");
+      caps = gst_caps_new_empty_simple ("audio/x-mha1");
+      break;
+    case FOURCC_mhm1:
+      /* audio/mhas is an IANA registered MIME type.
+       * Add framed=TRUE, since MHAS data _could_ be parsed
+       * by downstream as well, and these caps indicate that
+       * downstream does not have to parse. */
+      _codec ("MPEG-H 3D audio stream, mhm1 samples");
+      caps = gst_caps_new_simple ("audio/mhas",
+          "framed", G_TYPE_BOOLEAN, TRUE, NULL);
+      break;
     case GST_MAKE_FOURCC ('q', 't', 'v', 'r'):
       /* ? */
     default:

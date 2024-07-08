@@ -249,6 +249,8 @@ static const QtNodeType qt_node_types[] = {
   {FOURCC_vttc, "VTTCueBox 14496-30", QT_FLAG_CONTAINER},
   {FOURCC_metx, "XML MetaData Sample Entry", 0},
   {FOURCC_cstb, "Correct Start Time Box", 0},
+  {FOURCC_mha1, "MPEG-H 3D audio, mha1 sample entry", 0},
+  {FOURCC_mhm1, "MPEG-H 3D audio stream (MHAS), mhm1 sample entry", 0},
   {0, "unknown", 0,},
 };
 
