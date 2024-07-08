@@ -1335,6 +1335,10 @@ gst_base_sink_set_render_delay (GstBaseSink * sink, GstClockTime delay)
       GST_TIME_ARGS (delay));
   GST_OBJECT_UNLOCK (sink);
 
+  /* If not constructed yet, set values in instance struct and nothing else */
+  if (!GST_OBJECT_FLAG_IS_SET (sink, GST_OBJECT_FLAG_CONSTRUCTED))
+    return;
+
   if (delay != old_render_delay) {
     GST_DEBUG_OBJECT (sink, "posting latency changed");
     gst_element_post_message (GST_ELEMENT_CAST (sink),
@@ -1523,6 +1527,10 @@ gst_base_sink_set_processing_deadline (GstBaseSink * sink,
   GST_LOG_OBJECT (sink, "set render processing_deadline to %" GST_TIME_FORMAT,
       GST_TIME_ARGS (processing_deadline));
   GST_OBJECT_UNLOCK (sink);
+
+  /* If not constructed yet, set values in instance struct and nothing else */
+  if (!GST_OBJECT_FLAG_IS_SET (sink, GST_OBJECT_FLAG_CONSTRUCTED))
+    return;
 
   if (processing_deadline != old_processing_deadline) {
     GST_DEBUG_OBJECT (sink, "posting latency changed");

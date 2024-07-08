@@ -2150,7 +2150,8 @@ no_bus:
  * additional reference before calling.
  *
  * Returns: %TRUE if the message was successfully posted. The function returns
- * %FALSE if the element did not have a bus.
+ * %FALSE if the element did not have a bus or the element was not fully
+ * constructed yet.
  *
  * MT safe.
  */
@@ -2162,6 +2163,11 @@ gst_element_post_message (GstElement * element, GstMessage * message)
 
   g_return_val_if_fail (GST_IS_ELEMENT (element), FALSE);
   g_return_val_if_fail (message != NULL, FALSE);
+
+  if (!GST_OBJECT_FLAG_IS_SET (element, GST_OBJECT_FLAG_CONSTRUCTED)) {
+    gst_message_unref (message);
+    return FALSE;
+  }
 
   GST_TRACER_ELEMENT_POST_MESSAGE_PRE (element, message);
 
