@@ -996,9 +996,11 @@ gst_base_parse_parse_frame (GstBaseParse * parse, GstBaseParseFrame * frame)
 {
   GstBuffer *buffer = frame->buffer;
   gboolean must_approximate_pts = !GST_BUFFER_PTS_IS_VALID (buffer)
-      && GST_CLOCK_TIME_IS_VALID (parse->priv->next_pts);
+      && GST_CLOCK_TIME_IS_VALID (parse->priv->next_pts)
+      && parse->priv->pts_interpolate;
   gboolean must_approximate_dts = !GST_BUFFER_DTS_IS_VALID (buffer)
-      && GST_CLOCK_TIME_IS_VALID (parse->priv->next_dts);
+      && GST_CLOCK_TIME_IS_VALID (parse->priv->next_dts)
+      && parse->priv->pts_interpolate;
 
   if (must_approximate_pts) {
     GST_BUFFER_PTS (buffer) = parse->priv->next_pts;
@@ -2411,7 +2413,8 @@ gst_base_parse_handle_and_push_frame (GstBaseParse * parse,
   }
 
   /* track upstream time if provided, not subclass' internal notion of it */
-  if (parse->priv->upstream_format == GST_FORMAT_TIME) {
+  if (parse->priv->upstream_format == GST_FORMAT_TIME
+      && parse->priv->pts_interpolate) {
     GST_BUFFER_PTS (frame->buffer) = GST_CLOCK_TIME_NONE;
     GST_BUFFER_DTS (frame->buffer) = GST_CLOCK_TIME_NONE;
   }
@@ -3312,7 +3315,8 @@ gst_base_parse_chain (GstPad * pad, GstObject * parent, GstBuffer * buffer)
 
     /* already inform subclass what timestamps we have planned,
      * at least if provided by time-based upstream */
-    if (parse->priv->upstream_format == GST_FORMAT_TIME) {
+    if (parse->priv->upstream_format == GST_FORMAT_TIME
+        && parse->priv->pts_interpolate) {
       tmpbuf = gst_buffer_make_writable (tmpbuf);
       GST_BUFFER_PTS (tmpbuf) = parse->priv->next_pts;
       GST_BUFFER_DTS (tmpbuf) = parse->priv->next_dts;
