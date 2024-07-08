@@ -114,6 +114,7 @@ base_tests = [
   [['libs/vkvideoencodeh265.c'], not gstvulkan_dep.found() or vulkan_conf.get('GST_VULKAN_HAVE_VIDEO_EXTENSIONS') != 1, [gstvulkan_dep, gstcodecparsers_dep]],
   [['libs/d3d11device.cpp'], not gstd3d11_dep.found(), [gstd3d11_dep]],
   [['libs/d3d11memory.c'], not gstd3d11_dep.found(), [gstd3d11_dep]],
+  [['libs/win32rwlock.c'], host_machine.system() != 'windows', []],
   [['libs/cudamemory.c'], not gstcuda_dep.found(), [gstcuda_dep, gstcuda_stub_dep]],
   [['libs/d3d12device.cpp'], not gstd3d12_dep.found(), [gstd3d12_dep]],
 ]
