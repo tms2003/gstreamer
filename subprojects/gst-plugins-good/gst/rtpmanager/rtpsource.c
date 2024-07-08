@@ -198,9 +198,9 @@ rtp_source_class_init (RTPSourceClass * klass)
    * * "sent-rb-lsr"           G_TYPE_UINT     last SR time (seconds in NTP Short Format, 16.16 fixed point)
    * * "sent-rb-dlsr"          G_TYPE_UINT     delay since last SR (seconds in NTP Short Format, 16.16 fixed point)
    *
-   * The following fields are only present for non-internal sources and
-   * represents the last RB that this source sent. This is only updated
-   * when the source is receiving data and sending RB blocks.
+   * The following fields represent the last RB that this source sent. This is
+   * only updated when the source is receiving data and sending RB blocks.
+   * Prior to 1.24, these fields were only present for non-internal sources.
    *
    * * "have-rb"          G_TYPE_BOOLEAN  the source has sent RB
    * * "rb-fractionlost"  G_TYPE_UINT     lost 8-bit fraction
@@ -210,9 +210,8 @@ rtp_source_class_init (RTPSourceClass * klass)
    * * "rb-lsr"           G_TYPE_UINT     last SR time (seconds in NTP Short Format, 16.16 fixed point)
    * * "rb-dlsr"          G_TYPE_UINT     delay since last SR (seconds in NTP Short Format, 16.16 fixed point)
    *
-   * The round trip of this source is calculated from the last RB
-   * values and the reception time of the last RB packet. It is only present for
-   * non-internal sources.
+   * The round trip of this source is calculated from the last RB values and the
+   * reception time of the last RB packet.
    *
    * * "rb-round-trip"    G_TYPE_UINT     the round-trip time (seconds in NTP Short Format, 16.16 fixed point)
    *
@@ -452,22 +451,22 @@ rtp_source_create_stats (RTPSource * src)
         (guint) src->last_rr.jitter, "sent-rb-lsr", G_TYPE_UINT,
         (guint) src->last_rr.lsr, "sent-rb-dlsr", G_TYPE_UINT,
         (guint) src->last_rr.dlsr, NULL);
-
-    /* get the last RB */
-    have_rb = rtp_source_get_last_rb (src, &ssrc, &fractionlost,
-        &packetslost, &exthighestseq, &jitter, &lsr, &dlsr, &round_trip);
-
-    gst_structure_set (s,
-        "have-rb", G_TYPE_BOOLEAN, have_rb,
-        "rb-ssrc", G_TYPE_UINT, ssrc,
-        "rb-fractionlost", G_TYPE_UINT, (guint) fractionlost,
-        "rb-packetslost", G_TYPE_INT, (gint) packetslost,
-        "rb-exthighestseq", G_TYPE_UINT, (guint) exthighestseq,
-        "rb-jitter", G_TYPE_UINT, (guint) jitter,
-        "rb-lsr", G_TYPE_UINT, (guint) lsr,
-        "rb-dlsr", G_TYPE_UINT, (guint) dlsr,
-        "rb-round-trip", G_TYPE_UINT, (guint) round_trip, NULL);
   }
+
+  /* get the last RB */
+  have_rb = rtp_source_get_last_rb (src, &ssrc, &fractionlost,
+      &packetslost, &exthighestseq, &jitter, &lsr, &dlsr, &round_trip);
+
+  gst_structure_set (s,
+      "have-rb", G_TYPE_BOOLEAN, have_rb,
+      "rb-ssrc", G_TYPE_UINT, ssrc,
+      "rb-fractionlost", G_TYPE_UINT, (guint) fractionlost,
+      "rb-packetslost", G_TYPE_INT, (gint) packetslost,
+      "rb-exthighestseq", G_TYPE_UINT, (guint) exthighestseq,
+      "rb-jitter", G_TYPE_UINT, (guint) jitter,
+      "rb-lsr", G_TYPE_UINT, (guint) lsr,
+      "rb-dlsr", G_TYPE_UINT, (guint) dlsr,
+      "rb-round-trip", G_TYPE_UINT, (guint) round_trip, NULL);
 
   return s;
 }

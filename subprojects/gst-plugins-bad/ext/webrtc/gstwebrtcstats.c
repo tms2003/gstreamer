@@ -124,7 +124,7 @@ _get_stats_from_remote_rtp_source_stats (GstWebRTCBin * webrtc,
       "have-rb", G_TYPE_BOOLEAN, &have_rb, NULL);
 
   /* This isn't what we're looking for */
-  if (internal == TRUE || have_rb == FALSE)
+  if (internal == FALSE || have_rb == FALSE)
     return FALSE;
 
   r_in_id = g_strdup_printf ("rtp-remote-inbound-stream-stats_%u", ssrc);
