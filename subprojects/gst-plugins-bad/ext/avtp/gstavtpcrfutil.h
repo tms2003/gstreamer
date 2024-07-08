@@ -28,5 +28,7 @@ gboolean buffer_size_valid (GstMapInfo * info);
 GstClockTime get_avtp_tstamp (GstAvtpCrfBase * avtpcrfbase,
     struct avtp_stream_pdu * pdu);
 gboolean h264_tstamp_valid (struct avtp_stream_pdu * pdu);
+GstClockTime gst_avtp_crf_adjust_ts (GstAvtpCrfBase * const avtpcrfbase,
+    const struct avtp_stream_pdu * const pdu, GstClockTime tstamp);
 
 #endif /* __GST_AVTP_CRF_UTILS_H__ */
