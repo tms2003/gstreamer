@@ -2,7 +2,7 @@
  * GStreamer gstreamer-ssdobjectdetector
  * Copyright (C) 2021 Collabora Ltd.
  *
- * gstssdobjectdetector.cpp
+ * gstssdobjectdetector.c
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -51,7 +51,6 @@
 #include <gst/gst.h>
 #include <gst/video/video.h>
 #include <gst/analytics/analytics.h>
-#include "tensor/gsttensormeta.h"
 
 /* Object detection tensor id strings */
 #define GST_MODEL_OBJECT_DETECTOR_BOXES "Gst.Model.ObjectDetector.Boxes"
