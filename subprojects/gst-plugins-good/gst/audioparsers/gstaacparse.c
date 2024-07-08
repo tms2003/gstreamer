@@ -357,12 +357,19 @@ gst_aac_parse_sink_setcaps (GstBaseParse * parse, GstCaps * caps)
     if (g_strcmp0 (stream_format, "raw") == 0) {
       GST_ERROR_OBJECT (parse, "Need codec_data for raw AAC");
       return FALSE;
+    } else if (g_strcmp0 (stream_format, "adts") == 0) {
+      aacparse->header_type = DSPAAC_HEADER_ADTS;
+    } else if (g_strcmp0 (stream_format, "adif") == 0) {
+      aacparse->header_type = DSPAAC_HEADER_ADIF;
+    } else if (g_strcmp0 (stream_format, "loas") == 0) {
+      aacparse->header_type = DSPAAC_HEADER_LOAS;
     } else {
-      aacparse->sample_rate = 0;
-      aacparse->channels = 0;
       aacparse->header_type = DSPAAC_HEADER_NOT_PARSED;
-      gst_base_parse_set_passthrough (parse, FALSE);
     }
+
+    aacparse->sample_rate = 0;
+    aacparse->channels = 0;
+    gst_base_parse_set_passthrough (parse, FALSE);
   }
   return TRUE;
 }
