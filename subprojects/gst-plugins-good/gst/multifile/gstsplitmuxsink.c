@@ -66,6 +66,11 @@
  * ]|
  * Records 10 frames to an mp4 file, using a muxer-pad-map to make explicit mappings between the splitmuxsink sink pad and the corresponding muxer pad
  * it will deliver to.
+ *
+ * |[
+ * gst-launch-1.0  filesrc location=../ny.mp4 ! decodebin ! videoconvert  ! x264enc key-int-max=10 ! h264parse !  splitmuxsink max-size-time=10000000000 async-finalize=TRUE sink-factory=awss3sink sink-location-property=key location="zozozoz/xxxxx_%02d.mp4"  sink-properties='properties,endpoint-uri="https://minio.acme.com:9000",bucket="workers-results",access-key="91dZgUbpDUjaBFIk",secret-access-key="XZnPh3FvniwxSrAVIXmX29BqJRzf9lk1"'
+ * ]|
+ * Split file for 10 seconds and load it into S3 storage
  */
 
 #ifdef HAVE_CONFIG_H
@@ -119,7 +124,8 @@ enum
   PROP_SINK_FACTORY,
   PROP_SINK_PRESET,
   PROP_SINK_PROPERTIES,
-  PROP_MUXERPAD_MAP
+  PROP_MUXERPAD_MAP,
+  PROP_SINK_LOCATION_PROPERTY
 };
 
 #define DEFAULT_MAX_SIZE_TIME       0
@@ -406,6 +412,10 @@ gst_splitmux_sink_class_init (GstSplitMuxSinkClass * klass)
           "The muxer element factory to use (default = mp4mux). "
           "Valid only for async-finalize = TRUE",
           "mp4mux", G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+    g_object_class_install_property (gobject_class, PROP_SINK_LOCATION_PROPERTY,
+      g_param_spec_string ("sink-location-property", "Location Output Pattern",
+          "Format string pattern for the property of the sink to write (e.g. video%05d.mp4)",
+          NULL, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
   /**
    * GstSplitMuxSink:muxer-preset
    *
@@ -919,6 +929,13 @@ gst_splitmux_sink_set_property (GObject * object, guint prop_id,
       GST_SPLITMUX_UNLOCK (splitmux);
       break;
     }
+    case PROP_SINK_LOCATION_PROPERTY:{
+      GST_OBJECT_LOCK (splitmux);
+      g_free (splitmux->sink_location_property);
+      splitmux->sink_location_property = g_value_dup_string (value);
+      GST_OBJECT_UNLOCK (splitmux);
+      break;
+    }
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -1037,6 +1054,11 @@ gst_splitmux_sink_get_property (GObject * object, guint prop_id,
       gst_value_set_structure (value, splitmux->muxerpad_map);
       GST_SPLITMUX_UNLOCK (splitmux);
       break;
+    case PROP_SINK_LOCATION_PROPERTY:
+      GST_OBJECT_LOCK (splitmux);
+      g_value_set_string (value, splitmux->sink_location_property);
+      GST_OBJECT_UNLOCK (splitmux);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -1111,6 +1133,7 @@ send_fragment_opened_closed_msg (GstSplitMuxSink * splitmux, gboolean opened,
     GstElement * sink)
 {
   gchar *location = NULL;
+  const gchar *location_attribute_name = NULL;
   GstMessage *msg;
   const gchar *msg_name = opened ?
       "splitmuxsink-fragment-opened" : "splitmuxsink-fragment-closed";
@@ -1124,18 +1147,23 @@ send_fragment_opened_closed_msg (GstSplitMuxSink * splitmux, gboolean opened,
 
   if (g_object_class_find_property (G_OBJECT_GET_CLASS (sink),
           "location") != NULL)
-    g_object_get (sink, "location", &location, NULL);
+    location_attribute_name = "location";
+  else
+      if (splitmux->sink_location_property != NULL)
+          location_attribute_name = splitmux->sink_location_property;
+
+  g_object_get (sink, location_attribute_name, &location, NULL);
 
   GST_DEBUG_OBJECT (splitmux,
-      "Sending %s message. Running time %" GST_TIME_FORMAT " location %s",
-      msg_name, GST_TIME_ARGS (running_time), GST_STR_NULL (location));
+      "Sending %s message. Running time %" GST_TIME_FORMAT " %s %s",
+      msg_name, GST_TIME_ARGS (running_time), GST_STR_NULL (location_attribute_name), GST_STR_NULL (location));
 
   /* If it's in the middle of a teardown, the reference_ctc might have become
    * NULL */
   if (splitmux->reference_ctx) {
     msg = gst_message_new_element (GST_OBJECT (splitmux),
         gst_structure_new (msg_name,
-            "location", G_TYPE_STRING, location,
+             location_attribute_name, G_TYPE_STRING, location,
             "running-time", GST_TYPE_CLOCK_TIME, running_time,
             "sink", GST_TYPE_ELEMENT, sink, NULL));
     gst_element_post_message (GST_ELEMENT_CAST (splitmux), msg);
@@ -3866,6 +3894,7 @@ static void
 set_next_filename (GstSplitMuxSink * splitmux, MqStreamCtx * ctx)
 {
   gchar *fname = NULL;
+  const gchar *location_attribute_name = NULL;
   GstSample *sample;
   GstCaps *caps;
 
@@ -3897,7 +3926,12 @@ set_next_filename (GstSplitMuxSink * splitmux, MqStreamCtx * ctx)
     GST_INFO_OBJECT (splitmux, "Setting file to %s", fname);
     if (g_object_class_find_property (G_OBJECT_GET_CLASS (splitmux->sink),
             "location") != NULL)
-      g_object_set (splitmux->sink, "location", fname, NULL);
+      location_attribute_name = "location";
+    else
+      if (splitmux->sink_location_property != NULL)
+         location_attribute_name = splitmux->sink_location_property;
+
+    g_object_set (splitmux->sink, location_attribute_name, fname, NULL);
     g_free (fname);
   }
 
