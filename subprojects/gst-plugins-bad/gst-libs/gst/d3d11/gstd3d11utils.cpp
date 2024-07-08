@@ -44,22 +44,9 @@ static std::recursive_mutex _context_lock;
 /* *INDENT-ON* */
 
 GST_DEBUG_CATEGORY_STATIC (GST_CAT_CONTEXT);
-#ifndef GST_DISABLE_GST_DEBUG
-#define GST_CAT_DEFAULT ensure_debug_category()
-static GstDebugCategory *
-ensure_debug_category (void)
-{
-  static GstDebugCategory *cat = nullptr;
-
-  GST_D3D11_CALL_ONCE_BEGIN {
-    cat = _gst_debug_category_new ("d3d11utils", 0, "d3d11 utility functions");
-  } GST_D3D11_CALL_ONCE_END;
-
-  return cat;
-}
-#else
-#define ensure_debug_category() /* NOOP */
-#endif /* GST_DISABLE_GST_DEBUG */
+GST_DEBUG_CATEGORY_DEFINE_STATIC (d3d11_utils_dbg,
+    "d3d11utils", 0, "d3d11 utility functions");
+#define GST_CAT_DEFAULT GST_DEBUG_CATEGORY_LAZY_INIT (d3d11_utils_dbg)
 
 static void
 _init_context_debug (void)

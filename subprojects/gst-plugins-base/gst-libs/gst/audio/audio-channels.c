@@ -32,28 +32,9 @@
 
 #include "audio-channels.h"
 
-#ifndef GST_DISABLE_GST_DEBUG
-#define GST_CAT_DEFAULT ensure_debug_category()
-static GstDebugCategory *
-ensure_debug_category (void)
-{
-  static gsize cat_gonce = 0;
-
-  if (g_once_init_enter (&cat_gonce)) {
-    gsize cat_done;
-
-    cat_done = (gsize) _gst_debug_category_new ("audio-channels", 0,
-        "audio-channels object");
-
-    g_once_init_leave (&cat_gonce, cat_done);
-  }
-
-  return (GstDebugCategory *) cat_gonce;
-}
-#else
-#define ensure_debug_category() /* NOOP */
-#endif /* GST_DISABLE_GST_DEBUG */
-
+GST_DEBUG_CATEGORY_DEFINE_STATIC (audio_channels_dbg, "audio-channels", 0,
+    "audio-channels object");
+#define GST_CAT_DEFAULT GST_DEBUG_CATEGORY_LAZY_INIT (audio_channels_dbg)
 
 static const GstAudioChannelPosition default_channel_order[64] = {
   GST_AUDIO_CHANNEL_POSITION_FRONT_LEFT,

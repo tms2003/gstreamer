@@ -35,21 +35,8 @@
  * Since: 1.26
  */
 
-#ifndef GST_DISABLE_GST_DEBUG
-#define GST_CAT_DEFAULT ensure_debug_category()
-static GstDebugCategory *
-ensure_debug_category (void)
-{
-  static GstDebugCategory *cat = nullptr;
-  static std::once_flag cat_once;
-
-  std::call_once (cat_once, [&]() {
-    cat = _gst_debug_category_new ("d3dcompile", 0, "d3dcompile");
-  });
-
-  return cat;
-}
-#endif /* GST_DISABLE_GST_DEBUG */
+GST_DEBUG_CATEGORY_DEFINE_STATIC (d3d_compile_dbg, "d3dcompile", 0, "d3dcompile");
+#define GST_CAT_DEFAULT GST_DEBUG_CATEGORY_LAZY_INIT (d3d_compile_dbg)
 
 static GModule *d3d_compiler_module = nullptr;
 static pD3DCompile GstD3DCompileFunc = nullptr;

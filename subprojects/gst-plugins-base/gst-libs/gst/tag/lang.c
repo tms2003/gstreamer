@@ -47,32 +47,9 @@
 #include "tag.h"
 #include "lang-tables.dat"
 
-#ifndef GST_DISABLE_GST_DEBUG
-
-#define GST_CAT_DEFAULT ensure_debug_category()
-
-static GstDebugCategory *
-ensure_debug_category (void)
-{
-  static gsize cat_gonce = 0;
-
-  if (g_once_init_enter (&cat_gonce)) {
-    gsize cat_done;
-
-    cat_done = (gsize) _gst_debug_category_new ("tag-langcodes", 0,
-        "GstTag language codes and names");
-
-    g_once_init_leave (&cat_gonce, cat_done);
-  }
-
-  return (GstDebugCategory *) cat_gonce;
-}
-
-#else
-
-#define ensure_debug_category() /* NOOP */
-
-#endif /* GST_DISABLE_GST_DEBUG */
+GST_DEBUG_CATEGORY_DEFINE_STATIC (tag_langcodes_dbg, "tag-langcodes", 0,
+    "GstTag language codes and names");
+#define GST_CAT_DEFAULT GST_DEBUG_CATEGORY_LAZY_INIT (tag_langcodes_dbg)
 
 /* ------------------------------------------------------------------------- */
 
@@ -276,8 +253,6 @@ gst_tag_get_language_codes (void)
   gchar **codes;
   int i;
 
-  ensure_debug_category ();
-
   ht = gst_tag_get_iso_639_ht ();
 
   /* we have at least two keys for each language (-1 code and -2 code) */
@@ -325,8 +300,6 @@ gst_tag_get_language_name (const gchar * language_code)
 
   g_return_val_if_fail (language_code != NULL, NULL);
 
-  ensure_debug_category ();
-
   ht = gst_tag_get_iso_639_ht ();
 
   lang_name = g_hash_table_lookup (ht, (gpointer) language_code);
@@ -356,8 +329,6 @@ gst_tag_get_language_code_iso_639_1 (const gchar * lang_code)
   int i;
 
   g_return_val_if_fail (lang_code != NULL, NULL);
-
-  ensure_debug_category ();
 
   /* FIXME: we are being a bit inconsistent here in the sense that will only
    * map the language codes from our static table. Theoretically the iso-codes
@@ -440,8 +411,6 @@ gst_tag_get_language_code_iso_639_2T (const gchar * lang_code)
 
   g_return_val_if_fail (lang_code != NULL, NULL);
 
-  ensure_debug_category ();
-
   c = gst_tag_get_language_code_iso_639_2X (lang_code, ISO_639_FLAG_2T);
 
   GST_LOG ("%s -> %s", lang_code, GST_STR_NULL (c));
@@ -473,8 +442,6 @@ gst_tag_get_language_code_iso_639_2B (const gchar * lang_code)
   const gchar *c;
 
   g_return_val_if_fail (lang_code != NULL, NULL);
-
-  ensure_debug_category ();
 
   c = gst_tag_get_language_code_iso_639_2X (lang_code, ISO_639_FLAG_2B);
 

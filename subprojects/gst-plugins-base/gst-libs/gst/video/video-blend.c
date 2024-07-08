@@ -32,32 +32,9 @@
 
 #include <string.h>
 
-#ifndef GST_DISABLE_GST_DEBUG
-
-#define GST_CAT_DEFAULT ensure_debug_category()
-
-static GstDebugCategory *
-ensure_debug_category (void)
-{
-  static gsize cat_gonce = 0;
-
-  if (g_once_init_enter (&cat_gonce)) {
-    gsize cat_done;
-
-    cat_done = (gsize) _gst_debug_category_new ("video-blending", 0,
-        "video blending");
-
-    g_once_init_leave (&cat_gonce, cat_done);
-  }
-
-  return (GstDebugCategory *) cat_gonce;
-}
-
-#else
-
-#define ensure_debug_category() /* NOOP */
-
-#endif /* GST_DISABLE_GST_DEBUG */
+GST_DEBUG_CATEGORY_DEFINE_STATIC (video_blending_dbg, "video-blending", 0,
+    "video blending");
+#define GST_CAT_DEFAULT GST_DEBUG_CATEGORY_LAZY_INIT (video_blending_dbg)
 
 static void
 matrix_identity (guint8 * tmpline, guint width)
@@ -319,8 +296,6 @@ gst_video_blend (GstVideoFrame * dest,
 
   dest_width = GST_VIDEO_FRAME_WIDTH (dest);
   dest_height = GST_VIDEO_FRAME_HEIGHT (dest);
-
-  ensure_debug_category ();
 
   GST_LOG ("blend src %dx%d onto dest %dx%d @ %d,%d", src_width, src_height,
       dest_width, dest_height, x, y);

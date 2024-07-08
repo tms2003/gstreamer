@@ -621,7 +621,9 @@ G_STMT_START{                                        \
  * Declares a GstDebugCategory variable as extern. Use in header files.
  * This macro expands to nothing if debugging is disabled.
  */
-#define GST_DEBUG_CATEGORY_EXTERN(cat) extern GstDebugCategory *cat
+#define GST_DEBUG_CATEGORY_EXTERN(cat) \
+  extern GstDebugCategory *cat;        \
+  GstDebugCategory *cat##_init (void)
 
 /**
  * GST_DEBUG_CATEGORY_STATIC:
@@ -665,6 +667,180 @@ G_STMT_START{                                        \
   if (cat == NULL)							\
     cat = _gst_debug_category_new (name,color,description);		\
 }G_STMT_END
+
+/**
+ * GST_DEBUG_CATEGORY_DEFINE:
+ * @cat: the category variable name.
+ * @name: the name of the category.
+ * @color: the colors to use for a color representation or 0 for no color.
+ * @description: optional description of the category.
+ *
+ * Defines a new #GstDebugCategory, that will be initialized with the
+ * given properties on the first logging.
+ * It should be used together with the GST_DEBUG_CATEGORY_LAZY_INIT() macro.
+ * Example:
+ * |[<!-- language="C" -->
+ * GST_DEBUG_CATEGORY_DEFINE (myplugin_dbg, "myplugin",
+ *     0, "nice element");
+ * #define GST_CAT_DEFAULT GST_DEBUG_CATEGORY_LAZY_INIT (myplugin_dbg)
+ * ]|
+ *
+ * NOTE: this macro defines the category as an export symbol that will be
+ * accessible from the other object files. If the category is not used
+ * in another object files use GST_DEBUG_CATEGORY_DEFINE_STATIC().
+ *
+ * > This macro expands to nothing if debugging is disabled.
+ * >
+ * > When naming your category, please follow the following conventions to ensure
+ * > that the pattern matching for categories works as expected. It is not
+ * > earth-shattering if you don't follow these conventions, but it would be nice
+ * > for everyone.
+ * >
+ * > If you define a category for a plugin or a feature of it, name the category
+ * > like the feature. So if you wanted to write a "filesrc" element, you would
+ * > name the category "filesrc". Use lowercase letters only.
+ * > If you define more than one category for the same element, append an
+ * > underscore and an identifier to your categories, like this: "filesrc_cache"
+ * >
+ * > If you create a library or an application using debugging categories, use a
+ * > common prefix followed by an underscore for all your categories. GStreamer
+ * > uses the GST prefix so GStreamer categories look like "GST_STATES". Be sure
+ * > to include uppercase letters.
+ *
+ * Since: 1.26
+ */
+#define GST_DEBUG_CATEGORY_DEFINE(cat,name,color,description)           \
+  __GST_DEBUG_CATEGORY_DEFINE_MAYBE_STATIC (cat,name, color, description,)
+
+/**
+ * GST_DEBUG_CATEGORY_DEFINE_STATIC:
+ * @cat: the category variable name.
+ * @name: the name of the category.
+ * @color: the colors to use for a color representation or 0 for no color.
+ * @description: optional description of the category.
+ *
+ * Defines a new #GstDebugCategory, that will be initialized with the
+ * given properties on the first logging.
+ * It should be used together with the GST_DEBUG_CATEGORY_LAZY_INIT() macro.
+ * Example:
+ * |[<!-- language="C" -->
+ * GST_DEBUG_CATEGORY_DEFINE_STATIC (myplugin_dbg, "myplugin",
+ *     0, "nice element");
+ * #define GST_CAT_DEFAULT GST_DEBUG_CATEGORY_LAZY_INIT (myplugin_dbg)
+ * ]|
+ *
+ * NOTE: this macro defines the category as a local static variable that won't be
+ * accessible from the other object files. If the category is going to be used
+ * in another code files use GST_DEBUG_CATEGORY_DEFINE().
+ *
+ * > This macro expands to nothing if debugging is disabled.
+ * >
+ * > When naming your category, please follow the following conventions to ensure
+ * > that the pattern matching for categories works as expected. It is not
+ * > earth-shattering if you don't follow these conventions, but it would be nice
+ * > for everyone.
+ * >
+ * > If you define a category for a plugin or a feature of it, name the category
+ * > like the feature. So if you wanted to write a "filesrc" element, you would
+ * > name the category "filesrc". Use lowercase letters only.
+ * > If you define more than one category for the same element, append an
+ * > underscore and an identifier to your categories, like this: "filesrc_cache"
+ * >
+ * > If you create a library or an application using debugging categories, use a
+ * > common prefix followed by an underscore for all your categories. GStreamer
+ * > uses the GST prefix so GStreamer categories look like "GST_STATES". Be sure
+ * > to include uppercase letters.
+ *
+ * Since: 1.26
+ */
+#define GST_DEBUG_CATEGORY_DEFINE_STATIC(cat,name,color,description)    \
+  __GST_DEBUG_CATEGORY_DEFINE_MAYBE_STATIC(cat,name, color, description, static)
+
+/**
+ * __GST_DEBUG_CATEGORY_DEFINE_MAYBE_STATIC: (skip)
+ *
+ * Only for private usage, part of GST_DEBUG_CATEGORY_DEFINE
+ *
+ * Since: 1.26
+ */
+#define __GST_DEBUG_CATEGORY_DEFINE_MAYBE_STATIC(cat,name,color,description,maybe_static) \
+  maybe_static GstDebugCategory *cat = NULL;                            \
+  maybe_static GstDebugCategory *cat##_init (void);                     \
+  maybe_static GstDebugCategory *cat##_init (void)                      \
+  {                                                                     \
+    G_STATIC_ASSERT (sizeof(gsize) == sizeof(gpointer));                \
+    if (g_once_init_enter ((gsize*)&cat)) {                             \
+      g_once_init_leave ((gsize*)&cat,                                  \
+          (gsize)_gst_debug_category_new (name,color,description));     \
+    }                                                                   \
+                                                                        \
+    return cat;                                                         \
+  }
+
+/**
+ * _gst_atomic_pointer_get_relaxed:
+ * @atomic: pointer to the pointer-sized atomic
+ *
+ * Get current value of a pointer sized-atomic.
+ *
+ * Returns: current value of a pointer sized-atomic
+ *
+ * Since: 1.26
+ */
+
+#if defined (__STDC_VERSION__) && __STDC_VERSION__ >= 201112L && !defined (__STDC_NO_ATOMICS__)
+#include <stdatomic.h>
+
+static inline gpointer
+_gst_atomic_pointer_get_relaxed (gpointer atomic)
+{
+  _Atomic (gpointer) *tmp = (_Atomic (gpointer)*)atomic;
+  return atomic_load_explicit (tmp, memory_order_relaxed);
+}
+#elif defined(__ATOMIC_RELAXED)
+#define _gst_atomic_pointer_get_relaxed(atomic)                         \
+  (G_GNUC_EXTENSION ({                                                  \
+    G_STATIC_ASSERT (sizeof *(atomic) == sizeof (gpointer));            \
+    gpointer temp_newval;                                               \
+    gpointer *temp_atomic = (gpointer *)(atomic);                       \
+    __atomic_load (temp_atomic, &temp_newval, __ATOMIC_RELAXED);        \
+    temp_newval;                                                        \
+  }))
+#else
+/* Fallback (undesired) */
+#define _gst_atomic_pointer_get_relaxed(atomic) g_atomic_pointer_get (atomic)
+#endif
+
+/**
+ * GST_DEBUG_CATEGORY_LAZY_INIT:
+ * @cat: the category to use.
+ *
+ * This macro will return debug category @cat defined with GST_DEBUG_CATEGORY_DEFINE()
+ * or GST_DEBUG_CATEGORY_DEFINE_STATIC().
+ * If the category @cat haven't been initialized, it will perform the initialization
+ * first.
+ * It is typically used this way:
+ * |[<!-- language="C" -->
+ * GST_DEBUG_CATEGORY_DEFINE_STATIC (myplugin_dbg, "myplugin",
+ *     0, "nice element");
+ * #define GST_CAT_DEFAULT GST_DEBUG_CATEGORY_LAZY_INIT (myplugin_dbg)
+ * ]|
+ * or if the category is defined in another object file:
+ * |[<!-- language="C" -->
+ * GST_DEBUG_CATEGORY_EXTERN (myplugin_dbg);
+ * #define GST_CAT_DEFAULT GST_DEBUG_CATEGORY_LAZY_INIT (myplugin_dbg)
+ * ]|
+ * So there's no need to call GST_DEBUG_CATEGORY_INIT() for the selected
+ * category at all: it will be initialized on the first logging.
+ *
+ * Returns: initialized debug category
+ *
+ * Since: 1.26
+ */
+#define GST_DEBUG_CATEGORY_LAZY_INIT(cat)                               \
+  (G_LIKELY ((cat = (GstDebugCategory *)                                \
+          _gst_atomic_pointer_get_relaxed (&cat))) ?                    \
+      cat : (cat = cat##_init ()))
 
 /**
  * GST_DEBUG_CATEGORY_GET:
@@ -1870,6 +2046,9 @@ GST_TRACE (const char *format, ...)
 #define GST_DEBUG_CATEGORY(var)				void _gst_debug_dummy_##var (void)
 #define GST_DEBUG_CATEGORY_EXTERN(var)			void _gst_debug_dummy_extern_##var (void)
 #define GST_DEBUG_CATEGORY_STATIC(var)			void _gst_debug_dummy_static_##var (void)
+#define GST_DEBUG_CATEGORY_DEFINE(var,name,color,desc) void _gst_debug_dummy_define_##var (void)
+#define GST_DEBUG_CATEGORY_DEFINE_STATIC(var,name,color,desc) void _gst_debug_dummy_define_static_##var (void)
+#define GST_DEBUG_CATEGORY_LAZY_INIT(cat)
 
 #define GST_DEBUG_CATEGORY_INIT(var,name,color,desc)	G_STMT_START{ }G_STMT_END
 #define GST_DEBUG_CATEGORY_GET(var,name)		G_STMT_START{ }G_STMT_END

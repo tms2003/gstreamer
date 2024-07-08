@@ -40,27 +40,9 @@
  * present in Vertical Blanking Interval as well as Closed Caption.
  */
 
-#ifndef GST_DISABLE_GST_DEBUG
-#define GST_CAT_DEFAULT ensure_debug_category()
-static GstDebugCategory *
-ensure_debug_category (void)
-{
-  static gsize cat_gonce = 0;
-
-  if (g_once_init_enter (&cat_gonce)) {
-    gsize cat_done;
-
-    cat_done = (gsize) _gst_debug_category_new ("video-anc", 0,
-        "Ancillary data, VBI and CC utilities");
-
-    g_once_init_leave (&cat_gonce, cat_done);
-  }
-
-  return (GstDebugCategory *) cat_gonce;
-}
-#else
-#define ensure_debug_category() /* NOOP */
-#endif /* GST_DISABLE_GST_DEBUG */
+GST_DEBUG_CATEGORY_DEFINE_STATIC (video_anc_dbg, "video-anc", 0,
+    "Ancillary data, VBI and CC utilities");
+#define GST_CAT_DEFAULT GST_DEBUG_CATEGORY_LAZY_INIT (video_anc_dbg)
 
 struct _GstVideoVBIParser
 {

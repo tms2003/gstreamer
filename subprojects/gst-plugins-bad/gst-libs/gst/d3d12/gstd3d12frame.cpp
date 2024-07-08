@@ -34,20 +34,9 @@
 using namespace Microsoft::WRL;
 /* *INDENT-ON* */
 
-#ifndef GST_DISABLE_GST_DEBUG
-#define GST_CAT_DEFAULT ensure_debug_category()
-static GstDebugCategory *
-ensure_debug_category (void)
-{
-  static GstDebugCategory *cat = nullptr;
-
-  GST_D3D12_CALL_ONCE_BEGIN {
-    cat = _gst_debug_category_new ("d3d12frame", 0, "d3d12frame");
-  } GST_D3D12_CALL_ONCE_END;
-
-  return cat;
-}
-#endif
+GST_DEBUG_CATEGORY_DEFINE_STATIC (d3d12_frame_dbg,
+    "d3d12frame", 0, "d3d12frame");
+#define GST_CAT_DEFAULT GST_DEBUG_CATEGORY_LAZY_INIT (d3d12_frame_dbg)
 
 /**
  * gst_d3d12_frame_map:

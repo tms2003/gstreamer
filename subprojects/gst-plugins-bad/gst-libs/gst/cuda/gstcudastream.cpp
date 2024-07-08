@@ -26,22 +26,9 @@
 #include "gstcudautils.h"
 #include "gstcuda-private.h"
 
-#ifndef GST_DISABLE_GST_DEBUG
-#define GST_CAT_DEFAULT ensure_debug_category()
-static GstDebugCategory *
-ensure_debug_category (void)
-{
-  static GstDebugCategory *cat = nullptr;
-
-  GST_CUDA_CALL_ONCE_BEGIN {
-    cat = _gst_debug_category_new ("cudastream", 0, "cudastream");
-  } GST_CUDA_CALL_ONCE_END;
-
-  return cat;
-}
-#else
-#define ensure_debug_category() /* NOOP */
-#endif /* GST_DISABLE_GST_DEBUG */
+GST_DEBUG_CATEGORY_DEFINE_STATIC (cudastream_dbg, "cudastream", 0,
+    "cudastream");
+#define GST_CAT_DEFAULT GST_DEBUG_CATEGORY_LAZY_INIT (cudastream_dbg)
 
 static gint
 gst_cuda_stream_compare_func (const GstCudaStream * a, const GstCudaStream * b)

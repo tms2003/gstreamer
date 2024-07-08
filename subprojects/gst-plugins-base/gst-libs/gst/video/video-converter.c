@@ -94,27 +94,9 @@
  *        10 : a -> b -> c -> d -> e* -> f* -> g* -> h -> i -> j -> k
  */
 
-#ifndef GST_DISABLE_GST_DEBUG
-#define GST_CAT_DEFAULT ensure_debug_category()
-static GstDebugCategory *
-ensure_debug_category (void)
-{
-  static gsize cat_gonce = 0;
-
-  if (g_once_init_enter (&cat_gonce)) {
-    gsize cat_done;
-
-    cat_done = (gsize) _gst_debug_category_new ("video-converter", 0,
-        "video-converter object");
-
-    g_once_init_leave (&cat_gonce, cat_done);
-  }
-
-  return (GstDebugCategory *) cat_gonce;
-}
-#else
-#define ensure_debug_category() /* NOOP */
-#endif /* GST_DISABLE_GST_DEBUG */
+GST_DEBUG_CATEGORY_DEFINE_STATIC (video_converter_dbg, "video-converter", 0,
+    "video-converter object");
+#define GST_CAT_DEFAULT GST_DEBUG_CATEGORY_LAZY_INIT (video_converter_dbg)
 
 typedef void (*GstParallelizedTaskFunc) (gpointer user_data);
 

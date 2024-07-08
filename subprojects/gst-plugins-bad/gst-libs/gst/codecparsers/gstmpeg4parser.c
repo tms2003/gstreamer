@@ -40,32 +40,9 @@
 #include "gstmpeg4parser.h"
 #include "parserutils.h"
 
-#ifndef GST_DISABLE_GST_DEBUG
-
-#define GST_CAT_DEFAULT ensure_debug_category()
-
-static GstDebugCategory *
-ensure_debug_category (void)
-{
-  static gsize cat_gonce = 0;
-
-  if (g_once_init_enter (&cat_gonce)) {
-    gsize cat_done;
-
-    cat_done = (gsize) _gst_debug_category_new ("codecparsers_mpeg4", 0,
-        "GstMpeg4 codec parsing library");
-
-    g_once_init_leave (&cat_gonce, cat_done);
-  }
-
-  return (GstDebugCategory *) cat_gonce;
-}
-
-#else
-
-#define ensure_debug_category() /* NOOP */
-
-#endif /* GST_DISABLE_GST_DEBUG */
+GST_DEBUG_CATEGORY_DEFINE_STATIC (codecparsers_mpeg4_dbg,
+    "codecparsers_mpeg4", 0, "GstMpeg4 codec parsing library");
+#define GST_CAT_DEFAULT GST_DEBUG_CATEGORY_LAZY_INIT (codecparsers_mpeg4_dbg)
 
 #define CHECK_MARKER(br) G_STMT_START { \
   guint8 marker;\

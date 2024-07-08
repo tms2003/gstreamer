@@ -24,26 +24,8 @@
 #include <string.h>
 #include "gstdsd.h"
 
-#ifndef GST_DISABLE_GST_DEBUG
-#define GST_CAT_DEFAULT ensure_debug_category()
-static GstDebugCategory *
-ensure_debug_category (void)
-{
-  static gsize cat_gonce = 0;
-
-  if (g_once_init_enter (&cat_gonce)) {
-    gsize cat_done;
-
-    cat_done = (gsize) _gst_debug_category_new ("gst-dsd", 0, "GStreamer DSD");
-
-    g_once_init_leave (&cat_gonce, cat_done);
-  }
-
-  return (GstDebugCategory *) cat_gonce;
-}
-#else
-#define ensure_debug_category() /* NOOP */
-#endif /* GST_DISABLE_GST_DEBUG */
+GST_DEBUG_CATEGORY_DEFINE_STATIC (gst_dsd_dbg, "gst-dsd", 0, "GStreamer DSD");
+#define GST_CAT_DEFAULT GST_DEBUG_CATEGORY_LAZY_INIT (gst_dsd_dbg)
 
 static const guint8 byte_bit_reversal_table[256] = {
   0x00, 0x80, 0x40, 0xc0, 0x20, 0xa0, 0x60, 0xe0,
