@@ -2606,6 +2606,13 @@ gst_v4l2_object_add_colorspace (GstV4l2Object * v4l2object, GstStructure * s,
   if (gst_v4l2_object_try_fmt (v4l2object, &fmt) == 0) {
     if (gst_v4l2_object_get_colorspace (v4l2object, &fmt, &cinfo))
       gst_v4l2_object_fill_colorimetry_list (&list, &cinfo);
+    /* don't add colorimetry in output caps, otherwise caps negotiation fail */
+    else {
+      if (V4L2_TYPE_IS_OUTPUT (v4l2object->type)) {
+        g_value_unset (&list);
+        return;
+      }
+    }
   }
 
   /* step 2: probe all colorspace other than default
