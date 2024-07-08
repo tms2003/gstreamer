@@ -32,6 +32,7 @@
 #include <glib/gi18n-lib.h>
 
 #include <gst/gst.h>
+#include <gst/allocators/gstdmabuf.h>
 
 #include <fcntl.h>
 #include <string.h>
@@ -69,10 +70,12 @@ gst_v4l2_probe_template_caps (const gchar * device, gint video_fd,
 {
   gint n;
   struct v4l2_fmtdesc format;
-  GstCaps *caps;
+  GstCaps *caps, *dmabuf_caps = NULL;
 
   GST_DEBUG ("Getting %s format enumerations", device);
   caps = gst_caps_new_empty ();
+  if (type == V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE)
+    dmabuf_caps = gst_caps_new_empty ();
 
   for (n = 0;; n++) {
     GstStructure *template;
@@ -114,9 +117,38 @@ gst_v4l2_probe_template_caps (const gchar * device, gint video_fd,
       if (alt_t)
         gst_caps_append_structure (caps, alt_t);
     }
+
+    if (dmabuf_caps) {
+      GstStructure *template;
+      guint32 fourcc = format.pixelformat;
+
+      if (fourcc != 0x32315559 && fourcc != 0x3231564e)
+        continue;
+
+      template = gst_structure_new ("video/x-raw",
+        "format", G_TYPE_STRING, "DMA_DRM",
+        "drm-format", G_TYPE_STRING, gst_video_dma_drm_fourcc_to_string (fourcc, 0x0),
+        NULL);
+
+      gst_structure_set (template,
+            "width", GST_TYPE_INT_RANGE, 1, GST_V4L2_MAX_SIZE,
+            "height", GST_TYPE_INT_RANGE, 1, GST_V4L2_MAX_SIZE,
+            "framerate", GST_TYPE_FRACTION_RANGE, 0, 1, G_MAXINT, 1, NULL);
+
+      gst_caps_append_structure (dmabuf_caps, template);
+    }
   }
 
-  return gst_caps_simplify (caps);
+  caps = gst_caps_simplify (caps);
+
+  if (dmabuf_caps) {
+    dmabuf_caps = gst_caps_simplify (dmabuf_caps);
+    gst_caps_set_features_simple (dmabuf_caps,
+        gst_caps_features_from_string (GST_CAPS_FEATURE_MEMORY_DMABUF));
+    caps = gst_caps_merge (dmabuf_caps, caps);
+  }
+
+  return caps;
 }
 
 static gboolean

@@ -1871,6 +1871,52 @@ gst_v4l2_object_get_caps_helper (GstV4L2FormatFlags flags)
   return gst_caps_merge (caps, caps_interlaced);
 }
 
+static GstCaps *
+gst_v4l2_object_get_caps_helper_dmabuf (void)
+{
+  GstStructure *structure;
+  GstVideoFormat format;
+  GstCaps *caps;
+  guint i;
+
+  caps = gst_caps_new_empty ();
+  for (i = 0; i < GST_V4L2_FORMAT_COUNT; i++) {
+    guint32 fourcc = gst_v4l2_formats[i].format;
+
+    if ((gst_v4l2_formats[i].flags & GST_V4L2_RAW) == 0)
+      continue;
+
+    format = gst_v4l2_object_v4l2fourcc_to_video_format (fourcc);
+    if (format == GST_VIDEO_FORMAT_UNKNOWN)
+      continue;
+
+    if (fourcc != 0x32315559 && fourcc != 0x3231564e)
+      continue;
+
+    structure = gst_structure_new ("video/x-raw",
+        "format", G_TYPE_STRING, "DMA_DRM",
+        "drm-format", G_TYPE_STRING, gst_video_dma_drm_fourcc_to_string (fourcc, 0x0),
+        NULL);
+
+    if (structure) {
+      if (gst_v4l2_formats[i].dimensions) {
+        gst_structure_set (structure,
+            "width", GST_TYPE_INT_RANGE, 1, GST_V4L2_MAX_SIZE,
+            "height", GST_TYPE_INT_RANGE, 1, GST_V4L2_MAX_SIZE,
+            "framerate", GST_TYPE_FRACTION_RANGE, 0, 1, G_MAXINT, 1, NULL);
+      }
+
+      gst_caps_append_structure (caps, structure);
+    }
+  }
+
+  caps = gst_caps_simplify (caps);
+  gst_caps_set_features_simple (caps,
+      gst_caps_features_from_string (GST_CAPS_FEATURE_MEMORY_DMABUF));
+
+  return caps;
+}
+
 GstCaps *
 gst_v4l2_object_get_all_caps (void)
 {
@@ -1892,8 +1938,11 @@ gst_v4l2_object_get_raw_caps (void)
 
   if (g_once_init_enter (&caps)) {
     GstCaps *raw_caps = gst_v4l2_object_get_caps_helper (GST_V4L2_RAW);
+    GstCaps *dmabuf_caps = gst_v4l2_object_get_caps_helper_dmabuf ();
+    raw_caps = gst_caps_merge (dmabuf_caps, raw_caps);
     GST_MINI_OBJECT_FLAG_SET (raw_caps, GST_MINI_OBJECT_FLAG_MAY_BE_LEAKED);
     g_once_init_leave (&caps, raw_caps);
+    //GST_WARNING ("gst_v4l2_object_get_raw_caps: %" GST_PTR_FORMAT, caps);
   }
 
   return caps;
@@ -5076,6 +5125,104 @@ gst_v4l2_object_probe_caps (GstV4l2Object * v4l2object, GstCaps * filter)
 
     gst_structure_free (template);
   }
+
+  if (filter) {
+    GstCaps *tmp;
+
+    tmp = ret;
+    ret = gst_caps_intersect_full (filter, ret, GST_CAPS_INTERSECT_FIRST);
+    gst_caps_unref (tmp);
+  }
+
+  GST_INFO_OBJECT (v4l2object->dbg_obj, "probed caps: %" GST_PTR_FORMAT, ret);
+
+  return ret;
+}
+
+GstCaps *
+gst_v4l2_object_probe_caps_dmabuf (GstV4l2Object * v4l2object, GstCaps * filter)
+{
+  GstCaps *ret;
+  GSList *walk;
+  GSList *formats;
+  guint32 fourcc = 0;
+
+  if (v4l2object->fmtdesc)
+    fourcc = GST_V4L2_PIXELFORMAT (v4l2object);
+
+  gst_v4l2_object_clear_format_list (v4l2object);
+  formats = gst_v4l2_object_get_format_list (v4l2object);
+
+  /* Recover the fmtdesc, it may no longer exist, in which case it will be set
+   * to null */
+  if (fourcc)
+    v4l2object->fmtdesc =
+        gst_v4l2_object_get_format_from_fourcc (v4l2object, fourcc);
+
+  ret = gst_caps_new_empty ();
+
+  if (v4l2object->keep_aspect && !v4l2object->par) {
+    struct v4l2_cropcap cropcap;
+
+    memset (&cropcap, 0, sizeof (cropcap));
+
+    cropcap.type = v4l2object->type;
+    if (v4l2object->ioctl (v4l2object->video_fd, VIDIOC_CROPCAP, &cropcap) < 0) {
+      if (errno != ENOTTY)
+        GST_WARNING_OBJECT (v4l2object->dbg_obj,
+            "Failed to probe pixel aspect ratio with VIDIOC_CROPCAP: %s",
+            g_strerror (errno));
+    } else if (cropcap.pixelaspect.numerator && cropcap.pixelaspect.denominator) {
+      v4l2object->par = g_new0 (GValue, 1);
+      g_value_init (v4l2object->par, GST_TYPE_FRACTION);
+      gst_value_set_fraction (v4l2object->par, cropcap.pixelaspect.numerator,
+          cropcap.pixelaspect.denominator);
+    }
+  }
+
+  for (walk = formats; walk; walk = walk->next) {
+    struct v4l2_fmtdesc *format;
+    GstStructure *template;
+    guint32 fourcc;
+    GstCaps *tmp;
+
+    format = (struct v4l2_fmtdesc *) walk->data;
+    fourcc = format->pixelformat;
+
+    template = gst_structure_new ("video/x-raw",
+        "format", G_TYPE_STRING, "DMA_DRM",
+        "drm-format", G_TYPE_STRING, gst_video_dma_drm_fourcc_to_string (fourcc, 0x0),
+        NULL);
+
+    /* If we have a filter, check if we need to probe this format or not */
+    if (filter) {
+      GstCaps *format_caps = gst_caps_new_empty ();
+
+      gst_caps_append_structure (format_caps, gst_structure_copy (template));
+      gst_caps_set_features_simple (format_caps,
+          gst_caps_features_from_string (GST_CAPS_FEATURE_MEMORY_DMABUF));
+
+      if (!gst_caps_can_intersect (format_caps, filter)) {
+        gst_caps_unref (format_caps);
+        gst_structure_free (template);
+        continue;
+      }
+
+      gst_caps_unref (format_caps);
+    }
+
+    tmp = gst_v4l2_object_probe_caps_for_format (v4l2object,
+        format->pixelformat, template);
+    if (tmp) {
+      gst_caps_append (ret, tmp);
+    }
+
+    gst_structure_free (template);
+  }
+
+  ret = gst_caps_simplify (ret);
+  gst_caps_set_features_simple (ret,
+      gst_caps_features_from_string (GST_CAPS_FEATURE_MEMORY_DMABUF));
 
   if (filter) {
     GstCaps *tmp;
