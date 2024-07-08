@@ -93,6 +93,10 @@ gst_mpd_helper_mimetype_to_caps (const gchar * mimeType)
     return "video/quicktime";
   } else if (strcmp (mimeType, "audio/mp4") == 0) {
     return "audio/x-m4a";
+  } else if (strcmp (mimeType, "video/webm") == 0) {
+    return "video/webm";
+  } else if (strcmp (mimeType, "audio/webm") == 0) {
+    return "audio/webm";
   } else if (strcmp (mimeType, "text/vtt") == 0) {
     return "application/x-subtitle-vtt";
   } else

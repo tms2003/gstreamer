@@ -373,6 +373,9 @@ static GstClockTime
 gst_dash_demux_stream_get_fragment_waiting_time (GstAdaptiveDemux2Stream *
     stream);
 static GstFlowReturn
+gst_dash_demux_handle_matroska (GstAdaptiveDemux2Stream * stream,
+    GstAdapter * adapter);
+static GstFlowReturn
 gst_dash_demux_stream_data_received (GstAdaptiveDemux2Stream * stream,
     GstBuffer * buffer);
 static gboolean gst_dash_demux_stream_fragment_start (GstAdaptiveDemux2Stream *
@@ -443,7 +446,9 @@ gst_dash_demux_stream_init (GstDashDemux2Stream * stream)
   /* Set a default average keyframe download time of a quarter of a second */
   stream->average_download_time = 250 * GST_MSECOND;
 
+  stream->stream_parser = GST_DASH_STREAM_PARSER_NONE;
   gst_isoff_sidx_parser_init (&stream->sidx_parser);
+  gst_dash_matroska_parser_init (&stream->matroska_parser);
 }
 
 static void
@@ -455,7 +460,9 @@ gst_dash_demux_stream_finalize (GObject * object)
     dash_stream->track = NULL;
   }
 
+  dash_stream->stream_parser = GST_DASH_STREAM_PARSER_NONE;
   gst_isoff_sidx_parser_clear (&dash_stream->sidx_parser);
+  gst_dash_matroska_parser_clear (&dash_stream->matroska_parser);
   if (dash_stream->adapter)
     g_object_unref (dash_stream->adapter);
   if (dash_stream->moof)
@@ -983,8 +990,13 @@ gst_dash_demux_setup_all_streams (GstDashDemux2 * demux)
     s = gst_caps_get_structure (caps, 0);
     stream->allow_sidx =
         gst_mpd_client2_has_isoff_ondemand_profile (demux->client);
-    stream->is_isobmff = gst_structure_has_name (s, "video/quicktime")
-        || gst_structure_has_name (s, "audio/x-m4a");
+    if (gst_structure_has_name (s, "video/quicktime")
+        || gst_structure_has_name (s, "audio/x-m4a")) {
+      stream->stream_parser = GST_DASH_STREAM_PARSER_ISOBMFF;
+    } else if (gst_structure_has_name (s, "video/webm")
+        || gst_structure_has_name (s, "audio/webm")) {
+      stream->stream_parser = GST_DASH_STREAM_PARSER_MATROSKA;
+    }
     gst_adaptive_demux2_stream_set_caps (GST_ADAPTIVE_DEMUX2_STREAM_CAST
         (stream), caps);
     stream->index = i;
@@ -1702,6 +1714,7 @@ gst_dash_demux_stream_seek (GstAdaptiveDemux2Stream * stream, gboolean forward,
         last_repeat != dashstream->active_stream->segment_repeat_index) {
       GST_LOG_OBJECT (stream, "Segment index was changed, reset sidx parser");
       gst_isoff_sidx_parser_clear (&dashstream->sidx_parser);
+      gst_dash_matroska_parser_clear (&dashstream->matroska_parser);
       dashstream->sidx_base_offset = 0;
       dashstream->allow_sidx = TRUE;
     }
@@ -1712,6 +1725,7 @@ gst_dash_demux_stream_seek (GstAdaptiveDemux2Stream * stream, gboolean forward,
         GST_ERROR_OBJECT (stream, "Couldn't find position in sidx");
         dashstream->sidx_position = GST_CLOCK_TIME_NONE;
         gst_isoff_sidx_parser_clear (&dashstream->sidx_parser);
+        gst_dash_matroska_parser_clear (&dashstream->matroska_parser);
       }
       if (final_rt)
         *final_rt = final_ts;
@@ -2476,6 +2490,7 @@ gst_dash_demux_stream_select_bitrate (GstAdaptiveDemux2Stream * stream,
     }
 
     gst_isoff_sidx_parser_clear (&dashstream->sidx_parser);
+    gst_dash_matroska_parser_clear (&dashstream->matroska_parser);
     dashstream->sidx_base_offset = 0;
     dashstream->allow_sidx = TRUE;
 
@@ -2860,7 +2875,8 @@ gst_dash_demux_stream_fragment_start (GstAdaptiveDemux2Stream * stream)
    * buffers instead of keeping track of them itself from the first
    * buffer. We need offsets to be consistent between moof and mdat
    */
-  if (dashstream->is_isobmff && dashdemux->allow_trickmode_key_units
+  if (dashstream->stream_parser == GST_DASH_STREAM_PARSER_ISOBMFF
+      && dashdemux->allow_trickmode_key_units
       && GST_ADAPTIVE_DEMUX_IN_TRICKMODE_KEY_UNITS (stream->demux)
       && dashstream->active_stream->mimeType == GST_STREAM_VIDEO)
     stream->discont = TRUE;
@@ -2881,7 +2897,8 @@ gst_dash_demux_stream_fragment_finished (GstAdaptiveDemux2Stream * stream)
    * buffers instead of keeping track of them itself from the first
    * buffer. We need offsets to be consistent between moof and mdat
    */
-  if (dashstream->is_isobmff && dashdemux->allow_trickmode_key_units
+  if (dashstream->stream_parser == GST_DASH_STREAM_PARSER_ISOBMFF
+      && dashdemux->allow_trickmode_key_units
       && GST_ADAPTIVE_DEMUX_IN_TRICKMODE_KEY_UNITS (stream->demux)
       && dashstream->active_stream->mimeType == GST_STREAM_VIDEO)
     stream->discont = TRUE;
@@ -2931,7 +2948,7 @@ gst_dash_demux_stream_need_another_chunk (GstAdaptiveDemux2Stream * stream)
    * fragment until we parsed the moof and arrived at the mdat. 8192 is a
    * random guess for the moof size
    */
-  if (dashstream->is_isobmff
+  if (dashstream->stream_parser == GST_DASH_STREAM_PARSER_ISOBMFF
       && GST_ADAPTIVE_DEMUX_IN_TRICKMODE_KEY_UNITS (stream->demux)
       && dashstream->active_stream->mimeType == GST_STREAM_VIDEO
       && !stream->downloading_header && !stream->downloading_index
@@ -3676,6 +3693,263 @@ gst_dash_demux_stream_handle_isobmff (GstAdaptiveDemux2Stream * stream)
 }
 
 static GstFlowReturn
+gst_dash_demux_update_sidx_parser_by_matroska_parser (GstAdaptiveDemux * demux,
+    GstAdaptiveDemux2Stream * stream)
+{
+  guint64 index = 0;
+  GstDashDemux2Stream *dash_stream = (GstDashDemux2Stream *) stream;
+  GstDashMatroskaParser *matroska_parser = &(dash_stream->matroska_parser);
+  GstSidxParser *sidx_parser = &dash_stream->sidx_parser;
+  GstFlowReturn res = GST_FLOW_OK;
+  GstSidxBox *sidx = NULL;
+
+  /* Check matroska cues information list */
+  if (!matroska_parser->array) {
+    GST_DEBUG_OBJECT (stream, "the cues information array list is null ");
+    return res;
+  }
+
+  /* update sidx parser */
+  sidx_parser->sidx.first_offset = matroska_parser->segment_head_offset;
+  /* sidx base offset used in check subfragment boundary */
+  dash_stream->sidx_base_offset = matroska_parser->segment_head_offset;
+  sidx_parser->sidx.entry_index = 0;
+  sidx_parser->sidx.entries_count = matroska_parser->cue_point_num;
+  sidx_parser->sidx.entries =
+      g_malloc (sizeof (GstSidxBoxEntry) * sidx_parser->sidx.entries_count);
+  GST_DEBUG_OBJECT (stream, "matroska parser: segment_head_offset = %ld",
+      matroska_parser->segment_head_offset);
+
+  /* Update sidx box information */
+  while (index < sidx_parser->sidx.entries_count) {
+    GstSidxBoxEntry *sidx_entry = &sidx_parser->sidx.entries[index];
+    GstDashMatroskaPointData *cue_entry =
+        &g_array_index (matroska_parser->array,
+        GstDashMatroskaPointData, index);
+    sidx_entry->size = 0;
+    sidx_entry->offset = cue_entry->track_pos.cluster_pos;
+    sidx_entry->pts = cue_entry->cue_time * matroska_parser->time_scale;
+    sidx_entry->duration = -1;
+
+    if (index >= 1) {
+      GstSidxBoxEntry *prev_sidx_entry = &sidx_parser->sidx.entries[index - 1];
+      prev_sidx_entry->duration = (sidx_entry->pts - prev_sidx_entry->pts);
+      prev_sidx_entry->size = (sidx_entry->offset - prev_sidx_entry->offset);
+      GST_DEBUG_OBJECT (stream, "sidx_entry[%ld]: duration = %ld, size = %d",
+          index - 1, prev_sidx_entry->duration, prev_sidx_entry->size);
+    }
+
+    GST_DEBUG_OBJECT (stream, "sidx_entry[%ld]: offset = %ld, pts = %ld", index,
+        sidx_entry->offset, sidx_entry->pts);
+    index++;
+  }
+
+  GST_DEBUG_OBJECT (stream, "free array, addr = 0x%lx",
+      (guint64) (matroska_parser->array));
+  g_array_free (matroska_parser->array, TRUE);
+  matroska_parser->array = NULL;
+
+  /* We might've cleared the index above */
+  sidx = SIDX (dash_stream);
+  if (sidx->entries_count > 0) {
+    if (GST_CLOCK_TIME_IS_VALID (dash_stream->pending_seek_ts)) {
+      /* FIXME, preserve seek flags */
+      if (gst_dash_demux_stream_sidx_seek (dash_stream,
+              demux->segment.rate >= 0, 0, dash_stream->pending_seek_ts,
+              NULL) != GST_FLOW_OK) {
+        GST_ERROR_OBJECT (stream,
+            "pending_seek_ts is valid, stream seek error");
+        /* select fragment position */
+        dash_stream->sidx_position = GST_CLOCK_TIME_NONE;
+        gst_isoff_sidx_parser_clear (&dash_stream->sidx_parser);
+      } else {
+        GST_DEBUG_OBJECT (stream, "pending_seek_ts is valid, stream seek ok");
+      }
+      dash_stream->pending_seek_ts = GST_CLOCK_TIME_NONE;
+    } else {
+      /* sidx seek */
+      if (dash_stream->sidx_position == GST_CLOCK_TIME_NONE) {
+        SIDX (dash_stream)->entry_index = 0;
+      } else {
+        /* update sidx entry_index */
+        if (gst_dash_demux_stream_sidx_seek (dash_stream,
+                demux->segment.rate >= 0, GST_SEEK_FLAG_SNAP_BEFORE,
+                dash_stream->sidx_position, NULL) != GST_FLOW_OK) {
+          GST_ERROR_OBJECT (stream, "Couldn't find position in sidx");
+          dash_stream->sidx_position = GST_CLOCK_TIME_NONE;
+          gst_isoff_sidx_parser_clear (&dash_stream->sidx_parser);
+        } else {
+          GST_DEBUG_OBJECT (stream,
+              "stream sidx seek ok, sidx index = %d, sidx_position = %ld",
+              sidx_parser->sidx.entry_index, dash_stream->sidx_position);
+        }
+      }
+      dash_stream->sidx_position =
+          SIDX (dash_stream)->entries[SIDX (dash_stream)->entry_index].pts;
+    }
+  }
+
+  sidx_parser->status = GST_ISOFF_SIDX_PARSER_FINISHED;
+  return res;
+}
+
+static GstFlowReturn
+gst_dash_demux_handle_matroska (GstAdaptiveDemux2Stream * stream,
+    GstAdapter * adapter)
+{
+  GstAdaptiveDemux *demux = stream->demux;
+  GstBuffer *buffer = NULL;
+  GstDashDemux2Stream *dash_stream = (GstDashDemux2Stream *) stream;
+  GstDashMatroskaParser *matroska_parser = &(dash_stream->matroska_parser);
+  GstFlowReturn ret = GST_FLOW_OK;
+  GstDashMatroskaParserResult res = GST_MATROSKA_PARSER_OK;
+
+  guint index_header_or_data = 0;
+  if (stream->downloading_index)
+    index_header_or_data = 1;
+  else if (stream->downloading_header)
+    index_header_or_data = 2;
+  else
+    index_header_or_data = 3;
+
+  GST_DEBUG_OBJECT (stream, "index_header_or_data = %d, rep idx = %d,"
+      "sid index = %d, sidx_base_offset = %ld, stream current_offset = %ld, adapter length = %ld",
+      index_header_or_data,
+      dash_stream->active_stream->representation_idx,
+      dash_stream->sidx_parser.sidx.entry_index,
+      dash_stream->sidx_base_offset,
+      dash_stream->current_offset, gst_adapter_available (adapter));
+
+  if (matroska_parser->status != GST_MATROSKA_PARSER_STATUS_FINISHED) {
+    gsize available;
+
+    available = gst_adapter_available (adapter);
+    buffer = gst_adapter_take_buffer (adapter, available);
+    res = gst_dash_matroska_parser_parse (matroska_parser, buffer);
+    gst_adapter_push (adapter, buffer);
+  }
+
+  if (res == GST_MATROSKA_PARSER_DONE) {
+    gst_dash_demux_update_sidx_parser_by_matroska_parser (demux, stream);
+    GST_DEBUG_OBJECT (stream, "update sidx parser, consume = %ld",
+        matroska_parser->consume);
+  } else if (res == GST_MATROSKA_PARSER_NOT_SUPPORTED) {
+    GST_DEBUG_OBJECT (stream, "EMBL header matched failed, consume = %ld",
+        matroska_parser->consume);
+  }
+
+  if ((dash_stream->sidx_parser.status == GST_ISOFF_SIDX_PARSER_FINISHED) &&
+      (index_header_or_data == 3)) {
+    gsize available;
+    GST_DEBUG_OBJECT (stream, "cluster data");
+
+    /* Matroska stream will update sidx parser and had a SIDX index. */
+    while (ret == GST_FLOW_OK
+        && ((available = gst_adapter_available (dash_stream->adapter)) > 0)) {
+
+      gboolean advance = FALSE;
+      guint64 sidx_end_offset =
+          dash_stream->sidx_base_offset +
+          SIDX_CURRENT_ENTRY (dash_stream)->offset +
+          SIDX_CURRENT_ENTRY (dash_stream)->size;
+      gboolean has_next = gst_dash_demux_stream_has_next_subfragment (stream);
+
+      if (dash_stream->current_offset + available < sidx_end_offset) {
+        buffer = gst_adapter_take_buffer (dash_stream->adapter, available);
+      } else {
+        if (!has_next && sidx_end_offset <= dash_stream->current_offset) {
+          /* Drain all bytes, since there might be trailing bytes at the end of subfragment */
+          buffer = gst_adapter_take_buffer (dash_stream->adapter, available);
+          GST_DEBUG_OBJECT (stream, "drain data");
+        } else {
+          if (sidx_end_offset <= dash_stream->current_offset) {
+            /* This means a corrupted stream or a bug: ignoring bugs, it
+             * should only happen if the SIDX index is corrupt */
+            GST_ERROR_OBJECT (stream, "Invalid SIDX state");
+            gst_adapter_clear (dash_stream->adapter);
+            ret = GST_FLOW_ERROR;
+            break;
+          } else {
+            buffer =
+                gst_adapter_take_buffer (dash_stream->adapter,
+                sidx_end_offset - dash_stream->current_offset);
+            advance = TRUE;
+          }
+        }
+      }
+
+      GST_BUFFER_OFFSET (buffer) = dash_stream->current_offset;
+      GST_BUFFER_OFFSET_END (buffer) =
+          GST_BUFFER_OFFSET (buffer) + gst_buffer_get_size (buffer);
+      dash_stream->current_offset = GST_BUFFER_OFFSET_END (buffer);
+
+      GST_DEBUG_OBJECT (stream,
+          "rep idx = %d, sidx idx = %d, sidx_end_offset = %ld, "
+          "current_offset = %ld, buffer offset end = %ld",
+          dash_stream->active_stream->representation_idx,
+          dash_stream->sidx_parser.sidx.entry_index, sidx_end_offset,
+          GST_BUFFER_OFFSET (buffer), GST_BUFFER_OFFSET_END (buffer));
+
+      ret = gst_adaptive_demux2_stream_push_buffer (stream, buffer);
+      if (advance) {
+        if (has_next) {
+          GstFlowReturn new_ret;
+          GST_DEBUG_OBJECT (stream, "has next subfragment, advance");
+          new_ret =
+              gst_adaptive_demux2_stream_advance_fragment (stream,
+              SIDX_CURRENT_ENTRY (dash_stream)->duration);
+
+          /* only overwrite if it was OK before */
+          if (ret == GST_FLOW_OK) {
+            ret = new_ret;
+
+            /* check whether need to change representation index */
+            if (ret != GST_FLOW_OK) {
+              GST_DEBUG_OBJECT (stream, "stop send data");
+              return ret;
+            }
+          }
+        }
+      } else {
+        /* reach the last sub fragment boundary */
+        break;
+      }
+    }
+  } else {
+    guint64 avail_len = gst_adapter_available (dash_stream->adapter);
+
+    GST_DEBUG_OBJECT (stream,
+        "main header = %d: matroska parser offset = %ld, avail_len = %ld",
+        index_header_or_data, matroska_parser->offset, avail_len);
+
+    /* If have parsed data, can only send parsed data */
+    if (matroska_parser->offset) {
+      if (matroska_parser->offset > avail_len) {
+        GST_ERROR_OBJECT (stream,
+            "need to return, matroska parser offset: %ld > avail_len: %ld",
+            matroska_parser->offset, avail_len);
+        return ret;
+      } else {
+        avail_len = matroska_parser->offset;
+        /* Clear parser offset */
+        matroska_parser->offset = 0;
+      }
+    }
+
+    /* this should be the main header, just push it all */
+    buffer = gst_adapter_take_buffer (dash_stream->adapter, avail_len);
+
+    GST_BUFFER_OFFSET (buffer) = dash_stream->current_offset;
+    GST_BUFFER_OFFSET_END (buffer) =
+        GST_BUFFER_OFFSET (buffer) + gst_buffer_get_size (buffer);
+    dash_stream->current_offset = GST_BUFFER_OFFSET_END (buffer);
+    ret = gst_adaptive_demux2_stream_push_buffer (stream, buffer);
+  }
+
+  return ret;
+}
+
+static GstFlowReturn
 gst_dash_demux_stream_data_received (GstAdaptiveDemux2Stream * stream,
     GstBuffer * buffer)
 {
@@ -3707,13 +3981,16 @@ gst_dash_demux_stream_data_received (GstAdaptiveDemux2Stream * stream,
   gst_adapter_push (dash_stream->adapter, buffer);
   buffer = NULL;
 
-  if (dash_stream->is_isobmff || stream->downloading_index) {
+  if (dash_stream->stream_parser == GST_DASH_STREAM_PARSER_MATROSKA) {
+    ret = gst_dash_demux_handle_matroska (stream, dash_stream->adapter);
+  } else if (dash_stream->stream_parser == GST_DASH_STREAM_PARSER_ISOBMFF
+      || stream->downloading_index) {
     /* SIDX index is also ISOBMMF */
     ret = gst_dash_demux_stream_handle_isobmff (stream);
   } else if (dash_stream->sidx_parser.status == GST_ISOFF_SIDX_PARSER_FINISHED) {
     gsize available;
 
-    /* Not ISOBMFF but had a SIDX index. Does this even exist or work? */
+    /* Not matroska or ISOBMFF but had a SIDX index. */
     while (ret == GST_FLOW_OK
         && ((available = gst_adapter_available (dash_stream->adapter)) > 0)) {
       gboolean advance = FALSE;
