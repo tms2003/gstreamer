@@ -3928,6 +3928,7 @@ update_estimated_eos (GstRtpJitterBuffer * jitterbuffer,
     rtp_timer_queue_set_eos (priv->timers, estimated,
         timeout_offset (jitterbuffer));
     priv->estimated_eos = estimated;
+    update_current_timer (jitterbuffer);
   }
 }
 
