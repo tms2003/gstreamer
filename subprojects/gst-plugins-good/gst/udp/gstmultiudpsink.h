@@ -23,6 +23,7 @@
 #include <gst/gst.h>
 #include <gst/base/gstbasesink.h>
 #include <gio/gio.h>
+#include <gst/net/gstnetecnmeta.h>
 
 G_BEGIN_DECLS
 
@@ -102,6 +103,8 @@ struct _GstMultiUDPSink {
   gint           buffer_size;
   gchar         *bind_address;
   gint           bind_port;
+
+  GstNetEcnCp    ecn;
 };
 
 struct _GstMultiUDPSinkClass {

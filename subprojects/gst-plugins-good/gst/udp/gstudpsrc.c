@@ -118,6 +118,7 @@
 #include "gstudpsrc.h"
 
 #include <gst/net/gstnetaddressmeta.h>
+#include <gst/net/gstnetecnmeta.h>
 
 #include <gio/gnetworking.h>
 
@@ -507,6 +508,209 @@ gst_socket_timestamp_message_class_init (GstSocketTimestampMessageClass * class)
 }
 #endif
 
+/* Control messages for Congestion Control */
+#ifdef IP_RECVTOS
+GType gst_ip_tos_message_get_type (void);
+
+#define GST_TYPE_IP_TOS_MESSAGE         (gst_ip_tos_message_get_type ())
+#define GST_IP_TOS_MESSAGE(o)           (G_TYPE_CHECK_INSTANCE_CAST ((o), GST_TYPE_IP_TOS_MESSAGE, GstIPTosMessage))
+#define GST_IP_TOS_MESSAGE_CLASS(c)     (G_TYPE_CHECK_CLASS_CAST ((c), GST_TYPE_IP_TOS_MESSAGE, GstIPTosMessageClass))
+#define GST_IS_IP_TOS_MESSAGE(o)        (G_TYPE_CHECK_INSTANCE_TYPE ((o), GST_TYPE_IP_TOS_MESSAGE))
+#define GST_IS_IP_TOS_MESSAGE_CLASS(c)  (G_TYPE_CHECK_CLASS_TYPE ((c), GST_TYPE_IP_TOS_MESSAGE))
+#define GST_IP_TOS_MESSAGE_GET_CLASS(o) (G_TYPE_INSTANCE_GET_CLASS ((o), GST_TYPE_IP_TOS_MESSAGE, GstIPTosMessageClass))
+
+typedef struct _GstIPTosMessage GstIPTosMessage;
+typedef struct _GstIPTosMessageClass GstIPTosMessageClass;
+
+struct _GstIPTosMessageClass
+{
+  GSocketControlMessageClass parent_class;
+
+};
+
+struct _GstIPTosMessage
+{
+  GSocketControlMessage parent;
+
+  GstNetEcnCp ecn_cp;
+};
+
+G_DEFINE_TYPE (GstIPTosMessage, gst_ip_tos_message,
+    G_TYPE_SOCKET_CONTROL_MESSAGE);
+
+static gsize
+gst_ip_tos_message_get_size (GSocketControlMessage * message)
+{
+  return sizeof (struct in_pktinfo);
+}
+
+static int
+gst_ip_tos_message_get_level (GSocketControlMessage * message)
+{
+  return IPPROTO_IP;
+}
+
+static int
+gst_ip_tos_message_get_msg_type (GSocketControlMessage * message)
+{
+  return IP_TOS;
+}
+
+static GSocketControlMessage *
+gst_ip_tos_message_deserialize (gint level,
+    gint type, gsize size, gpointer data)
+{
+  GstIPTosMessage *message;
+  gint *ecnptr;
+
+  if (level != IPPROTO_IP || type != IP_TOS)
+    return NULL;
+
+  if (size != 1)
+    return NULL;
+
+  message = g_object_new (GST_TYPE_IP_TOS_MESSAGE, NULL);
+  ecnptr = (int *) data;
+  message->ecn_cp = (guint8) (*ecnptr & 0x3);
+
+  return G_SOCKET_CONTROL_MESSAGE (message);
+}
+
+static const gchar *
+gst_ip_tos_message_get_ecn_string (GstIPTosMessage * message)
+{
+  switch (message->ecn_cp) {
+    case GST_NET_ECN_META_NO_ECN:
+      return "Non-ECT";
+    case GST_NET_ECN_META_ECT_0:
+      return "ECT(0)";
+    case GST_NET_ECN_META_ECT_1:
+      return "ECT(1)";
+    case GST_NET_ECN_META_ECT_CE:
+      return "CE";
+  }
+  return "Unknown";
+}
+
+static void
+gst_ip_tos_message_init (GstIPTosMessage * message)
+{
+}
+
+static void
+gst_ip_tos_message_class_init (GstIPTosMessageClass * class)
+{
+  GSocketControlMessageClass *scm_class;
+
+  scm_class = G_SOCKET_CONTROL_MESSAGE_CLASS (class);
+  scm_class->get_size = gst_ip_tos_message_get_size;
+  scm_class->get_level = gst_ip_tos_message_get_level;
+  scm_class->get_type = gst_ip_tos_message_get_msg_type;
+  scm_class->deserialize = gst_ip_tos_message_deserialize;
+}
+#endif /* ifdef IP_TOS */
+
+#ifdef IPV6_RECVTCLASS
+GType gst_ipv6_tclass_message_get_type (void);
+
+#define GST_TYPE_IPV6_TCLASS_MESSAGE         (gst_ipv6_tclass_message_get_type ())
+#define GST_IPV6_TCLASS_MESSAGE(o)           (G_TYPE_CHECK_INSTANCE_CAST ((o), GST_TYPE_IPV6_TCLASS_MESSAGE, GstIPv6TClassMessage))
+#define GST_IPV6_TCLASS_MESSAGE_CLASS(c)     (G_TYPE_CHECK_CLASS_CAST ((c), GST_TYPE_IPV6_TCLASS_MESSAGE, GstIPv6TClassMessageClass))
+#define GST_IS_IPV6_TCLASS_MESSAGE(o)        (G_TYPE_CHECK_INSTANCE_TYPE ((o), GST_TYPE_IPV6_TCLASS_MESSAGE))
+#define GST_IS_IPV6_TCLASS_MESSAGE_CLASS(c)  (G_TYPE_CHECK_CLASS_TYPE ((c), GST_TYPE_IPV6_TCLASS_MESSAGE))
+#define GST_IPV6_TCLASS_MESSAGE_GET_CLASS(o) (G_TYPE_INSTANCE_GET_CLASS ((o), GST_TYPE_IPV6_TCLASS_MESSAGE, GstIPv6TClassMessageClass))
+
+typedef struct _GstIPv6TClassMessage GstIPv6TClassMessage;
+typedef struct _GstIPv6TClassMessageClass GstIPv6TClassMessageClass;
+
+struct _GstIPv6TClassMessageClass
+{
+  GSocketControlMessageClass parent_class;
+
+};
+
+struct _GstIPv6TClassMessage
+{
+  GSocketControlMessage parent;
+
+  GstNetEcnCp ecn_cp;
+};
+
+G_DEFINE_TYPE (GstIPv6TClassMessage, gst_ipv6_tclass_message,
+    G_TYPE_SOCKET_CONTROL_MESSAGE);
+
+static gsize
+gst_ipv6_tclass_message_get_size (GSocketControlMessage * message)
+{
+  return sizeof (struct in6_pktinfo);
+}
+
+static int
+gst_ipv6_tclass_message_get_level (GSocketControlMessage * message)
+{
+  return IPPROTO_IPV6;
+}
+
+static int
+gst_ipv6_tclass_message_get_msg_type (GSocketControlMessage * message)
+{
+  return IPV6_TCLASS;
+}
+
+static GSocketControlMessage *
+gst_ipv6_tclass_message_deserialize (gint level,
+    gint type, gsize size, gpointer data)
+{
+  GstIPv6TClassMessage *message;
+  gint *ecnptr;
+
+  if (level != IPPROTO_IPV6 || type != IPV6_TCLASS)
+    return NULL;
+
+  if (size != sizeof (int))
+    return NULL;
+
+  message = g_object_new (GST_TYPE_IPV6_TCLASS_MESSAGE, NULL);
+  ecnptr = (int *) data;
+  message->ecn_cp = (guint8) (*ecnptr & 0x3);
+
+  return G_SOCKET_CONTROL_MESSAGE (message);
+}
+
+static const gchar *
+gst_ipv6_tclass_message_get_ecn_string (GstIPv6TClassMessage * message)
+{
+  switch (message->ecn_cp) {
+    case GST_NET_ECN_META_NO_ECN:
+      return "Non-ECT";
+    case GST_NET_ECN_META_ECT_0:
+      return "ECT(0)";
+    case GST_NET_ECN_META_ECT_1:
+      return "ECT(1)";
+    case GST_NET_ECN_META_ECT_CE:
+      return "CE";
+  }
+  return "Unknown";
+}
+
+static void
+gst_ipv6_tclass_message_init (GstIPv6TClassMessage * message)
+{
+}
+
+static void
+gst_ipv6_tclass_message_class_init (GstIPv6TClassMessageClass * class)
+{
+  GSocketControlMessageClass *scm_class;
+
+  scm_class = G_SOCKET_CONTROL_MESSAGE_CLASS (class);
+  scm_class->get_size = gst_ipv6_tclass_message_get_size;
+  scm_class->get_level = gst_ipv6_tclass_message_get_level;
+  scm_class->get_type = gst_ipv6_tclass_message_get_msg_type;
+  scm_class->deserialize = gst_ipv6_tclass_message_deserialize;
+}
+#endif /* ifdef IPV6_TCLASS */
+
 static gboolean
 gst_udpsrc_decide_allocation (GstBaseSrc * bsrc, GstQuery * query)
 {
@@ -572,6 +776,7 @@ static GstStaticPadTemplate src_template = GST_STATIC_PAD_TEMPLATE ("src",
 #define UDP_DEFAULT_RETRIEVE_SENDER_ADDRESS TRUE
 #define UDP_DEFAULT_MTU                (1492)
 #define UDP_DEFAULT_MULTICAST_SOURCE   NULL
+#define UDP_DEFAULT_ECN                FALSE
 
 enum
 {
@@ -596,6 +801,7 @@ enum
   PROP_MTU,
   PROP_SOCKET_TIMESTAMP,
   PROP_MULTICAST_SOURCE,
+  PROP_ECN,
 };
 
 static void gst_udpsrc_uri_handler_init (gpointer g_iface, gpointer iface_data);
@@ -648,6 +854,12 @@ gst_udpsrc_class_init (GstUDPSrcClass * klass)
 #endif
 #ifdef SO_TIMESTAMPNS
   GST_TYPE_SOCKET_TIMESTAMP_MESSAGE;
+#endif
+#ifdef IP_TOS
+  GST_TYPE_IP_TOS_MESSAGE;
+#endif
+#ifdef IPV6_TCLASS
+  GST_TYPE_IPV6_TCLASS_MESSAGE;
 #endif
 
   gobject_class->set_property = gst_udpsrc_set_property;
@@ -798,6 +1010,21 @@ gst_udpsrc_class_init (GstUDPSrcClass * klass)
           UDP_DEFAULT_MULTICAST_SOURCE,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
+  /**
+   * GstUDPsrc:ecn:
+   *
+   * Enable reception of ECN ancillary data on this socket.
+   *
+   * Since: 1.24
+   */
+  g_object_class_install_property (gobject_class, PROP_ECN,
+      g_param_spec_boolean ("retrieve-ecn",
+          "Enable reception of ECN ancillary data on this socket",
+          "Used for receiving ECN codepoints using IP_TOS/IPV6_TCLASS, "
+          "and add it to buffers as meta.",
+          UDP_DEFAULT_ECN, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
+          GST_PARAM_CONDITIONALLY_AVAILABLE));
+
   gst_element_class_add_static_pad_template (gstelement_class, &src_template);
 
   gst_element_class_set_static_metadata (gstelement_class,
@@ -842,6 +1069,7 @@ gst_udpsrc_init (GstUDPSrc * udpsrc)
   udpsrc->mtu = UDP_DEFAULT_MTU;
   udpsrc->source_list =
       g_ptr_array_new_with_free_func ((GDestroyNotify) g_free);
+  udpsrc->ecn = UDP_DEFAULT_ECN;
 
   /* configure basesrc to be a live source */
   gst_base_src_set_live (GST_BASE_SRC (udpsrc), TRUE);
@@ -970,6 +1198,10 @@ gst_udpsrc_fill (GstPushSrc * psrc, GstBuffer * outbuf)
   if (udpsrc->socket_timestamp_mode == GST_SOCKET_TIMESTAMP_MODE_REALTIME)
     p_msgs = &msgs;
 #endif
+#if defined(IP_RECVTOS) || defined(IPV6_RECVTCLASS)
+  if (udpsrc->ecn)
+    p_msgs = &msgs;
+#endif /* IP_RECVTOS || IPV6_RECVTCLASS */
 
   /* Retrieve sender address unless we've been configured not to do so */
   p_saddr = (udpsrc->retrieve_sender_address) ? &saddr : NULL;
@@ -1157,6 +1389,22 @@ retry:
           GST_ERROR_OBJECT (udpsrc,
               "Failed to get element clock, not setting DTS");
         }
+      }
+#endif
+#ifdef IP_RECVTOS
+      if (udpsrc->ecn && GST_IS_IP_TOS_MESSAGE (msgs[i])) {
+        GstIPTosMessage *msg = GST_IP_TOS_MESSAGE (msgs[i]);
+        GST_DEBUG_OBJECT (udpsrc, "Received packet with ECN %s (0x%x)",
+            gst_ip_tos_message_get_ecn_string (msg), msg->ecn_cp);
+        gst_buffer_add_net_ecn_meta (outbuf, msg->ecn_cp);
+      }
+#endif
+#ifdef IPV6_RECVTCLASS
+      if (udpsrc->ecn && GST_IS_IPV6_TCLASS_MESSAGE (msgs[i])) {
+        GstIPv6TClassMessage *msg = GST_IPV6_TCLASS_MESSAGE (msgs[i]);
+        GST_DEBUG_OBJECT (udpsrc, "Received packet with ECN %s (0x%x)",
+            gst_ipv6_tclass_message_get_ecn_string (msg), msg->ecn_cp);
+        gst_buffer_add_net_ecn_meta (outbuf, msg->ecn_cp);
       }
 #endif
     }
@@ -1441,6 +1689,9 @@ gst_udpsrc_set_property (GObject * object, guint prop_id, const GValue * value,
       }
       GST_OBJECT_UNLOCK (udpsrc);
       break;
+    case PROP_ECN:
+      udpsrc->ecn = g_value_get_boolean (value);
+      break;
     default:
       break;
   }
@@ -1511,6 +1762,9 @@ gst_udpsrc_get_property (GObject * object, guint prop_id, GValue * value,
       GST_OBJECT_LOCK (udpsrc);
       g_value_set_string (value, udpsrc->multicast_source);
       GST_OBJECT_UNLOCK (udpsrc);
+      break;
+    case PROP_ECN:
+      g_value_set_boolean (value, udpsrc->ecn);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -1718,6 +1972,43 @@ gst_udpsrc_open (GstUDPSrc * src)
       }
     }
 #endif
+
+    if (src->ecn) {
+      GError *opt_err = NULL;
+      GST_DEBUG_OBJECT (src, "Enabling reception of ECN");
+      gboolean could_set = FALSE;
+#ifdef IP_RECVTOS
+      if (g_inet_address_get_family (addr) == G_SOCKET_FAMILY_IPV4) {
+        if (!g_socket_set_option (src->used_socket, IPPROTO_IP, IP_RECVTOS, 1,
+                &opt_err)) {
+          GST_WARNING_OBJECT (src, "Couldn't set IP_RECVTOS to receive ECN: %s",
+              opt_err->message);
+          g_clear_error (&opt_err);
+        } else {
+          could_set = TRUE;
+        }
+      }
+#endif
+#ifdef IPV6_RECVTCLASS
+      if (g_inet_address_get_family (addr) == G_SOCKET_FAMILY_IPV6) {
+        if (!g_socket_set_option (src->used_socket, IPPROTO_IPV6,
+                IPV6_RECVTCLASS, 1, &opt_err)) {
+          GST_WARNING_OBJECT (src,
+              "Couldn't set IPV6_RECVTCLASS to receive ECN: %s",
+              opt_err->message);
+          g_clear_error (&opt_err);
+        } else {
+          could_set = TRUE;
+        }
+      }
+#endif
+      if (!could_set) {
+        GST_WARNING_OBJECT (src,
+            "Failed to set ECN, it may not be available on this platform.");
+        src->ecn = FALSE;
+        g_object_notify (G_OBJECT (src), "retrieve-ecn");
+      }
+    }
 
     val = gst_udpsrc_get_rcvbuf (src);
     if (val < src->buffer_size)
