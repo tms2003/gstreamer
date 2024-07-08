@@ -101,6 +101,7 @@ struct _GstVideoBufferPoolPrivate
   GstVideoAlignment video_align;
   gboolean add_videometa;
   gboolean need_alignment;
+  gboolean multi_plane;
   GstAllocator *allocator;
   GstAllocationParams params;
 };
@@ -115,7 +116,8 @@ static const gchar **
 video_buffer_pool_get_options (GstBufferPool * pool)
 {
   static const gchar *options[] = { GST_BUFFER_POOL_OPTION_VIDEO_META,
-    GST_BUFFER_POOL_OPTION_VIDEO_ALIGNMENT, NULL
+    GST_BUFFER_POOL_OPTION_VIDEO_ALIGNMENT,
+    GST_BUFFER_POOL_OPTION_VIDEO_MULTI_PLANE, NULL
   };
   return options;
 }
@@ -168,6 +170,10 @@ video_buffer_pool_set_config (GstBufferPool * pool, GstStructure * config)
   /* parse extra alignment info */
   priv->need_alignment = gst_buffer_pool_config_has_option (config,
       GST_BUFFER_POOL_OPTION_VIDEO_ALIGNMENT);
+
+  /* parse multi plane info */
+  priv->multi_plane = gst_buffer_pool_config_has_option (config,
+      GST_BUFFER_POOL_OPTION_VIDEO_MULTI_PLANE);
 
   if (priv->need_alignment && priv->add_videometa) {
     guint max_align, n;
@@ -235,6 +241,25 @@ failed_to_align:
   }
 }
 
+static int
+video_buffer_pool_get_plane_size (GstVideoInfo * info, int plane)
+{
+  int plane_num = GST_VIDEO_INFO_N_PLANES (info);
+  gsize cur_offset = GST_VIDEO_INFO_PLANE_OFFSET (info, plane);
+  gsize next_offset = (plane == (plane_num - 1)) ?
+      GST_VIDEO_INFO_SIZE (info) :
+      GST_VIDEO_INFO_PLANE_OFFSET (info, plane + 1);
+
+  gsize plane_size = next_offset - cur_offset;
+
+  GST_DEBUG ("plane: %d size: %" G_GSIZE_FORMAT
+      " cur_offset: %" G_GSIZE_FORMAT
+      " next_offset: %" G_GSIZE_FORMAT,
+      plane, plane_size, cur_offset, next_offset);
+
+  return plane_size;
+}
+
 static GstFlowReturn
 video_buffer_pool_alloc (GstBufferPool * pool, GstBuffer ** buffer,
     GstBufferPoolAcquireParams * params)
@@ -247,10 +272,30 @@ video_buffer_pool_alloc (GstBufferPool * pool, GstBuffer ** buffer,
 
   GST_DEBUG_OBJECT (pool, "alloc %" G_GSIZE_FORMAT, info->size);
 
-  *buffer =
-      gst_buffer_new_allocate (priv->allocator, info->size, &priv->params);
-  if (*buffer == NULL)
-    goto no_memory;
+  if (!priv->multi_plane) {
+    *buffer =
+        gst_buffer_new_allocate (priv->allocator, info->size, &priv->params);
+    if (*buffer == NULL)
+      goto no_memory;
+  } else {
+    gint plane_num = GST_VIDEO_INFO_N_PLANES (info);
+
+    *buffer = gst_buffer_new ();
+    if (*buffer == NULL)
+      goto no_memory;
+
+    for (int plane = 0; plane < plane_num; plane++) {
+      GstMemory *mem = gst_allocator_alloc (priv->allocator,
+          video_buffer_pool_get_plane_size (info, plane), &priv->params);
+      if (mem == NULL) {
+        gst_buffer_unref (*buffer);
+        *buffer = NULL;
+        goto no_memory;
+      }
+
+      gst_buffer_append_memory (*buffer, mem);
+    }
+  }
 
   if (priv->add_videometa) {
     GST_DEBUG_OBJECT (pool, "adding GstVideoMeta");

@@ -45,6 +45,14 @@ G_BEGIN_DECLS
  */
 #define GST_BUFFER_POOL_OPTION_VIDEO_ALIGNMENT "GstBufferPoolOptionVideoAlignment"
 
+/**
+ * GST_BUFFER_POOL_OPTION_VIDEO_MULTI_PLANE:
+ *
+ * An option that can be activated on bufferpool to request
+ * multi gstmemory in a gstbuffer when possible
+ */
+#define GST_BUFFER_POOL_OPTION_VIDEO_MULTI_PLANE "GstBufferPoolOptionVideoMultiPlane"
+
 /* setting a bufferpool config */
 
 GST_VIDEO_API
