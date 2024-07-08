@@ -532,6 +532,11 @@ proxy_setup (GstCurlBaseSink * bcsink)
     return FALSE;
   }
 
+  /* an empty string as CURLOPT_PROXY disables the use of a proxy, regardless of environment variables */
+  if (!strlen (sink->proxy)) {
+    return TRUE;
+  }
+
   res = curl_easy_setopt (bcsink->curl, CURLOPT_PROXYPORT, sink->proxy_port);
   if (res != CURLE_OK) {
     bcsink->error = g_strdup_printf ("failed to set proxy port: %s",
