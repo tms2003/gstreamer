@@ -1,4 +1,4 @@
-webrtc_audio_coding_dep = dependency('webrtc-audio-coding-1', required: get_option('isac'))
+webrtc_audio_coding_dep = dependency('webrtc-audio-coding-1', required: get_option('isac'), default_options: ['default_library=static'])
 
 if webrtc_audio_coding_dep.found()
   isac_sources = [
