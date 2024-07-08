@@ -255,10 +255,42 @@ specific to machine learning techniques and can also be used to store analysis
 results from computer vision, heuristics or other techniques. It can be used as
 a bridge between different techniques.
 
+##### Storing Tensors Into Analytics Meta
+To be able to describe more precisely analytics results, an analytics pipeline
+where the output tensor of the first inference stage is directly pushed, without tensor decoding,
+into a second inference stage. It would be useful to store those tensors using
+analytics-meta because we could communicate the relation between tensor of first
+inference and tensor of second inference. With the relation description a
+tensor-decoder of second inference would be able to retrieve associated tensor of
+of first inference and extract potentially useful information that is not
+available the tensor of the second inference.
+
+### Semantically-Agnostic Tensor Processing
+Not all tensor processing is model dependent. Sometime the processing can be
+done uniformly on all tensor's values. For example normalization, range
+adjustment, offset adjustment, quantization are examples of operations that do
+not require knowledge of how the information is encoded in the tensor. To the
+contrary of tensor decoder, elements implementing these types of processing
+don't need to know how information is encoded in the tensor but need to know
+general information about the tensor like: cardinality, dimension and data type.
+Note GStreamer already does a lot of semantically-agnostic tensor processing,
+remember image/frame are also a form of tensor, processing like scaling,
+cropping, color-space conversion, ...
+
+#### Semantically-Agnostic Tensor Processing With Graph-Computing Framework
+Graph computing frameworks, like ONNX, can also be used this type of operation.
+
+#### Tensor Decoder Bin And Auto-Plugging
+Since tensor decoders are model specific, we expect that many will be created
+and one way to simplify analytics pipeline creation an promote re-usability is to provide
+tensor decoder bin able to identify the correct tensor decoder for the tensor to
+be decoded. It's possible to have multiple tensor decoder able to decode the
+exact same decoder, but making use of specific acceleration. Rank can be used to
+identify the ideal tensor decoder for a specific platform.
+
 ### Tensor Transport Mode
 Two transport mode are envisioned as Meta or as Media. Both mode have pros and
-cons which justify supporting both mode. Currently tensor are only transported
-as meta.
+cons which justify supporting both mode.
 
 #### Tensor Transport As Meta
 In this mode tensor is attached to the buffer (the media) on which the analysis
@@ -270,13 +302,150 @@ advantage is the ability to keep a relation description between tensors in a
 refinement context On the other hand this mode of transporting analytics result
 make negotiation of tensor-decoder in particular difficult.
 
+#### Tensor Transport As Media
+In this mode tensor is a media, potentially referring to buffer (original media on
+which the analysis was performed) using a Meta (idea behind OriginalBufferMeta MR).
+The advantage of this mode is tensor-decoder negotiation is simple, but
+association of the analytics result with the original buffer on which the
+analysis was performed is more difficult.
+*Also note this the mode of transport used by NNStreamer.*
+
+### Negotiation
+Allowing to negotiate the required analysis pre/post-processing and automatically
+injecting the required elements to able to perform them would be very valuable and
+minimize effort of porting an analytics pipeline between different platforms and
+making use of acceleration available. Tensor-decoders bin, auto-plugging of
+pre-processing (considering acceleration available), auto-plugging of inference
+element (optimized of the platform), post-processing, tensor-decoder bin
+selecting required tensor-decoders potentially from multiple functionally
+equivalent, but more adapted to the platform are all aspect to consider when
+designing negotiation involved in analytics-pipeline.
+
+#### Negotiating Tensor-Decoder
+As described above tensor-decoder need to know 4 attributes about a tensor to
+know if it can handle it:
+
+1. Tensor dimension cardinality ( not required explicitly in some cases)
+2. Tensor dimension
+3. Tensor datatype
+4. Tensor type (identifier of analytics-result encoding semantic)
+
+Note 1, 2, 3 could be encoded into 4, but this is not desirable because 1,2,3
+are useful for selection semantically-agnostic tensor processor.
+
+Tensor-decoder can handle multiple tensor types. This could be expressed in the
+sinkpad(s) template by a list of arrays where each combination of tensor types
+it can handle would be expressed. This would make the sinkpad(s) caps difficult
+to read. To avoid this problem when a tensor-decoder handle multiple tensors the
+tensor type is a category the encapsulate all tensor type it can handle.
+Referring again to YOLOv3's 3 tensors: small, medium large, all 3 would have the
+same tensor-type identifier, ex YOLOv3, and each tensors themselves would have
+sub-type field distinguishing them ('small', 'medium', 'large'). Same also
+applies to FastSAM 2 tensors ('FastSAM-masks', 'FastSAM-logits') where both
+would be represented by the same tensor type ('FastSAM') in pad capability level.
+
+When tensor is stored as a meta, allocation query need to be used to negotiate
+tensor-decoder. TODO: expand how this would work.
+
+
+##### Tensor-Decoder Sinkpad Caps Examples
+
+Examples assuming object-detection on video frame
+```
+PadTemplates:
+  SINK template: 'vsink' // Tensor attached on to buffer
+    Avaiability: 'always'
+    Capabilities:
+      video/x-raw
+        format: {...}
+        width: {...}
+        height: {...}
+        framerate: {...}
+
+  SINK template: 'tsink' // Tensor
+    Avaiability: 'always'
+    Capabilities:
+      tensor/x-raw
+        shape:{<a, b, ...z>} // This represent a x b x ... x z
+        datatype: {(enum) "int8", "float32", ...}
+        type: { (string)"YOLOv3", (string)"YOLOv4", (string)"SSD", ...)}
+
+```
+
+##### Tensor-Decoder Srcpad(s)
+Typically will be the same as sinkpad but could be different. In general
+tensor-decoder only attach an analytics-meta to buffer. Analytics-meta
+consumption is left to other downstream elements. It's also possible for
+tensor-decoder to have very different caps on srcpad. This can be the case when
+analytics-result is difficult to represent like text-to-speech or
+super-resolution. In these case the tensor-decoder could be producing a media
+directly. audio for TTS or image for super-resolution.
+
 ### Inference Sinkpad(s) Capabilities
 Sinkpad capability, before been constrained based on model, can be any
-media type.
+media type, including `tensor` . Note that multiple sinkpads can be present.
+
+#### Batch Inference
+To support batch inference `tensor` media type need to be used. Batching is
+a method used to spread the fixed time cost of scheduling work on some
+accelerator (GPU). Multiple samples (buffers) are aggregated into a batch that
+is pushed to the inference. When batching is used, output tensor will also contain
+analytics results in the form of a batch. Un-batching require information on how
+the batch was formed: buffer timestamp, buffer source, media type, buffer caps.
+A batch can be formed from a single source, forming the batch with time multiplexing
+of from multiple sources, time and source multiplexing. Once multiplexed, the
+batch can be pushed to the inference element as a tensor media.
+
+TODO: Describe TensorBatchMeta
 
 ### Inference Srcpad(s) Capabilities
 
-Srcpads capabilities, will be identical to sinkpads capabilities.
+Srcpads capabilities, will be identical to sinkpads capabilities or a
+```tensor```.
+
+```
+PadTemplates:
+  SRC template: 'vsrc_%u' // Tensor attached on to buffer
+    Avaiability: 'always'
+    Capabilities:
+      video/x-raw
+        format: {...}
+        width: {...}
+        height: {...}
+        framerate: {...}
+  SRC template: 'asrc_%u' // Tensor attached on to buffer
+    Avaiability: 'always'
+    Capabilities:
+      audio/x-raw
+        format: {...}
+        layout: {...}
+        rate: [...]
+        channels: [...]
+
+  SRC template: 'tsrc_%u' // Tensor attached on to buffer
+    Avaiability: 'always'
+    Capabilities:
+      text/x-raw
+        format: {...}
+
+  SRC template: 'src_%u' // Tensor
+    Avaiability: 'always'
+    Capabilities:
+      tensor/x-raw
+        shape:{<a, b, ...z>} // This represent a x b x ... x z
+        datatype: {(enum) "int8", "float32", ...}
+        type: { (string)"YOLOv3", (string)"YOLOv4", (string)"SSD", ...)}
+
+```
+
+### New Video Format
+TODO
+
+- We need to add floating point video formats
+
+### Batch Aggregator Element
+TODO
+
 
 # Reference
 - [Onnx-Refactor-MR](https://gitlab.freedesktop.org/gstreamer/gstreamer/-/merge_requests/4916)
