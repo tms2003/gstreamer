@@ -978,6 +978,11 @@ void                    gst_object_default_error        (GstObject    * source,
                                                          const GError * error,
                                                          const gchar  * debug);
 
+GST_API
+void                    gst_util_proxy_properties       (GstElement * element,
+                                                         GstElement * child,
+                                                         guint property_id_offset);
+
 /* element functions */
 
 GST_API

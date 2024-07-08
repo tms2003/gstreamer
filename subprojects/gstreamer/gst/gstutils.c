@@ -2687,6 +2687,103 @@ gst_object_default_error (GstObject * source, const GError * error,
 }
 
 /**
+ * gst_util_proxy_properties:
+ * @element: element to proxy the properties to
+ * @child: element to proxy the properties from
+ * @property_id_offset: offset to start from
+ *
+ * Returns: void
+ *
+ * Since: 1.14
+ */
+/* TODO complete the types */
+
+void
+gst_util_proxy_properties (GstElement * element,
+    GstElement * child, guint property_id_offset)
+{
+  GObjectClass *object_class;
+  GParamSpec **properties;
+  guint n_properties, i;
+
+  object_class = G_OBJECT_CLASS (GST_ELEMENT_GET_CLASS (element));
+  properties = g_object_class_list_properties (G_OBJECT_GET_CLASS (child),
+      &n_properties);
+
+  for (i = 0; i < n_properties; i++) {
+    guint property_id = i + property_id_offset;
+
+    if (properties[i]->owner_type == GST_TYPE_OBJECT
+        || properties[i]->owner_type == G_TYPE_OBJECT)
+      continue;
+
+    if (G_IS_PARAM_SPEC_BOOLEAN (properties[i])) {
+      GParamSpecBoolean *prop = G_PARAM_SPEC_BOOLEAN (properties[i]);
+      g_object_class_install_property (object_class, property_id,
+          g_param_spec_boolean (g_param_spec_get_name (properties[i]),
+              g_param_spec_get_nick (properties[i]),
+              g_param_spec_get_blurb (properties[i]),
+              prop->default_value, properties[i]->flags));
+    } else if (G_IS_PARAM_SPEC_INT (properties[i])) {
+      GParamSpecInt *prop = G_PARAM_SPEC_INT (properties[i]);
+      g_object_class_install_property (object_class, property_id,
+          g_param_spec_int (g_param_spec_get_name (properties[i]),
+              g_param_spec_get_nick (properties[i]),
+              g_param_spec_get_blurb (properties[i]),
+              prop->minimum, prop->maximum, prop->default_value,
+              properties[i]->flags));
+    } else if (G_IS_PARAM_SPEC_UINT (properties[i])) {
+      GParamSpecUInt *prop = G_PARAM_SPEC_UINT (properties[i]);
+      g_object_class_install_property (object_class, property_id,
+          g_param_spec_uint (g_param_spec_get_name (properties[i]),
+              g_param_spec_get_nick (properties[i]),
+              g_param_spec_get_blurb (properties[i]),
+              prop->minimum, prop->maximum, prop->default_value,
+              properties[i]->flags));
+    } else if (G_IS_PARAM_SPEC_INT64 (properties[i])) {
+      GParamSpecInt64 *prop = G_PARAM_SPEC_INT64 (properties[i]);
+      g_object_class_install_property (object_class, property_id,
+          g_param_spec_int64 (g_param_spec_get_name (properties[i]),
+              g_param_spec_get_nick (properties[i]),
+              g_param_spec_get_blurb (properties[i]),
+              prop->minimum, prop->maximum, prop->default_value,
+              properties[i]->flags));
+    } else if (G_IS_PARAM_SPEC_UINT64 (properties[i])) {
+      GParamSpecUInt64 *prop = G_PARAM_SPEC_UINT64 (properties[i]);
+      g_object_class_install_property (object_class, property_id,
+          g_param_spec_uint64 (g_param_spec_get_name (properties[i]),
+              g_param_spec_get_nick (properties[i]),
+              g_param_spec_get_blurb (properties[i]),
+              prop->minimum, prop->maximum, prop->default_value,
+              properties[i]->flags));
+    } else if (G_IS_PARAM_SPEC_ENUM (properties[i])) {
+      GParamSpecEnum *prop = G_PARAM_SPEC_ENUM (properties[i]);
+      g_object_class_install_property (object_class, property_id,
+          g_param_spec_enum (g_param_spec_get_name (properties[i]),
+              g_param_spec_get_nick (properties[i]),
+              g_param_spec_get_blurb (properties[i]),
+              properties[i]->value_type, prop->default_value,
+              properties[i]->flags));
+    } else if (G_IS_PARAM_SPEC_STRING (properties[i])) {
+      GParamSpecString *prop = G_PARAM_SPEC_STRING (properties[i]);
+      g_object_class_install_property (object_class, property_id,
+          g_param_spec_string (g_param_spec_get_name (properties[i]),
+              g_param_spec_get_nick (properties[i]),
+              g_param_spec_get_blurb (properties[i]),
+              prop->default_value, properties[i]->flags));
+    } else if (G_IS_PARAM_SPEC_BOXED (properties[i])) {
+      g_object_class_install_property (object_class, property_id,
+          g_param_spec_boxed (g_param_spec_get_name (properties[i]),
+              g_param_spec_get_nick (properties[i]),
+              g_param_spec_get_blurb (properties[i]),
+              properties[i]->value_type, properties[i]->flags));
+    }
+  }
+
+  g_free (properties);
+}
+
+/**
  * gst_bin_add_many: (skip)
  * @bin: a #GstBin
  * @element_1: (transfer floating): the #GstElement element to add to the bin
