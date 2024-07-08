@@ -100,7 +100,8 @@ gst_analytics_od_mtd_meta_transform (GstBuffer * transbuf,
 
 static const GstAnalyticsMtdImpl od_impl = {
   "object-detection",
-  gst_analytics_od_mtd_meta_transform
+  gst_analytics_od_mtd_meta_transform,
+  NULL
 };
 
 /**
