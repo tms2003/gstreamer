@@ -49,6 +49,8 @@ struct _GstAudioBaseSrcPrivate
 {
   /* the clock slaving algorithm in use */
   GstAudioBaseSrcSlaveMethod slave_method;
+
+  GRWLock ringbuffer_clock_lock;
 };
 
 /* BaseAudioSrc signals and args */
@@ -102,6 +104,7 @@ static void gst_audio_base_src_set_property (GObject * object, guint prop_id,
 static void gst_audio_base_src_get_property (GObject * object, guint prop_id,
     GValue * value, GParamSpec * pspec);
 static void gst_audio_base_src_dispose (GObject * object);
+static void gst_audio_base_src_finalize (GObject * object);
 
 static GstStateChangeReturn gst_audio_base_src_change_state (GstElement *
     element, GstStateChange transition);
@@ -137,6 +140,7 @@ gst_audio_base_src_class_init (GstAudioBaseSrcClass * klass)
   gobject_class->set_property = gst_audio_base_src_set_property;
   gobject_class->get_property = gst_audio_base_src_get_property;
   gobject_class->dispose = gst_audio_base_src_dispose;
+  gobject_class->finalize = gst_audio_base_src_finalize;
 
   /* FIXME: 2.0, handle BUFFER_TIME and LATENCY in nanoseconds */
   g_object_class_install_property (gobject_class, PROP_BUFFER_TIME,
@@ -230,6 +234,7 @@ gst_audio_base_src_init (GstAudioBaseSrc * audiobasesrc)
       (GstAudioClockGetTimeFunc) gst_audio_base_src_get_time, audiobasesrc,
       NULL);
 
+  g_rw_lock_init (&audiobasesrc->priv->ringbuffer_clock_lock);
 
   /* we are always a live source */
   gst_base_src_set_live (GST_BASE_SRC (audiobasesrc), TRUE);
@@ -260,13 +265,27 @@ gst_audio_base_src_dispose (GObject * object)
   G_OBJECT_CLASS (parent_class)->dispose (object);
 }
 
+static void
+gst_audio_base_src_finalize (GObject * object)
+{
+  GstAudioBaseSrc *src = GST_AUDIO_BASE_SRC (object);
+
+  g_rw_lock_clear (&src->priv->ringbuffer_clock_lock);
+
+  G_OBJECT_CLASS (parent_class)->finalize (object);
+}
+
 static GstClock *
 gst_audio_base_src_provide_clock (GstElement * elem)
 {
-  GstAudioBaseSrc *src;
+  GstAudioBaseSrc *src = GST_AUDIO_BASE_SRC (elem);
   GstClock *clock;
 
-  src = GST_AUDIO_BASE_SRC (elem);
+  if (!g_rw_lock_reader_trylock (&src->priv->ringbuffer_clock_lock)) {
+    /* Can't acquire the lock - the ringbuffer is either being created, or destroyed
+     * either way it can't provide a clock yet */
+    return NULL;
+  }
 
   /* we have no ringbuffer (must be NULL state) */
   if (src->ringbuffer == NULL)
@@ -274,6 +293,8 @@ gst_audio_base_src_provide_clock (GstElement * elem)
 
   if (gst_audio_ring_buffer_is_flushing (src->ringbuffer))
     goto wrong_state;
+
+  g_rw_lock_reader_unlock (&src->priv->ringbuffer_clock_lock);
 
   GST_OBJECT_LOCK (src);
 
@@ -288,6 +309,7 @@ gst_audio_base_src_provide_clock (GstElement * elem)
   /* ERRORS */
 wrong_state:
   {
+    g_rw_lock_reader_unlock (&src->priv->ringbuffer_clock_lock);
     GST_DEBUG_OBJECT (src, "ringbuffer is flushing");
     return NULL;
   }
@@ -308,19 +330,27 @@ gst_audio_base_src_get_time (GstClock * clock, GstAudioBaseSrc * src)
   GstAudioRingBuffer *ringbuffer;
   gint rate;
 
-  ringbuffer = src->ringbuffer;
-  if (!ringbuffer)
+  if (!g_rw_lock_reader_trylock (&src->priv->ringbuffer_clock_lock))
     return GST_CLOCK_TIME_NONE;
 
-  rate = ringbuffer->spec.info.rate;
-  if (rate == 0)
+  if ((ringbuffer = src->ringbuffer) == NULL) {
+    g_rw_lock_reader_unlock (&src->priv->ringbuffer_clock_lock);
     return GST_CLOCK_TIME_NONE;
+  }
+
+  if ((rate = ringbuffer->spec.info.rate) == 0) {
+    g_rw_lock_reader_unlock (&src->priv->ringbuffer_clock_lock);
+    return GST_CLOCK_TIME_NONE;
+  }
 
   raw = samples = gst_audio_ring_buffer_samples_done (ringbuffer);
 
   /* the number of samples not yet processed, this is still queued in the
    * device (not yet read for capture). */
   delay = gst_audio_ring_buffer_delay (ringbuffer);
+
+  /* We don't need the ringbuffer any more */
+  g_rw_lock_reader_unlock (&src->priv->ringbuffer_clock_lock);
 
   samples += delay;
 
@@ -1130,15 +1160,15 @@ gst_audio_base_src_change_state (GstElement * element,
       if (rb == NULL)
         goto create_failed;
 
-      GST_OBJECT_LOCK (src);
+      g_rw_lock_writer_lock (&src->priv->ringbuffer_clock_lock);
       src->ringbuffer = rb;
-      GST_OBJECT_UNLOCK (src);
+      g_rw_lock_writer_unlock (&src->priv->ringbuffer_clock_lock);
 
       if (!gst_audio_ring_buffer_open_device (src->ringbuffer)) {
-        GST_OBJECT_LOCK (src);
+        g_rw_lock_writer_lock (&src->priv->ringbuffer_clock_lock);
         gst_object_unparent (GST_OBJECT_CAST (src->ringbuffer));
         src->ringbuffer = NULL;
-        GST_OBJECT_UNLOCK (src);
+        g_rw_lock_writer_unlock (&src->priv->ringbuffer_clock_lock);
         goto open_failed;
       }
       break;
@@ -1193,10 +1223,11 @@ gst_audio_base_src_change_state (GstElement * element,
     case GST_STATE_CHANGE_READY_TO_NULL:
       GST_DEBUG_OBJECT (src, "READY->NULL");
       gst_audio_ring_buffer_close_device (src->ringbuffer);
-      GST_OBJECT_LOCK (src);
+
+      g_rw_lock_writer_lock (&src->priv->ringbuffer_clock_lock);
       gst_object_unparent (GST_OBJECT_CAST (src->ringbuffer));
       src->ringbuffer = NULL;
-      GST_OBJECT_UNLOCK (src);
+      g_rw_lock_writer_unlock (&src->priv->ringbuffer_clock_lock);
       break;
     default:
       break;
