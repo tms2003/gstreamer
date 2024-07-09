@@ -19,7 +19,7 @@ subdir('qsv')
 subdir('qt6d3d11')
 subdir('uvch264')
 subdir('va')
-subdir('waylandsink')
+subdir('waylandsink/gtk')
 subdir('webrtc')
 subdir('wpe')
 
