@@ -686,7 +686,7 @@ gst_vulkan_device_get_physical_device (GstVulkanDevice * device)
 /**
  * gst_context_set_vulkan_device:
  * @context: a #GstContext
- * @device: a #GstVulkanDevice
+ * @device: (transfer none) (nullable): a #GstVulkanDevice
  *
  * Sets @device on @context
  *
@@ -713,7 +713,7 @@ gst_context_set_vulkan_device (GstContext * context, GstVulkanDevice * device)
 /**
  * gst_context_get_vulkan_device:
  * @context: a #GstContext
- * @device: resulting #GstVulkanDevice
+ * @device: (out) (optional) (nullable) (transfer full): resulting #GstVulkanDevice
  *
  * Returns: Whether @device was in @context
  *
@@ -1091,12 +1091,12 @@ _choose_queue (GstVulkanDevice * device, GstVulkanQueue * queue,
 /**
  * gst_vulkan_device_select_queue
  * @device: a #GstVulkanDevice
- * @expected_flags:  a VkQueueFlagBits
+ * @expected_flags: a VkQueueFlagBits
  *
  * Select a compatible queue from the @device supporting the @expected_flags.
  *
- * Returns: (transfer full): a #GstVulkanQueue for @queue matching the
- *                           @expected_flags
+ * Returns: (transfer full) (nullable): a #GstVulkanQueue for @queue matching
+ *                                      the @expected_flags
  *
  * Since: 1.24
  */
