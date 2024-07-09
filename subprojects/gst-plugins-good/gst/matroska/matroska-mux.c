@@ -69,6 +69,7 @@ enum
   PROP_0,
   PROP_WRITING_APP,
   PROP_DOCTYPE_VERSION,
+  PROP_DOCTYPE_OPT_VERSION,
   PROP_MIN_INDEX_INTERVAL,
   PROP_STREAMABLE,
   PROP_TIMECODESCALE,
@@ -80,6 +81,7 @@ enum
 };
 
 #define  DEFAULT_DOCTYPE_VERSION         2
+#define  DEFAULT_DOCTYPE_OPT_VERSION     4
 #define  DEFAULT_WRITING_APP             "GStreamer Matroska muxer"
 #define  DEFAULT_MIN_INDEX_INTERVAL      0
 #define  DEFAULT_STREAMABLE              FALSE
@@ -345,8 +347,13 @@ gst_matroska_mux_class_init (GstMatroskaMuxClass * klass)
           NULL, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
   g_object_class_install_property (gobject_class, PROP_DOCTYPE_VERSION,
       g_param_spec_int ("version", "DocType version",
-          "This parameter determines what Matroska features can be used.",
+          "This parameter determines what required Matroska features can be used.",
           1, 2, DEFAULT_DOCTYPE_VERSION,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+  g_object_class_install_property (gobject_class, PROP_DOCTYPE_OPT_VERSION,
+      g_param_spec_int ("optional-version", "DocType optional version",
+          "This parameter determines what optional Matroska features can be used.",
+          1, 4, DEFAULT_DOCTYPE_OPT_VERSION,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
   g_object_class_install_property (gobject_class, PROP_MIN_INDEX_INTERVAL,
       g_param_spec_int64 ("min-index-interval", "Minimum time between index "
@@ -523,6 +530,7 @@ gst_matroska_mux_init (GstMatroskaMux * mux, gpointer g_class)
 
   /* property defaults */
   mux->doctype_version = DEFAULT_DOCTYPE_VERSION;
+  mux->doctype_opt_version = DEFAULT_DOCTYPE_OPT_VERSION;
   mux->writing_app = g_strdup (DEFAULT_WRITING_APP);
   mux->min_index_interval = DEFAULT_MIN_INDEX_INTERVAL;
   mux->ebml_write->streamable = DEFAULT_STREAMABLE;
@@ -1153,8 +1161,12 @@ gst_matroska_mux_video_pad_setcaps (GstPad * pad, GstCaps * caps)
   if (interlace_mode != NULL) {
     if (strcmp (interlace_mode, "progressive") == 0)
       videocontext->interlace_mode = GST_MATROSKA_INTERLACE_MODE_PROGRESSIVE;
-    else
+    else {
       videocontext->interlace_mode = GST_MATROSKA_INTERLACE_MODE_INTERLACED;
+      if ((s = gst_structure_get_string (structure, "field-order"))) {
+        videocontext->field_order = gst_video_field_order_from_string (s);
+      }
+    }
   } else {
     videocontext->interlace_mode = GST_MATROSKA_INTERLACE_MODE_UNKNOWN;
   }
@@ -1198,6 +1210,9 @@ gst_matroska_mux_video_pad_setcaps (GstPad * pad, GstCaps * caps)
   } else {
     videocontext->display_width = 0;
     videocontext->display_height = 0;
+  }
+  if ((s = gst_structure_get_string (structure, "chroma-site"))) {
+    videocontext->chroma_site = gst_video_chroma_site_from_string (s);
   }
 
   if ((s = gst_structure_get_string (structure, "colorimetry"))) {
@@ -2788,6 +2803,9 @@ gst_matroska_mux_write_colour (GstMatroskaMux * mux,
   guint range_id = 0;
   guint transfer_id = 0;
   guint primaries_id = 0;
+  /* 0 = unknown, 1 = yes, 2 = no */
+  guint chroma_site_horz = 0;
+  guint chroma_site_vert = 0;
 
   master = gst_ebml_write_master_start (ebml, GST_MATROSKA_ID_VIDEOCOLOUR);
 
@@ -2808,6 +2826,15 @@ gst_matroska_mux_write_colour (GstMatroskaMux * mux,
   primaries_id =
       gst_video_color_primaries_to_iso (videocontext->colorimetry.primaries);
 
+  if (videocontext->chroma_site != GST_VIDEO_CHROMA_SITE_UNKNOWN) {
+    chroma_site_horz = 2;
+    chroma_site_vert = 2;
+    if (videocontext->chroma_site & GST_VIDEO_CHROMA_SITE_H_COSITED)
+      chroma_site_horz = 1;
+    if (videocontext->chroma_site & GST_VIDEO_CHROMA_SITE_V_COSITED)
+      chroma_site_vert = 1;
+  }
+
   gst_ebml_write_uint (ebml, GST_MATROSKA_ID_VIDEORANGE, range_id);
   gst_ebml_write_uint (ebml, GST_MATROSKA_ID_VIDEOMATRIXCOEFFICIENTS,
       matrix_id);
@@ -2820,6 +2847,13 @@ gst_matroska_mux_write_colour (GstMatroskaMux * mux,
         videocontext->content_light_level.max_content_light_level);
     gst_ebml_write_uint (ebml, GST_MATROSKA_ID_MAXFALL,
         videocontext->content_light_level.max_frame_average_light_level);
+  }
+  if (mux->doctype_opt_version >= 4 && chroma_site_horz != 0
+      && chroma_site_vert != 0) {
+    gst_ebml_write_uint (ebml, GST_MATROSKA_ID_VIDEOCHROMASITINGHORZ,
+        chroma_site_horz);
+    gst_ebml_write_uint (ebml, GST_MATROSKA_ID_VIDEOCHROMASITINGVERT,
+        chroma_site_vert);
   }
 
   gst_matroska_mux_write_mastering_metadata (mux, videocontext);
@@ -2884,6 +2918,19 @@ gst_matroska_mux_track_header (GstMatroskaMux * mux,
       switch (videocontext->interlace_mode) {
         case GST_MATROSKA_INTERLACE_MODE_INTERLACED:
           gst_ebml_write_uint (ebml, GST_MATROSKA_ID_VIDEOFLAGINTERLACED, 1);
+          if (mux->doctype_opt_version >= 4
+              && videocontext->field_order != GST_VIDEO_FIELD_ORDER_UNKNOWN) {
+            if (videocontext->field_order ==
+                GST_VIDEO_FIELD_ORDER_TOP_FIELD_FIRST) {
+              gst_ebml_write_uint (ebml, GST_MATROSKA_ID_VIDEOFIELDORDER, 9);
+            } else if (videocontext->field_order ==
+                GST_VIDEO_FIELD_ORDER_BOTTOM_FIELD_FIRST) {
+              gst_ebml_write_uint (ebml, GST_MATROSKA_ID_VIDEOFIELDORDER, 14);
+            } else {
+              GST_FIXME_OBJECT (mux, "unhandled video field order %d",
+                  videocontext->field_order);
+            }
+          }
           break;
         case GST_MATROSKA_INTERLACE_MODE_PROGRESSIVE:
           gst_ebml_write_uint (ebml, GST_MATROSKA_ID_VIDEOFLAGINTERLACED, 2);
@@ -3213,9 +3260,10 @@ gst_matroska_mux_start (GstMatroskaMux * mux, GstMatroskaPad * first_pad,
   gst_pad_set_caps (mux->srcpad, ebml->caps);
   /* we start with a EBML header */
   doctype = mux->doctype;
-  GST_INFO_OBJECT (ebml, "DocType: %s, Version: %d",
-      doctype, mux->doctype_version);
-  gst_ebml_write_header (ebml, doctype, mux->doctype_version);
+  GST_INFO_OBJECT (ebml, "DocType: %s, Version: %d/%d",
+      doctype, mux->doctype_opt_version, mux->doctype_version);
+  gst_ebml_write_header (ebml, doctype, mux->doctype_opt_version,
+      mux->doctype_version);
 
   /* the rest of the header is cached */
   gst_ebml_write_set_cache (ebml, 0x1000);
@@ -4458,7 +4506,20 @@ gst_matroska_mux_set_property (GObject * object,
       mux->writing_app = g_value_dup_string (value);
       break;
     case PROP_DOCTYPE_VERSION:
+      if (g_value_get_int (value) > mux->doctype_opt_version) {
+        GST_WARNING_OBJECT (mux,
+            "version property can not be greater than optional-version property");
+        break;
+      }
       mux->doctype_version = g_value_get_int (value);
+      break;
+    case PROP_DOCTYPE_OPT_VERSION:
+      if (g_value_get_int (value) < mux->doctype_version) {
+        GST_WARNING_OBJECT (mux,
+            "optional-version property can not be less than version property");
+        break;
+      }
+      mux->doctype_opt_version = g_value_get_int (value);
       break;
     case PROP_MIN_INDEX_INTERVAL:
       mux->min_index_interval = g_value_get_int64 (value);
@@ -4506,6 +4567,9 @@ gst_matroska_mux_get_property (GObject * object,
       break;
     case PROP_DOCTYPE_VERSION:
       g_value_set_int (value, mux->doctype_version);
+      break;
+    case PROP_DOCTYPE_OPT_VERSION:
+      g_value_set_int (value, mux->doctype_opt_version);
       break;
     case PROP_MIN_INDEX_INTERVAL:
       g_value_set_int64 (value, mux->min_index_interval);

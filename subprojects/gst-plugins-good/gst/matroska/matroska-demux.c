@@ -580,6 +580,8 @@ gst_matroska_demux_parse_colour (GstMatroskaDemux * demux, GstEbmlRead * ebml,
 {
   GstFlowReturn ret;
   GstVideoColorimetry colorimetry;
+  guint64 chroma_site_horz;
+  guint64 chroma_site_vert;
   guint32 id;
   guint64 num;
 
@@ -587,6 +589,9 @@ gst_matroska_demux_parse_colour (GstMatroskaDemux * demux, GstEbmlRead * ebml,
   colorimetry.matrix = GST_VIDEO_COLOR_MATRIX_UNKNOWN;
   colorimetry.transfer = GST_VIDEO_TRANSFER_UNKNOWN;
   colorimetry.primaries = GST_VIDEO_COLOR_PRIMARIES_UNKNOWN;
+  /* 0 = unknown, 1 = yes, 2 = no */
+  chroma_site_horz = 0;
+  chroma_site_vert = 0;
 
   DEBUG_ELEMENT_START (demux, ebml, "TrackVideoColour");
 
@@ -679,6 +684,22 @@ gst_matroska_demux_parse_colour (GstMatroskaDemux * demux, GstEbmlRead * ebml,
         break;
       }
 
+      case GST_MATROSKA_ID_VIDEOCHROMASITINGHORZ:{
+        if ((ret =
+                gst_ebml_read_uint (ebml, &id,
+                    &chroma_site_horz)) != GST_FLOW_OK)
+          goto beach;
+        break;
+      }
+
+      case GST_MATROSKA_ID_VIDEOCHROMASITINGVERT:{
+        if ((ret =
+                gst_ebml_read_uint (ebml, &id,
+                    &chroma_site_vert)) != GST_FLOW_OK)
+          goto beach;
+        break;
+      }
+
       default:
         GST_FIXME_OBJECT (demux, "Unsupported subelement 0x%x in Colour", id);
         ret = gst_ebml_read_skip (ebml);
@@ -688,6 +709,16 @@ gst_matroska_demux_parse_colour (GstMatroskaDemux * demux, GstEbmlRead * ebml,
 
   memcpy (&video_context->colorimetry, &colorimetry,
       sizeof (GstVideoColorimetry));
+
+  video_context->chroma_site = GST_VIDEO_CHROMA_SITE_UNKNOWN;
+  if (chroma_site_horz == 2 && chroma_site_vert == 2) {
+    video_context->chroma_site = GST_VIDEO_CHROMA_SITE_NONE;
+  } else {
+    if (chroma_site_horz == 1)
+      video_context->chroma_site |= GST_VIDEO_CHROMA_SITE_H_COSITED;
+    if (chroma_site_vert == 1)
+      video_context->chroma_site |= GST_VIDEO_CHROMA_SITE_V_COSITED;
+  }
 
 beach:
   DEBUG_ELEMENT_STOP (demux, ebml, "TrackVideoColour", ret);
@@ -6885,6 +6916,14 @@ gst_matroska_demux_video_caps (GstMatroskaTrackVideoContext *
           (&videocontext->content_light_level, caps)) {
         GST_WARNING ("couldn't set content light level to caps");
       }
+    }
+
+    if (videocontext->chroma_site != GST_VIDEO_CHROMA_SITE_UNKNOWN) {
+      gchar *chroma =
+          gst_video_chroma_site_to_string (videocontext->chroma_site);
+      gst_caps_set_simple (caps, "chroma-site", G_TYPE_STRING, chroma, NULL);
+      GST_DEBUG ("setting chroma site to %s", chroma);
+      g_free (chroma);
     }
 
     caps = gst_caps_simplify (caps);
