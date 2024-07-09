@@ -23,7 +23,7 @@ cmake -S . -B build \
     -GNinja \
     -DCMAKE_INSTALL_PREFIX:PATH=$cmake_prefix \
     -DCMAKE_INSTALL_LIBDIR:PATH=lib \
-    -DBUILD_SHARED_LIBS=YES \
+    -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
     -DCRC32C_USE_GLOG=NO \
     -DCRC32C_BUILD_TESTS=NO \
     -DCRC32C_BUILD_BENCHMARKS=NO
@@ -40,7 +40,7 @@ cmake -S . -B build \
     -DBUILD_TESTING=NO \
     -DCMAKE_INSTALL_PREFIX:PATH=$cmake_prefix \
     -DCMAKE_INSTALL_LIBDIR:PATH=lib \
-    -DBUILD_SHARED_LIBS=YES
+    -DCMAKE_POSITION_INDEPENDENT_CODE=ON
 cmake --build build --target install
 cd ..
 
@@ -51,7 +51,7 @@ curl -sSL https://github.com/nlohmann/json/archive/v3.10.4.tar.gz | \
     tar -xzf - --strip-components=1
 cmake \
       -DCMAKE_BUILD_TYPE=Release \
-      -DBUILD_SHARED_LIBS=yes \
+      -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
       -DBUILD_TESTING=OFF \
       -H. -Bcmake-out/nlohmann/json && \
     cmake --build cmake-out/nlohmann/json --target install -- -j ${NCPU} && \
@@ -68,7 +68,7 @@ cmake -S . -B build \
     -DCMAKE_CXX_STANDARD=14 \
     -DCMAKE_INSTALL_PREFIX:PATH=$cmake_prefix \
     -DCMAKE_INSTALL_LIBDIR:PATH=lib \
-    -DBUILD_SHARED_LIBS=YES \
+    -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
     -DBUILD_TESTING=NO \
     -DGOOGLE_CLOUD_CPP_ENABLE=storage
 cmake --build build --target install -- -v
