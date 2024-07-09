@@ -72,6 +72,8 @@ struct _GstPulseSrc
 
   GstStructure *properties;
   pa_proplist *proplist;
+
+  GMutex prop_lock;
 };
 
 G_END_DECLS

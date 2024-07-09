@@ -74,6 +74,8 @@ struct _GstPulseSink
 
   gint format_lost;
   GstClockTime format_lost_time;
+
+  GMutex prop_lock;
 };
 
 #define PULSE_SINK_TEMPLATE_CAPS \
