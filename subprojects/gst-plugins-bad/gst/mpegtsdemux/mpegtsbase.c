@@ -66,6 +66,7 @@ enum
   PROP_0,
   PROP_PARSE_PRIVATE_SECTIONS,
   PROP_IGNORE_PCR,
+  PROP_TIMEOUT,
   /* FILL ME */
 };
 
@@ -161,6 +162,11 @@ mpegts_base_class_init (MpegTSBaseClass * klass)
           "Ignore PCR stream for timing", DEFAULT_IGNORE_PCR,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
+  g_object_class_install_property (gobject_class, PROP_TIMEOUT,
+      g_param_spec_int ("timeout", "timeout to re-build pcr (ms)", "Timeout",
+          0, G_MAXINT, 500,
+          G_PARAM_WRITABLE | G_PARAM_STATIC_STRINGS | G_PARAM_CONSTRUCT));
+
   klass->sink_query = GST_DEBUG_FUNCPTR (mpegts_base_default_sink_query);
   klass->handle_psi = NULL;
 
@@ -179,6 +185,9 @@ mpegts_base_set_property (GObject * object, guint prop_id,
       break;
     case PROP_IGNORE_PCR:
       base->ignore_pcr = g_value_get_boolean (value);
+      break;
+    case PROP_TIMEOUT:
+      base->packetizer->timeout_ms = g_value_get_int (value);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);

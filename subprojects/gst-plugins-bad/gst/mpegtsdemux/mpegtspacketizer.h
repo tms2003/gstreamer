@@ -291,6 +291,8 @@ struct _MpegTSPacketizer2 {
   /* Extra time offset to handle values before initial PCR.
    * This will be added to all converted timestamps */
   GstClockTime extra_shift;
+
+  gint timeout_ms;
 };
 
 struct _MpegTSPacketizer2Class {
