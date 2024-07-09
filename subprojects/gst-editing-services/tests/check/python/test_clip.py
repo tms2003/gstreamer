@@ -188,7 +188,7 @@ class TestTrackElements(common.GESSimpleTimelineTest):
         self.assertEqual(effect.props.track, video_track)
 
         audio_source = test_clip.find_track_element(None, GES.AudioSource)
-        self.assertFalse(audio_source is None)
+        self.assertIsNotNone(audio_source)
         self.assertEqual(audio_source.get_child_property("volume")[1], 0.0)
         self.assertEqual(audio_source.props.track, audio_track)
         self.assertEqual(video_source.props.track, video_track)
@@ -367,7 +367,7 @@ class TestTrackElements(common.GESSimpleTimelineTest):
         image_src, = clip.get_children(True)
 
         self.assertTrue(image_src.get_asset().is_image())
-        self.assertTrue(isinstance(image_src, GES.VideoUriSource))
+        self.assertIsInstance(image_src, GES.VideoUriSource)
         imagefreeze, = [e for e in image_src.get_nleobject().iterate_recurse()
             if e.get_factory().get_name() == "imagefreeze"]
 

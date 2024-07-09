@@ -99,7 +99,7 @@ class ServerConnectionTestCase(unittest.TestCase):
 #        self.browser = create_chrome_driver()
         self.addCleanup(self.browser.quit)
         self.html_source = os.environ.get('TEST_HTML_SOURCE')
-        self.assertIsNot(self.html_source, None)
+        self.assertIsNotNone(self.html_source)
         self.assertNotEqual(self.html_source, '')
         self.html_source = 'file://' + self.html_source + '/index.html'
 
