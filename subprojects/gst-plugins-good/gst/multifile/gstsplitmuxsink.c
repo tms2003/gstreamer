@@ -2942,10 +2942,13 @@ handle_mq_input (GstPad * pad, GstPadProbeInfo * info, MqStreamCtx * ctx)
     running_time = ctx->in_running_time;
   }
 
-  if (GST_CLOCK_TIME_IS_VALID (pts))
-    running_time_pts = my_segment_to_running_time (&ctx->in_segment, pts);
-  else
-    running_time_pts = GST_CLOCK_STIME_NONE;
+  if (!GST_CLOCK_TIME_IS_VALID (pts)) {
+    GST_ERROR_OBJECT (pad,
+        "%" GST_PTR_FORMAT "has no valid PTS. Bailing.", buf);
+    ret = GST_FLOW_ERROR;
+    goto beach;
+  }
+  running_time_pts = my_segment_to_running_time (&ctx->in_segment, pts);
 
   if (GST_CLOCK_TIME_IS_VALID (dts)) {
     running_time_dts = my_segment_to_running_time (&ctx->in_segment, dts);
