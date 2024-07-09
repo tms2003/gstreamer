@@ -48,7 +48,7 @@ static GstStaticPadTemplate gst_rtp_vraw_depay_sink_template =
         "media = (string) \"video\", "
         "clock-rate = (int) 90000, "
         "encoding-name = (string) \"RAW\", "
-        "sampling = (string) { \"RGB\", \"RGBA\", \"BGR\", \"BGRA\", "
+        "sampling = (string) { \"GRAYSCALE\", \"RGB\", \"RGBA\", \"BGR\", \"BGRA\", "
         "\"YCbCr-4:4:4\", \"YCbCr-4:2:2\", \"YCbCr-4:2:0\", "
         "\"YCbCr-4:1:1\" },"
         /* we cannot express these as strings 
@@ -265,6 +265,14 @@ gst_rtp_vraw_depay_setcaps (GstRTPBaseDepayload * depayload, GstCaps * caps)
     format = GST_VIDEO_FORMAT_Y41B;
     pgroup = 6;
     xinc = 4;
+  } else if (!strcmp (str, "GRAYSCALE")) {
+    if (depth == 8) {
+      format = GST_VIDEO_FORMAT_GRAY8;
+      pgroup = 4;
+    } else if (depth == 10) {
+      format = GST_VIDEO_FORMAT_GRAY8;
+      pgroup = 5;
+    }
   } else {
     goto unknown_format;
   }
@@ -560,6 +568,28 @@ gst_rtp_vraw_depay_process_packet (GstRTPBaseDepayload * depayload,
           *vdp++ = p[3];
           *ydp++ = p[4];
           *ydp++ = p[5];
+          p += pgroup;
+        }
+        break;
+      }
+      case GST_VIDEO_FORMAT_GRAY8:
+      {
+        gint i;
+        guint8 *ydp, *p;
+
+        ydp = yp + (line * ystride);
+
+        p = payload;
+
+        /* Samples are packed in order Y00-Y01-Y02-Y03 for both interlaced
+         * and progressive scan lines */
+        for (i = 0; i < plen; i += pgroup) {
+          *ydp++ = p[0];
+          *ydp++ = p[1];
+          *ydp++ = p[2];
+          *ydp++ = p[3];
+          if (pgroup >= 5)
+            *ydp++ = p[5];
           p += pgroup;
         }
         break;
