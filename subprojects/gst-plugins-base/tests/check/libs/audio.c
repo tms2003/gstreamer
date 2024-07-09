@@ -439,12 +439,70 @@ GST_START_TEST (test_buffer_clip_time_handles_rounding)
   fail_unless_equals_int64 (GST_BUFFER_TIMESTAMP (ret), 2 * GST_SECOND);
   fail_unless_equals_int64 (GST_BUFFER_DURATION (ret), 8 * GST_SECOND);
   fail_unless_equals_int64 (GST_BUFFER_OFFSET (ret), 200);
-  fail_unless_equals_int64 (GST_BUFFER_OFFSET_END (ret), 1000);
+  /* As the duration (10,099s) of the buffer is almost 1 sample more (99ms more) than 1000 samples,
+   * the clipping of 8 seconds will be rounded to 1 sample less (799 samples) and 201 samples
+   * will remain.
+   */
+  fail_unless_equals_int64 (GST_BUFFER_OFFSET_END (ret), 999);
   gst_buffer_map (ret, &map, GST_MAP_READ);
   fail_unless (map.data == data);
-  fail_unless (map.size == 800);
+  fail_unless (map.size == 799);
   gst_buffer_unmap (ret, &map);
 
+  gst_buffer_unref (ret);
+}
+
+GST_END_TEST;
+
+GST_START_TEST (test_buffer_clip_time_handles_rounding_third)
+{
+  GstSegment s;
+  GstBuffer *buf;
+  GstBuffer *ret;
+  GstMapInfo map;
+  guint8 *data;
+
+  setup_segment (&s, GST_FORMAT_TIME, 0, 1 * GST_SECOND, 0);
+
+  /* Clip one third buffer */
+  buf = make_buffer (&data);
+  GST_BUFFER_TIMESTAMP (buf) = 1 * GST_SECOND / 3;
+  GST_BUFFER_DURATION (buf) = 1 * GST_SECOND;
+  GST_BUFFER_OFFSET (buf) = 0;
+  GST_BUFFER_OFFSET_END (buf) = 100;
+
+  ret = gst_audio_buffer_clip (buf, &s, 100, 1);
+
+  fail_unless (ret != NULL);
+  fail_unless_equals_int64 (GST_BUFFER_OFFSET (ret), 0);
+  /* The clipped buffer should be rounded to 67 samples as the duration
+   * will be 0.66667s
+   */
+  fail_unless_equals_int64 (GST_BUFFER_OFFSET_END (ret), 67);
+  gst_buffer_map (ret, &map, GST_MAP_READ);
+  fail_unless (map.data == data);
+  gst_buffer_unmap (ret, &map);
+  gst_buffer_unref (ret);
+
+  /* Clip two third buffer */
+  buf = make_buffer (&data);
+  GST_BUFFER_TIMESTAMP (buf) = 2 * GST_SECOND / 3;
+  /* the max duration that still converts back to the same size of samples */
+  GST_BUFFER_DURATION (buf) = 1 * GST_SECOND;
+  GST_BUFFER_OFFSET (buf) = 0;
+  GST_BUFFER_OFFSET_END (buf) = 100;
+
+  ret = gst_audio_buffer_clip (buf, &s, 100, 1);
+
+  fail_unless (ret != NULL);
+  fail_unless_equals_int64 (GST_BUFFER_OFFSET (ret), 0);
+  /* The clipped buffer should be rounded to 33 samples length as the duration
+   * will be 0.3333s
+   */
+  fail_unless_equals_int64 (GST_BUFFER_OFFSET_END (ret), 33);
+  gst_buffer_map (ret, &map, GST_MAP_READ);
+  fail_unless (map.data == data);
+  gst_buffer_unmap (ret, &map);
   gst_buffer_unref (ret);
 }
 
@@ -1697,6 +1755,7 @@ audio_suite (void)
   tcase_add_test (tc_chain, test_buffer_clip_time_start_and_stop_no_meta);
   tcase_add_test (tc_chain, test_buffer_clip_time_no_timestamp);
   tcase_add_test (tc_chain, test_buffer_clip_time_handles_rounding);
+  tcase_add_test (tc_chain, test_buffer_clip_time_handles_rounding_third);
   tcase_add_test (tc_chain, test_buffer_clip_samples_start_and_stop);
   tcase_add_test (tc_chain, test_buffer_clip_samples_start_and_stop_planar);
   tcase_add_test (tc_chain, test_buffer_clip_samples_start);
