@@ -161,6 +161,8 @@ buffer_release (void *data, struct wl_buffer *wl_buffer)
   priv->used_by_compositor = FALSE;
   priv->current_gstbuffer = NULL;
 
+  GST_BUFFER_FLAG_SET (buf, GST_BUFFER_FLAG_TAG_MEMORY);
+
   /* unref should be last, because it may end up destroying the GstWlBuffer */
   gst_buffer_unref (buf);
 }
