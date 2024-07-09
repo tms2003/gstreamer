@@ -42,6 +42,7 @@
 
 static const GstAnalyticsMtdImpl cls_impl = {
   "classification",
+  NULL,
   NULL
 };
 

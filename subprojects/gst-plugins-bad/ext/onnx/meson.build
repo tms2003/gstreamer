@@ -16,6 +16,7 @@ if onnxrt_dep.found()
     gstonnx = library('gstonnx',
     'gstonnx.c',
     'decoders/gstssdobjectdetector.c',
+    'decoders/gstfastsamtensordecoder.c',
     'gstonnxinference.cpp',
     'gstonnxclient.cpp',
     'tensor/gsttensormeta.c',

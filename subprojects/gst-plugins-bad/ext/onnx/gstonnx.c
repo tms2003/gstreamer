@@ -25,6 +25,7 @@
 #endif
 
 #include "decoders/gstssdobjectdetector.h"
+#include "decoders/gstfastsamtensordecoder.h"
 #include "gstonnxinference.h"
 #include "tensor/gsttensormeta.h"
 
@@ -33,6 +34,7 @@ plugin_init (GstPlugin * plugin)
 {
   gboolean success = GST_ELEMENT_REGISTER (ssd_object_detector, plugin);
   success |= GST_ELEMENT_REGISTER (onnx_inference, plugin);
+  success |= GST_ELEMENT_REGISTER (fastsam_tensor_decoder, plugin);
 
   return success;
 }

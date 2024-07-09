@@ -442,6 +442,19 @@ static void
 gst_analytics_relation_meta_clear (GstBuffer * buffer, GstMeta * meta)
 {
   GstAnalyticsRelationMeta *rmeta = (GstAnalyticsRelationMeta *) meta;
+  GstAnalyticsRelatableMtdData *rlt_mtd_data = NULL;
+
+  for (gsize index = 0; index < rmeta->length; index++) {
+    rlt_mtd_data = (GstAnalyticsRelatableMtdData *)
+        (rmeta->mtd_data_lookup[index] + rmeta->analysis_results);
+    if (rlt_mtd_data->impl && rlt_mtd_data->impl->mtd_meta_clear) {
+      GstAnalyticsMtd mtd;
+      mtd.id = rlt_mtd_data->id;
+      mtd.meta = rmeta;
+      rlt_mtd_data->impl->mtd_meta_clear (buffer, rmeta, &mtd);
+    }
+  }
+
   gsize adj_mat_data_size =
       (sizeof (guint8) * rmeta->rel_order * rmeta->rel_order);
 
