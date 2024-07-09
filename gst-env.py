@@ -22,6 +22,11 @@ from scripts.common import get_meson
 from scripts.common import git
 from scripts.common import win32_get_short_path_name
 from scripts.common import get_wine_shortpath
+from scripts.common import win32_supports_symlinks
+from scripts.common import developer_mode_enabled
+from scripts.common import win32_supports_long_paths
+from scripts.common import long_paths_enabled
+from scripts.common import OrderedSet
 
 SCRIPTDIR = os.path.dirname(os.path.realpath(__file__))
 PREFIX_DIR = os.path.join(SCRIPTDIR, 'prefix')
@@ -326,16 +331,9 @@ def get_subprocess_env(options, gst_version):
     prepend_env_var(env, "PATH", os.path.join(SCRIPTDIR, 'scripts'),
                     options.sysroot)
 
-    # tools: gst-launch-1.0, gst-inspect-1.0
-    prepend_env_var(env, "PATH", os.path.join(options.builddir, 'subprojects',
-                                              'gstreamer', 'tools'),
-                    options.sysroot)
     # plugin scanner and generator
     prepend_env_var(env, "PATH", os.path.join(options.builddir, 'subprojects',
                                               'gstreamer', 'docs'),
-                    options.sysroot)
-    prepend_env_var(env, "PATH", os.path.join(options.builddir, 'subprojects',
-                                              'gst-plugins-base', 'tools'),
                     options.sysroot)
 
     # Library and binary search paths
@@ -354,8 +352,10 @@ def get_subprocess_env(options, gst_version):
     meson = get_meson()
     targets_s = subprocess.check_output(meson + ['introspect', options.builddir, '--targets'])
     targets = json.loads(targets_s.decode())
-    paths = set()
-    mono_paths = set()
+    # Directories to put in PATH, except when --win32-path-workaround is passed
+    # when this is the set of targets to symlink into meson-uninstalled/bin
+    paths = OrderedSet()
+    mono_paths = OrderedSet()
     srcdir_path = pathlib.Path(options.srcdir)
 
     build_options_s = subprocess.check_output(meson + ['introspect', options.builddir, '--buildoptions'])
@@ -369,6 +369,7 @@ def get_subprocess_env(options, gst_version):
 
     global GSTPLUGIN_FILEPATH_REG_TEMPLATE
     GSTPLUGIN_FILEPATH_REG_TEMPLATE = GSTPLUGIN_FILEPATH_REG_TEMPLATE.format(libdir=libdir.as_posix())
+    meson_uninstalled = pathlib.Path(options.builddir) / 'meson-uninstalled'
 
     for target in targets:
         filenames = listify(target['filename'])
@@ -385,11 +386,17 @@ def get_subprocess_env(options, gst_version):
                                 os.path.join(options.builddir, root),
                                 options.sysroot)
             elif is_library_target_and_not_plugin(target, filename):
-                prepend_env_var(env, lib_path_envvar,
-                                os.path.join(options.builddir, root),
-                                options.sysroot)
+                if options.win32_path_workaround:
+                    paths.add(os.path.join(options.builddir, filename))
+                else:
+                    prepend_env_var(env, lib_path_envvar,
+                                    os.path.join(options.builddir, root),
+                                    options.sysroot)
             elif is_binary_target_and_in_path(target, filename, bindir):
-                paths.add(os.path.join(options.builddir, root))
+                if options.win32_path_workaround:
+                    paths.add(os.path.join(options.builddir, filename))
+                else:
+                    paths.add(os.path.join(options.builddir, root))
             elif is_gio_module(target, filename, options.builddir):
                 prepend_env_var(env, 'GIO_EXTRA_MODULES',
                                 os.path.join(options.builddir, root),
@@ -406,18 +413,44 @@ def get_subprocess_env(options, gst_version):
                                     options.sysroot)
             break
 
-    # Sort to iterate in a consistent order (`set`s and `hash`es are randomized)
-    for p in sorted(paths):
-        prepend_env_var(env, 'PATH', p, options.sysroot)
+    if options.win32_path_workaround:
+        uninstalled_bindir = meson_uninstalled / 'bin'
+        uninstalled_bindir.mkdir(exist_ok=True)
+        if not win32_supports_symlinks():
+            print('This option needs at least Windows 10.0.15063, please upgrade or follow these instructions:')
+            print('https://gstreamer.freedesktop.org/documentation/installing/building-from-source-using-meson.html#older-windows-versions')
+            exit(1)
+        if not developer_mode_enabled():
+            print('Please enable Developer Mode, this option is non-functional without it:')
+            print('https://gstreamer.freedesktop.org/documentation/installing/building-from-source-using-meson.html#windows-settings')
+            exit(1)
+        for src in paths:
+            dst = str(uninstalled_bindir / os.path.basename(src))
+            if os.path.lexists(dst):
+                os.remove(dst)
+            os.symlink(src, dst)
+        prepend_env_var(env, 'PATH', str(uninstalled_bindir), options.sysroot)
+    else:
+        if os.name == 'nt':
+            if not win32_supports_long_paths():
+                print('gst-env.py needs at least Windows 10.0.14393, please upgrade or follow these instructions:')
+                print('https://gstreamer.freedesktop.org/documentation/installing/building-from-source-using-meson.html#older-windows-versions')
+                exit(1)
+            if not long_paths_enabled():
+                print('gst-env.py needs the long paths option enabled:')
+                print('https://learn.microsoft.com/en-us/windows/win32/fileio/maximum-file-path-limitation')
+                exit(1)
+        for p in paths:
+            prepend_env_var(env, 'PATH', p, options.sysroot)
 
     if os.name != 'nt':
-        for p in sorted(mono_paths):
+        for p in mono_paths:
             prepend_env_var(env, "MONO_PATH", p, options.sysroot)
 
-    presets = set()
-    encoding_targets = set()
+    presets = OrderedSet()
+    encoding_targets = OrderedSet()
     python_dirs = setup_gdb(options)
-    overrides_dirs = set()
+    overrides_dirs = OrderedSet()
     if '--installed' in subprocess.check_output(meson + ['introspect', '-h']).decode():
         installed_s = subprocess.check_output(meson + ['introspect', options.builddir, '--installed'])
         for path, installpath in json.loads(installed_s.decode()).items():
@@ -439,7 +472,7 @@ def get_subprocess_env(options, gst_version):
                 py_package = 'site-packages'
             elif 'dist-packages' in installpath_parts:
                 py_package = 'dist-packages'
-            if  py_package:
+            if py_package:
                 install_subpath = os.path.join(*installpath_parts[installpath_parts.index(py_package) + 1:])
                 if path.endswith(install_subpath):
                     if os.path.commonprefix(["gi/overrides", install_subpath]):
@@ -453,21 +486,19 @@ def get_subprocess_env(options, gst_version):
                 encoding_targets.add(
                     os.path.abspath(os.path.join(os.path.dirname(path), '..')))
 
-        for p in sorted(presets):
+        for p in presets:
             prepend_env_var(env, 'GST_PRESET_PATH', p, options.sysroot)
 
-        for t in sorted(encoding_targets):
+        for t in encoding_targets:
             prepend_env_var(env, 'GST_ENCODING_TARGET_PATH', t, options.sysroot)
 
-    # Check if meson has generated -uninstalled pkgconfig files
-    meson_uninstalled = pathlib.Path(options.builddir) / 'meson-uninstalled'
-    if meson_uninstalled.is_dir():
-        prepend_env_var(env, 'PKG_CONFIG_PATH', str(meson_uninstalled), options.sysroot)
+    # Add meson-generated -uninstalled pkgconfig files
+    prepend_env_var(env, 'PKG_CONFIG_PATH', str(meson_uninstalled), options.sysroot)
 
-    for python_dir in sorted(python_dirs):
+    for python_dir in python_dirs:
         prepend_env_var(env, 'PYTHONPATH', python_dir, options.sysroot)
 
-    for python_dir in sorted(overrides_dirs):
+    for python_dir in overrides_dirs:
         prepend_env_var(env, '_GI_OVERRIDES_PATH', python_dir, options.sysroot)
 
     mesonpath = os.path.join(SCRIPTDIR, "meson")
@@ -529,6 +560,10 @@ if __name__ == "__main__":
                         action='store_true',
                         default=False,
                         help="Do not start a shell, only print required environment.")
+    parser.add_argument("--win32-path-workaround",
+                        action='store_true',
+                        default=False,
+                        help="Workaround Windows PATH env limitations by symlinking targets")
     options, args = parser.parse_known_args()
 
     if not os.path.exists(options.builddir):

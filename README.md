@@ -329,6 +329,9 @@ An external script can be run in development environment with:
 ./gst-env.py external_script.sh
 ```
 
+NOTE: On Windows, the development environment script requires Windows 10 1703
+or newer, and also requires that you enable Developer Mode in the settings.
+
 NOTE: In the development environment, a fully usable prefix is also configured
 in `gstreamer/prefix` where you can install any extra dependency/project.
 
