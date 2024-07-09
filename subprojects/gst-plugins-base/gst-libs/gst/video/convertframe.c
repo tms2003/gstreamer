@@ -219,6 +219,82 @@ failed:
 }
 
 static GstElement *
+build_convert_frame_pipeline_vulkan (GstElement ** src_element,
+                                    GstElement ** sink_element, GstCaps * from_caps, GstCaps * to_caps,
+                                    GError ** err)
+{
+	GstElement *pipeline = NULL;
+	GstElement *appsrc = NULL;
+	GstElement *vulkan_convert = NULL;
+	GstElement *vulkan_download = NULL;
+	GstElement *convert = NULL;
+	GstElement *enc = NULL;
+	GstElement *appsink = NULL;
+	GError *error = NULL;
+
+	if (!create_element ("appsrc", &appsrc, &error) ||
+	    !create_element ("vulkancolorconvert", &vulkan_convert, &error) ||
+	    !create_element ("vulkandownload", &vulkan_download, &error) ||
+	    !create_element ("videoconvert", &convert, &error) ||
+	    !create_element ("appsink", &appsink, &error)) {
+		GST_ERROR ("Could not create element");
+		goto failed;
+	}
+
+	if (caps_are_raw (to_caps)) {
+		if (!create_element ("identity", &enc, &error)) {
+			GST_ERROR ("Could not create identity element");
+			goto failed;
+		}
+	} else {
+		enc = get_encoder (to_caps, &error);
+		if (!enc) {
+			GST_ERROR ("Could not create encoder");
+			goto failed;
+		}
+	}
+
+	g_object_set (appsrc, "caps", from_caps, "emit-signals", TRUE,
+	              "format", GST_FORMAT_TIME, NULL);
+	g_object_set (appsink, "caps", to_caps, "emit-signals", TRUE, NULL);
+
+	pipeline = gst_pipeline_new ("vulkan-convert-frame-pipeline");
+	gst_bin_add_many (GST_BIN (pipeline), appsrc, vulkan_convert, vulkan_download,
+	                  convert, enc, appsink, NULL);
+
+	if (!gst_element_link_many (appsrc,
+	                            vulkan_convert, vulkan_download, convert, enc, appsink, NULL)) {
+		/* Now pipeline takes ownership of all elements, so only top-level
+		 * pipeline should be cleared */
+		appsrc = vulkan_convert = convert = enc = appsink = NULL;
+
+		error = g_error_new (GST_CORE_ERROR, GST_CORE_ERROR_NEGOTIATION,
+		                     "Could not configure pipeline for conversion");
+	}
+
+	*src_element = appsrc;
+	*sink_element = appsink;
+
+	return pipeline;
+
+	failed:
+	if (err)
+		*err = error;
+	else
+		g_clear_error (&error);
+
+	gst_clear_object (&pipeline);
+	gst_clear_object (&appsrc);
+	gst_clear_object (&vulkan_convert);
+	gst_clear_object (&vulkan_download);
+	gst_clear_object (&convert);
+	gst_clear_object (&enc);
+	gst_clear_object (&appsink);
+
+	return NULL;
+}
+
+static GstElement *
 build_convert_frame_pipeline (GstElement ** src_element,
     GstElement ** sink_element, GstCaps * from_caps,
     GstVideoCropMeta * cmeta, GstCaps * to_caps, GError ** err)
@@ -242,6 +318,10 @@ build_convert_frame_pipeline (GstElement ** src_element,
           from_caps, to_caps, is_d3d12, err);
     }
   }
+  if (features && gst_caps_features_contains (features, "memory:VulkanImage")) {
+		return build_convert_frame_pipeline_vulkan (src_element, sink_element,
+		                                           from_caps, to_caps, err);
+	}
 #ifdef HAVE_GL
   if (features &&
       gst_caps_features_contains (features, GST_CAPS_FEATURE_MEMORY_GL_MEMORY))
