@@ -196,8 +196,10 @@ typedef enum {
 } GstMpegtsSCTESpliceCommandType;
 
 #define GST_TYPE_MPEGTS_SCTE_SIT (gst_mpegts_scte_sit_get_type())
+#define GST_TYPE_MPEGTS_SCTE_SEGMENTATION (gst_mpegts_scte_segmentation_get_type())
 
 typedef struct _GstMpegtsSCTESIT GstMpegtsSCTESIT;
+typedef struct _GstMpegtsSCTESegmentation GstMpegtsSCTESegmentation;
 
 struct _GstMpegtsSCTESIT
 {
@@ -241,6 +243,21 @@ struct _GstMpegtsSCTESIT
   gboolean is_running_time;
 };
 
+struct _GstMpegtsSCTESegmentation {
+  guint32 segmentation_event_id;
+  gboolean cancel;
+  guint64 duration;
+  guint8 upid_type;
+  GString * upid;
+  guint8 segmentation_type_id;
+  guint8 segment_num;
+  guint8 segments_expected;
+  gboolean web_delivery_allowed;
+  gboolean no_regional_blackout;
+  gboolean archive_allowed;
+  guint8 device_restrictions;
+};
+
 GST_MPEGTS_API
 GType gst_mpegts_scte_sit_get_type (void);
 
@@ -248,10 +265,19 @@ GST_MPEGTS_API
 GstMpegtsSCTESIT *gst_mpegts_scte_sit_new (void);
 
 GST_MPEGTS_API
+GType gst_mpegts_scte_segmentation_get_type (void);
+
+GST_MPEGTS_API
+GstMpegtsSCTESegmentation *gst_mpegts_scte_segmentation_new (void);
+
+GST_MPEGTS_API
 GstMpegtsSCTESIT *gst_mpegts_scte_null_new (void);
 
 GST_MPEGTS_API
 GstMpegtsSCTESIT *gst_mpegts_scte_cancel_new (guint32 event_id);
+
+GST_MPEGTS_API
+GstMpegtsSCTESIT *gst_mpegts_scte_time_new (guint64 splice_time);
 
 GST_MPEGTS_API
 GstMpegtsSCTESIT *gst_mpegts_scte_splice_in_new (guint32 event_id,
@@ -281,6 +307,10 @@ GType gst_mpegts_scte_splice_component_get_type (void);
 GST_MPEGTS_API
 GstMpegtsSCTESpliceComponent *gst_mpegts_scte_splice_component_new (guint8 tag);
 
+GstMpegtsDescriptor * gst_mpegts_descriptor_from_segmentation (GstMpegtsSCTESegmentation * segmentation);
+
+GST_MPEGTS_API
+GstMpegtsSCTESegmentation * gst_mpegts_segment_from_descriptor (GstMpegtsDescriptor * desc);
 
 G_END_DECLS
 
