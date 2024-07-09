@@ -533,6 +533,10 @@ play_bus_msg (GstBus * bus, GstMessage * msg, gpointer user_data)
                 } else if (strcmp (key, "space") == 0 ||
                     strcmp (key, "Space") == 0) {
                   key = " ";
+                } else if (strcmp (key, "comma") == 0) {
+                  key = ",";
+                } else if (strcmp (key, "period") == 0) {
+                  key = ".";
                 } else if (strcmp (key, "minus") == 0) {
                   key = "-";
                 } else if (strcmp (key, "plus") == 0
@@ -1103,6 +1107,23 @@ play_set_relative_playback_rate (GstPlay * play, gdouble rate_step,
   play_set_playback_rate (play, new_rate);
 }
 
+static gboolean
+play_frame_step (GstPlay * play, gboolean backward)
+{
+  GstEvent *step;
+
+  if ((backward && (play->rate > 0)) || (!backward && (play->rate < 0))) {
+    play_set_relative_playback_rate (play, 0.0, TRUE);
+  }
+
+  step = gst_event_new_step (GST_FORMAT_BUFFERS, 1, 1.0, TRUE, FALSE);
+
+  if (!gst_element_send_event (play->playbin, step))
+    gst_print ("Failed to step.\n");
+
+  return TRUE;
+}
+
 static const gchar *
 trick_mode_get_description (GstPlayTrickMode mode)
 {
@@ -1419,6 +1440,8 @@ print_keyboard_help (void)
     "m", N_("toggle audio mute on/off")}, {
     "+", N_("increase playback rate")}, {
     "-", N_("decrease playback rate")}, {
+    ",", N_("step frame backward")}, {
+    ".", N_("step frame forward")}, {
     "d", N_("change playback direction")}, {
     "t", N_("enable/disable trick modes")}, {
     "A/a", N_("change to previous/next audio track")}, {
@@ -1530,6 +1553,12 @@ keyboard_cb (const gchar * key_input, gpointer user_data)
       break;
     case 'm':
       play_toggle_audio_mute (play);
+      break;
+    case ',':
+      play_frame_step (play, TRUE);
+      break;
+    case '.':
+      play_frame_step (play, FALSE);
       break;
     default:
       if (strcmp (key_input, GST_PLAY_KB_ARROW_RIGHT) == 0) {
