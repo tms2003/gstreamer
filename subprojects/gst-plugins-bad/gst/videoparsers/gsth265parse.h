@@ -114,6 +114,24 @@ struct _GstH265Parse
   /* AU state */
   gboolean picture_start;
 
+  /* For insertion of AU Delimiter */
+  GArray *nal_backlog;
+
+  /* Index of last vcl nal of current AU in backlog */
+  gint bl_curr_au_last_vcl;
+
+  /* Index of first vcl nal of next AU in backlog */
+  gint bl_next_au_first_vcl;
+
+  /* Index of first nal of next AU in backlog */
+  gint bl_next_au_first_nal;
+
+  /* Index of next nal to be processed in backlog */
+  gint bl_next_nal;
+
+  /* Index of last AUD */
+  gint bl_last_aud_nal;
+
   GstVideoParseUserData user_data;
   GstVideoParseUserDataUnregistered user_data_unregistered;
 
