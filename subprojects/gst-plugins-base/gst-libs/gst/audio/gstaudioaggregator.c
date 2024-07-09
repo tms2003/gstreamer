@@ -2413,42 +2413,7 @@ gst_audio_aggregator_aggregate (GstAggregator * agg, gboolean timeout)
     }
 
     g_assert (pad->priv->buffer);
-
-    /* This pad is lagging behind, we need to update the offset
-     * and maybe drop the current buffer */
-    if (pad->priv->output_offset < aagg->priv->offset) {
-      gint64 diff = aagg->priv->offset - pad->priv->output_offset;
-      gint64 odiff = diff;
-
-      if (pad->priv->position + diff > pad->priv->size)
-        diff = pad->priv->size - pad->priv->position;
-      pad->priv->dropped += diff;
-      if (diff != 0) {
-        GstClockTime rt;
-
-        rt = gst_audio_aggregator_pad_enqueue_qos_message (pad, aagg, diff);
-        GST_DEBUG_OBJECT (pad, "Dropped %" G_GINT64_FORMAT " samples at"
-            " running time %" GST_TIME_FORMAT " because input buffer is before"
-            " output offset", diff, GST_TIME_ARGS (rt));
-      }
-      pad->priv->position += diff;
-      pad->priv->output_offset += diff;
-
-      if (pad->priv->position == pad->priv->size) {
-        GST_DEBUG_OBJECT (pad, "Buffer was late by %" GST_TIME_FORMAT
-            ", dropping %" GST_PTR_FORMAT,
-            GST_TIME_ARGS (gst_util_uint64_scale (odiff, GST_SECOND,
-                    GST_AUDIO_INFO_RATE (&srcpad->info))), pad->priv->buffer);
-        /* Buffer done, drop it */
-        gst_buffer_replace (&pad->priv->buffer, NULL);
-        dropped = TRUE;
-        GST_OBJECT_UNLOCK (pad);
-        gst_aggregator_pad_drop_buffer (aggpad);
-        continue;
-      }
-    }
-
-    g_assert (pad->priv->buffer);
+    g_assert (pad->priv->output_offset >= aagg->priv->offset);
     GST_OBJECT_UNLOCK (pad);
   }
   GST_OBJECT_UNLOCK (agg);
