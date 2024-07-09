@@ -1354,15 +1354,27 @@ print_element_list (gboolean print_all, gchar * ftypes)
       if (GST_IS_ELEMENT_FACTORY (feature)) {
         const gchar *klass;
         GstElementFactory *factory;
+        gboolean all_found;
 
         factory = GST_ELEMENT_FACTORY (feature);
-        if (types) {
-          gint i;
-          gboolean all_found = TRUE;
 
+        all_found = FALSE;
+        if (ftypes && gst_plugin_feature_load (feature)) {
+          GType gtype, fgtype;
+
+          gtype = gst_element_factory_get_element_type (factory);
+          fgtype = g_type_from_name (ftypes);
+
+          all_found = gtype && fgtype && g_type_is_a (gtype, fgtype);
+        }
+
+        if (!all_found && types) {
+          gint i;
           klass =
               gst_element_factory_get_metadata (factory,
               GST_ELEMENT_METADATA_KLASS);
+
+          all_found = TRUE;
           for (i = 0; types[i]; i++) {
             if (!strstr (klass, types[i])) {
               all_found = FALSE;
@@ -2196,8 +2208,10 @@ real_main (int argc, char *argv[])
     {"plugin", '\0', 0, G_OPTION_ARG_NONE, &plugin_name,
         N_("List the plugin contents"), NULL},
     {"types", 't', 0, G_OPTION_ARG_STRING, &types,
-        N_("A slashes ('/') separated list of types of elements (also known "
-              "as klass) to list. (unordered)"), NULL},
+          N_("GType name (i.e. 'GstBaseTransform') in the class hierarchy tree "
+              "or a slashes ('/') separated list of types of elements (also "
+              "known as klass) to list (unordered, i.e. 'Effect/Video')."),
+        NULL},
     {"exists", '\0', 0, G_OPTION_ARG_NONE, &check_exists,
         N_("Check if the specified element or plugin exists"), NULL},
     {"atleast-version", '\0', 0, G_OPTION_ARG_STRING, &min_version,
