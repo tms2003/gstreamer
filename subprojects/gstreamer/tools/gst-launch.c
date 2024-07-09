@@ -49,6 +49,9 @@
 #ifdef HAVE_WINMM
 #include <mmsystem.h>
 #endif
+#ifdef HAVE_SHELLSCALINGAPI_H
+#include <shellscalingapi.h>
+#endif
 
 #ifdef __APPLE__
 #include <TargetConditionals.h>
@@ -1075,6 +1078,62 @@ clear_winmm_timer_resolution (guint resolution)
 }
 #endif
 
+#ifdef HAVE_SHELLSCALINGAPI_H
+typedef HRESULT (__stdcall *
+    SetProcessDpiAwareness_Fn) (PROCESS_DPI_AWARENESS value);
+
+/* APIs in shellscalingapi.h require Windows 8.1 or newer.
+ * Use LoadLibrary instead of linking symbols at build time */
+static gboolean
+set_win32_dpi_awareness (const gchar * awareness)
+{
+  DWORD old_mode;
+  BOOL suppressed;
+  PROCESS_DPI_AWARENESS dpi = PROCESS_DPI_UNAWARE;
+  HRESULT hr;
+  HMODULE module = NULL;
+  SetProcessDpiAwareness_Fn setProcessDpiAwareness;
+
+  if (!awareness)
+    return FALSE;
+
+  if (g_strcmp0 (awareness, "unaware") == 0)
+    dpi = PROCESS_DPI_UNAWARE;
+  else if (g_strcmp0 (awareness, "system") == 0)
+    dpi = PROCESS_SYSTEM_DPI_AWARE;
+  else if (g_strcmp0 (awareness, "per-monitor") == 0)
+    dpi = PROCESS_PER_MONITOR_DPI_AWARE;
+  else
+    return FALSE;
+
+  suppressed =
+      SetThreadErrorMode (SEM_NOOPENFILEERRORBOX | SEM_FAILCRITICALERRORS,
+      &old_mode);
+
+  module = LoadLibraryW (L"shcore.dll");
+
+  if (suppressed)
+    SetThreadErrorMode (old_mode, NULL);
+
+  if (!module) {
+    g_warning ("Couldn't load shcore.dll");
+    return FALSE;
+  }
+
+  (FARPROC) setProcessDpiAwareness =
+      GetProcAddress (module, "SetProcessDpiAwareness");
+  if (!setProcessDpiAwareness) {
+    g_warning ("Couldn't get SetProcessDpiAwareness symbol");
+    FreeLibrary (module);
+    return FALSE;
+  }
+
+  hr = setProcessDpiAwareness (dpi);
+
+  return SUCCEEDED (hr);
+}
+#endif
+
 static int
 real_main (int argc, char *argv[])
 {
@@ -1087,6 +1146,9 @@ real_main (int argc, char *argv[])
   gchar *savefile = NULL;
   gboolean no_position = FALSE;
   gboolean force_position = FALSE;
+#ifdef HAVE_SHELLSCALINGAPI_H
+  gchar *dpi_awareness = NULL;
+#endif
 #ifndef GST_DISABLE_OPTION_PARSING
   GOptionEntry options[] = {
     {"tags", 't', 0, G_OPTION_ARG_NONE, &tags,
@@ -1126,6 +1188,11 @@ real_main (int argc, char *argv[])
               "stdout is not a TTY. This option has no effect if "
               "the \"no-position\" option is specified"),
         NULL},
+#ifdef HAVE_SHELLSCALINGAPI_H
+    {"dpi-awareness", '\0', 0, G_OPTION_ARG_STRING, &dpi_awareness,
+        N_("Process DPI awareness value to use. Supported values are "
+              "\"unaware\", \"system\", and \"per-monitor\""), NULL},
+#endif
     {NULL}
   };
   GOptionContext *ctx;
@@ -1190,6 +1257,10 @@ real_main (int argc, char *argv[])
 
 #ifdef G_OS_WIN32
   argc = g_strv_length (argv);
+#endif
+#ifdef HAVE_SHELLSCALINGAPI_H
+  if (set_win32_dpi_awareness (dpi_awareness))
+    PRINT (_("Configured process DPI awareness: \"%s\"\n"), dpi_awareness);
 #endif
 
   gst_tools_print_version ();
