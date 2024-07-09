@@ -222,7 +222,6 @@ struct _GstURIDecodeBin3
   /* Properties */
   GstElement *source;
   guint64 connection_speed;     /* In bits/sec (0 = unknown) */
-  GstCaps *caps;
   guint64 buffer_duration;      /* When buffering, buffer duration (ns) */
   guint buffer_size;            /* When buffering, buffer size (bytes) */
   gboolean download;
@@ -255,6 +254,7 @@ struct _GstURIDecodeBin3
   gulong db_pad_removed_id;
   gulong db_select_stream_id;
   gulong db_about_to_finish_id;
+  gulong db_select_decoder_id;
 
   /* 1 if shutting down */
   gint shutdown;
@@ -279,6 +279,8 @@ struct _GstURIDecodeBin3Class
 
     gint (*select_stream) (GstURIDecodeBin3 * dbin,
       GstStreamCollection * collection, GstStream * stream);
+    gboolean (*select_decoder) (GstURIDecodeBin3 * dbin,
+      GstStream * stream, GValue * decoder_factories);
 };
 
 GST_DEBUG_CATEGORY_STATIC (gst_uri_decode_bin3_debug);
@@ -290,6 +292,7 @@ enum
   SIGNAL_SELECT_STREAM,
   SIGNAL_SOURCE_SETUP,
   SIGNAL_ABOUT_TO_FINISH,
+  SIGNAL_SELECT_DECODER,
   LAST_SIGNAL
 };
 
@@ -582,6 +585,23 @@ gst_uri_decode_bin3_class_init (GstURIDecodeBin3Class * klass)
       g_signal_new ("about-to-finish", G_TYPE_FROM_CLASS (klass),
       G_SIGNAL_RUN_LAST, 0, NULL, NULL, NULL, G_TYPE_NONE, 0, G_TYPE_NONE);
 
+  /**
+   * GstURIDecodeBin3::select-decoder:
+   * @bin: the uridecodebin.
+   * @stream: a #GstStream
+   * @decoder_factories: a #GstValueArray of #GstElementFactory
+   *
+   * This signal is emitted when a reconfiguration is performed.
+   * It allows the subscriber to modify the order of the @decoder_factories list
+   * that will be instantiated/tested for the @stream.
+   *
+   * Returns: FALSE if the stream cannot be played
+   */
+  gst_uri_decode_bin3_signals[SIGNAL_SELECT_DECODER] =
+      g_signal_new ("select-decoder", G_TYPE_FROM_CLASS (klass),
+      G_SIGNAL_RUN_LAST, G_STRUCT_OFFSET (GstURIDecodeBin3Class,
+          select_decoder), NULL, NULL, NULL, G_TYPE_BOOLEAN, 2, GST_TYPE_STREAM,
+      G_TYPE_POINTER);
 
   gst_element_class_add_static_pad_template (gstelement_class,
       &video_src_template);
@@ -809,6 +829,29 @@ db_select_stream_cb (GstElement * decodebin,
 }
 
 static gboolean
+db_select_decoder_cb (GstElement * decodebin,
+    GstStream * stream, GValue * decoder_factories,
+    GstURIDecodeBin3 * uridecodebin)
+{
+  gboolean can_decode = GST_VALUE_HOLDS_ARRAY (decoder_factories) &&
+      gst_value_array_get_size (decoder_factories);
+  GValue args[3] = { {0}, {0}, {0} };
+  GValue ret = { 0 };
+
+  g_value_init (&args[0], GST_TYPE_ELEMENT);
+  g_value_set_object (&args[0], uridecodebin);
+  g_value_init (&args[1], GST_TYPE_STREAM);
+  g_value_set_object (&args[1], stream);
+  g_value_init (&args[2], G_TYPE_POINTER);
+  g_value_set_pointer (&args[2], decoder_factories);
+  g_value_init (&ret, G_TYPE_BOOLEAN);
+  g_value_set_boolean (&ret, can_decode);
+  g_signal_emitv (args,
+      gst_uri_decode_bin3_signals[SIGNAL_SELECT_DECODER], 0, &ret);
+  return g_value_get_boolean (&ret);
+}
+
+static gboolean
 check_pad_mode (GstElement * src, GstPad * pad, gpointer udata)
 {
   GstPadMode curmode = GST_PAD_MODE (pad);
@@ -891,7 +934,6 @@ gst_uri_decode_bin3_init (GstURIDecodeBin3 * dec)
   GstPlayItem *item;
 
   dec->connection_speed = DEFAULT_CONNECTION_SPEED;
-  dec->caps = DEFAULT_CAPS;
   dec->buffer_duration = DEFAULT_BUFFER_DURATION;
   dec->buffer_size = DEFAULT_BUFFER_SIZE;
   dec->download = DEFAULT_DOWNLOAD;
@@ -902,6 +944,7 @@ gst_uri_decode_bin3_init (GstURIDecodeBin3 * dec)
   g_cond_init (&dec->input_source_drained);
 
   dec->decodebin = gst_element_factory_make ("decodebin3", NULL);
+  g_object_set (dec->decodebin, "caps", DEFAULT_CAPS, NULL);
   gst_bin_add (GST_BIN_CAST (dec), dec->decodebin);
   dec->db_pad_added_id =
       g_signal_connect (dec->decodebin, "pad-added",
@@ -915,6 +958,9 @@ gst_uri_decode_bin3_init (GstURIDecodeBin3 * dec)
   dec->db_about_to_finish_id =
       g_signal_connect (dec->decodebin, "about-to-finish",
       G_CALLBACK (db_about_to_finish_cb), dec);
+  dec->db_select_decoder_id =
+      g_signal_connect (dec->decodebin, "select-decoder",
+      G_CALLBACK (db_select_decoder_cb), dec);
 
   GST_OBJECT_FLAG_SET (dec, GST_ELEMENT_FLAG_SOURCE);
   gst_bin_set_suppressed_flags (GST_BIN (dec),
@@ -944,8 +990,6 @@ gst_uri_decode_bin3_dispose (GObject * obj)
   g_clear_pointer (&dec->download_dir, g_free);
 
   g_mutex_clear (&dec->play_items_lock);
-
-  gst_clear_caps (&dec->caps);
 
   G_OBJECT_CLASS (parent_class)->dispose (obj);
 }
@@ -1629,11 +1673,7 @@ gst_uri_decode_bin3_set_property (GObject * object, guint prop_id,
       dec->ring_buffer_max_size = g_value_get_uint64 (value);
       break;
     case PROP_CAPS:
-      GST_OBJECT_LOCK (dec);
-      if (dec->caps)
-        gst_caps_unref (dec->caps);
-      dec->caps = g_value_dup_boxed (value);
-      GST_OBJECT_UNLOCK (dec);
+      g_object_set_property (G_OBJECT (dec->decodebin), pspec->name, value);
       break;
     case PROP_INSTANT_URI:
       GST_OBJECT_LOCK (dec);
@@ -1726,9 +1766,7 @@ gst_uri_decode_bin3_get_property (GObject * object, guint prop_id,
       g_value_set_uint64 (value, dec->ring_buffer_max_size);
       break;
     case PROP_CAPS:
-      GST_OBJECT_LOCK (dec);
-      g_value_set_boxed (value, dec->caps);
-      GST_OBJECT_UNLOCK (dec);
+      g_object_get_property (G_OBJECT (dec->decodebin), pspec->name, value);
       break;
     case PROP_INSTANT_URI:
       GST_OBJECT_LOCK (dec);
@@ -2080,9 +2118,6 @@ gst_uri_decode_bin3_change_state (GstElement * element,
   GstURIDecodeBin3 *uridecodebin = (GstURIDecodeBin3 *) element;
 
   switch (transition) {
-    case GST_STATE_CHANGE_NULL_TO_READY:
-      g_object_set (uridecodebin->decodebin, "caps", uridecodebin->caps, NULL);
-      break;
     case GST_STATE_CHANGE_READY_TO_PAUSED:
       g_atomic_int_set (&uridecodebin->shutdown, 0);
       ret = activate_play_item (uridecodebin->input_item);

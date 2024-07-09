@@ -12677,6 +12677,11 @@
                         "desc": "Force only software-based decoders (no effect for playbin3)",
                         "name": "force-sw-decoders",
                         "value": "0x00001000"
+                    },
+                    {
+                        "desc": "allow decodebin3 to produce any of sink caps",
+                        "name": "audio-passthrough",
+                        "value": "0x00002000"
                     }
                 ]
             },

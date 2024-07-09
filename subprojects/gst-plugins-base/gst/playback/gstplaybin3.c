@@ -379,6 +379,8 @@ struct _GstPlayBin3
   GstElement *text_stream_combiner;     /* configured text stream combiner, or NULL */
 
   gboolean is_live;             /* Whether we are live */
+
+  gboolean allow_audio_passthrough;
 };
 
 struct _GstPlayBin3Class
@@ -486,9 +488,11 @@ static void pad_added_cb (GstElement * uridecodebin, GstPad * pad,
     GstPlayBin3 * playbin);
 static void pad_removed_cb (GstElement * decodebin, GstPad * pad,
     GstPlayBin3 * playbin);
-static gint select_stream_cb (GstElement * decodebin,
+static gint select_stream_cb (GstElement * uridecodebin,
     GstStreamCollection * collection, GstStream * stream,
     GstPlayBin3 * playbin);
+static gboolean select_decoder_cb (GstElement * uridecodebin,
+    GstStream * stream, GValue * decoder_factories, GstPlayBin3 * playbin);
 static void source_setup_cb (GstElement * element, GstElement * source,
     GstPlayBin3 * playbin);
 static void about_to_finish_cb (GstElement * uridecodebin,
@@ -1089,6 +1093,8 @@ gst_play_bin3_init (GstPlayBin3 * playbin)
       G_CALLBACK (pad_removed_cb), playbin);
   g_signal_connect (playbin->uridecodebin, "select-stream",
       G_CALLBACK (select_stream_cb), playbin);
+  g_signal_connect (playbin->uridecodebin, "select-decoder",
+      G_CALLBACK (select_decoder_cb), playbin);
   g_signal_connect (playbin->uridecodebin, "source-setup",
       G_CALLBACK (source_setup_cb), playbin);
   g_signal_connect (playbin->uridecodebin, "about-to-finish",
@@ -1238,6 +1244,8 @@ gst_play_bin3_set_flags (GstPlayBin3 * playbin, GstPlayFlags flags)
       ((flags & GST_PLAY_FLAG_DOWNLOAD) != 0),
       /* configure buffering of demuxed/parsed data */
       "use-buffering", ((flags & GST_PLAY_FLAG_BUFFERING) != 0), NULL);
+
+  playbin->allow_audio_passthrough = flags & GST_PLAY_FLAG_AUDIO_PASSTHROUGH;
 }
 
 static GstSample *
@@ -2527,7 +2535,7 @@ done:
 
 
 static gint
-select_stream_cb (GstElement * decodebin, GstStreamCollection * collection,
+select_stream_cb (GstElement * uridecodebin, GstStreamCollection * collection,
     GstStream * stream, GstPlayBin3 * playbin)
 {
   GstStreamType stype = gst_stream_get_stream_type (stream);
@@ -2547,6 +2555,56 @@ select_stream_cb (GstElement * decodebin, GstStreamCollection * collection,
 
   /* Let decodebin3 decide otherwise */
   return -1;
+}
+
+static gboolean
+select_decoder_cb (GstElement * uridecodebin, GstStream * stream,
+    GValue * decoder_factories, GstPlayBin3 * playbin)
+{
+  gboolean has_decoder = GST_VALUE_HOLDS_ARRAY (decoder_factories) &&
+      gst_value_array_get_size (decoder_factories), sink_unref;
+  GstCaps *stream_caps, *sink_caps;
+  GstElement *sink;
+  GstPad *pad;
+
+  GST_DEBUG_OBJECT (uridecodebin, "select-decoder out of %u factories for %s",
+      gst_value_array_get_size (decoder_factories), stream->stream_id);
+
+  if (!playbin->allow_audio_passthrough ||
+      gst_stream_get_stream_type (stream) != GST_STREAM_TYPE_AUDIO)
+    return has_decoder;
+
+  sink = gst_play_sink_get_sink (playbin->playsink, GST_PLAY_SINK_TYPE_AUDIO);
+  sink_unref = sink != NULL;
+  if (!sink || GST_STATE (sink) < GST_STATE_READY) {
+    sink = gst_play_sink_create_audio_sink (playbin->playsink);
+    if (!sink)
+      return has_decoder;
+  }
+
+  stream_caps = gst_stream_get_caps (stream);
+  if (!stream_caps)
+    goto no_caps;
+  pad = gst_element_get_static_pad (sink, "sink");
+  if (!pad)
+    goto out;
+  sink_caps = gst_pad_query_caps (pad, NULL);
+  gst_object_unref (pad);
+  GST_DEBUG_OBJECT (uridecodebin, "sink_caps for %s: %" GST_PTR_FORMAT "\n"
+      "stream caps: %" GST_PTR_FORMAT,
+      stream->stream_id, sink_caps, stream_caps);
+  /* force no use of decoder if the sink can handle stream caps */
+  if (gst_caps_can_intersect (stream_caps, sink_caps)) {
+    has_decoder = TRUE;
+    g_value_unset (decoder_factories);
+  }
+  gst_caps_unref (sink_caps);
+out:
+  gst_caps_unref (stream_caps);
+no_caps:
+  if (sink_unref)
+    gst_object_unref (sink);
+  return has_decoder;
 }
 
 /* We get called when the selected stream types change and

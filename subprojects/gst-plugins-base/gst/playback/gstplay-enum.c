@@ -72,6 +72,14 @@ gst_play_flags_get_type (void)
     {C_FLAGS (GST_PLAY_FLAG_FORCE_SW_DECODERS),
           "Force only software-based decoders (no effect for playbin3)",
         "force-sw-decoders"},
+    /**
+     * GstPlayFlags::audio-passthrough:
+     *
+     * Since: 1.23
+     */
+    {C_FLAGS (GST_PLAY_FLAG_AUDIO_PASSTHROUGH),
+          "allow decodebin3 to produce any of sink caps",
+        "audio-passthrough"},
     {0, NULL, NULL}
   };
   static GType id = 0;
