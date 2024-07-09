@@ -1146,6 +1146,9 @@ gst_video_test_src_query (GstBaseSrc * bsrc, GstQuery * query)
         res = TRUE;
       } else {
         GST_OBJECT_UNLOCK (src);
+        /* Without a framerate, we can't determine latency in time units, but
+         * we can chain up to report the default values and live-ness */
+        res = GST_BASE_SRC_CLASS (parent_class)->query (bsrc, query);
       }
       break;
     }
