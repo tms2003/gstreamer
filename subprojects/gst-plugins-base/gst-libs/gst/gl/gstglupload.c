@@ -701,7 +701,7 @@ GST_STATIC_CAPS (GST_VIDEO_CAPS_MAKE_WITH_FEATURES
 
 static const UploadMethod _gl_memory_upload = {
   "GLMemory",
-  METHOD_FLAG_CAN_SHARE_CONTEXT,
+  METHOD_FLAG_CAN_ACCEPT_RAW | METHOD_FLAG_CAN_SHARE_CONTEXT,
   &_gl_memory_upload_caps,
   &_gl_memory_upload_new,
   &_gl_memory_upload_transform_caps,
