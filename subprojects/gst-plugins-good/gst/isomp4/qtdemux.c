@@ -3608,11 +3608,9 @@ qtdemux_parse_trun (GstQTDemux * qtdemux, GstByteReader * trun,
    * non-fragmented case.
    */
   if (min_ct < 0)
-    stream->cslg_shift = -min_ct;
-  else
-    stream->cslg_shift = 0;
+    stream->cslg_shift = MAX (stream->cslg_shift, -min_ct);
 
-  GST_DEBUG_OBJECT (qtdemux, "Using clsg_shift %" G_GUINT64_FORMAT,
+  GST_DEBUG_OBJECT (qtdemux, "Using cslg_shift %" G_GUINT64_FORMAT,
       stream->cslg_shift);
 
   /* Update total duration if needed */
