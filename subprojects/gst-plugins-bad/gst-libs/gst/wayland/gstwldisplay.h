@@ -112,4 +112,16 @@ struct wp_single_pixel_buffer_manager_v1 * gst_wl_display_get_single_pixel_buffe
 GST_WL_API
 gboolean gst_wl_display_has_own_display (GstWlDisplay * self);
 
+GST_WL_API
+struct xx_color_manager_v2 *gst_wl_display_get_color_manager_v1 (GstWlDisplay * self);
+
+GST_WL_API
+struct wp_color_representation_manager_v1 *gst_wl_display_get_color_representation_manager_v1 (GstWlDisplay * self);
+
+GST_WL_API
+GList *gst_wl_display_get_colorimetries (GstWlDisplay * self);
+
+GST_WL_API
+gboolean gst_wl_display_get_color_parametric_creator_supported (GstWlDisplay * self);
+
 G_END_DECLS

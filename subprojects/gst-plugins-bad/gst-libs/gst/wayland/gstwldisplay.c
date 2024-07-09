@@ -24,6 +24,8 @@
 
 #include "gstwldisplay.h"
 
+#include "color-management-v1-client-protocol.h"
+#include "color-representation-v1-client-protocol.h"
 #include "fullscreen-shell-unstable-v1-client-protocol.h"
 #include "linux-dmabuf-unstable-v1-client-protocol.h"
 #include "single-pixel-buffer-v1-client-protocol.h"
@@ -53,9 +55,19 @@ typedef struct _GstWlDisplayPrivate
   struct wl_shm *shm;
   struct wp_viewporter *viewporter;
   struct zwp_linux_dmabuf_v1 *dmabuf;
+  struct xx_color_manager_v2 *color;
+  struct wp_color_representation_manager_v1 *color_representation;
+
   GArray *shm_formats;
   GArray *dmabuf_formats;
   GArray *dmabuf_modifiers;
+
+  gboolean color_parametric_creator_supported;
+  GList *colorimetries;
+  GArray *color_transfer_functions;
+  GArray *color_primaries;
+  GArray *color_representation_coefficients;
+  GArray *color_representation_chroma_locations;
 
   /* private */
   gboolean own_display;
@@ -92,6 +104,13 @@ gst_wl_display_init (GstWlDisplay * self)
   priv->shm_formats = g_array_new (FALSE, FALSE, sizeof (uint32_t));
   priv->dmabuf_formats = g_array_new (FALSE, FALSE, sizeof (uint32_t));
   priv->dmabuf_modifiers = g_array_new (FALSE, FALSE, sizeof (guint64));
+  priv->color_transfer_functions =
+      g_array_new (FALSE, FALSE, sizeof (uint32_t));
+  priv->color_primaries = g_array_new (FALSE, FALSE, sizeof (uint32_t));
+  priv->color_representation_coefficients =
+      g_array_new (FALSE, FALSE, sizeof (uint32_t));
+  priv->color_representation_chroma_locations =
+      g_array_new (FALSE, FALSE, sizeof (uint32_t));
   priv->wl_fd_poll = gst_poll_new (TRUE);
   priv->buffers = g_hash_table_new (g_direct_hash, g_direct_equal);
   g_mutex_init (&priv->buffers_mutex);
@@ -132,10 +151,24 @@ gst_wl_display_finalize (GObject * gobject)
   g_array_unref (priv->shm_formats);
   g_array_unref (priv->dmabuf_formats);
   g_array_unref (priv->dmabuf_modifiers);
+
+  if (priv->colorimetries)
+    g_list_free (priv->colorimetries);
+  g_array_unref (priv->color_transfer_functions);
+  g_array_unref (priv->color_primaries);
+  g_array_unref (priv->color_representation_coefficients);
+  g_array_unref (priv->color_representation_chroma_locations);
+
   gst_poll_free (priv->wl_fd_poll);
   g_hash_table_unref (priv->buffers);
   g_mutex_clear (&priv->buffers_mutex);
   g_rec_mutex_clear (&priv->sync_mutex);
+
+  if (priv->color)
+    xx_color_manager_v2_destroy (priv->color);
+
+  if (priv->color_representation)
+    wp_color_representation_manager_v1_destroy (priv->color_representation);
 
   if (priv->viewporter)
     wp_viewporter_destroy (priv->viewporter);
@@ -242,6 +275,262 @@ static const struct zwp_linux_dmabuf_v1_listener dmabuf_listener = {
   dmabuf_modifier,
 };
 
+#define FULL_RANGE_FLAG (1 << 8)
+
+static gboolean
+not_contained_in (gpointer key, gpointer value, gpointer other)
+{
+  return !g_hash_table_contains (other, key);
+}
+
+static void
+gst_wl_display_compute_colorimetrie (GstWlDisplay * self)
+{
+  GstWlDisplayPrivate *priv = gst_wl_display_get_instance_private (self);
+  GHashTable *candidates;
+  GHashTable *candidates_tmp;
+  guint i;
+
+  if (!priv->color) {
+    g_warning ("Server does not support color management");
+    return;
+  }
+
+  if (!priv->color_representation) {
+    g_warning ("Server does not support color representation");
+    return;
+  }
+
+  candidates_tmp = g_hash_table_new (NULL, NULL);
+
+  for (i = 0; i < priv->color_transfer_functions->len; i++) {
+    uint32_t transfer_function =
+        g_array_index (priv->color_transfer_functions, uint32_t, i);
+
+    switch (transfer_function) {
+      case WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_BT709:
+        g_hash_table_add (candidates_tmp,
+            (gpointer) GST_VIDEO_COLORIMETRY_BT601);
+        g_hash_table_add (candidates_tmp,
+            (gpointer) GST_VIDEO_COLORIMETRY_BT709);
+        g_hash_table_add (candidates_tmp,
+            (gpointer) GST_VIDEO_COLORIMETRY_BT2020_10);
+        break;
+      case WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_SRGB:
+        g_hash_table_add (candidates_tmp,
+            (gpointer) GST_VIDEO_COLORIMETRY_SRGB);
+        break;
+      case WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_ST2084_PQ:
+        g_hash_table_add (candidates_tmp,
+            (gpointer) GST_VIDEO_COLORIMETRY_BT2100_PQ);
+        break;
+      case WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_HLG:
+        g_hash_table_add (candidates_tmp,
+            (gpointer) GST_VIDEO_COLORIMETRY_BT2100_HLG);
+        break;
+      default:
+        break;
+    }
+  }
+
+  candidates = candidates_tmp;
+  candidates_tmp = g_hash_table_new (NULL, NULL);
+
+  for (i = 0; i < priv->color_primaries->len; i++) {
+    uint32_t primarie = g_array_index (priv->color_primaries, uint32_t, i);
+
+    switch (primarie) {
+      case WP_COLOR_MANAGER_V1_PRIMARIES_SRGB:
+        g_hash_table_add (candidates_tmp,
+            (gpointer) GST_VIDEO_COLORIMETRY_SRGB);
+        g_hash_table_add (candidates_tmp,
+            (gpointer) GST_VIDEO_COLORIMETRY_BT709);
+        break;
+      case WP_COLOR_MANAGER_V1_PRIMARIES_NTSC:
+        g_hash_table_add (candidates_tmp,
+            (gpointer) GST_VIDEO_COLORIMETRY_BT601);
+        break;
+      case WP_COLOR_MANAGER_V1_PRIMARIES_BT2020:
+        g_hash_table_add (candidates_tmp,
+            (gpointer) GST_VIDEO_COLORIMETRY_BT2020_10);
+        g_hash_table_add (candidates_tmp,
+            (gpointer) GST_VIDEO_COLORIMETRY_BT2100_PQ);
+        g_hash_table_add (candidates_tmp,
+            (gpointer) GST_VIDEO_COLORIMETRY_BT2100_HLG);
+        break;
+      default:
+        break;
+    }
+  }
+
+  g_hash_table_foreach_remove (candidates, not_contained_in, candidates_tmp);
+  g_hash_table_remove_all (candidates_tmp);
+
+  for (i = 0; i < priv->color_representation_coefficients->len; i++) {
+    uint32_t coefficient =
+        g_array_index (priv->color_representation_coefficients, uint32_t, i);
+    GstVideoColorRange range;
+
+    range = (coefficient & FULL_RANGE_FLAG) ?
+        GST_VIDEO_COLOR_RANGE_0_255 : GST_VIDEO_COLOR_RANGE_16_235;
+    coefficient %= FULL_RANGE_FLAG;
+
+    switch (coefficient) {
+      case WP_COLOR_REPRESENTATION_V1_COEFFICIENTS_IDENTITY:
+        if (range == GST_VIDEO_COLOR_RANGE_0_255)
+          g_hash_table_add (candidates_tmp,
+              (gpointer) GST_VIDEO_COLORIMETRY_SRGB);
+        break;
+      case WP_COLOR_REPRESENTATION_V1_COEFFICIENTS_BT709:
+        if (range == GST_VIDEO_COLOR_RANGE_16_235)
+          g_hash_table_add (candidates_tmp,
+              (gpointer) GST_VIDEO_COLORIMETRY_BT709);
+        break;
+      case WP_COLOR_REPRESENTATION_V1_COEFFICIENTS_BT601:
+        if (range == GST_VIDEO_COLOR_RANGE_16_235)
+          g_hash_table_add (candidates_tmp,
+              (gpointer) GST_VIDEO_COLORIMETRY_BT601);
+        break;
+      case WP_COLOR_REPRESENTATION_V1_COEFFICIENTS_BT2020:
+        if (range == GST_VIDEO_COLOR_RANGE_16_235) {
+          g_hash_table_add (candidates_tmp,
+              (gpointer) GST_VIDEO_COLORIMETRY_BT2020_10);
+          g_hash_table_add (candidates_tmp,
+              (gpointer) GST_VIDEO_COLORIMETRY_BT2100_PQ);
+          g_hash_table_add (candidates_tmp,
+              (gpointer) GST_VIDEO_COLORIMETRY_BT2100_HLG);
+        }
+        break;
+      default:
+        break;
+    }
+  }
+
+  g_hash_table_foreach_remove (candidates, not_contained_in, candidates_tmp);
+  g_hash_table_remove_all (candidates_tmp);
+
+  for (i = 0; i < priv->color_representation_chroma_locations->len; i++) {
+    uint32_t chroma_location =
+        g_array_index (priv->color_representation_chroma_locations, uint32_t,
+        i);
+
+    switch (chroma_location) {
+      case WP_COLOR_REPRESENTATION_V1_CHROMA_LOCATION_TYPE_0:
+        g_hash_table_add (candidates_tmp,
+            (gpointer) GST_VIDEO_COLORIMETRY_SRGB);
+        g_hash_table_add (candidates_tmp,
+            (gpointer) GST_VIDEO_COLORIMETRY_BT601);
+        g_hash_table_add (candidates_tmp,
+            (gpointer) GST_VIDEO_COLORIMETRY_BT709);
+        break;
+      case WP_COLOR_REPRESENTATION_V1_CHROMA_LOCATION_TYPE_2:
+        g_hash_table_add (candidates_tmp,
+            (gpointer) GST_VIDEO_COLORIMETRY_BT2020_10);
+        g_hash_table_add (candidates_tmp,
+            (gpointer) GST_VIDEO_COLORIMETRY_BT2100_PQ);
+        g_hash_table_add (candidates_tmp,
+            (gpointer) GST_VIDEO_COLORIMETRY_BT2100_HLG);
+        break;
+      default:
+        break;
+    }
+  }
+
+  g_hash_table_foreach_remove (candidates, not_contained_in, candidates_tmp);
+  g_hash_table_remove_all (candidates_tmp);
+
+  g_warning ("%s supported geometries: %d", __func__,
+      g_hash_table_size (candidates));
+  priv->colorimetries = g_hash_table_get_keys (candidates);
+
+  g_hash_table_unref (candidates);
+  g_hash_table_unref (candidates_tmp);
+}
+
+static void
+color_supported_intent (void *data,
+    struct xx_color_manager_v2 *xx_color_manager_v2, uint32_t render_intent)
+{
+}
+
+static void
+color_supported_feature (void *data,
+    struct xx_color_manager_v2 *xx_color_manager_v2, uint32_t feature)
+{
+  GstWlDisplay *self = data;
+  GstWlDisplayPrivate *priv = gst_wl_display_get_instance_private (self);
+
+  if (feature == WP_COLOR_MANAGER_V1_FEATURE_PARAMETRIC) {
+    g_warning ("%s new_parametric_creator supported", __func__);
+    priv->color_parametric_creator_supported = TRUE;
+  }
+}
+
+static void
+color_supported_tf_named (void *data,
+    struct xx_color_manager_v2 *xx_color_manager_v2, uint32_t tf)
+{
+  GstWlDisplay *self = data;
+  GstWlDisplayPrivate *priv = gst_wl_display_get_instance_private (self);
+
+  g_warning ("%s: %u", __func__, tf);
+  g_array_append_val (priv->color_transfer_functions, tf);
+}
+
+static void
+color_supported_primaries_named (void *data,
+    struct xx_color_manager_v2 *xx_color_manager_v2, uint32_t primaries)
+{
+  GstWlDisplay *self = data;
+  GstWlDisplayPrivate *priv = gst_wl_display_get_instance_private (self);
+
+  g_warning ("%s: %u", __func__, primaries);
+  g_array_append_val (priv->color_primaries, primaries);
+}
+
+static const struct xx_color_manager_v2_listener color_listener = {
+  .supported_intent = color_supported_intent,
+  .supported_feature = color_supported_feature,
+  .supported_tf_named = color_supported_tf_named,
+  .supported_primaries_named = color_supported_primaries_named,
+};
+
+static void
+color_representation_supported_coefficients_and_ranges (void *data,
+    struct wp_color_representation_manager_v1
+    *wp_color_representation_manager_v1, uint32_t coefficients, uint32_t range)
+{
+  GstWlDisplay *self = data;
+  GstWlDisplayPrivate *priv = gst_wl_display_get_instance_private (self);
+
+  g_warning ("%s: %u / %u", __func__, coefficients, range);
+
+  if (range == WP_COLOR_REPRESENTATION_V1_RANGE_FULL)
+    coefficients |= FULL_RANGE_FLAG;
+
+  g_array_append_val (priv->color_representation_coefficients, coefficients);
+}
+
+static void
+color_representation_supported_chroma_location (void *data,
+    struct wp_color_representation_manager_v1
+    *wp_color_representation_manager_v1, uint32_t chroma_location)
+{
+  GstWlDisplay *self = data;
+  GstWlDisplayPrivate *priv = gst_wl_display_get_instance_private (self);
+
+  g_warning ("%s: %u", __func__, chroma_location);
+  g_array_append_val (priv->color_representation_chroma_locations,
+      chroma_location);
+}
+
+static const struct wp_color_representation_manager_v1_listener
+    color_representation_listener = {
+  .supported_coefficients_and_ranges =
+      color_representation_supported_coefficients_and_ranges,
+  .supported_chroma_location = color_representation_supported_chroma_location,
+};
+
 gboolean
 gst_wl_display_check_format_for_shm (GstWlDisplay * self,
     const GstVideoInfo * video_info)
@@ -336,6 +625,17 @@ registry_handle_global (void *data, struct wl_registry *registry,
     priv->single_pixel_buffer =
         wl_registry_bind (registry, id,
         &wp_single_pixel_buffer_manager_v1_interface, 1);
+  } else if (g_strcmp0 (interface, xx_color_manager_v2_interface.name) == 0) {
+    priv->color = wl_registry_bind (registry, id,
+        &xx_color_manager_v2_interface, 1);
+    xx_color_manager_v2_add_listener (priv->color, &color_listener, self);
+  } else if (g_strcmp0 (interface,
+          wp_color_representation_manager_v1_interface.name) == 0) {
+    priv->color_representation =
+        wl_registry_bind (registry, id,
+        &wp_color_representation_manager_v1_interface, 1);
+    wp_color_representation_manager_v1_add_listener (priv->color_representation,
+        &color_representation_listener, self);
   }
 }
 
@@ -483,6 +783,8 @@ gst_wl_display_new_existing (struct wl_display *display,
     g_warning ("Could not bind to either xdg_wm_base or zwp_fullscreen_shell, "
         "video display may not work properly.");
   }
+
+  gst_wl_display_compute_colorimetrie (self);
 
   priv->thread = g_thread_try_new ("GstWlDisplay", gst_wl_display_thread_run,
       self, &err);
@@ -692,4 +994,36 @@ gst_wl_display_has_own_display (GstWlDisplay * self)
   GstWlDisplayPrivate *priv = gst_wl_display_get_instance_private (self);
 
   return priv->own_display;
+}
+
+struct xx_color_manager_v2 *
+gst_wl_display_get_color_manager_v1 (GstWlDisplay * self)
+{
+  GstWlDisplayPrivate *priv = gst_wl_display_get_instance_private (self);
+
+  return priv->color;
+}
+
+struct wp_color_representation_manager_v1 *
+gst_wl_display_get_color_representation_manager_v1 (GstWlDisplay * self)
+{
+  GstWlDisplayPrivate *priv = gst_wl_display_get_instance_private (self);
+
+  return priv->color_representation;
+}
+
+GList *
+gst_wl_display_get_colorimetries (GstWlDisplay * self)
+{
+  GstWlDisplayPrivate *priv = gst_wl_display_get_instance_private (self);
+
+  return priv->colorimetries;
+}
+
+gboolean
+gst_wl_display_get_color_parametric_creator_supported (GstWlDisplay * self)
+{
+  GstWlDisplayPrivate *priv = gst_wl_display_get_instance_private (self);
+
+  return priv->color_parametric_creator_supported;
 }
