@@ -1951,26 +1951,10 @@ gst_uri_decode_bin3_set_uri (GstURIDecodeBin3 * dec, const gchar * uri)
     /* Switch immediately if not the current input item */
     GST_DEBUG_OBJECT (dec, "Switching immediately");
 
-    /* FLUSH START all input pads */
     for (iter = old_pads; iter; iter = iter->next) {
       GstSourcePad *spad = iter->data;
-      if (spad->db3_sink_pad) {
-        /* Mark all input pads as EOS */
-        gst_pad_send_event (spad->db3_sink_pad, gst_event_new_flush_start ());
-      }
-      /* Block all input source pads */
-      spad->block_probe_id =
-          gst_pad_add_probe (spad->src_pad, GST_PAD_PROBE_TYPE_IDLE,
-          (GstPadProbeCallback) uri_src_ignore_block_probe, spad, NULL);
+      /* Mark all input pads as EOS */
       spad->saw_eos = TRUE;
-    }
-    for (iter = old_pads; iter; iter = iter->next) {
-      /* FLUSH_STOP all current input pads */
-      GstSourcePad *spad = iter->data;
-      if (spad->db3_sink_pad) {
-        gst_pad_send_event (spad->db3_sink_pad,
-            gst_event_new_flush_stop (TRUE));
-      }
     }
     start_item = TRUE;
   } else if (dec->input_item->posted_about_to_finish) {
