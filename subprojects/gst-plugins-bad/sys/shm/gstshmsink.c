@@ -94,7 +94,8 @@ static void gst_shm_sink_get_property (GObject * object, guint prop_id,
 
 static gboolean gst_shm_sink_start (GstBaseSink * bsink);
 static gboolean gst_shm_sink_stop (GstBaseSink * bsink);
-static GstFlowReturn gst_shm_sink_render (GstBaseSink * bsink, GstBuffer * buf);
+static gboolean gst_shm_sink_set_caps (GstBaseSink *bsink, GstCaps *caps);
+static GstFlowReturn gst_shm_sink_render (GstBaseSink *bsink, GstBuffer *buf);
 
 static gboolean gst_shm_sink_event (GstBaseSink * bsink, GstEvent * event);
 static gboolean gst_shm_sink_unlock (GstBaseSink * bsink);
@@ -378,6 +379,7 @@ gst_shm_sink_class_init (GstShmSinkClass * klass)
 
   gstbasesink_class->start = GST_DEBUG_FUNCPTR (gst_shm_sink_start);
   gstbasesink_class->stop = GST_DEBUG_FUNCPTR (gst_shm_sink_stop);
+  gstbasesink_class->set_caps = GST_DEBUG_FUNCPTR (gst_shm_sink_set_caps);
   gstbasesink_class->render = GST_DEBUG_FUNCPTR (gst_shm_sink_render);
   gstbasesink_class->event = GST_DEBUG_FUNCPTR (gst_shm_sink_event);
   gstbasesink_class->unlock = GST_DEBUG_FUNCPTR (gst_shm_sink_unlock);
@@ -623,6 +625,8 @@ gst_shm_sink_stop (GstBaseSink * bsink)
 
   GST_DEBUG_OBJECT (self, "Stopping");
 
+  gst_clear_buffer_list (&self->streamheaders);
+
   while (self->clients) {
     struct GstShmClient *client = self->clients->data;
     self->clients = g_list_remove (self->clients, client);
@@ -638,6 +642,54 @@ gst_shm_sink_stop (GstBaseSink * bsink)
 
   sp_writer_close (self->pipe, NULL, NULL);
   self->pipe = NULL;
+
+  return TRUE;
+}
+
+static gboolean
+gst_shm_sink_set_caps (GstBaseSink *bsink, GstCaps *caps)
+{
+  GstShmSink *self = GST_SHM_SINK (bsink);
+  GstStructure *s;
+
+  s = gst_caps_get_structure (caps, 0);
+
+  GST_OBJECT_LOCK (self);
+
+  gst_clear_buffer_list (&self->streamheaders);
+
+  if (gst_structure_has_field_typed (s, "streamheader", GST_TYPE_ARRAY)) {
+    const GValue *streamheader;
+    guint i, size;
+
+    streamheader = gst_structure_get_value (s, "streamheader");
+
+    GST_DEBUG_OBJECT (self, "'streamheader' field holds array");
+
+    size = gst_value_array_get_size (streamheader);
+    self->streamheaders = gst_buffer_list_new_sized (size);
+
+    for (i = 0; i < size; i++) {
+      const GValue *v = gst_value_array_get_value (streamheader, i);
+      if (!GST_VALUE_HOLDS_BUFFER (v)) {
+        GST_ERROR_OBJECT (self, "'streamheader' item of unexpected type '%s'",
+            G_VALUE_TYPE_NAME (v));
+        GST_OBJECT_UNLOCK (self);
+        return FALSE;
+      }
+
+      gst_buffer_list_add (self->streamheaders, g_value_dup_boxed (v));
+    }
+
+  } else if (gst_structure_has_field_typed (s, "streamheader",
+                 GST_TYPE_BUFFER)) {
+    GstBuffer *buf;
+
+    gst_structure_get (s, "streamheader", GST_TYPE_BUFFER, &buf, NULL);
+    gst_buffer_list_add (self->streamheaders, buf);
+  }
+
+  GST_OBJECT_UNLOCK (self);
 
   return TRUE;
 }
@@ -660,13 +712,32 @@ gst_shm_sink_can_render (GstShmSink * self, GstClockTime time)
   return TRUE;
 }
 
+static gboolean
+gst_shm_sink_is_usable_mem (GstShmSink * self, GstBuffer * buf)
+{
+  if (gst_buffer_n_memory (buf) > 1) {
+    GST_LOG_OBJECT (self, "Buffer %p has %d GstMemory, we only support a single"
+        " one, need to do a memcpy", buf, gst_buffer_n_memory (buf));
+    return FALSE;
+  } else {
+    GstMemory *memory = gst_buffer_peek_memory (buf, 0);
+
+    if (memory->allocator != GST_ALLOCATOR (self->allocator)) {
+      GST_LOG_OBJECT (self, "Memory in buffer %p was not allocated by "
+          "%" GST_PTR_FORMAT ", will memcpy", buf, memory->allocator);
+      return FALSE;
+    }
+  }
+
+  return TRUE;
+}
+
 static GstFlowReturn
 gst_shm_sink_render (GstBaseSink * bsink, GstBuffer * buf)
 {
   GstShmSink *self = GST_SHM_SINK (bsink);
   int rv = 0;
   GstMapInfo map;
-  gboolean need_new_memory = FALSE;
   GstFlowReturn ret = GST_FLOW_OK;
   GstMemory *memory = NULL;
   GstBuffer *sendbuf = NULL;
@@ -702,22 +773,7 @@ gst_shm_sink_render (GstBaseSink * bsink, GstBuffer * buf)
     }
   }
 
-
-  if (gst_buffer_n_memory (buf) > 1) {
-    GST_LOG_OBJECT (self, "Buffer %p has %d GstMemory, we only support a single"
-        " one, need to do a memcpy", buf, gst_buffer_n_memory (buf));
-    need_new_memory = TRUE;
-  } else {
-    memory = gst_buffer_peek_memory (buf, 0);
-
-    if (memory->allocator != GST_ALLOCATOR (self->allocator)) {
-      need_new_memory = TRUE;
-      GST_LOG_OBJECT (self, "Memory in buffer %p was not allocated by "
-          "%" GST_PTR_FORMAT ", will memcpy", buf, memory->allocator);
-    }
-  }
-
-  if (need_new_memory) {
+  if (!gst_shm_sink_is_usable_mem (self, buf)) {
     if (gst_buffer_get_size (buf) > sp_writer_get_max_buf_size (self->pipe)) {
       gsize area_size = sp_writer_get_max_buf_size (self->pipe);
       GST_ELEMENT_ERROR (self, RESOURCE, NO_SPACE_LEFT, (NULL),
@@ -790,7 +846,7 @@ gst_shm_sink_render (GstBaseSink * bsink, GstBuffer * buf)
    * We know it's not mapped for writing anywhere as we just mapped it for
    * reading
    */
-  rv = sp_writer_send_buf (self->pipe, (char *) map.data, map.size, sendbuf);
+  rv = sp_writer_send_buf (self->pipe, (char *) map.data, map.size, sendbuf, NULL);
   if (rv == -1) {
     GST_ELEMENT_ERROR (self, STREAM, FAILED,
         (NULL), ("Failed to send data over SHM"));
@@ -868,13 +924,29 @@ pollthread_func (gpointer data)
 
       GST_OBJECT_LOCK (self);
       client = sp_writer_accept_client (self->pipe);
-      GST_OBJECT_UNLOCK (self);
 
       if (!client) {
-        GST_ELEMENT_ERROR (self, RESOURCE, READ,
+         GST_OBJECT_UNLOCK (self);
+         GST_ELEMENT_ERROR (self, RESOURCE, READ,
             ("Failed to read from shmsink"),
             ("Control socket returns wrong data"));
         return NULL;
+      }
+
+      if (self->streamheaders) {
+        guint i;
+
+        for (i = 0; i < gst_buffer_list_length (self->streamheaders); i++) {
+          GstBuffer *buf = gst_buffer_list_get (self->streamheaders, i);
+          gsize size = gst_buffer_get_size (buf);
+          ShmBlock *block = sp_writer_alloc_block (self->pipe, size);
+
+          g_assert (block);
+
+          gst_buffer_extract (buf, 0, sp_writer_block_get_buf (block), size);
+          sp_writer_send_buf (self->pipe, sp_writer_block_get_buf (block), size, NULL, client);
+          sp_writer_free_block (block);
+        }
       }
 
       gclient = g_new (struct GstShmClient, 1);
@@ -884,6 +956,8 @@ pollthread_func (gpointer data)
       gst_poll_add_fd (self->poll, &gclient->pollfd);
       gst_poll_fd_ctl_read (self->poll, &gclient->pollfd, TRUE);
       self->clients = g_list_prepend (self->clients, gclient);
+      GST_OBJECT_UNLOCK (self);
+
       g_signal_emit (self, signals[SIGNAL_CLIENT_CONNECTED], 0,
           gclient->pollfd.fd);
       /* we need to call gst_poll_wait before calling gst_poll_* status
@@ -924,7 +998,7 @@ pollthread_func (gpointer data)
 
         g_assert (rv == 0 || tag == NULL);
 
-        if (rv == 0)
+        if (tag && rv == 0)
           gst_buffer_unref (tag);
       }
       continue;
@@ -934,12 +1008,13 @@ pollthread_func (gpointer data)
         GST_OBJECT_LOCK (self);
         sp_writer_close_client (self->pipe, gclient->client,
             (sp_buffer_free_callback) free_buffer_locked, (void **) &list);
+        gst_poll_remove_fd (self->poll, &gclient->pollfd);
+        self->clients = g_list_remove (self->clients, gclient);
+
         GST_OBJECT_UNLOCK (self);
         g_slist_free_full (list, (GDestroyNotify) gst_buffer_unref);
       }
 
-      gst_poll_remove_fd (self->poll, &gclient->pollfd);
-      self->clients = g_list_remove (self->clients, gclient);
 
       g_signal_emit (self, signals[SIGNAL_CLIENT_DISCONNECTED], 0,
           gclient->pollfd.fd);
