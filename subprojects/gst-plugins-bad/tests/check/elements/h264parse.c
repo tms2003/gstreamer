@@ -1243,6 +1243,174 @@ GST_START_TEST (test_parse_sei_closedcaptions)
 
 GST_END_TEST;
 
+GST_START_TEST (test_insert_cc_none_sei)
+{
+  /* Test `h264parse insert-cc=none`, ie: the "negative assertion" test.
+   * `h264parse` should return exactly the same bitstream as was put in, even
+   * when there is a GstVideoCaptionMeta.
+   */
+  GstVideoCaptionMeta *cc;
+  GstHarness *h;
+  GstBuffer *buf;
+
+  /* Bogus caption data, that we won't use. */
+  const guint8 cc_data[] = {
+    0x00, 0x80, 0x80
+  };
+  const gsize cc_data_size = sizeof (cc_data);
+
+  const guint8 video_idr[] = {
+    /* IDR frame (doesn't necessarily match caps) */
+    0x00, 0x00, 0x00, 0x14, 0x65, 0x88, 0x84, 0x00,
+    0x10, 0xff, 0xfe, 0xf6, 0xf0, 0xfe, 0x05, 0x36,
+    0x56, 0x04, 0x50, 0x96, 0x7b, 0x3f, 0x53, 0xe1
+  };
+  const gsize video_idr_size = sizeof (video_idr);
+
+  h = gst_harness_new_parse ("h264parse insert-cc=none");
+
+  gst_harness_set_src_caps_str (h,
+      "video/x-h264, stream-format=(string)avc, alignment=(string)au,"
+      " codec_data=(buffer)014d4015ffe10017674d4015eca4bf2e0220000003002ee6b28001e2c5b2c001000468ebecb2,"
+      " width=(int)32, height=(int)24, framerate=(fraction)30/1,"
+      " pixel-aspect-ratio=(fraction)1/1");
+
+  buf = gst_buffer_new_and_alloc (video_idr_size);
+  gst_buffer_add_video_caption_meta (buf,
+      GST_VIDEO_CAPTION_TYPE_CEA708_RAW, cc_data, cc_data_size);
+  gst_buffer_fill (buf, 0, video_idr, video_idr_size);
+  fail_unless_equals_int (gst_harness_push (h, buf), GST_FLOW_OK);
+
+  buf = gst_harness_pull (h);
+  /* Output should retain GstVideoCaptionMeta, regardless of insert-cc. */
+  cc = gst_buffer_get_video_caption_meta (buf);
+  fail_unless (cc != NULL);
+  fail_unless_equals_int (gst_buffer_get_size (buf), video_idr_size);
+  fail_unless_equals_int (gst_buffer_memcmp (buf, 0, video_idr, video_idr_size),
+      0);
+  gst_buffer_unref (buf);
+
+  gst_harness_teardown (h);
+}
+
+GST_END_TEST;
+
+GST_START_TEST (test_insert_cc_a53_sei)
+{
+  /* Test `h264parse insert-cc=a53`.
+   * `h264parse` should insert an SEI NAL before the primary picture NAL,
+   * in ATSC A/53 Part 4 format.
+   */
+  GstVideoCaptionMeta *cc;
+  GstHarness *h;
+  GstBuffer *buf;
+
+  /* Bogus caption data. */
+  const guint8 cc_data[] = {
+    0x00, 0x80, 0x80
+  };
+  const gsize cc_data_size = sizeof (cc_data);
+
+  /* The expected SEI NAL for cc_data. */
+  const guint8 caption_sei[] = {
+    0x00, 0x00, 0x00, 0x12,     /* NAL length */
+    0x06,                       /* nal_unit_type = SEI */
+    0x04,                       /* SEI_REGISTERED_USER_DATA */
+    0x0e,                       /* SEI length */
+    0xb5,                       /* ITU_T_T35_COUNTRY_CODE_US */
+    0x00, 0x31,                 /* ITU_T_T35_MANUFACTURER_US_ATSC */
+    0x47, 0x41, 0x39, 0x34,     /* "GA94" */
+    0x03,                       /* A53_USER_DATA_TYPE_CODE_CC_DATA */
+    0x41,                       /* process_cc_data = 1, cc_count = 1 */
+    0xff,                       /* em_data */
+    0x00, 0x80, 0x80,           /* cc_data */
+    0xff,                       /* marker bits */
+    0x80                        /* rbsp_trailing_bits */
+  };
+  const gsize caption_sei_size = sizeof (caption_sei);
+
+  const guint8 video_idr[] = {
+    /* IDR frame (doesn't necessarily match caps) */
+    0x00, 0x00, 0x00, 0x14, 0x65, 0x88, 0x84, 0x00,
+    0x10, 0xff, 0xfe, 0xf6, 0xf0, 0xfe, 0x05, 0x36,
+    0x56, 0x04, 0x50, 0x96, 0x7b, 0x3f, 0x53, 0xe1
+  };
+  const gsize video_idr_size = sizeof (video_idr);
+
+  h = gst_harness_new_parse ("h264parse insert-cc=a53");
+
+  gst_harness_set_src_caps_str (h,
+      "video/x-h264, stream-format=(string)avc, alignment=(string)au,"
+      " codec_data=(buffer)014d4015ffe10017674d4015eca4bf2e0220000003002ee6b28001e2c5b2c001000468ebecb2,"
+      " width=(int)32, height=(int)24, framerate=(fraction)30/1,"
+      " pixel-aspect-ratio=(fraction)1/1");
+
+  buf = gst_buffer_new_and_alloc (video_idr_size);
+  gst_buffer_add_video_caption_meta (buf,
+      GST_VIDEO_CAPTION_TYPE_CEA708_RAW, cc_data, cc_data_size);
+  gst_buffer_fill (buf, 0, video_idr, video_idr_size);
+  fail_unless_equals_int (gst_harness_push (h, buf), GST_FLOW_OK);
+
+  buf = gst_harness_pull (h);
+  cc = gst_buffer_get_video_caption_meta (buf);
+  fail_unless (cc != NULL);
+  fail_unless_equals_int (gst_buffer_get_size (buf),
+      caption_sei_size + video_idr_size);
+  /* Caption SEI NAL should preceed video IDR. */
+  fail_unless_equals_int (gst_buffer_memcmp (buf, 0, caption_sei,
+          caption_sei_size), 0);
+  fail_unless_equals_int (gst_buffer_memcmp (buf, caption_sei_size, video_idr,
+          video_idr_size), 0);
+  gst_buffer_unref (buf);
+
+  gst_harness_teardown (h);
+}
+
+GST_END_TEST;
+
+GST_START_TEST (test_insert_cc_a53_no_captions)
+{
+  /* Test `h264parse insert-cc=a53` with no GstVideoCaptionMeta.
+   * `h264parse` should return exactly the same bitstream as was put in.
+   */
+  GstVideoCaptionMeta *cc;
+  GstHarness *h;
+  GstBuffer *buf;
+
+  const guint8 video_idr[] = {
+    /* IDR frame (doesn't necessarily match caps) */
+    0x00, 0x00, 0x00, 0x14, 0x65, 0x88, 0x84, 0x00,
+    0x10, 0xff, 0xfe, 0xf6, 0xf0, 0xfe, 0x05, 0x36,
+    0x56, 0x04, 0x50, 0x96, 0x7b, 0x3f, 0x53, 0xe1
+  };
+  const gsize video_idr_size = sizeof (video_idr);
+
+  h = gst_harness_new_parse ("h264parse insert-cc=a53");
+
+  gst_harness_set_src_caps_str (h,
+      "video/x-h264, stream-format=(string)avc, alignment=(string)au,"
+      " codec_data=(buffer)014d4015ffe10017674d4015eca4bf2e0220000003002ee6b28001e2c5b2c001000468ebecb2,"
+      " width=(int)32, height=(int)24, framerate=(fraction)30/1,"
+      " pixel-aspect-ratio=(fraction)1/1");
+
+  buf = gst_buffer_new_and_alloc (video_idr_size);
+  gst_buffer_fill (buf, 0, video_idr, video_idr_size);
+  fail_unless_equals_int (gst_harness_push (h, buf), GST_FLOW_OK);
+
+  buf = gst_harness_pull (h);
+  /* Output should have no GstVideoCaptionMeta. */
+  cc = gst_buffer_get_video_caption_meta (buf);
+  fail_unless (cc == NULL);
+  fail_unless_equals_int (gst_buffer_get_size (buf), video_idr_size);
+  fail_unless_equals_int (gst_buffer_memcmp (buf, 0, video_idr, video_idr_size),
+      0);
+  gst_buffer_unref (buf);
+
+  gst_harness_teardown (h);
+}
+
+GST_END_TEST;
+
 GST_START_TEST (test_parse_skip_to_4bytes_sc)
 {
   GstHarness *h;
@@ -1625,6 +1793,9 @@ main (int argc, char **argv)
     s = suite_create ("h264parse");
     suite_add_tcase (s, tc_chain);
     tcase_add_test (tc_chain, test_parse_sei_closedcaptions);
+    tcase_add_test (tc_chain, test_insert_cc_none_sei);
+    tcase_add_test (tc_chain, test_insert_cc_a53_sei);
+    tcase_add_test (tc_chain, test_insert_cc_a53_no_captions);
     tcase_add_test (tc_chain, test_parse_compatible_caps);
     tcase_add_test (tc_chain, test_parse_skip_to_4bytes_sc);
     tcase_add_test (tc_chain, test_parse_aud_insert);

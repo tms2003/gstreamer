@@ -39,12 +39,36 @@ GST_DEBUG_CATEGORY (h264_parse_debug);
 
 #define DEFAULT_CONFIG_INTERVAL      (0)
 #define DEFAULT_UPDATE_TIMECODE       FALSE
+#define DEFAULT_INSERT_CC             GST_H264_PARSE_CC_MODE_NONE
+
+#define GST_H264_PARSE_CC_MODE_TYPE (gst_h264_parse_cc_mode_get_type())
+static GType
+gst_h264_parse_cc_mode_get_type (void)
+{
+  static GType type = 0;
+  static const GEnumValue data[] = {
+    {GST_H264_PARSE_CC_MODE_NONE,
+        "Don't insert caption SEIs into the bitstream", "none"},
+    {GST_H264_PARSE_CC_MODE_A53,
+          "Inserts a DTVCC transport stream "
+          "(closedcaption/x-cea-708,format=cc_data) as ATSC A/53 Part 4 SEI "
+          "NALs",
+        "a53"},
+    {0, NULL, NULL},
+  };
+
+  if (!type) {
+    type = g_enum_register_static ("GstH264ParseCCMode", data);
+  }
+  return type;
+}
 
 enum
 {
   PROP_0,
   PROP_CONFIG_INTERVAL,
   PROP_UPDATE_TIMECODE,
+  PROP_INSERT_CC,
 };
 
 enum
@@ -173,6 +197,39 @@ gst_h264_parse_class_init (GstH264ParseClass * klass)
           "VUI and pic_struct_present_flag of VUI must be non-zero",
           DEFAULT_UPDATE_TIMECODE, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
+  /**
+   * GstH264Parse:insert-cc:
+   *
+   * Inserts closed captions from #GstVideoCaptionMeta into the H.264
+   * bitstream. This is extremely fast, because it does not require
+   * transcoding!
+   *
+   * The following pipeline takes a MacCaption file `input.mcc` containing
+   * EIA/CEA/CTA-608 and/or 708 captions, and converts it to a DTVCC stream. It
+   * then takes an ISO MP4 file `input.mp4` containing a H.264 video stream,
+   * and inserts the DTVCC stream as ATSC A/53 SEI NALs, and writes that and
+   * the original audio track to `output.mp4`:
+   *
+   * ```
+   * gst-launch-1.0 \
+   *   cccombiner name=ccc schedule=false ! h264parse insert-cc=a53 ! \
+   *     mp4mux name=mp4 ! filesink location=output.mp4 \
+   *   filesrc location=input.mcc ! mccparse ! ccconverter ! \
+   *     closedcaption/x-cea-708,format=cc_data ! ccc.caption \
+   *   filesrc location=input.mp4 ! qtdemux name=qt ! queue ! ccc. \
+   *   qt.audio_0 ! queue ! mp4.
+   * ```
+   *
+   * Since: 1.20
+   */
+  g_object_class_install_property (gobject_class, PROP_INSERT_CC,
+      g_param_spec_enum ("insert-cc",
+          "Insert Closed Captions",
+          "Inserts closed captions from GstVideoCaptionMeta into the H.264 "
+          "bitstream without transcoding.", GST_H264_PARSE_CC_MODE_TYPE,
+          DEFAULT_INSERT_CC, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+  gst_type_mark_as_plugin_api (GST_H264_PARSE_CC_MODE_TYPE, 0);
+
   /* Override BaseParse vfuncs */
   parse_class->start = GST_DEBUG_FUNCPTR (gst_h264_parse_start);
   parse_class->stop = GST_DEBUG_FUNCPTR (gst_h264_parse_stop);
@@ -205,6 +262,7 @@ gst_h264_parse_init (GstH264Parse * h264parse)
   h264parse->aud_needed = TRUE;
   h264parse->aud_insert = TRUE;
   h264parse->update_timecode = DEFAULT_UPDATE_TIMECODE;
+  h264parse->insert_cc = DEFAULT_INSERT_CC;
 }
 
 static void
@@ -231,6 +289,7 @@ gst_h264_parse_reset_frame (GstH264Parse * h264parse)
   h264parse->update_caps = FALSE;
   h264parse->idr_pos = -1;
   h264parse->sei_pos = -1;
+  h264parse->picture_start_pos = -1;
   h264parse->pic_timing_sei_pos = -1;
   h264parse->pic_timing_sei_size = -1;
   h264parse->keyframe = FALSE;
@@ -1082,6 +1141,16 @@ gst_h264_parse_process_nal (GstH264Parse * h264parse, GstH264NalUnit * nalu)
       /* This is similar to the GOT_SLICE state, but is only reset when the
        * AU is complete. This is used to keep track of AU */
       h264parse->picture_start = TRUE;
+      if (h264parse->picture_start_pos == -1) {
+        if (h264parse->transform)
+          h264parse->picture_start_pos =
+              gst_adapter_available (h264parse->frame_out);
+        else
+          h264parse->picture_start_pos = nalu->sc_offset;
+        GST_DEBUG_OBJECT (h264parse,
+            "marking picture start in frame at offset %d",
+            h264parse->picture_start_pos);
+      }
 
       /* don't need to parse the whole slice (header) here */
       if (*(nalu->data + nalu->offset + nalu->header_bytes) & 0x80) {
@@ -3198,6 +3267,136 @@ gst_h264_parse_create_pic_timing_sei (GstH264Parse * h264parse,
       h264parse->idr_pos += mem_size;
       h264parse->idr_pos -= h264parse->pic_timing_sei_size;
     }
+    if (h264parse->picture_start_pos >= 0) {
+      h264parse->picture_start_pos += mem_size;
+      h264parse->picture_start_pos -= h264parse->pic_timing_sei_size;
+    }
+  }
+
+  return out_buf;
+}
+
+static GstBuffer *
+gst_h264_parse_create_cc_sei (GstH264Parse * h264parse, GstBuffer * buffer)
+{
+  GstVideoCaptionMeta *cc_meta;
+  gpointer iter = NULL;
+  GstMemory *mem = NULL;
+  GArray *cc_sei_array = NULL;
+  GstBuffer *out_buf = NULL;
+
+  if (!h264parse->insert_cc)
+    return NULL;
+
+  /* Collect all caption data from GstVideoCaptionMeta on the buffer.
+   * These can be inserted with `cccombiner`.
+   */
+  while ((cc_meta =
+          (GstVideoCaptionMeta *) gst_buffer_iterate_meta_filtered (buffer,
+              &iter, GST_VIDEO_CAPTION_META_API_TYPE))) {
+    GstH264SEIMessage sei;
+    GstH264RegisteredUserData *rud;
+    GstByteWriter *bw;
+
+    /* While this only allows `closedcaption/x-cea-708,format=cc_data`,
+     * you can still insert EIA-608 captions delivered in the DTVCC
+     * transport layer (ref: CEA-708-E §4), which `ccconverter` can
+     * produce.
+     */
+    if (cc_meta->caption_type != GST_VIDEO_CAPTION_TYPE_CEA708_RAW)
+      continue;
+
+    /* Create a user data SEI payload registered by ITU-T T.35 */
+    memset (&sei, 0, sizeof (GstH264SEIMessage));
+    sei.payloadType = GST_H264_SEI_REGISTERED_USER_DATA;
+    rud = &sei.payload.registered_user_data;
+    rud->country_code = ITU_T_T35_COUNTRY_CODE_US;
+    rud->size = cc_meta->size + 10;
+
+    bw = gst_byte_writer_new_with_size (rud->size, TRUE);
+    /* 16-bits itu_t_t35_provider_code */
+    gst_byte_writer_put_uint16_be (bw, ITU_T_T35_MANUFACTURER_US_ATSC);
+    /* 32-bits ATSC_user_identifier */
+    gst_byte_writer_put_uint32_be (bw, A53_USER_DATA_ID_GA94);
+    /* 8-bits ATSC1_data_user_data_type_code */
+    gst_byte_writer_put_uint8 (bw, A53_USER_DATA_TYPE_CODE_CC_DATA);
+    /* 8-bits:
+     * 1 bit process_em_data_flag (0)
+     * 1 bit process_cc_data_flag (1)
+     * 1 bit additional_data_flag (0)
+     * 5-bits cc_count
+     */
+    gst_byte_writer_put_uint8 (bw, ((cc_meta->size / 3) & 0x1f) | 0x40);
+    /* 8 bits em_data, unused */
+    gst_byte_writer_put_uint8 (bw, 255);
+    gst_byte_writer_put_data (bw, cc_meta->data, cc_meta->size);
+    /* 8 marker bits */
+    gst_byte_writer_put_uint8 (bw, 255);
+
+    rud->data = gst_byte_writer_free_and_get_data (bw);
+    if (!cc_sei_array) {
+      cc_sei_array = g_array_new (FALSE, FALSE, sizeof (GstH264SEIMessage));
+      g_array_set_clear_func (cc_sei_array,
+          (GDestroyNotify) gst_h264_sei_clear);
+    }
+
+    g_array_append_val (cc_sei_array, sei);
+  }
+
+  if (!cc_sei_array) {
+    /* Nothing to do! */
+    return NULL;
+  }
+
+  GST_DEBUG_OBJECT (h264parse,
+      "Inserting %d closed caption SEI message(s)", cc_sei_array->len);
+  if (h264parse->format == GST_H264_PARSE_FORMAT_BYTE) {
+    mem = gst_h264_create_sei_memory (4, cc_sei_array);
+  } else {
+    mem = gst_h264_create_sei_memory_avc (h264parse->nal_length_size,
+        cc_sei_array);
+  }
+  g_array_unref (cc_sei_array);
+
+  if (!mem) {
+    GST_WARNING_OBJECT (h264parse, "Cannot create SEI nal unit");
+    return NULL;
+  }
+
+  /* Insert the captions SEI bytes (mem) into the frame bytes. */
+  out_buf = gst_buffer_new ();
+  gst_buffer_copy_into (out_buf, buffer, GST_BUFFER_COPY_METADATA, 0, -1);
+  if (h264parse->align == GST_H264_PARSE_ALIGN_NAL) {
+    gst_buffer_append_memory (out_buf, mem);
+  } else {
+    gsize mem_size;
+
+    if (h264parse->picture_start_pos < 0) {
+      GST_WARNING_OBJECT (h264parse,
+          "No picture VCL NAL in frame, nowhere to insert SEI NAL unit");
+      return NULL;
+    }
+    mem_size = gst_memory_get_sizes (mem, NULL, NULL);
+
+    /* Order defined in Rec. ITU-T H.264 §7.4.1.2.3, Figure 7-1.
+     * SEI NALs must be after the AUD, SPS and PPS NALs, and preceed the 
+     * first VCL NAL of a primary coded picture. Because the AUD, SPS, PPS
+     * and SEI are all optional, insert before the first VCL NAL.
+     */
+    gst_buffer_copy_into (out_buf, buffer, GST_BUFFER_COPY_MEMORY, 0,
+        h264parse->picture_start_pos);
+
+    /* Insert new SEI NAL unit; this must preceed any picture data NAL. */
+    gst_buffer_append_memory (out_buf, mem);
+
+    /* Copy the remaining NALs. */
+    gst_buffer_copy_into (out_buf, buffer, GST_BUFFER_COPY_MEMORY,
+        h264parse->picture_start_pos, -1);
+
+    if (h264parse->idr_pos >= 0) {
+      h264parse->idr_pos += mem_size;
+    }
+    h264parse->picture_start_pos += mem_size;
   }
 
   return out_buf;
@@ -3258,6 +3457,8 @@ gst_h264_parse_pre_push_frame (GstBaseParse * parse, GstBaseParseFrame * frame)
       gst_buffer_prepend_memory (frame->out_buffer, mem);
       if (h264parse->idr_pos >= 0)
         h264parse->idr_pos += sizeof (au_delim);
+      if (h264parse->picture_start_pos >= 0)
+        h264parse->picture_start_pos += sizeof (au_delim);
 
       buffer = frame->out_buffer;
     } else {
@@ -3281,6 +3482,15 @@ gst_h264_parse_pre_push_frame (GstBaseParse * parse, GstBaseParseFrame * frame)
 
   /* handle timecode */
   new_buf = gst_h264_parse_create_pic_timing_sei (h264parse, buffer);
+  if (new_buf) {
+    if (frame->out_buffer)
+      gst_buffer_unref (frame->out_buffer);
+
+    buffer = frame->out_buffer = new_buf;
+  }
+
+  /* handle closed captions */
+  new_buf = gst_h264_parse_create_cc_sei (h264parse, buffer);
   if (new_buf) {
     if (frame->out_buffer)
       gst_buffer_unref (frame->out_buffer);
@@ -3908,6 +4118,9 @@ gst_h264_parse_set_property (GObject * object, guint prop_id,
     case PROP_UPDATE_TIMECODE:
       parse->update_timecode = g_value_get_boolean (value);
       break;
+    case PROP_INSERT_CC:
+      parse->insert_cc = g_value_get_enum (value);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -3928,6 +4141,9 @@ gst_h264_parse_get_property (GObject * object, guint prop_id,
       break;
     case PROP_UPDATE_TIMECODE:
       g_value_set_boolean (value, parse->update_timecode);
+      break;
+    case PROP_INSERT_CC:
+      g_value_set_enum (value, parse->insert_cc);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);

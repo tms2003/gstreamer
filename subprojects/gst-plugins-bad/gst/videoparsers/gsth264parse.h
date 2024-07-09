@@ -48,6 +48,39 @@ typedef struct _H264Params H264Params;
 
 GType gst_h264_parse_get_type (void);
 
+
+/**
+ * GstH264ParseCCMode:
+ * 
+ * H.264 in-bitstream caption insertion method.
+ *
+ * Since: 1.20
+ */
+typedef enum
+{
+  /**
+   * GstH264ParseCCMode::none:
+   * 
+   * Don't insert caption SEIs into the bitstream.
+   * 
+   * Since: 1.20
+   */
+  GST_H264_PARSE_CC_MODE_NONE = 0,
+
+  /**
+   * GstH264ParseCCMode::a53:
+   * 
+   * Inserts a DTVCC stream as ATSC A/53 Part 4 SEI NALs.
+   * 
+   * Captions must be encapsulated using the DTVCC transport layer
+   * (`closedcaption/x-cea-708,format=cc_data`). EIA/CEA/CTA-608, 708 and
+   * mixed 608+708 captions can be delivered over DTVCC.
+   * 
+   * Since: 1.20
+   */
+  GST_H264_PARSE_CC_MODE_A53 = 1,
+} GstH264ParseCCMode;
+
 typedef struct _GstH264Parse GstH264Parse;
 typedef struct _GstH264ParseClass GstH264ParseClass;
 
@@ -144,10 +177,13 @@ struct _GstH264Parse
   gboolean frame_start;
   /* AU state */
   gboolean picture_start;
+  /* Position of the first picture NAL */
+  gint picture_start_pos;
 
   /* props */
   gint interval;
   gboolean update_timecode;
+  GstH264ParseCCMode insert_cc;
 
   GstClockTime pending_key_unit_ts;
   GstEvent *force_key_unit_event;
