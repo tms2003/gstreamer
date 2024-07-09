@@ -2511,6 +2511,444 @@ corresponding to the @system_frame_number</doc>
         </return-value>
       </function>
     </record>
+    <class name="H265Encoder" c:symbol-prefix="h265_encoder" c:type="GstH265Encoder" parent="GstVideo.VideoEncoder" abstract="1" glib:type-name="GstH265Encoder" glib:get-type="gst_h265_encoder_get_type" glib:type-struct="H265EncoderClass">
+      <doc xml:space="preserve" filename="../subprojects/gst-plugins-bad/gst-libs/gst/codecs/gsth265encoder.h">The opaque #GstH265Encoder data structure.</doc>
+      <source-position filename="../subprojects/gst-plugins-bad/gst-libs/gst/codecs/gsth265encoder.h"/>
+      <implements name="Gst.Preset"/>
+      <function name="get_profile_from_str" c:identifier="gst_h265_encoder_get_profile_from_str" introspectable="0">
+        <source-position filename="../subprojects/gst-plugins-bad/gst-libs/gst/codecs/gsth265encoder.h"/>
+        <return-value>
+          <type c:type="GstH265Profile"/>
+        </return-value>
+        <parameters>
+          <parameter name="profile" transfer-ownership="none">
+            <type name="utf8" c:type="const gchar*"/>
+          </parameter>
+        </parameters>
+      </function>
+      <function name="get_profile_name" c:identifier="gst_h265_encoder_get_profile_name" introspectable="0">
+        <source-position filename="../subprojects/gst-plugins-bad/gst-libs/gst/codecs/gsth265encoder.h"/>
+        <return-value transfer-ownership="none">
+          <type name="utf8" c:type="const gchar*"/>
+        </return-value>
+        <parameters>
+          <parameter name="profile" transfer-ownership="none">
+            <type c:type="GstH265Profile"/>
+          </parameter>
+        </parameters>
+      </function>
+      <function name="slice_type_name" c:identifier="gst_h265_encoder_slice_type_name" introspectable="0">
+        <source-position filename="../subprojects/gst-plugins-bad/gst-libs/gst/codecs/gsth265encoder.h"/>
+        <return-value transfer-ownership="none">
+          <type name="utf8" c:type="const gchar*"/>
+        </return-value>
+        <parameters>
+          <parameter name="type" transfer-ownership="none">
+            <type c:type="GstH265SliceType"/>
+          </parameter>
+        </parameters>
+      </function>
+      <virtual-method name="encode_frame">
+        <doc xml:space="preserve" filename="../subprojects/gst-plugins-bad/gst-libs/gst/codecs/gsth265encoder.h">Provide the frame to be encoded with the encode parameters (to be defined)</doc>
+        <source-position filename="../subprojects/gst-plugins-bad/gst-libs/gst/codecs/gsth265encoder.h"/>
+        <return-value transfer-ownership="none">
+          <type name="Gst.FlowReturn" c:type="GstFlowReturn"/>
+        </return-value>
+        <parameters>
+          <instance-parameter name="encoder" transfer-ownership="none">
+            <doc xml:space="preserve" filename="../subprojects/gst-plugins-bad/gst-libs/gst/codecs/gsth265encoder.h">a #GstH265Encoder</doc>
+            <type name="H265Encoder" c:type="GstH265Encoder*"/>
+          </instance-parameter>
+          <parameter name="frame" transfer-ownership="none">
+            <doc xml:space="preserve" filename="../subprojects/gst-plugins-bad/gst-libs/gst/codecs/gsth265encoder.h">a #GstH265Frame</doc>
+            <type name="GstVideo.VideoCodecFrame" c:type="GstVideoCodecFrame*"/>
+          </parameter>
+          <parameter name="last" transfer-ownership="none">
+            <type name="gboolean" c:type="gboolean"/>
+          </parameter>
+        </parameters>
+      </virtual-method>
+      <virtual-method name="max_num_reference">
+        <source-position filename="../subprojects/gst-plugins-bad/gst-libs/gst/codecs/gsth265encoder.h"/>
+        <return-value transfer-ownership="none">
+          <type name="gboolean" c:type="gboolean"/>
+        </return-value>
+        <parameters>
+          <instance-parameter name="encoder" transfer-ownership="none">
+            <type name="H265Encoder" c:type="GstH265Encoder*"/>
+          </instance-parameter>
+          <parameter name="list0" transfer-ownership="none">
+            <type name="guint32" c:type="guint32*"/>
+          </parameter>
+          <parameter name="list1" transfer-ownership="none">
+            <type name="guint32" c:type="guint32*"/>
+          </parameter>
+        </parameters>
+      </virtual-method>
+      <virtual-method name="new_frame">
+        <source-position filename="../subprojects/gst-plugins-bad/gst-libs/gst/codecs/gsth265encoder.h"/>
+        <return-value transfer-ownership="none">
+          <type name="gboolean" c:type="gboolean"/>
+        </return-value>
+        <parameters>
+          <instance-parameter name="encoder" transfer-ownership="none">
+            <type name="H265Encoder" c:type="GstH265Encoder*"/>
+          </instance-parameter>
+          <parameter name="frame" transfer-ownership="none">
+            <type name="GstVideo.VideoCodecFrame" c:type="GstVideoCodecFrame*"/>
+          </parameter>
+        </parameters>
+      </virtual-method>
+      <virtual-method name="prepare_output">
+        <source-position filename="../subprojects/gst-plugins-bad/gst-libs/gst/codecs/gsth265encoder.h"/>
+        <return-value transfer-ownership="none">
+          <type name="none" c:type="void"/>
+        </return-value>
+        <parameters>
+          <instance-parameter name="encoder" transfer-ownership="none">
+            <type name="H265Encoder" c:type="GstH265Encoder*"/>
+          </instance-parameter>
+          <parameter name="frame" transfer-ownership="none">
+            <type name="GstVideo.VideoCodecFrame" c:type="GstVideoCodecFrame*"/>
+          </parameter>
+        </parameters>
+      </virtual-method>
+      <virtual-method name="reorder_frame">
+        <source-position filename="../subprojects/gst-plugins-bad/gst-libs/gst/codecs/gsth265encoder.h"/>
+        <return-value transfer-ownership="none">
+          <type name="gboolean" c:type="gboolean"/>
+        </return-value>
+        <parameters>
+          <instance-parameter name="base" transfer-ownership="none">
+            <type name="H265Encoder" c:type="GstH265Encoder*"/>
+          </instance-parameter>
+          <parameter name="frame" transfer-ownership="none">
+            <type name="GstVideo.VideoCodecFrame" c:type="GstVideoCodecFrame*"/>
+          </parameter>
+          <parameter name="bump_all" transfer-ownership="none">
+            <type name="gboolean" c:type="gboolean"/>
+          </parameter>
+          <parameter name="out_frame" transfer-ownership="none">
+            <type name="GstVideo.VideoCodecFrame" c:type="GstVideoCodecFrame**"/>
+          </parameter>
+        </parameters>
+      </virtual-method>
+      <virtual-method name="set_format">
+        <source-position filename="../subprojects/gst-plugins-bad/gst-libs/gst/codecs/gsth265encoder.h"/>
+        <return-value transfer-ownership="none">
+          <type name="gboolean" c:type="gboolean"/>
+        </return-value>
+        <parameters>
+          <instance-parameter name="encoder" transfer-ownership="none">
+            <type name="H265Encoder" c:type="GstH265Encoder*"/>
+          </instance-parameter>
+          <parameter name="state" transfer-ownership="none">
+            <type name="GstVideo.VideoCodecState" c:type="GstVideoCodecState*"/>
+          </parameter>
+        </parameters>
+      </virtual-method>
+      <property name="bitrate" version="1.24" writable="1" construct="1" transfer-ownership="none">
+        <type name="guint64" c:type="guint64"/>
+      </property>
+      <property name="idr-period" version="1.24" writable="1" construct="1" transfer-ownership="none">
+        <type name="gint" c:type="gint"/>
+      </property>
+      <field name="parent" readable="0" private="1">
+        <type name="GstVideo.VideoEncoder" c:type="GstVideoEncoder"/>
+      </field>
+      <field name="input_state" readable="0" private="1">
+        <type name="GstVideo.VideoCodecState" c:type="GstVideoCodecState*"/>
+      </field>
+      <field name="width" readable="0" private="1">
+        <type name="gint" c:type="gint"/>
+      </field>
+      <field name="height" readable="0" private="1">
+        <type name="gint" c:type="gint"/>
+      </field>
+      <field name="luma_width" readable="0" private="1">
+        <type name="guint" c:type="guint"/>
+      </field>
+      <field name="luma_height" readable="0" private="1">
+        <type name="guint" c:type="guint"/>
+      </field>
+      <field name="profile" introspectable="0" readable="0" private="1">
+        <type c:type="GstH265Profile"/>
+      </field>
+      <field name="level_idc" readable="0" private="1">
+        <type name="guint8" c:type="guint8"/>
+      </field>
+      <field name="tier_flag" readable="0" private="1">
+        <type name="gboolean" c:type="gboolean"/>
+      </field>
+      <field name="level_str" readable="0" private="1">
+        <type name="utf8" c:type="const gchar*"/>
+      </field>
+      <field name="min_cr" readable="0" private="1">
+        <type name="guint" c:type="guint"/>
+      </field>
+      <record name="gop" c:type="gop">
+        <source-position filename="../subprojects/gst-plugins-bad/gst-libs/gst/codecs/gsth265encoder.h"/>
+        <field name="idr_period" writable="1">
+          <type name="guint32" c:type="guint32"/>
+        </field>
+        <field name="total_idr_count" writable="1">
+          <type name="guint32" c:type="guint32"/>
+        </field>
+        <field name="ip_period" writable="1">
+          <type name="guint32" c:type="guint32"/>
+        </field>
+        <field name="i_period" writable="1">
+          <type name="guint32" c:type="guint32"/>
+        </field>
+        <field name="num_bframes" writable="1">
+          <type name="guint32" c:type="guint32"/>
+        </field>
+        <field name="b_pyramid" writable="1">
+          <type name="gboolean" c:type="gboolean"/>
+        </field>
+        <field name="highest_pyramid_level" writable="1">
+          <type name="guint32" c:type="guint32"/>
+        </field>
+        <field name="num_iframes" writable="1">
+          <type name="guint32" c:type="guint32"/>
+        </field>
+        <field name="frame_types" writable="1">
+          <array zero-terminated="0" fixed-size="1024">
+            <type name="gpointer" c:type="gpointer"/>
+          </array>
+        </field>
+        <field name="cur_frame_index" writable="1">
+          <type name="guint" c:type="guint"/>
+        </field>
+        <field name="cur_frame_num" writable="1">
+          <type name="gint" c:type="gint"/>
+        </field>
+        <field name="max_frame_num" writable="1">
+          <type name="guint32" c:type="guint32"/>
+        </field>
+        <field name="log2_max_frame_num" writable="1">
+          <type name="guint32" c:type="guint32"/>
+        </field>
+        <field name="max_pic_order_cnt" writable="1">
+          <type name="guint32" c:type="guint32"/>
+        </field>
+        <field name="log2_max_pic_order_cnt" writable="1">
+          <type name="guint32" c:type="guint32"/>
+        </field>
+        <field name="num_ref_frames" writable="1">
+          <type name="guint32" c:type="guint32"/>
+        </field>
+        <field name="ref_num_list0" writable="1">
+          <type name="guint32" c:type="guint32"/>
+        </field>
+        <field name="ref_num_list1" writable="1">
+          <type name="guint32" c:type="guint32"/>
+        </field>
+        <field name="num_reorder_frames" writable="1">
+          <type name="guint" c:type="guint"/>
+        </field>
+      </record>
+      <record name="prop" c:type="prop">
+        <source-position filename="../subprojects/gst-plugins-bad/gst-libs/gst/codecs/gsth265encoder.h"/>
+        <field name="idr_period" writable="1">
+          <type name="guint32" c:type="guint32"/>
+        </field>
+        <field name="max_quality" writable="1">
+          <type name="gint" c:type="gint"/>
+        </field>
+        <field name="min_quality" writable="1">
+          <type name="gint" c:type="gint"/>
+        </field>
+      </record>
+      <field name="ref_list">
+        <type name="GLib.Queue" c:type="GQueue"/>
+      </field>
+      <field name="reorder_list">
+        <type name="GLib.Queue" c:type="GQueue"/>
+      </field>
+      <field name="output_list">
+        <type name="GLib.Queue" c:type="GQueue"/>
+      </field>
+      <field name="start_pts">
+        <type name="Gst.ClockTime" c:type="GstClockTime"/>
+      </field>
+      <field name="frame_duration">
+        <type name="Gst.ClockTime" c:type="GstClockTime"/>
+      </field>
+      <field name="input_frame_count">
+        <type name="guint" c:type="guint"/>
+      </field>
+      <field name="output_frame_count">
+        <type name="guint" c:type="guint"/>
+      </field>
+      <field name="priv" readable="0" private="1">
+        <type name="H265EncoderPrivate" c:type="GstH265EncoderPrivate*"/>
+      </field>
+      <field name="padding" readable="0" private="1">
+        <array zero-terminated="0" fixed-size="20">
+          <type name="gpointer" c:type="gpointer"/>
+        </array>
+      </field>
+    </class>
+    <record name="H265EncoderClass" c:type="GstH265EncoderClass" glib:is-gtype-struct-for="H265Encoder">
+      <source-position filename="../subprojects/gst-plugins-bad/gst-libs/gst/codecs/gsth265encoder.h"/>
+      <field name="parent_class">
+        <type name="GstVideo.VideoEncoderClass" c:type="GstVideoEncoderClass"/>
+      </field>
+      <field name="new_frame">
+        <callback name="new_frame">
+          <source-position filename="../subprojects/gst-plugins-bad/gst-libs/gst/codecs/gsth265encoder.h"/>
+          <return-value transfer-ownership="none">
+            <type name="gboolean" c:type="gboolean"/>
+          </return-value>
+          <parameters>
+            <parameter name="encoder" transfer-ownership="none">
+              <type name="H265Encoder" c:type="GstH265Encoder*"/>
+            </parameter>
+            <parameter name="frame" transfer-ownership="none">
+              <type name="GstVideo.VideoCodecFrame" c:type="GstVideoCodecFrame*"/>
+            </parameter>
+          </parameters>
+        </callback>
+      </field>
+      <field name="reorder_frame">
+        <callback name="reorder_frame">
+          <source-position filename="../subprojects/gst-plugins-bad/gst-libs/gst/codecs/gsth265encoder.h"/>
+          <return-value transfer-ownership="none">
+            <type name="gboolean" c:type="gboolean"/>
+          </return-value>
+          <parameters>
+            <parameter name="base" transfer-ownership="none">
+              <type name="H265Encoder" c:type="GstH265Encoder*"/>
+            </parameter>
+            <parameter name="frame" transfer-ownership="none">
+              <type name="GstVideo.VideoCodecFrame" c:type="GstVideoCodecFrame*"/>
+            </parameter>
+            <parameter name="bump_all" transfer-ownership="none">
+              <type name="gboolean" c:type="gboolean"/>
+            </parameter>
+            <parameter name="out_frame" transfer-ownership="none">
+              <type name="GstVideo.VideoCodecFrame" c:type="GstVideoCodecFrame**"/>
+            </parameter>
+          </parameters>
+        </callback>
+      </field>
+      <field name="encode_frame">
+        <callback name="encode_frame">
+          <source-position filename="../subprojects/gst-plugins-bad/gst-libs/gst/codecs/gsth265encoder.h"/>
+          <return-value transfer-ownership="none">
+            <type name="Gst.FlowReturn" c:type="GstFlowReturn"/>
+          </return-value>
+          <parameters>
+            <parameter name="encoder" transfer-ownership="none">
+              <doc xml:space="preserve" filename="../subprojects/gst-plugins-bad/gst-libs/gst/codecs/gsth265encoder.h">a #GstH265Encoder</doc>
+              <type name="H265Encoder" c:type="GstH265Encoder*"/>
+            </parameter>
+            <parameter name="frame" transfer-ownership="none">
+              <doc xml:space="preserve" filename="../subprojects/gst-plugins-bad/gst-libs/gst/codecs/gsth265encoder.h">a #GstH265Frame</doc>
+              <type name="GstVideo.VideoCodecFrame" c:type="GstVideoCodecFrame*"/>
+            </parameter>
+            <parameter name="last" transfer-ownership="none">
+              <type name="gboolean" c:type="gboolean"/>
+            </parameter>
+          </parameters>
+        </callback>
+      </field>
+      <field name="prepare_output">
+        <callback name="prepare_output">
+          <source-position filename="../subprojects/gst-plugins-bad/gst-libs/gst/codecs/gsth265encoder.h"/>
+          <return-value transfer-ownership="none">
+            <type name="none" c:type="void"/>
+          </return-value>
+          <parameters>
+            <parameter name="encoder" transfer-ownership="none">
+              <type name="H265Encoder" c:type="GstH265Encoder*"/>
+            </parameter>
+            <parameter name="frame" transfer-ownership="none">
+              <type name="GstVideo.VideoCodecFrame" c:type="GstVideoCodecFrame*"/>
+            </parameter>
+          </parameters>
+        </callback>
+      </field>
+      <field name="set_format">
+        <callback name="set_format">
+          <source-position filename="../subprojects/gst-plugins-bad/gst-libs/gst/codecs/gsth265encoder.h"/>
+          <return-value transfer-ownership="none">
+            <type name="gboolean" c:type="gboolean"/>
+          </return-value>
+          <parameters>
+            <parameter name="encoder" transfer-ownership="none">
+              <type name="H265Encoder" c:type="GstH265Encoder*"/>
+            </parameter>
+            <parameter name="state" transfer-ownership="none">
+              <type name="GstVideo.VideoCodecState" c:type="GstVideoCodecState*"/>
+            </parameter>
+          </parameters>
+        </callback>
+      </field>
+      <field name="max_num_reference">
+        <callback name="max_num_reference">
+          <source-position filename="../subprojects/gst-plugins-bad/gst-libs/gst/codecs/gsth265encoder.h"/>
+          <return-value transfer-ownership="none">
+            <type name="gboolean" c:type="gboolean"/>
+          </return-value>
+          <parameters>
+            <parameter name="encoder" transfer-ownership="none">
+              <type name="H265Encoder" c:type="GstH265Encoder*"/>
+            </parameter>
+            <parameter name="list0" transfer-ownership="none">
+              <type name="guint32" c:type="guint32*"/>
+            </parameter>
+            <parameter name="list1" transfer-ownership="none">
+              <type name="guint32" c:type="guint32*"/>
+            </parameter>
+          </parameters>
+        </callback>
+      </field>
+      <field name="padding" readable="0" private="1">
+        <array zero-terminated="0" fixed-size="20">
+          <type name="gpointer" c:type="gpointer"/>
+        </array>
+      </field>
+    </record>
+    <record name="H265EncoderPrivate" c:type="GstH265EncoderPrivate" disguised="1">
+      <source-position filename="../subprojects/gst-plugins-bad/gst-libs/gst/codecs/gsth265encoder.h"/>
+    </record>
+    <record name="H265Frame" c:type="GstH265Frame" glib:type-name="GstH265Frame" glib:get-type="gst_h265_frame_get_type" c:symbol-prefix="h265_frame">
+      <source-position filename="../subprojects/gst-plugins-bad/gst-libs/gst/codecs/gsth265frame.h"/>
+      <field name="parent" writable="1">
+        <type name="Gst.MiniObject" c:type="GstMiniObject"/>
+      </field>
+      <field name="type" writable="1">
+        <type name="H265FrameType" c:type="GstH265FrameType"/>
+      </field>
+      <field name="quality" writable="1">
+        <type name="gint" c:type="gint"/>
+      </field>
+      <field name="frame" writable="1">
+        <type name="GstVideo.VideoCodecFrame" c:type="GstVideoCodecFrame*"/>
+      </field>
+      <constructor name="new" c:identifier="gst_h265_frame_new">
+        <doc xml:space="preserve" filename="../subprojects/gst-plugins-bad/gst-libs/gst/codecs/gsth265frame.c">Create new #GstH265Frame</doc>
+        <source-position filename="../subprojects/gst-plugins-bad/gst-libs/gst/codecs/gsth265frame.h"/>
+        <return-value transfer-ownership="full">
+          <doc xml:space="preserve" filename="../subprojects/gst-plugins-bad/gst-libs/gst/codecs/gsth265frame.c">a new #GstH265Frame</doc>
+          <type name="H265Frame" c:type="GstH265Frame*"/>
+        </return-value>
+        <parameters>
+          <parameter name="f" transfer-ownership="none">
+            <type name="GstVideo.VideoCodecFrame" c:type="GstVideoCodecFrame*"/>
+          </parameter>
+        </parameters>
+      </constructor>
+    </record>
+    <enumeration name="H265FrameType" c:type="GstH265FrameType">
+      <source-position filename="../subprojects/gst-plugins-bad/gst-libs/gst/codecs/gsth265frame.h"/>
+      <member name="key" value="0" c:identifier="GST_H265_FRAME_KEY">
+      </member>
+      <member name="inter" value="1" c:identifier="GST_H265_FRAME_INTER">
+      </member>
+    </enumeration>
     <record name="H265Picture" c:type="GstH265Picture" glib:type-name="GstH265Picture" glib:get-type="gst_h265_picture_get_type" c:symbol-prefix="h265_picture">
       <source-position filename="../subprojects/gst-plugins-bad/gst-libs/gst/codecs/gsth265picture.h"/>
       <field name="parent" readable="0" private="1">
@@ -2632,6 +3070,48 @@ corresponding to the @system_frame_number</doc>
       <source-position filename="../subprojects/gst-plugins-bad/gst-libs/gst/codecs/gsth265picture.h"/>
       <type name="gint" c:type="gint"/>
     </constant>
+    <function-macro name="H265_ENCODER" c:identifier="GST_H265_ENCODER" introspectable="0">
+      <source-position filename="../subprojects/gst-plugins-bad/gst-libs/gst/codecs/gsth265encoder.h"/>
+      <parameters>
+        <parameter name="obj">
+        </parameter>
+      </parameters>
+    </function-macro>
+    <function-macro name="H265_ENCODER_CAST" c:identifier="GST_H265_ENCODER_CAST" introspectable="0">
+      <source-position filename="../subprojects/gst-plugins-bad/gst-libs/gst/codecs/gsth265encoder.h"/>
+      <parameters>
+        <parameter name="obj">
+        </parameter>
+      </parameters>
+    </function-macro>
+    <function-macro name="H265_ENCODER_CLASS" c:identifier="GST_H265_ENCODER_CLASS" introspectable="0">
+      <source-position filename="../subprojects/gst-plugins-bad/gst-libs/gst/codecs/gsth265encoder.h"/>
+      <parameters>
+        <parameter name="klass">
+        </parameter>
+      </parameters>
+    </function-macro>
+    <function-macro name="H265_ENCODER_GET_CLASS" c:identifier="GST_H265_ENCODER_GET_CLASS" introspectable="0">
+      <source-position filename="../subprojects/gst-plugins-bad/gst-libs/gst/codecs/gsth265encoder.h"/>
+      <parameters>
+        <parameter name="obj">
+        </parameter>
+      </parameters>
+    </function-macro>
+    <function-macro name="H265_FRAME" c:identifier="GST_H265_FRAME" introspectable="0">
+      <source-position filename="../subprojects/gst-plugins-bad/gst-libs/gst/codecs/gsth265frame.h"/>
+      <parameters>
+        <parameter name="obj">
+        </parameter>
+      </parameters>
+    </function-macro>
+    <function-macro name="H265_FRAME_CAST" c:identifier="GST_H265_FRAME_CAST" introspectable="0">
+      <source-position filename="../subprojects/gst-plugins-bad/gst-libs/gst/codecs/gsth265frame.h"/>
+      <parameters>
+        <parameter name="obj">
+        </parameter>
+      </parameters>
+    </function-macro>
     <function-macro name="H265_PICTURE" c:identifier="GST_H265_PICTURE" introspectable="0">
       <source-position filename="../subprojects/gst-plugins-bad/gst-libs/gst/codecs/gsth265picture.h"/>
       <parameters>
@@ -2699,6 +3179,27 @@ corresponding to the @system_frame_number</doc>
       <source-position filename="../subprojects/gst-plugins-bad/gst-libs/gst/codecs/gsth265decoder.h"/>
       <parameters>
         <parameter name="klass">
+        </parameter>
+      </parameters>
+    </function-macro>
+    <function-macro name="IS_H265_ENCODER" c:identifier="GST_IS_H265_ENCODER" introspectable="0">
+      <source-position filename="../subprojects/gst-plugins-bad/gst-libs/gst/codecs/gsth265encoder.h"/>
+      <parameters>
+        <parameter name="obj">
+        </parameter>
+      </parameters>
+    </function-macro>
+    <function-macro name="IS_H265_ENCODER_CLASS" c:identifier="GST_IS_H265_ENCODER_CLASS" introspectable="0">
+      <source-position filename="../subprojects/gst-plugins-bad/gst-libs/gst/codecs/gsth265encoder.h"/>
+      <parameters>
+        <parameter name="klass">
+        </parameter>
+      </parameters>
+    </function-macro>
+    <function-macro name="IS_H265_FRAME" c:identifier="GST_IS_H265_FRAME" introspectable="0">
+      <source-position filename="../subprojects/gst-plugins-bad/gst-libs/gst/codecs/gsth265frame.h"/>
+      <parameters>
+        <parameter name="obj">
         </parameter>
       </parameters>
     </function-macro>
