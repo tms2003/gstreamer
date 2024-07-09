@@ -5069,7 +5069,7 @@ try_match_transceiver_with_fec_decoder (GstWebRTCBin * webrtc,
     original_pt =
         GPOINTER_TO_INT (g_object_get_data (G_OBJECT (fecdec),
             GST_WEBRTC_PAYLOAD_TYPE));
-    if (original_pt <= 0) {
+    if (original_pt < 0) {
       GST_WARNING_OBJECT (trans, "failed to match fec decoder with "
           "transceiver, fec decoder %" GST_PTR_FORMAT " does not contain a "
           "valid payload type", fecdec);
@@ -7652,6 +7652,7 @@ on_rtpbin_request_fec_decoder_full (GstElement * rtpbin, guint session_id,
   TransportStream *stream;
   GstElement *ret = NULL;
   GObject *internal_storage;
+  int original_pt;
 
   stream = _find_transport_for_session (webrtc, session_id);
   if (!stream) {
@@ -7678,8 +7679,17 @@ on_rtpbin_request_fec_decoder_full (GstElement * rtpbin, guint session_id,
   g_object_set (ret, "storage", internal_storage, NULL);
   g_clear_object (&internal_storage);
 
+  /*
+   * For PCMU, pt can be 0. To make sure we can distinguish the case of pt = 0
+   * and pt being NULL in try_match_transceiver_with_fec_decoder, ensure we set
+   * it to -1.
+   */
+  original_pt = pt;
+  if (!(original_pt >= 0))
+    original_pt = -1;
+
   g_object_set_data (G_OBJECT (ret), GST_WEBRTC_PAYLOAD_TYPE,
-      GINT_TO_POINTER (pt));
+      GINT_TO_POINTER (original_pt));
 
   PC_LOCK (webrtc);
   stream->fecdecs = g_list_prepend (stream->fecdecs, gst_object_ref (ret));
