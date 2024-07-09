@@ -149,7 +149,7 @@ enum
   PROP_ASYNC_CONNECT,
   PROP_PEAK_KBPS,
   PROP_CHUNK_SIZE,
-  PROP_STATS,
+  PROP_RTMP_STATS,
   PROP_STOP_COMMANDS,
 };
 
@@ -230,9 +230,10 @@ gst_rtmp2_sink_class_init (GstRtmp2SinkClass * klass)
           GST_RTMP_DEFAULT_CHUNK_SIZE, G_PARAM_READWRITE |
           G_PARAM_STATIC_STRINGS | GST_PARAM_MUTABLE_PLAYING));
 
-  g_object_class_install_property (gobject_class, PROP_STATS,
-      g_param_spec_boxed ("stats", "Stats", "Retrieve a statistics structure",
-          GST_TYPE_STRUCTURE, G_PARAM_READABLE | G_PARAM_STATIC_STRINGS));
+  g_object_class_install_property (gobject_class, PROP_RTMP_STATS,
+      g_param_spec_boxed ("rtmp-stats", "RTMP Stats",
+          "Retrieve a statistics structure", GST_TYPE_STRUCTURE,
+          G_PARAM_READABLE | G_PARAM_STATIC_STRINGS));
 
   /**
    * GstRtmp2Sink:stop-commands:
@@ -480,7 +481,7 @@ gst_rtmp2_sink_get_property (GObject * object, guint property_id,
       g_value_set_uint (value, self->chunk_size);
       GST_OBJECT_UNLOCK (self);
       break;
-    case PROP_STATS:
+    case PROP_RTMP_STATS:
       g_value_take_boxed (value, gst_rtmp2_sink_get_stats (self));
       break;
     case PROP_STOP_COMMANDS:
