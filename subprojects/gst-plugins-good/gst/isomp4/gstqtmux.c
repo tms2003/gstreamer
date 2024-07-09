@@ -4502,7 +4502,13 @@ init:
         GST_STIME_FORMAT ")", first_qt_dts, GST_TIME_ARGS (first_dts), dts,
         GST_TIME_ARGS (current_dts), dts - first_qt_dts,
         GST_STIME_ARGS (current_dts - first_dts));
-    atom_traf_set_base_decode_time (pad->traf, dts - first_qt_dts);
+
+    // The dfdt box should be updated with the current dts which will be used by demuxer to calculate
+    // the fragment DTS. Each fragment is created every 10 seconds.
+    // See ISO 14496-12-2015-8.8.12.1
+    // The Track Fragment Base Media Decode Time Box provides the absolute decode time, measured on the
+    // media timeline, of the first sample in decode order in the track fragment
+    atom_traf_set_base_decode_time (pad->traf, dts);
   }
 
   if (qtmux->fragment_mode == GST_QT_MUX_FRAGMENT_FIRST_MOOV_THEN_FINALISE) {
