@@ -1835,9 +1835,7 @@ gst_audio_decoder_flush (GstAudioDecoder * dec, gboolean hard)
     gst_segment_init (&dec->output_segment, GST_FORMAT_TIME);
     dec->priv->error_count = 0;
   }
-  /* only bother subclass with flushing if known it is already alive
-   * and kicking out stuff */
-  if (klass->flush && dec->priv->samples_out > 0)
+  if (klass->flush)
     klass->flush (dec, hard);
   /* and get (re)set for the sequel */
   gst_audio_decoder_reset (dec, FALSE);
