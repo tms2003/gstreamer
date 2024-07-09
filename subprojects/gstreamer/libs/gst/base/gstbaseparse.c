@@ -2454,8 +2454,11 @@ gst_base_parse_handle_and_push_frame (GstBaseParse * parse,
     GstBaseParseFrame *queued_frame;
 
     while ((queued_frame = g_queue_pop_head (&parse->priv->queued_frames))) {
-      gst_base_parse_push_frame (parse, queued_frame);
+      GstFlowReturn ret = gst_base_parse_push_frame (parse, queued_frame);
       gst_base_parse_frame_free (queued_frame);
+      if (GST_FLOW_OK != ret) {
+        return ret;
+      }
     }
   }
 
