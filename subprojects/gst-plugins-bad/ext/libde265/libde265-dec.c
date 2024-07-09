@@ -50,6 +50,14 @@ G_DEFINE_TYPE (GstLibde265Dec, gst_libde265_dec, GST_TYPE_VIDEO_DECODER);
 GST_ELEMENT_REGISTER_DEFINE (libde265dec, "libde265dec",
     GST_RANK_SECONDARY, GST_TYPE_LIBDE265_DEC);
 
+#if G_BYTE_ORDER == G_BIG_ENDIAN
+#define LIBDE_VIDEO_FORMATS "{ Y444_12LE, I422_12LE, I420_12LE, Y444_10LE, " \
+"I422_10LE, I420_10LE, Y444, Y42B, I420 }"
+#elif G_BYTE_ORDER == G_LITTLE_ENDIAN
+#define LIBDE_VIDEO_FORMATS "{ Y444_12LE, I422_12LE, I420_12LE, Y444_10LE, " \
+"I422_10LE, I420_10LE, Y444, Y42B, I420 }"
+#endif
+
 static GstStaticPadTemplate sink_template = GST_STATIC_PAD_TEMPLATE ("sink",
     GST_PAD_SINK,
     GST_PAD_ALWAYS,
@@ -58,13 +66,16 @@ static GstStaticPadTemplate sink_template = GST_STATIC_PAD_TEMPLATE ("sink",
         "alignment=(string) { au, nal }, "
         /* TODO: Can support more profiles by adding the according
            output formats in src caps. */
-        "profile=(string) main")
+        "profile=(string) { "
+        "main, main-still-picture, main-intra, main-444, main-444-intra, main-444-still-picture, main-10, main-10-intra,"
+        "main-422-10, main-422-10-intra, main-444-10, main-444-10-intra, main-12, main-12-intra, main-422-12,"
+        "main-422-12-intra,main-444-12, main-444-12-intra, monochrome" "}")
     );
 
 static GstStaticPadTemplate src_template = GST_STATIC_PAD_TEMPLATE ("src",
     GST_PAD_SRC,
     GST_PAD_ALWAYS,
-    GST_STATIC_CAPS (GST_VIDEO_CAPS_MAKE ("I420"))
+    GST_STATIC_CAPS (GST_VIDEO_CAPS_MAKE (LIBDE_VIDEO_FORMATS))
     );
 
 enum
@@ -95,7 +106,7 @@ static GstFlowReturn _gst_libde265_return_image (GstVideoDecoder * decoder,
 static GstFlowReturn gst_libde265_dec_handle_frame (GstVideoDecoder * decoder,
     GstVideoCodecFrame * frame);
 static GstFlowReturn _gst_libde265_image_available (GstVideoDecoder * decoder,
-    int width, int height);
+    int width, int height, GstVideoFormat format);
 
 static void
 gst_libde265_dec_class_init (GstLibde265DecClass * klass)
@@ -237,6 +248,82 @@ gst_libde265_dec_release_frame_ref (struct GstLibde265FrameRef *ref)
   g_free (ref);
 }
 
+static GstVideoFormat
+get_video_format (const struct de265_image *img)
+{
+
+  GstVideoFormat format = GST_VIDEO_FORMAT_UNKNOWN;
+  enum de265_chroma chroma = de265_get_chroma_format (img);
+  int bit_depth = de265_get_bits_per_pixel (img, 0);
+  switch (chroma) {
+    case de265_chroma_420:
+      if (bit_depth == 8) {
+        format = GST_VIDEO_FORMAT_I420;
+      }
+      if (bit_depth == 10) {
+#if G_BYTE_ORDER == G_LITTLE_ENDIAN
+        format = GST_VIDEO_FORMAT_I420_10LE;
+#else
+        format = GST_VIDEO_FORMAT_I420_10BE;
+#endif
+      }
+      if (bit_depth == 12) {
+#if G_BYTE_ORDER == G_LITTLE_ENDIAN
+        format = GST_VIDEO_FORMAT_I420_12LE;
+#else
+        format = GST_VIDEO_FORMAT_I420_12BE;
+#endif
+      }
+      break;
+    case de265_chroma_422:
+      if (bit_depth == 8) {
+        format = GST_VIDEO_FORMAT_Y42B;
+      }
+      if (bit_depth == 10) {
+#if G_BYTE_ORDER == G_LITTLE_ENDIAN
+        format = GST_VIDEO_FORMAT_I422_10LE;
+#else
+        format = GST_VIDEO_FORMAT_I422_10BE;
+#endif
+      }
+      if (bit_depth == 12) {
+#if G_BYTE_ORDER == G_LITTLE_ENDIAN
+        format = GST_VIDEO_FORMAT_I422_12LE;
+#else
+        format = GST_VIDEO_FORMAT_I422_12BE;
+#endif
+      }
+      break;
+    case de265_chroma_444:
+      if (bit_depth == 8) {
+        format = GST_VIDEO_FORMAT_Y444;
+      }
+      if (bit_depth == 10) {
+#if G_BYTE_ORDER == G_LITTLE_ENDIAN
+        format = GST_VIDEO_FORMAT_Y444_10LE;
+#else
+        format = GST_VIDEO_FORMAT_Y444_10BE;
+#endif
+      }
+      if (bit_depth == 12) {
+#if G_BYTE_ORDER == G_LITTLE_ENDIAN
+        format = GST_VIDEO_FORMAT_Y444_12LE;
+#else
+        format = GST_VIDEO_FORMAT_Y444_12BE;
+#endif
+      }
+      break;
+    case de265_chroma_mono:
+      if (bit_depth == 8) {
+        format = GST_VIDEO_FORMAT_GRAY8;
+      } else {
+        format = GST_VIDEO_FORMAT_UNKNOWN;
+      }
+      break;
+  }
+  return format;
+}
+
 static int
 gst_libde265_dec_get_buffer (de265_decoder_context * ctx,
     struct de265_image_spec *spec, struct de265_image *img, void *userdata)
@@ -248,7 +335,7 @@ gst_libde265_dec_get_buffer (de265_decoder_context * ctx,
   int width = spec->width;
   int height = spec->height;
   GstFlowReturn ret;
-  struct GstLibde265FrameRef *ref;
+  struct GstLibde265FrameRef *ref = NULL;
   GstVideoInfo *info;
   int frame_number;
 
@@ -274,7 +361,12 @@ gst_libde265_dec_get_buffer (de265_decoder_context * ctx,
     goto fallback;
   }
 
-  ret = _gst_libde265_image_available (base, width, height);
+  GstVideoFormat format = get_video_format (img);
+  if (format == GST_VIDEO_FORMAT_UNKNOWN) {
+    GST_ERROR_OBJECT (base, "Monochrome is supported only with 8 bit depth");
+    goto error;
+  }
+  ret = _gst_libde265_image_available (base, width, height, format);
   if (G_UNLIKELY (ret != GST_FLOW_OK)) {
     GST_ERROR_OBJECT (dec, "Failed to notify about available image");
     goto fallback;
@@ -508,7 +600,8 @@ gst_libde265_dec_finish (GstVideoDecoder * decoder)
 }
 
 static GstFlowReturn
-_gst_libde265_image_available (GstVideoDecoder * decoder, int width, int height)
+_gst_libde265_image_available (GstVideoDecoder * decoder, int width, int height,
+    GstVideoFormat format)
 {
   GstLibde265Dec *dec = GST_LIBDE265_DEC (decoder);
 
@@ -516,7 +609,7 @@ _gst_libde265_image_available (GstVideoDecoder * decoder, int width, int height)
           || width != dec->output_state->info.width
           || height != dec->output_state->info.height)) {
     GstVideoCodecState *state =
-        gst_video_decoder_set_output_state (decoder, GST_VIDEO_FORMAT_I420,
+        gst_video_decoder_set_output_state (decoder, format,
         width, height, dec->input_state);
     if (state == NULL) {
       GST_ERROR_OBJECT (dec, "Failed to set output state");
@@ -702,9 +795,15 @@ _gst_libde265_return_image (GstVideoDecoder * decoder,
     return gst_video_decoder_finish_frame (decoder, out_frame);
   }
 
+  GstVideoFormat format = get_video_format (img);
+  if (format == GST_VIDEO_FORMAT_UNKNOWN) {
+    GST_ERROR_OBJECT (decoder, "Chroma mono not supported");
+    return GST_FLOW_ERROR;
+  }
+
   result =
       _gst_libde265_image_available (decoder, de265_get_image_width (img, 0),
-      de265_get_image_height (img, 0));
+      de265_get_image_height (img, 0), format);
   if (result != GST_FLOW_OK) {
     GST_ERROR_OBJECT (dec, "Failed to notify about available image");
     return result;
