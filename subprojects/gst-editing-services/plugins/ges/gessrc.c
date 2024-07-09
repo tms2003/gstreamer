@@ -160,9 +160,4 @@ ges_src_class_init (GESSrcClass * self_class)
 static void
 ges_src_init (GESSrc * self)
 {
-  SUPRESS_UNUSED_WARNING (GES_SRC);
-  SUPRESS_UNUSED_WARNING (GES_IS_SRC);
-#if defined(g_autoptr)
-  SUPRESS_UNUSED_WARNING (glib_autoptr_cleanup_GESSrc);
-#endif
 }

@@ -353,7 +353,6 @@ ges_test_clip_class_init (GESTestClipClass * klass)
 static void
 ges_test_clip_init (GESTestClip * self)
 {
-  SUPRESS_UNUSED_WARNING (GES_IS_TEST_CLIP_ASSET);
   self->priv = ges_test_clip_get_instance_private (self);
 
   self->priv->freq = 0;

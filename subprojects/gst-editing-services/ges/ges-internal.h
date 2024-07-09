@@ -111,8 +111,6 @@ GstDebugCategory * _ges_debug (void);
  ************************/
 #define GES_PARAM_NO_SERIALIZATION (1 << (G_PARAM_USER_SHIFT + 1))
 
-#define SUPRESS_UNUSED_WARNING(a) (void)a
-
 G_GNUC_INTERNAL void
 ges_timeline_freeze_auto_transitions (GESTimeline * timeline, gboolean freeze);
 
