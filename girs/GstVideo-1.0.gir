@@ -8028,6 +8028,13 @@ if packet loss was reported by upstream.</doc>
 corrupted instead of outputting them.</doc>
         <type name="gboolean" c:type="gboolean"/>
       </property>
+      <property name="drop-out-of-segment" version="1.24" writable="1" transfer-ownership="none">
+        <doc xml:space="preserve" filename="../subprojects/gst-plugins-base/gst-libs/gst/video/gstvideodecoder.c">If set to %FALSE the decoder will not clip frames in segment (see
+gst_segment_clip for more details), meaning that, after an accurate seeks
+for example, frames between the seek position and the first sync point will
+be outputed.</doc>
+        <type name="gboolean" c:type="gboolean"/>
+      </property>
       <property name="max-errors" version="1.18" writable="1" transfer-ownership="none">
         <doc xml:space="preserve" filename="../subprojects/gst-plugins-base/gst-libs/gst/video/gstvideodecoder.c">Maximum number of tolerated consecutive decode errors. See
 gst_video_decoder_set_max_errors() for more details.</doc>
