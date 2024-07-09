@@ -1380,7 +1380,7 @@ write_new_pcr (TsMux * mux, TsMuxStream * stream, gint64 cur_pcr,
           (double) (cur_pcr - stream->next_pcr) / 27000.0);
     }
     /* Next PCR deadline is now plus the scheduled interval */
-    stream->next_pcr = cur_pcr + mux->pcr_interval * 300;
+    stream->next_pcr = cur_pcr + mux->pcr_interval * G_GUINT64_CONSTANT (300);
   } else {
     cur_pcr = -1;
   }
@@ -1408,9 +1408,10 @@ rewrite_si (TsMux * mux, gint64 cur_ts)
 
   if (write_pat) {
     if (mux->next_pat_pcr == -1)
-      mux->next_pat_pcr = next_pcr + mux->pat_interval * 300;
+      mux->next_pat_pcr =
+          next_pcr + mux->pat_interval * G_GUINT64_CONSTANT (300);
     else
-      mux->next_pat_pcr += mux->pat_interval * 300;
+      mux->next_pat_pcr += mux->pat_interval * G_GUINT64_CONSTANT (300);
 
     if (!tsmux_write_pat (mux))
       return FALSE;
@@ -1428,9 +1429,9 @@ rewrite_si (TsMux * mux, gint64 cur_ts)
 
   if (write_si) {
     if (mux->next_si_pcr == -1)
-      mux->next_si_pcr = next_pcr + mux->si_interval * 300;
+      mux->next_si_pcr = next_pcr + mux->si_interval * G_GUINT64_CONSTANT (300);
     else
-      mux->next_si_pcr += mux->si_interval * 300;
+      mux->next_si_pcr += mux->si_interval * G_GUINT64_CONSTANT (300);
 
     if (!tsmux_write_si (mux))
       return FALSE;
@@ -1452,9 +1453,11 @@ rewrite_si (TsMux * mux, gint64 cur_ts)
 
     if (write_pmt) {
       if (program->next_pmt_pcr == -1)
-        program->next_pmt_pcr = next_pcr + program->pmt_interval * 300;
+        program->next_pmt_pcr =
+            next_pcr + program->pmt_interval * G_GUINT64_CONSTANT (300);
       else
-        program->next_pmt_pcr += program->pmt_interval * 300;
+        program->next_pmt_pcr +=
+            program->pmt_interval * G_GUINT64_CONSTANT (300);
 
       if (!tsmux_write_pmt (mux, program))
         return FALSE;
@@ -1474,9 +1477,11 @@ rewrite_si (TsMux * mux, gint64 cur_ts)
             program->next_scte35_pcr);
         if (program->next_scte35_pcr == -1)
           program->next_scte35_pcr =
-              next_pcr + program->scte35_null_interval * 300;
+              next_pcr +
+              program->scte35_null_interval * G_GUINT64_CONSTANT (300);
         else
-          program->next_scte35_pcr += program->scte35_null_interval * 300;
+          program->next_scte35_pcr +=
+              program->scte35_null_interval * G_GUINT64_CONSTANT (300);
         GST_DEBUG ("next scte35 NOW pcr %" G_GINT64_FORMAT,
             program->next_scte35_pcr);
 
@@ -1583,9 +1588,9 @@ write_new_prog_pcr (TsMux * mux, TsMuxProgram * prog, gint64 cur_pcr)
     prog->pi.pcr = cur_pcr;
 
     if (prog->next_pcr == -1)
-      prog->next_pcr = cur_pcr + mux->pcr_interval * 300;
+      prog->next_pcr = cur_pcr + mux->pcr_interval * G_GUINT64_CONSTANT (300);
     else
-      prog->next_pcr += mux->pcr_interval * 300;
+      prog->next_pcr += mux->pcr_interval * G_GUINT64_CONSTANT (300);
   } else {
     cur_pcr = -1;
   }
