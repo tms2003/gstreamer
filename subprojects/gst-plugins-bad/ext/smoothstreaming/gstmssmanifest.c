@@ -1333,6 +1333,35 @@ gst_mss_manifest_is_live (GstMssManifest * manifest)
 }
 
 static void
+gst_mss_stream_merge_fragments (GstMssStream * stream, GList *fragments)
+{
+  GList *iter;
+  for (iter = fragments; iter; iter = g_list_next (iter)) {
+    GstMssStreamFragment *fragment;
+    GstMssStreamFragment *last;
+    GList                *l = g_list_last (stream->fragments);
+
+    last     = (GstMssStreamFragment *) l->data;
+    fragment = iter->data;
+    if (last && (fragment->time == last->time + (last->duration*last->repetitions))) {
+      GstMssStreamFragment *new_fragment;
+
+      new_fragment              = g_new (GstMssStreamFragment, 1);
+      new_fragment->number      = last->number + 1;
+      new_fragment->repetitions = fragment->repetitions;
+      new_fragment->time        = fragment->time;
+      new_fragment->duration    = fragment->duration;
+      stream->fragments = g_list_append (stream->fragments, new_fragment);
+
+      GST_LOG ("Adding fragment number: %u to %s stream, time: %"
+        G_GUINT64_FORMAT ", duration: %" G_GUINT64_FORMAT ", repetitions: %u",
+        new_fragment->number, new_fragment->url, new_fragment->time,
+        new_fragment->duration, new_fragment->repetitions);
+    }
+  }
+}
+
+static void
 gst_mss_stream_reload_fragments (GstMssStream * stream, xmlNodePtr streamIndex)
 {
   xmlNodePtr iter;
@@ -1356,9 +1385,13 @@ gst_mss_stream_reload_fragments (GstMssStream * stream, xmlNodePtr streamIndex)
 
   /* store the new fragments list */
   if (builder.fragments) {
-    g_list_free_full (stream->fragments, g_free);
+    GList *prev_fragments = stream->fragments;
     stream->fragments = g_list_reverse (builder.fragments);
     stream->current_fragment = stream->fragments;
+    if (stream->has_live_fragments) {
+      gst_mss_stream_merge_fragments (stream, prev_fragments);
+    }
+    g_list_free_full (prev_fragments, g_free);
     /* TODO Verify how repositioning here works for reverse
      * playback - it might start from the wrong fragment */
     gst_mss_stream_seek (stream, TRUE, 0, current_gst_time, NULL);
