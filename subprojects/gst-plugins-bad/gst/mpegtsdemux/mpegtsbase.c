@@ -1278,12 +1278,15 @@ mpegts_base_handle_psi (MpegTSBase * base, GstMpegtsSection * section)
   switch (section->section_type) {
     case GST_MPEGTS_SECTION_PAT:
       post_message = mpegts_base_apply_pat (base, section);
+
+      GST_OBJECT_LOCK (base);
       if (base->seen_pat == FALSE) {
         base->seen_pat = TRUE;
         GST_DEBUG ("First PAT offset: %" G_GUINT64_FORMAT, section->offset);
         mpegts_packetizer_set_reference_offset (base->packetizer,
             section->offset);
       }
+      GST_OBJECT_UNLOCK (base);
       break;
     case GST_MPEGTS_SECTION_PMT:
       post_message = mpegts_base_apply_pmt (base, section);
@@ -1471,6 +1474,16 @@ mpegts_base_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
       gst_segment_init (&base->segment, GST_FORMAT_UNDEFINED);
       base->seen_pat = FALSE;
       break;
+    case GST_EVENT_CUSTOM_DOWNSTREAM:{
+      GstMpegtsSection *section;
+
+      section = gst_event_parse_mpegts_section (event);
+      if (section) {
+        mpegts_base_handle_psi (base, section);
+        gst_event_unref (event);
+        break;
+      }
+    }
     default:
       res = GST_MPEGTS_BASE_GET_CLASS (base)->push_event (base, event);
   }
@@ -1938,7 +1951,6 @@ mpegts_base_handle_seek_event (MpegTSBase * base, GstPad * pad,
   GST_PAD_STREAM_UNLOCK (base->sinkpad);
   return ret == GST_FLOW_OK;
 }
-
 
 static gboolean
 mpegts_base_sink_activate (GstPad * sinkpad, GstObject * parent)
