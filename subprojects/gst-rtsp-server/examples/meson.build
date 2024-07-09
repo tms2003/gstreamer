@@ -21,6 +21,7 @@ examples = [
   'test-record-auth',
   'test-record',
   'test-replay-server',
+  'test-rtsp-relay',
   'test-sdp',
   'test-uri',
   'test-video',
