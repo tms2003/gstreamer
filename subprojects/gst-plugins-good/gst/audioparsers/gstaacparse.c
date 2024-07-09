@@ -55,7 +55,7 @@ static GstStaticPadTemplate src_template = GST_STATIC_PAD_TEMPLATE ("src",
     GST_PAD_ALWAYS,
     GST_STATIC_CAPS ("audio/mpeg, "
         "framed = (boolean) true, " "mpegversion = (int) { 2, 4 }, "
-        "stream-format = (string) { raw, adts, adif, loas };"));
+        "stream-format = (string) { raw, adts, adif, loas, latm-mcp0, latm-mcp1 };"));
 
 static GstStaticPadTemplate sink_template = GST_STATIC_PAD_TEMPLATE ("sink",
     GST_PAD_SINK,
@@ -105,7 +105,9 @@ static gboolean gst_aac_parse_src_event (GstBaseParse * parse,
 static gboolean gst_aac_parse_read_audio_specific_config (GstAacParse *
     aacparse, GstBitReader * br, gint * object_type, gint * sample_rate,
     gint * channels, gint * frame_samples);
-
+static gboolean gst_aac_parse_read_streammux_config (GstAacParse *
+    aacparse, GstBitReader * br, gint * object_type, gint * sample_rate,
+    gint * channels);
 
 #define gst_aac_parse_parent_class parent_class
 G_DEFINE_TYPE (GstAacParse, gst_aac_parse, GST_TYPE_BASE_PARSE);
@@ -205,6 +207,12 @@ gst_aac_parse_set_src_caps (GstAacParse * aacparse, GstCaps * sink_caps)
       break;
     case DSPAAC_HEADER_LOAS:
       stream_format = "loas";
+      break;
+    case DSPAAC_HEADER_LATM_MCP0:
+      stream_format = "latm-mcp0";
+      break;
+    case DSPAAC_HEADER_LATM_MCP1:
+      stream_format = "latm-mcp1";
       break;
     default:
       stream_format = NULL;
@@ -320,15 +328,34 @@ gst_aac_parse_sink_setcaps (GstBaseParse * parse, GstCaps * caps)
     if (buf && gst_buffer_get_size (buf) >= 2) {
       GstMapInfo map;
       GstBitReader br;
+      const gchar *stream_format =
+          gst_structure_get_string (structure, "stream-format");
 
       if (!gst_buffer_map (buf, &map, GST_MAP_READ))
         return FALSE;
       gst_bit_reader_init (&br, map.data, map.size);
-      gst_aac_parse_read_audio_specific_config (aacparse, &br,
-          &aacparse->object_type, &aacparse->sample_rate, &aacparse->channels,
-          &aacparse->frame_samples);
 
-      aacparse->header_type = DSPAAC_HEADER_NONE;
+      if (g_strcmp0 (stream_format, "latm-mcp0") == 0) {
+        /*
+         * If stream-format is latm-mcp0 then codec_data will be
+         * StreamMuxConfig and not AudioSpecificConfig.
+         */
+        if (!gst_aac_parse_read_streammux_config (aacparse, &br,
+                &aacparse->object_type, &aacparse->sample_rate,
+                &aacparse->channels)) {
+          GST_ERROR_OBJECT (aacparse,
+              "Parsing StreamMuxConfig in codec_data failed");
+          gst_buffer_unmap (buf, &map);
+          return FALSE;
+        }
+        aacparse->header_type = DSPAAC_HEADER_LATM_MCP0;
+      } else {
+        gst_aac_parse_read_audio_specific_config (aacparse, &br,
+            &aacparse->object_type, &aacparse->sample_rate, &aacparse->channels,
+            &aacparse->frame_samples);
+        aacparse->header_type = DSPAAC_HEADER_NONE;
+      }
+
       aacparse->mpegversion = 4;
       gst_buffer_unmap (buf, &map);
 
@@ -357,6 +384,10 @@ gst_aac_parse_sink_setcaps (GstBaseParse * parse, GstCaps * caps)
     if (g_strcmp0 (stream_format, "raw") == 0) {
       GST_ERROR_OBJECT (parse, "Need codec_data for raw AAC");
       return FALSE;
+    } else if (g_strcmp0 (stream_format, "latm-mcp1") == 0) {
+      aacparse->sample_rate = 0;
+      aacparse->channels = 0;
+      aacparse->header_type = DSPAAC_HEADER_LATM_MCP1;
     } else {
       aacparse->sample_rate = 0;
       aacparse->channels = 0;
@@ -709,32 +740,140 @@ gst_aac_parse_read_audio_specific_config (GstAacParse * aacparse,
   /* There's LOTS of stuff next, but we ignore it for now as we have
      what we want (sample rate and number of channels */
   GST_DEBUG_OBJECT (aacparse,
-      "Need more code to parse humongous LOAS data, currently ignored");
+      "Need more code to parse humongous LATM/LOAS data, currently ignored");
   aacparse->last_parsed_channels = *channels;
   return TRUE;
 }
 
+static gboolean
+gst_aac_parse_read_streammux_config (GstAacParse *
+    aacparse, GstBitReader * br, gint * object_type, gint * sample_rate,
+    gint * channels)
+{
+  guint8 v, vA;
+
+  GST_DEBUG_OBJECT (aacparse, "Trying to parse StreamMux config");
+
+  *object_type = 2;             /* Can only be AOT_AAC_LC for LATM MCP1 */
+
+  /* audioMuxVersion */
+  if (!gst_bit_reader_get_bits_uint8 (br, &v, 1))
+    return FALSE;
+
+  if (v) {
+    /* audioMuxVersionA */
+    if (!gst_bit_reader_get_bits_uint8 (br, &vA, 1))
+      return FALSE;
+  } else
+    vA = 0;
+
+  GST_DEBUG_OBJECT (aacparse, "v %d, vA %d", v, vA);
+
+  if (vA == 0) {
+    guint8 same_time_framing, subframes, num_program, prog;
+    if (v == 1) {
+      guint32 value;
+      /* taraBufferFullness */
+      if (!gst_aac_parse_latm_get_value (aacparse, br, &value))
+        return FALSE;
+    }
+
+    if (!gst_bit_reader_get_bits_uint8 (br, &same_time_framing, 1))
+      return FALSE;
+    if (!gst_bit_reader_get_bits_uint8 (br, &subframes, 6))
+      return FALSE;
+    if (!gst_bit_reader_get_bits_uint8 (br, &num_program, 4))
+      return FALSE;
+
+    /*
+     * For LATM, maximum number of program and layer is 1. Getting a value of
+     * 0 for either program or layer implies a value of 1.
+     */
+    num_program += 1;
+    if (num_program > 1) {
+      GST_ERROR_OBJECT (aacparse, "LATM Unsupported format");
+      return FALSE;
+    }
+
+    GST_INFO_OBJECT (aacparse,
+        "same_time_framing %d, subframes %d, num_program %d", same_time_framing,
+        subframes, num_program);
+
+    for (prog = 0; prog < num_program; ++prog) {
+      guint8 num_layer, layer;
+
+      if (!gst_bit_reader_get_bits_uint8 (br, &num_layer, 3))
+        return FALSE;
+
+      num_layer += 1;
+      if (num_layer > 1) {
+        GST_ERROR_OBJECT (aacparse, "LATM Unsupported format");
+        return FALSE;
+      }
+
+      GST_INFO_OBJECT (aacparse, "Program %d: %d layers", prog, num_layer);
+
+      for (layer = 0; layer < num_layer; layer++) {
+        guint8 use_same_config;
+
+        if (prog == 0 && layer == 0) {
+          use_same_config = 0;
+        } else {
+          if (!gst_bit_reader_get_bits_uint8 (br, &use_same_config, 1))
+            return FALSE;
+        }
+
+        if (!use_same_config) {
+          if (v == 0) {
+            if (!gst_aac_parse_read_audio_specific_config (aacparse, br, NULL,
+                    sample_rate, channels, NULL)) {
+              GST_ERROR_OBJECT (aacparse,
+                  "Failed to read audio specific config");
+              return FALSE;
+            }
+          } else {
+            guint32 asc_len;
+            if (!gst_aac_parse_latm_get_value (aacparse, br, &asc_len))
+              return FALSE;
+            if (!gst_aac_parse_read_audio_specific_config (aacparse, br, NULL,
+                    sample_rate, channels, NULL)) {
+              GST_ERROR_OBJECT (aacparse,
+                  "Failed to read audio specific config");
+              return FALSE;
+            }
+            if (!gst_bit_reader_skip (br, asc_len))
+              return FALSE;
+          }
+        }
+      }
+    }
+    /* Skip the rest of data in StreamMuxConfig for now */
+  } else {
+    GST_WARNING_OBJECT (aacparse,
+        "audioMuxVersionA > 0 reserved for future extensions");
+    return FALSE;
+  }
+
+  return TRUE;
+}
 
 static gboolean
-gst_aac_parse_read_loas_config (GstAacParse * aacparse, const guint8 * data,
+gst_aac_parse_read_latm_config (GstAacParse * aacparse, const guint8 * data,
     guint avail, gint * sample_rate, gint * channels, gint * version)
 {
   GstBitReader br;
-  guint8 u8, v, vA;
+  guint8 u8;
 
-  /* No version in the bitstream, but the spec has LOAS in the MPEG-4 section */
+  /* No version in the bitstream, but the spec has LATM in the MPEG-4 section */
   if (version)
     *version = 4;
 
   gst_bit_reader_init (&br, data, avail);
 
-  /* skip sync word (11 bits) and size (13 bits) */
-  if (!gst_bit_reader_skip (&br, 11 + 13))
-    return FALSE;
-
   /* First bit is "use last config" */
   if (!gst_bit_reader_get_bits_uint8 (&br, &u8, 1))
     return FALSE;
+
   if (u8) {
     GST_LOG_OBJECT (aacparse, "Frame uses previous config");
     if (!aacparse->last_parsed_sample_rate || !aacparse->last_parsed_channels) {
@@ -749,72 +888,20 @@ gst_aac_parse_read_loas_config (GstAacParse * aacparse, const guint8 * data,
 
   GST_DEBUG_OBJECT (aacparse, "Frame contains new config");
 
-  /* audioMuxVersion */
-  if (!gst_bit_reader_get_bits_uint8 (&br, &v, 1))
-    return FALSE;
-  if (v) {
-    /* audioMuxVersionA */
-    if (!gst_bit_reader_get_bits_uint8 (&br, &vA, 1))
-      return FALSE;
-  } else
-    vA = 0;
+  return gst_aac_parse_read_streammux_config (aacparse, &br,
+      &aacparse->object_type, sample_rate, channels);
+}
 
-  GST_LOG_OBJECT (aacparse, "v %d, vA %d", v, vA);
-  if (vA == 0) {
-    guint8 same_time, subframes, num_program, prog;
-    if (v == 1) {
-      guint32 value;
-      /* taraBufferFullness */
-      if (!gst_aac_parse_latm_get_value (aacparse, &br, &value))
-        return FALSE;
-    }
-    if (!gst_bit_reader_get_bits_uint8 (&br, &same_time, 1))
-      return FALSE;
-    if (!gst_bit_reader_get_bits_uint8 (&br, &subframes, 6))
-      return FALSE;
-    if (!gst_bit_reader_get_bits_uint8 (&br, &num_program, 4))
-      return FALSE;
-    GST_LOG_OBJECT (aacparse, "same_time %d, subframes %d, num_program %d",
-        same_time, subframes, num_program);
-
-    for (prog = 0; prog <= num_program; ++prog) {
-      guint8 num_layer, layer;
-      if (!gst_bit_reader_get_bits_uint8 (&br, &num_layer, 3))
-        return FALSE;
-      GST_LOG_OBJECT (aacparse, "Program %d: %d layers", prog, num_layer);
-
-      for (layer = 0; layer <= num_layer; ++layer) {
-        guint8 use_same_config;
-        if (prog == 0 && layer == 0) {
-          use_same_config = 0;
-        } else {
-          if (!gst_bit_reader_get_bits_uint8 (&br, &use_same_config, 1))
-            return FALSE;
-        }
-        if (!use_same_config) {
-          if (v == 0) {
-            if (!gst_aac_parse_read_audio_specific_config (aacparse, &br, NULL,
-                    sample_rate, channels, NULL))
-              return FALSE;
-          } else {
-            guint32 asc_len;
-            if (!gst_aac_parse_latm_get_value (aacparse, &br, &asc_len))
-              return FALSE;
-            if (!gst_aac_parse_read_audio_specific_config (aacparse, &br, NULL,
-                    sample_rate, channels, NULL))
-              return FALSE;
-            if (!gst_bit_reader_skip (&br, asc_len))
-              return FALSE;
-          }
-        }
-      }
-    }
-    GST_LOG_OBJECT (aacparse, "More data ignored");
-  } else {
-    GST_WARNING_OBJECT (aacparse, "Spec says \"TBD\"...");
-    return FALSE;
-  }
-  return TRUE;
+static gboolean
+gst_aac_parse_read_loas_config (GstAacParse * aacparse, const guint8 * data,
+    guint avail, gint * sample_rate, gint * channels, gint * version)
+{
+  /*
+   * LOAS is LATM without the synchronization layer.
+   * skip sync word (11 bits) and size (13 bits) viz. 3 bytes
+   */
+  return gst_aac_parse_read_latm_config (aacparse, &data[3], avail - 3,
+      sample_rate, channels, version);
 }
 
 /**
@@ -968,6 +1055,14 @@ gst_aac_parse_detect_stream (GstAacParse * aacparse,
   gboolean found = FALSE;
   guint need_data_adts = 0, need_data_loas;
   guint i = 0;
+
+  /*
+   * We might end up here on losing sync and requested stream could be LATM.
+   * Since there is no way to check for the presence of LATM by parsing the
+   * bitstream, just return TRUE here without checking anything.
+   */
+  if (aacparse->header_type == DSPAAC_HEADER_LATM_MCP1)
+    return TRUE;
 
   GST_DEBUG_OBJECT (aacparse, "Parsing header data");
 
@@ -1494,6 +1589,60 @@ gst_aac_parse_handle_frame (GstBaseParse * parse,
 
       gst_base_parse_set_frame_rate (GST_BASE_PARSE (aacparse),
           aacparse->sample_rate, aacparse->frame_samples, 2, 2);
+    }
+  } else if (aacparse->header_type == DSPAAC_HEADER_LATM_MCP0) {
+    gboolean setcaps = FALSE;
+
+    if (G_UNLIKELY (rate != aacparse->sample_rate
+            || channels != aacparse->channels)) {
+      aacparse->sample_rate = rate;
+      aacparse->channels = channels;
+      setcaps = TRUE;
+      GST_INFO_OBJECT (aacparse, "New LATM MCP0 config: %d Hz, %d channels",
+          rate, channels);
+    }
+
+    /* We want to set caps both at start, and when rate/channels change.
+       Since only some LATM frames have that info, we may receive frames
+       before knowing about rate/channels. */
+    if (setcaps
+        || !gst_pad_has_current_caps (GST_BASE_PARSE_SRC_PAD (aacparse))) {
+      if (!gst_aac_parse_set_src_caps (aacparse, NULL)) {
+        /* If linking fails, we need to return appropriate error */
+        ret = GST_FLOW_NOT_LINKED;
+      }
+
+      gst_base_parse_set_frame_rate (GST_BASE_PARSE (aacparse),
+          aacparse->sample_rate, aacparse->frame_samples, 2, 2);
+    }
+  } else if (aacparse->header_type == DSPAAC_HEADER_LATM_MCP1) {
+    gboolean setcaps = FALSE;
+
+    if (!gst_aac_parse_read_latm_config (aacparse, map.data, map.size, &rate,
+            &channels, &aacparse->mpegversion) || !rate || !channels) {
+      GST_ERROR_OBJECT (aacparse, "Error reading LATM config.");
+      goto exit;
+    }
+
+    if (G_UNLIKELY (rate != aacparse->sample_rate
+            || channels != aacparse->channels)) {
+      aacparse->sample_rate = rate;
+      aacparse->channels = channels;
+      setcaps = TRUE;
+      GST_INFO_OBJECT (aacparse, "New LATM MCP1 config: %d Hz, %d channels",
+          rate, channels);
+    }
+
+    if (setcaps
+        || !gst_pad_has_current_caps (GST_BASE_PARSE_SRC_PAD (aacparse))) {
+      if (!gst_aac_parse_set_src_caps (aacparse, NULL)) {
+        ret = GST_FLOW_NOT_LINKED;
+      }
+
+      gst_base_parse_set_frame_rate (GST_BASE_PARSE (aacparse),
+          aacparse->sample_rate, aacparse->frame_samples, 2, 2);
+      gst_base_parse_set_passthrough (GST_BASE_PARSE (aacparse), TRUE);
+      framesize = map.size;
     }
   }
 

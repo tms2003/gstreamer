@@ -38,7 +38,6 @@ G_BEGIN_DECLS
 #define GST_IS_AAC_PARSE_CLASS(klass) \
   (G_TYPE_CHECK_CLASS_TYPE((klass), GST_TYPE_AAC_PARSE))
 
-
 /**
  * GstAacHeaderType:
  * @DSPAAC_HEADER_NOT_PARSED: Header not parsed yet.
@@ -46,6 +45,8 @@ G_BEGIN_DECLS
  * @DSPAAC_HEADER_ADIF: ADIF header found.
  * @DSPAAC_HEADER_ADTS: ADTS header found.
  * @DSPAAC_HEADER_LOAS: LOAS header found.
+ * @DSPAAC_HEADER_LATM_MCP0: LATM header found with muxConfigPresent = 0.
+ * @DSPAAC_HEADER_LATM_MCP1: LATM header found with muxConfigPresent = 1.
  * @DSPAAC_HEADER_NONE: Raw stream, no header.
  *
  * Type header enumeration set in #header_type.
@@ -56,6 +57,8 @@ typedef enum {
   DSPAAC_HEADER_ADIF,
   DSPAAC_HEADER_ADTS,
   DSPAAC_HEADER_LOAS,
+  DSPAAC_HEADER_LATM_MCP0,
+  DSPAAC_HEADER_LATM_MCP1,
   DSPAAC_HEADER_NONE
 } GstAacHeaderType;
 

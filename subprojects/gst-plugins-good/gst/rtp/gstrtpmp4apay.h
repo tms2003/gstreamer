@@ -49,6 +49,7 @@ struct _GstRtpMP4APay
   gchar        *profile;
   const gchar  *streamtype;
   GstBuffer    *config;
+  gboolean      parse_latm;
 };
 
 struct _GstRtpMP4APayClass

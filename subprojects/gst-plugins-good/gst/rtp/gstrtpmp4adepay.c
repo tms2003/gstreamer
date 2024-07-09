@@ -39,7 +39,7 @@ GST_STATIC_PAD_TEMPLATE ("src",
     GST_PAD_ALWAYS,
     GST_STATIC_CAPS ("audio/mpeg,"
         "mpegversion = (int) 4," "framed = (boolean) { false, true }, "
-        "stream-format = (string) raw")
+        "stream-format = (string) { raw, latm-mcp0, latm-mcp1 }")
     );
 
 static GstStaticPadTemplate gst_rtp_mp4a_depay_sink_template =
@@ -141,6 +141,7 @@ gst_rtp_mp4a_depay_setcaps (GstRTPBaseDepayload * depayload, GstCaps * caps)
   GstStructure *structure;
   GstRtpMP4ADepay *rtpmp4adepay;
   GstCaps *srccaps;
+  const gchar *stream_format;
   const gchar *str;
   gint clock_rate;
   gint object_type;
@@ -160,18 +161,25 @@ gst_rtp_mp4a_depay_setcaps (GstRTPBaseDepayload * depayload, GstCaps * caps)
   if (!gst_structure_get_int (structure, "object", &object_type))
     object_type = 2;            /* AAC LC default */
 
+  stream_format = gst_structure_get_string (structure, "stream-format");
+  if (!stream_format) {
+    GST_WARNING_OBJECT (rtpmp4adepay, "AAC's stream-format not specified, "
+        "assuming 'raw'");
+    stream_format = "raw";
+  }
+
   srccaps = gst_caps_new_simple ("audio/mpeg",
       "mpegversion", G_TYPE_INT, 4,
       "framed", G_TYPE_BOOLEAN, FALSE, "channels", G_TYPE_INT, channels,
-      "stream-format", G_TYPE_STRING, "raw", NULL);
+      "stream-format", G_TYPE_STRING, stream_format, NULL);
 
   if ((str = gst_structure_get_string (structure, "config"))) {
     GValue v = { 0 };
 
     g_value_init (&v, GST_TYPE_BUFFER);
     if (gst_value_deserialize (&v, str)) {
-      GstBuffer *buffer;
-      GstMapInfo map;
+      GstBuffer *buffer, *cbuffer = NULL;
+      GstMapInfo map, cmap;
       guint8 *data;
       gsize size;
       gint i;
@@ -186,6 +194,20 @@ gst_rtp_mp4a_depay_setcaps (GstRTPBaseDepayload * depayload, GstCaps * caps)
       gst_buffer_map (buffer, &map, GST_MAP_READ);
       data = map.data;
       size = map.size;
+
+      if (strcmp (stream_format, "latm-mcp0") == 0) {
+        /*
+         * In case of latm-mcp0, the StreamMuxConfig in codec_data will be
+         * required downstream for decoding. In this case, copy the SMC to a
+         * separate buffer before we process further and set it for codec_data
+         * when latm-mcp0 is the stream format.
+         */
+        cbuffer = gst_buffer_new_and_alloc (map.size);
+        gst_buffer_map (cbuffer, &cmap, GST_MAP_WRITE);
+
+        memcpy (cmap.data, map.data, map.size);
+        gst_buffer_unmap (cbuffer, &cmap);
+      }
 
       if (size < 2) {
         GST_WARNING_OBJECT (depayload, "config too short (%d < 2)",
@@ -285,10 +307,18 @@ gst_rtp_mp4a_depay_setcaps (GstRTPBaseDepayload * depayload, GstCaps * caps)
       gst_buffer_unmap (buffer, &map);
       data = NULL;
 
-      gst_caps_set_simple (srccaps,
-          "channels", G_TYPE_INT, (gint) channels,
-          "rate", G_TYPE_INT, (gint) rate,
-          "codec_data", GST_TYPE_BUFFER, buffer, NULL);
+      if (strcmp (stream_format, "latm-mcp0") == 0) {
+        gst_caps_set_simple (srccaps,
+            "channels", G_TYPE_INT, (gint) channels,
+            "rate", G_TYPE_INT, (gint) rate,
+            "codec_data", GST_TYPE_BUFFER, cbuffer, NULL);
+        gst_buffer_unref (cbuffer);
+      } else {
+        gst_caps_set_simple (srccaps,
+            "channels", G_TYPE_INT, (gint) channels,
+            "rate", G_TYPE_INT, (gint) rate,
+            "codec_data", GST_TYPE_BUFFER, buffer, NULL);
+      }
     bad_config:
       if (data)
         gst_buffer_unmap (buffer, &map);
