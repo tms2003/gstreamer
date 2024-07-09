@@ -45,6 +45,7 @@
 #endif
 
 #include <gio/gio.h>
+#include <glib/gi18n-lib.h>
 
 #include "gstrtpsink.h"
 #include "gstrtp-utils.h"
@@ -95,6 +96,9 @@ static GstStaticPadTemplate sink_template = GST_STATIC_PAD_TEMPLATE ("sink_%u",
 
 static GstStateChangeReturn
 gst_rtp_sink_change_state (GstElement * element, GstStateChange transition);
+static gboolean
+gst_rtp_sink_uri_set_uri (GstURIHandler * handler, const gchar * str_uri,
+    GError ** error);
 
 static void
 gst_rtp_sink_set_property (GObject * object, guint prop_id,
@@ -104,23 +108,9 @@ gst_rtp_sink_set_property (GObject * object, guint prop_id,
 
   switch (prop_id) {
     case PROP_URI:{
-      GstUri *uri = NULL;
+      const gchar *str_uri = g_value_get_string (value);
 
-      GST_RTP_SINK_LOCK (object);
-      uri = gst_uri_from_string (g_value_get_string (value));
-      if (uri == NULL)
-        break;
-
-      if (self->uri)
-        gst_uri_unref (self->uri);
-      self->uri = uri;
-
-      gst_rtp_utils_set_properties_from_uri_query (G_OBJECT (self), self->uri);
-
-      g_object_set (self, "address", gst_uri_get_host (self->uri), NULL);
-      g_object_set (self, "port", gst_uri_get_port (self->uri), NULL);
-
-      GST_RTP_SINK_UNLOCK (object);
+      gst_rtp_sink_uri_set_uri ((GstURIHandler *) self, str_uri, NULL);
       break;
     }
     case PROP_ADDRESS:
@@ -175,12 +165,12 @@ gst_rtp_sink_get_property (GObject * object, guint prop_id,
 
   switch (prop_id) {
     case PROP_URI:
-      GST_RTP_SINK_LOCK (object);
+      GST_OBJECT_LOCK (object);
       if (self->uri)
         g_value_take_string (value, gst_uri_to_string (self->uri));
       else
         g_value_set_string (value, NULL);
-      GST_RTP_SINK_UNLOCK (object);
+      GST_OBJECT_UNLOCK (object);
       break;
     case PROP_ADDRESS:
       g_value_set_string (value, gst_uri_get_host (self->uri));
@@ -444,22 +434,22 @@ gst_rtp_sink_rtpbin_pad_removed_cb (GstElement * element, GstPad * pad,
 }
 
 static gboolean
-gst_rtp_sink_reuse_socket (GstRtpSink * self)
+gst_rtp_sink_setup_rtcp_socket (GstRtpSink * self)
 {
   GSocket *socket = NULL;
 
-  gst_element_set_locked_state (self->rtcp_src, FALSE);
-  gst_element_sync_state_with_parent (self->rtcp_src);
+  gst_element_set_locked_state (self->rtcp_sink, FALSE);
+  gst_element_sync_state_with_parent (self->rtcp_sink);
 
   /* share the socket created by the sink */
-  g_object_get (self->rtcp_src, "used-socket", &socket, NULL);
-  g_object_set (self->rtcp_sink, "socket", socket, "auto-multicast", FALSE,
+  g_object_get (self->rtcp_sink, "used-socket", &socket, NULL);
+  g_object_set (self->rtcp_src, "socket", socket, "auto-multicast", FALSE,
       "close-socket", FALSE, NULL);
   g_object_unref (socket);
 
   g_object_set (self->rtcp_sink, "sync", FALSE, "async", FALSE, NULL);
-  gst_element_set_locked_state (self->rtcp_sink, FALSE);
-  gst_element_sync_state_with_parent (self->rtcp_sink);
+  gst_element_set_locked_state (self->rtcp_src, FALSE);
+  gst_element_sync_state_with_parent (self->rtcp_src);
 
   return TRUE;
 
@@ -528,6 +518,20 @@ dns_resolve_failed:
   return FALSE;
 }
 
+static void
+gst_rtp_sink_stop (GstRtpSink * self)
+{
+  /* set the socket on rtcp_src to NULL before the udpsrc is changed to
+   * NULL. When an udpsrc goes to NULL, it will close the socket. Since
+   * this socket is shared with udpsink, this will close all RTCP
+   * traffic in an application that changes states
+   * NULL->PLAYING->NULL->PLAYING->NULL (e.g. gst-play-1.0). By setting
+   * the shared socket to NULL, this is avoided (and the socket is picked
+   * up again from udpsink/rtcp in gst_rtp_sink_setup_rtcp_socket). */
+  g_object_set (self->rtcp_src, "socket", NULL, NULL);
+}
+
+
 static GstStateChangeReturn
 gst_rtp_sink_change_state (GstElement * element, GstStateChange transition)
 {
@@ -547,6 +551,9 @@ gst_rtp_sink_change_state (GstElement * element, GstStateChange transition)
       break;
     case GST_STATE_CHANGE_READY_TO_PAUSED:
       break;
+    case GST_STATE_CHANGE_READY_TO_NULL:
+      gst_rtp_sink_stop (self);
+      break;
     default:
       break;
   }
@@ -558,7 +565,7 @@ gst_rtp_sink_change_state (GstElement * element, GstStateChange transition)
   switch (transition) {
     case GST_STATE_CHANGE_NULL_TO_READY:
       /* re-use the sockets after they have been initialised */
-      if (gst_rtp_sink_reuse_socket (self) == FALSE)
+      if (gst_rtp_sink_setup_rtcp_socket (self) == FALSE)
         return GST_STATE_CHANGE_FAILURE;
       break;
     case GST_STATE_CHANGE_READY_TO_PAUSED:
@@ -637,6 +644,8 @@ gst_rtp_sink_init (GstRtpSink * self)
     goto missing_plugin;
   }
 
+  g_object_set (self->rtp_sink, "async", FALSE, NULL);
+
   self->rtcp_src = gst_element_factory_make ("udpsrc", "rtp_rtcp_udpsrc0");
   if (self->rtcp_src == NULL) {
     missing_plugin = "udp";
@@ -702,12 +711,50 @@ gst_rtp_sink_uri_get_uri (GstURIHandler * handler)
 }
 
 static gboolean
-gst_rtp_sink_uri_set_uri (GstURIHandler * handler, const gchar * uri,
+gst_rtp_sink_uri_set_uri (GstURIHandler * handler, const gchar * str_uri,
     GError ** error)
 {
   GstRtpSink *self = (GstRtpSink *) handler;
+  GstUri *uri = NULL;
 
-  g_object_set (G_OBJECT (self), "uri", uri, NULL);
+  g_return_val_if_fail (str_uri != NULL, FALSE);
+
+  if (GST_STATE (self) >= GST_STATE_PAUSED) {
+    g_set_error (error, GST_URI_ERROR, GST_URI_ERROR_BAD_STATE,
+        _("Changing the URI on rtpsrc when it is running is not supported"));
+    GST_ERROR_OBJECT (self,
+        "Changing the URI on rtpsrc when it is running is not supported");
+    return FALSE;
+  }
+
+  if (!(uri = gst_uri_from_string (str_uri))) {
+    g_set_error (error, GST_URI_ERROR, GST_URI_ERROR_BAD_URI,
+        _("Invalid URI: %s"), str_uri);
+    GST_ERROR_OBJECT (self, "Invalid URI: %s", str_uri);
+    return FALSE;
+  }
+
+  if (g_strcmp0 (gst_uri_get_scheme (uri), "rtp") != 0) {
+    g_set_error (error, GST_URI_ERROR, GST_URI_ERROR_BAD_URI,
+        _("Invalid scheme in uri (needs to be rtp): %s"), str_uri);
+    GST_ERROR_OBJECT (self, "Invalid scheme in uri (needs to be rtp): %s",
+        str_uri);
+    gst_uri_unref (uri);
+    return FALSE;
+  }
+
+  g_object_set (self, "address", gst_uri_get_host (uri), NULL);
+  g_object_set (self, "port", gst_uri_get_port (uri), NULL);
+
+  GST_OBJECT_LOCK (self);
+  if (self->uri)
+    gst_uri_unref (self->uri);
+  self->uri = gst_uri_ref (uri);
+  GST_OBJECT_UNLOCK (self);
+
+  gst_rtp_utils_set_properties_from_uri_query (G_OBJECT (self), uri);
+
+  gst_uri_unref (uri);
 
   return TRUE;
 }
