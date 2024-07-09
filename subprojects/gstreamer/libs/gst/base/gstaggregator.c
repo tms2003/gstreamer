@@ -1493,7 +1493,7 @@ gst_aggregator_loop (GstAggregator * self)
     }
     GST_OBJECT_UNLOCK (self);
 
-    if (flow_return == GST_FLOW_EOS || flow_return == GST_FLOW_ERROR) {
+    if (flow_return == GST_FLOW_EOS) {
       gst_aggregator_push_eos (self);
     }
 
