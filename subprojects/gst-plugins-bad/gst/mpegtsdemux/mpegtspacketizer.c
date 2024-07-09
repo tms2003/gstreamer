@@ -277,6 +277,8 @@ mpegts_packetizer_init (MpegTSPacketizer2 * packetizer)
   packetizer->last_pts = GST_CLOCK_TIME_NONE;
   packetizer->last_dts = GST_CLOCK_TIME_NONE;
   packetizer->extra_shift = 0;
+  packetizer->first_raw_pts = GST_CLOCK_TIME_NONE;
+  packetizer->pts_wrap_offset = 0;
 }
 
 static void
@@ -599,6 +601,8 @@ mpegts_packetizer_clear (MpegTSPacketizer2 * packetizer)
   packetizer->last_in_time = GST_CLOCK_TIME_NONE;
   packetizer->last_pts = GST_CLOCK_TIME_NONE;
   packetizer->last_dts = GST_CLOCK_TIME_NONE;
+  packetizer->first_raw_pts = GST_CLOCK_TIME_NONE;
+  packetizer->pts_wrap_offset = 0;
 
   pcrtable = packetizer->observations[packetizer->pcrtablelut[0x1fff]];
   if (pcrtable)
@@ -2375,6 +2379,20 @@ mpegts_packetizer_pts_to_ts_internal (MpegTSPacketizer2 * packetizer,
           pts - PCRTIME_TO_GSTTIME (refpcr) + PCRTIME_TO_GSTTIME (refpcroffset);
     else
       GST_WARNING ("No groups, can't calculate timestamp");
+  } else if (pcr_pid == 0x1fff) {
+    if (!GST_CLOCK_TIME_IS_VALID (packetizer->first_raw_pts)) {
+      if (pts > 1000 * GST_SECOND)
+        packetizer->first_raw_pts = pts;
+    } else if (pts < packetizer->first_raw_pts) {
+      /* Wrap around */
+      if (packetizer->first_raw_pts - pts > 500 * GST_SECOND) {
+        packetizer->pts_wrap_offset +=
+            (MPEGTIME_TO_GSTTIME (((guint64) 1 << 33)) + 1);
+        packetizer->first_raw_pts = GST_CLOCK_TIME_NONE;
+      }
+    }
+
+    res = pts + packetizer->pts_wrap_offset;
   } else
     GST_WARNING ("Not enough information to calculate proper timestamp");
 
