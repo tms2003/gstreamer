@@ -2644,6 +2644,30 @@ gst_rtcp_packet_xr_get_ssrc (GstRTCPPacket * packet)
 }
 
 /**
+ * gst_rtcp_packet_xr_set_ssrc:
+ * @packet: a valid XR #GstRTCPPacket
+ * @ssrc: the SSRC to set
+ *
+ * Set the ssrc field of the XR @packet.
+ */
+void
+gst_rtcp_packet_xr_set_ssrc (GstRTCPPacket * packet, guint32 ssrc)
+{
+  guint8 *data;
+
+  g_return_if_fail (packet != NULL);
+  g_return_if_fail (packet->type == GST_RTCP_TYPE_XR);
+  g_return_if_fail (packet->rtcp != NULL);
+  g_return_if_fail (packet->rtcp->map.flags & GST_MAP_WRITE);
+
+  data = packet->rtcp->map.data;
+
+  /* skip header */
+  data += packet->offset + 4;
+  GST_WRITE_UINT32_BE (data, ssrc);
+}
+
+/**
  * gst_rtcp_packet_xr_first_rb:
  * @packet: a valid XR #GstRTCPPacket
  *
@@ -3074,6 +3098,90 @@ gst_rtcp_packet_xr_get_dlrr_block (GstRTCPPacket * packet,
     *delay = GST_READ_UINT32_BE (data);
 
   return TRUE;
+}
+
+/**
+ * gst_rtcp_packet_xr_add_dlrr
+ * @packet: a valid XR #GstRTCPPacket
+ * @ssrc: data source being reported
+ * @lrr: the last RR packet from this source
+ * @dlrr: the delay since last SR packet
+ *
+ * Add a new report block to @packet with the given values.
+ *
+ * Returns: %TRUE if the packet was created. This function can return %FALSE if
+ * the max MTU is exceeded or the number of report blocks is greater than
+ * #GST_RTCP_MAX_RB_COUNT.
+ *  0                   1                   2                   3
+ *  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+ * +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ * |     BT=5      |   reserved    |         block length          |
+ * +=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+
+ * |                 SSRC_1 (SSRC of first receiver)               | sub-
+ * +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+ block
+ * |                         last RR (LRR)                         |   1
+ * +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ * |                   delay since last RR (DLRR)                  |
+ * +=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+
+ * |                 SSRC_2 (SSRC of second receiver)              | sub-
+ * +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+ block
+ * :                               ...                             :   2
+ * +=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+
+ */
+gboolean
+gst_rtcp_packet_xr_add_dlrr (GstRTCPPacket * packet, guint32 ssrc,
+    guint32 lrr, guint32 dlrr)
+{
+  g_return_val_if_fail (packet != NULL, FALSE);
+  g_return_val_if_fail (packet->type == GST_RTCP_TYPE_XR, FALSE);
+  g_return_val_if_fail (packet->rtcp != NULL, FALSE);
+  g_return_val_if_fail (packet->rtcp->map.flags & GST_MAP_WRITE, FALSE);
+
+  guint8 *data = packet->rtcp->map.data;
+  gsize maxsize = packet->rtcp->map.maxsize;
+
+  /* skip header */
+  guint offset = packet->offset + 8;
+
+  // TODO: if there are more XR entries, jump to the propper one
+  // For now, we assume there will be no more than one
+  guint16 length_in_bytes = 16;
+  if (offset + length_in_bytes >= maxsize)
+    goto no_space;
+
+  // Update new size of buffer, write later:
+  packet->rtcp->map.size += length_in_bytes;
+
+  guint16 length_in_32bit_words_minus_1 = length_in_bytes / 4 - 1;
+
+  // Update length of RTCP packet
+  guint16 rtcp_length_in_32bit_words_minus_1 =
+      GST_READ_UINT16_BE (data + packet->offset + 2);
+  rtcp_length_in_32bit_words_minus_1 += (length_in_bytes / 4);
+  GST_WRITE_UINT16_BE (data + packet->offset + 2,
+      rtcp_length_in_32bit_words_minus_1);
+
+  /* DLRR header */
+  data[offset + 0] = GST_RTCP_XR_TYPE_DLRR;
+  data[offset + 1] = 0;
+  data += (offset + 2);
+  GST_WRITE_UINT16_BE (data, length_in_32bit_words_minus_1);
+  data += 2;                    // Just wrote 2 bytes
+
+  // Write the data
+  GST_WRITE_UINT32_BE (data, ssrc);
+  data += 4;
+  GST_WRITE_UINT32_BE (data, lrr);
+  data += 4;
+  GST_WRITE_UINT32_BE (data, dlrr);
+  data += 4;
+
+  return TRUE;
+
+no_space:
+  {
+    return FALSE;
+  }
 }
 
 /**

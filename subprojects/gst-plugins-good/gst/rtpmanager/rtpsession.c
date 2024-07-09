@@ -3113,6 +3113,56 @@ rtp_session_process_feedback (RTPSession * sess, GstRTCPPacket * packet,
     g_object_unref (src);
 }
 
+static void
+rtp_session_process_xr_rrt (GstRTCPPacket * packet, RTPSource * source,
+    RTPPacketInfo * pinfo)
+{
+  guint64 ntptime;
+  gst_rtcp_packet_xr_get_rrt (packet, &ntptime);
+
+  rtp_source_process_xr_rrt (source, pinfo->current_time, ntptime);
+}
+
+static void
+rtp_session_process_xr (RTPSession * sess, GstRTCPPacket * packet,
+    RTPPacketInfo * pinfo)
+{
+
+  guint32 ssrc = gst_rtcp_packet_xr_get_ssrc (packet);
+
+  gboolean created;
+
+  RTPSource *source = obtain_source (sess, ssrc, &created, pinfo, FALSE);
+
+  if (!source)
+    return;
+
+  /* skip non-bye packets for sources that are marked BYE */
+  if (sess->scheduled_bye && RTP_SOURCE_IS_MARKED_BYE (source))
+    goto out;
+
+  if (created)
+    on_new_ssrc (sess, source);
+
+  gboolean more = gst_rtcp_packet_xr_first_rb (packet);
+  while (more) {
+    GstRTCPXRType type = gst_rtcp_packet_xr_get_block_type (packet);
+    switch (type) {
+      case GST_RTCP_XR_TYPE_RRT:
+        rtp_session_process_xr_rrt (packet, source, pinfo);
+        break;
+      default:
+        GST_DEBUG ("Got XR packet with type %d, but ignored", type);
+    }
+
+    more = gst_rtcp_packet_xr_next_rb (packet);
+  }
+
+out:
+  g_object_unref (source);
+}
+
+
 /**
  * rtp_session_process_rtcp:
  * @sess: and #RTPSession
@@ -3185,10 +3235,7 @@ rtp_session_process_rtcp (RTPSession * sess, GstBuffer * buffer,
         rtp_session_process_feedback (sess, &packet, &pinfo, current_time);
         break;
       case GST_RTCP_TYPE_XR:
-        /* FIXME: This block is added to downgrade warning level.
-         * Once the parser is implemented, it should be replaced with
-         * a proper process function. */
-        GST_DEBUG ("got RTCP XR packet, but ignored");
+        rtp_session_process_xr (sess, &packet, &pinfo);
         break;
       default:
         GST_WARNING ("got unknown RTCP packet type: %d", type);
@@ -4139,6 +4186,32 @@ done:
   rtp_source_clear_nacks (source, nacked_seqnums);
 }
 
+/**
+ * construct XR
+ * Replicate what chrome does, with multiple video sources:
+ * We send and XR+DLRR for every media source, referencing the XR+RRT sender
+ */
+static void
+session_xr (const gchar * key, RTPSource * source, ReportData * data)
+{
+  GstRTCPBuffer *rtcp = &data->rtcpbuf;
+  GstRTCPPacket *packet = &data->packet;
+
+  if (RTP_SOURCE_IS_SENDER (source)) {
+    return;
+  }
+
+  guint32 lrr;
+  guint32 dlrr;
+  if (rtp_source_get_new_xr_dlrr (source, data->current_time, &lrr, &dlrr)) {
+    /* Add XR packet */
+    if (!gst_rtcp_buffer_add_packet (rtcp, GST_RTCP_TYPE_XR, packet))
+      return;
+    gst_rtcp_packet_xr_set_ssrc (packet, data->source->ssrc);
+    gst_rtcp_packet_xr_add_dlrr (packet, source->ssrc, lrr, dlrr);
+  }
+}
+
 /* perform cleanup of sources that timed out */
 static void
 session_cleanup (const gchar * key, RTPSource * source, ReportData * data)
@@ -4567,6 +4640,8 @@ generate_rtcp (const gchar * key, RTPSource * source, ReportData * data)
   if (data->have_nack)
     g_hash_table_foreach (sess->ssrcs[sess->mask_idx],
         (GHFunc) session_nack, data);
+
+  g_hash_table_foreach (sess->ssrcs[sess->mask_idx], (GHFunc) session_xr, data);
 
   gst_rtcp_buffer_unmap (&data->rtcpbuf);
 

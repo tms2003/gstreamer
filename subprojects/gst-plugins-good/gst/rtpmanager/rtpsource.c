@@ -279,6 +279,8 @@ rtp_source_reset (RTPSource * src)
   src->stats.sr[0].is_valid = FALSE;
   src->stats.curr_rr = 0;
   src->stats.rr[0].is_valid = FALSE;
+  src->stats.curr_xr_rrt = 0;
+  src->stats.xr_rrt[0].is_valid = FALSE;
   src->stats.prev_rtptime = GST_CLOCK_TIME_NONE;
   src->stats.prev_rtcptime = GST_CLOCK_TIME_NONE;
   src->stats.last_rtptime = GST_CLOCK_TIME_NONE;
@@ -1467,6 +1469,40 @@ no_callback:
 }
 
 /**
+ * rtp_source_process_xr_rrt:
+ * @src: an #RTPSource
+ * @time: time of packet arrival
+ * @ntptime: the NTP time (in NTP Timestamp Format, 32.32 fixed point)
+ *
+ * Update the extended report RRT in @src.
+ */
+void
+rtp_source_process_xr_rrt (RTPSource * src, GstClockTime time, guint64 ntptime)
+{
+  RTPExtendedReportRRT *curr;
+  gint curridx;
+
+  g_return_if_fail (RTP_IS_SOURCE (src));
+
+  GST_DEBUG ("got XR RRT packet: SSRC %08x, NTP %08x:%08x",
+      src->ssrc, (guint32) (ntptime >> 32), (guint32) (ntptime & 0xffffffff));
+
+  curridx = src->stats.curr_xr_rrt ^ 1;
+  curr = &src->stats.xr_rrt[curridx];
+
+  /* update current */
+  curr->is_valid = TRUE;
+  curr->ntptime = ntptime;
+  curr->time = time;
+
+  /* make current */
+  src->stats.curr_xr_rrt = curridx;
+
+  src->stats.prev_rtcptime = src->stats.last_rtcptime;
+  src->stats.last_rtcptime = time;
+}
+
+/**
  * rtp_source_process_sr:
  * @src: an #RTPSource
  * @time: time of packet arrival
@@ -1758,6 +1794,49 @@ rtp_source_get_new_rb (RTPSource * src, GstClockTime time,
     *lsr = LSR;
   if (dlsr)
     *dlsr = DLSR;
+
+  return TRUE;
+}
+
+/**
+ * rtp_source_get_new_xr_dlrr:
+ * @src: an #RTPSource
+ * @time: the current time of the system clock
+ * @lrr: the time of the last XR RRT packet on this source
+ *   (in NTP Short Format, 16.16 fixed point)
+ * @dlrr: the delay since the last XR RRT packet
+ *   (in NTP Short Format, 16.16 fixed point)
+ *
+ * Get new values to put into a new XR DLRR packet from this source.
+ *
+ * Returns: %TRUE on success.
+ */
+gboolean
+rtp_source_get_new_xr_dlrr (RTPSource * source, GstClockTime time,
+    guint32 * lrr, guint32 * dlrr)
+{
+  g_return_val_if_fail (lrr != NULL, FALSE);
+  g_return_val_if_fail (dlrr != NULL, FALSE);
+
+  RTPExtendedReportRRT *curr_rrt =
+      &source->stats.xr_rrt[source->stats.curr_xr_rrt];
+
+  if (!curr_rrt->is_valid) {
+    return FALSE;
+  }
+
+  guint64 ntptime = curr_rrt->ntptime;
+  GstClockTime rrt_time = curr_rrt->time;
+
+  /* LRR is middle 32 bits of the last ntptime */
+  *lrr = (ntptime >> 16) & 0xffffffff;
+
+  GstClockTime diff = time - rrt_time;
+
+  GST_DEBUG ("last XR RRT time diff %" GST_TIME_FORMAT, GST_TIME_ARGS (diff));
+
+  /* DLRR, delay since last XR RRT is expressed in 1/65536 second units */
+  *dlrr = gst_util_uint64_scale_int (diff, 65536, GST_SECOND);
 
   return TRUE;
 }

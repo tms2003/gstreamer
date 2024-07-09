@@ -62,6 +62,18 @@ typedef struct {
 } RTPReceiverReport;
 
 /**
+ * RTPExtendedReportRRT:
+ *
+ * A extended report structure for Receiver Reference Time.
+ */
+typedef struct {
+  gboolean is_valid;
+  guint32 ssrc; /* which source is the report about */
+  guint64 ntptime;
+  GstClockTime time;
+} RTPExtendedReportRRT;
+
+/**
  * RTPPacketInfo:
  * @send: if this is a packet for sending
  * @rtp: if this info is about an RTP packet
@@ -174,6 +186,10 @@ typedef struct {
   RTPReceiverReport rr[2];
   gint              curr_sr;
   RTPSenderReport   sr[2];
+
+  /* extended reports */
+  gint                 curr_xr_rrt;
+  RTPExtendedReportRRT xr_rrt[2];
 } RTPSourceStats;
 
 #define RTP_STATS_BANDWIDTH           64000
