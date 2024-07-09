@@ -3689,7 +3689,8 @@ gst_v4l2_video_colorimetry_matches (const GstVideoColorimetry * cinfo,
     info.colorimetry.primaries = cinfo->primaries;
   if (info.colorimetry.range == GST_VIDEO_COLOR_RANGE_UNKNOWN)
     info.colorimetry.range = cinfo->range;
-  if (info.colorimetry.matrix == GST_VIDEO_COLOR_MATRIX_UNKNOWN)
+  if (info.colorimetry.matrix == GST_VIDEO_COLOR_MATRIX_UNKNOWN ||
+      info.colorimetry.matrix == GST_VIDEO_COLOR_MATRIX_RGB)
     info.colorimetry.matrix = cinfo->matrix;
   if (info.colorimetry.transfer == GST_VIDEO_TRANSFER_UNKNOWN)
     info.colorimetry.transfer = cinfo->transfer;
