@@ -93,9 +93,14 @@ static GstStaticPadTemplate sinktemplate = GST_STATIC_PAD_TEMPLATE ("sink",
 static GstStaticPadTemplate srctemplate = GST_STATIC_PAD_TEMPLATE ("src",
     GST_PAD_SRC,
     GST_PAD_ALWAYS,
-    GST_STATIC_CAPS ("video/x-h264, parsed = (boolean) true, "
-        "stream-format=(string) { avc, avc3, byte-stream }, "
-        "alignment=(string) { au, nal }"));
+    GST_STATIC_CAPS ("video/x-h264, "
+        "parsed = (boolean) true, "
+        "stream-format=(string) { avc, avc3 }, "
+        "alignment = (string) au ;"
+        "video/x-h264, "
+        "parsed = (boolean) true, "
+        "stream-format=(string) byte-stream, "
+        "alignment = (string) { au, nal }"));
 
 #define parent_class gst_h264_parse_parent_class
 G_DEFINE_TYPE (GstH264Parse, gst_h264_parse, GST_TYPE_BASE_PARSE);
