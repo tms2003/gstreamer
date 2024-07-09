@@ -529,13 +529,20 @@ _gst_mss_stream_audio_caps_from_fourcc (gchar * fourcc)
   if (!fourcc)
     return NULL;
 
-  if (strcmp (fourcc, "AACL") == 0) {
+  if (strstr (fourcc, "AAC") != NULL) {
     return gst_caps_new_simple ("audio/mpeg", "mpegversion", G_TYPE_INT, 4,
         NULL);
   } else if (strcmp (fourcc, "WmaPro") == 0 || strcmp (fourcc, "WMAP") == 0) {
     return gst_caps_new_simple ("audio/x-wma", "wmaversion", G_TYPE_INT, 3,
         NULL);
+  } else if (strcmp (fourcc, "EC-3") == 0 || strcmp (fourcc, "EC+3") == 0) {
+    return gst_caps_new_simple ("audio/x-eac3", "framed", G_TYPE_BOOLEAN, TRUE,
+        NULL);
+  } else if (strcmp (fourcc, "AC-3") == 0) {
+    return gst_caps_new_simple ("audio/x-ac3", "framed", G_TYPE_BOOLEAN, TRUE,
+        NULL);
   }
+
   return NULL;
 }
 
