@@ -1286,7 +1286,10 @@ gst_ffmpegdemux_open (GstFFMpegDemux * demux)
   gst_element_no_more_pads (GST_ELEMENT (demux));
 
   /* transform some useful info to GstClockTime and remember */
-  demux->start_time = gst_util_uint64_scale_int (demux->context->start_time,
+  if (demux->context->start_time == G_MININT64)
+    demux->start_time = 0;
+  else
+    demux->start_time = gst_util_uint64_scale_int (demux->context->start_time,
       GST_SECOND, AV_TIME_BASE);
   GST_DEBUG_OBJECT (demux, "start time: %" GST_TIME_FORMAT,
       GST_TIME_ARGS (demux->start_time));
