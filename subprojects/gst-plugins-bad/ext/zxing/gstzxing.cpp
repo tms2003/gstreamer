@@ -47,6 +47,7 @@
  * gst-launch-1.0 -m v4l2src ! tee name=t ! queue ! videoconvert ! zxing ! fakesink t. ! queue ! xvimagesink
  * ]| Same as above, but running the filter on a branch to keep the display in color
  *
+ * Since: 1.18
  */
 
 #ifdef HAVE_CONFIG_H
