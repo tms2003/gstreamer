@@ -1815,6 +1815,22 @@ add_alternate_variant (GstV4l2Object * v4l2object, GstCaps * caps,
       gst_caps_features_new (GST_CAPS_FEATURE_FORMAT_INTERLACED, NULL));
 }
 
+static void
+append_non_colorimetry_caps (GstV4l2Object * v4l2object, GstCaps * caps,
+    GstStructure * structure)
+{
+  GstStructure *alt_s;
+
+  if (!gst_structure_has_name (structure, "video/x-raw") ||
+        !gst_structure_has_field (structure, "colorimetry"))
+    return;
+
+  alt_s = gst_structure_copy (structure);
+  gst_structure_remove_field (alt_s, "colorimetry");
+
+  gst_caps_append_structure (caps, alt_s);
+}
+
 static GstCaps *
 gst_v4l2_object_get_caps_helper (GstV4L2FormatFlags flags)
 {
@@ -5068,6 +5084,10 @@ gst_v4l2_object_probe_caps (GstV4l2Object * v4l2object, GstCaps * filter)
         format->pixelformat, template);
     if (tmp) {
       gst_caps_append (ret, tmp);
+
+      /* Append non colorimetry caps, so we can negotiate it if needed */
+      append_non_colorimetry_caps (v4l2object, ret, gst_caps_get_structure (ret,
+              gst_caps_get_size (ret) - 1));
 
       /* Add a variant of the caps with the Interlaced feature so we can negotiate it if needed */
       add_alternate_variant (v4l2object, ret, gst_caps_get_structure (ret,
