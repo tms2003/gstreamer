@@ -4416,7 +4416,7 @@ decode_slice (GstVaapiDecoderH264 * decoder, GstVaapiDecoderUnit * unit)
     return GST_VAAPI_DECODER_STATUS_ERROR_UNKNOWN;
   }
 
-  /* Check wether this is the first/last slice in the current access unit */
+  /* Check whether this is the first/last slice in the current access unit */
   if (pi->flags & GST_VAAPI_DECODER_UNIT_FLAG_AU_START)
     GST_VAAPI_PICTURE_FLAG_SET (picture, GST_VAAPI_PICTURE_FLAG_AU_START);
   if (pi->flags & GST_VAAPI_DECODER_UNIT_FLAG_AU_END)

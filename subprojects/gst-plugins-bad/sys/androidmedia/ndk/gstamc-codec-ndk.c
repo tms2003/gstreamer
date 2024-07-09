@@ -195,7 +195,7 @@ gst_amc_codec_ndk_free (GstAmcCodec * codec)
 
   if (result != AMEDIA_OK) {
     GST_WARNING
-        ("Unable to delete an AMediaCodec: %d, a leak might have occured.",
+        ("Unable to delete an AMediaCodec: %d, a leak might have occurred.",
         result);
   }
 

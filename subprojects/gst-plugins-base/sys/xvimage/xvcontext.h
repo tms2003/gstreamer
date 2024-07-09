@@ -111,9 +111,9 @@ struct _GstXvImageFormat
  * @heightmm ratio
  * @use_xshm: used to known whether of not XShm extension is usable or not even
  * if the Extension is present
- * @use_xkb: used to known wether of not Xkb extension is usable or not even
+ * @use_xkb: used to known whether of not Xkb extension is usable or not even
  * if the Extension is present
- * @use_xi2: used to known wether of not XInput extension is usable or not even
+ * @use_xi2: used to known whether of not XInput extension is usable or not even
  * if the Extension is present
  * @xi_opcode: XInput opcode
  * @xv_port_id: the XVideo port ID

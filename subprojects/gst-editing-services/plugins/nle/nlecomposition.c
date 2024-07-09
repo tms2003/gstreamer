@@ -68,7 +68,7 @@ enum
 enum
 {
   COMMIT_SIGNAL,
-  COMMITED_SIGNAL,
+  COMMITTED_SIGNAL,
   LAST_SIGNAL
 };
 
@@ -167,7 +167,7 @@ struct _NleCompositionPrivate
   GstSegment *segment;
 
   /* Segment representing the last seek. Simply initialized
-   * segment if no seek occured. */
+   * segment if no seek occurred. */
   GstSegment *seek_segment;
   guint64 next_base_time;
 
@@ -307,7 +307,7 @@ static void _deactivate_stack (NleComposition * comp,
     NleUpdateStackReason reason);
 static void _set_real_eos_seqnum_from_seek (NleComposition * comp,
     GstEvent * event);
-static void _emit_commited_signal_func (NleComposition * comp, gpointer udata);
+static void _emit_committed_signal_func (NleComposition * comp, gpointer udata);
 static void _restart_task (NleComposition * comp);
 static void
 _add_action (NleComposition * comp, GCallback func, gpointer data,
@@ -515,7 +515,7 @@ _stop_task (NleComposition * comp)
   gboolean res = TRUE;
   GstTask *task;
 
-  GST_INFO_OBJECT (comp, "Stoping children management task");
+  GST_INFO_OBJECT (comp, "Stopping children management task");
 
   ACTIONS_LOCK (comp);
   comp->priv->running = FALSE;
@@ -718,18 +718,19 @@ static inline gboolean
 _commit_values (NleComposition * comp)
 {
   GList *tmp;
-  gboolean commited = FALSE;
+  gboolean committed = FALSE;
   NleCompositionPrivate *priv = comp->priv;
 
   for (tmp = priv->objects_start; tmp; tmp = tmp->next) {
     if (nle_object_commit (tmp->data, TRUE))
-      commited = TRUE;
+      committed = TRUE;
   }
 
   GST_DEBUG_OBJECT (comp, "Linking up commit vmethod");
-  commited |= NLE_OBJECT_CLASS (parent_class)->commit (NLE_OBJECT (comp), TRUE);
+  committed |=
+      NLE_OBJECT_CLASS (parent_class)->commit (NLE_OBJECT (comp), TRUE);
 
-  return commited;
+  return committed;
 }
 
 static gboolean
@@ -1246,7 +1247,7 @@ nle_composition_class_init (NleCompositionClass * klass)
       GST_PARAM_MUTABLE_PLAYING);
   g_object_class_install_properties (gobject_class, PROP_LAST, properties);
 
-  _signals[COMMITED_SIGNAL] =
+  _signals[COMMITTED_SIGNAL] =
       g_signal_new ("commited", G_TYPE_FROM_CLASS (klass), G_SIGNAL_RUN_FIRST,
       0, NULL, NULL, NULL, G_TYPE_NONE, 1, G_TYPE_BOOLEAN);
 
@@ -1255,7 +1256,7 @@ nle_composition_class_init (NleCompositionClass * klass)
   GST_DEBUG_REGISTER_FUNCPTR (_add_object_func);
   GST_DEBUG_REGISTER_FUNCPTR (_update_pipeline_func);
   GST_DEBUG_REGISTER_FUNCPTR (_commit_func);
-  GST_DEBUG_REGISTER_FUNCPTR (_emit_commited_signal_func);
+  GST_DEBUG_REGISTER_FUNCPTR (_emit_committed_signal_func);
   GST_DEBUG_REGISTER_FUNCPTR (_initialize_stack_func);
 
   /* Just be useless, so the compiler does not warn us
@@ -1455,7 +1456,7 @@ nle_composition_reset (NleComposition * comp)
 
   _empty_bin (GST_BIN_CAST (priv->current_bin));
 
-  GST_DEBUG_OBJECT (comp, "Composition now resetted");
+  GST_DEBUG_OBJECT (comp, "Composition now reset");
 }
 
 static GstPadProbeReturn
@@ -1641,7 +1642,7 @@ ghost_event_probe_handler (GstPad * ghostpad G_GNUC_UNUSED,
       if (g_atomic_int_compare_and_exchange (&comp->priv->real_eos_seqnum,
               seqnum, 1)) {
 
-        GST_INFO_OBJECT (comp, "Got EOS for real, seq ID is %i, fowarding it",
+        GST_INFO_OBJECT (comp, "Got EOS for real, seq ID is %i, forwarding it",
             seqnum);
 
         if (comp->priv->seek_seqnum)
@@ -2608,11 +2609,11 @@ _set_current_bin_to_ready (NleComposition * comp, NleUpdateStackReason reason)
 }
 
 static void
-_emit_commited_signal_func (NleComposition * comp, gpointer udata)
+_emit_committed_signal_func (NleComposition * comp, gpointer udata)
 {
-  GST_INFO_OBJECT (comp, "Emiting COMMITED now that the stack " "is ready");
+  GST_INFO_OBJECT (comp, "Emitting COMMITTED now that the stack " "is ready");
 
-  g_signal_emit (comp, _signals[COMMITED_SIGNAL], 0, TRUE);
+  g_signal_emit (comp, _signals[COMMITTED_SIGNAL], 0, TRUE);
 }
 
 static void
@@ -2622,7 +2623,7 @@ _restart_task (NleComposition * comp)
       UPDATE_PIPELINE_REASONS[comp->priv->updating_reason]);
 
   if (comp->priv->updating_reason == COMP_UPDATE_STACK_ON_COMMIT)
-    _add_action (comp, G_CALLBACK (_emit_commited_signal_func), comp,
+    _add_action (comp, G_CALLBACK (_emit_committed_signal_func), comp,
         G_PRIORITY_HIGH);
 
   comp->priv->seqnum_to_restart_task = 0;
@@ -2683,13 +2684,13 @@ _commit_func (NleComposition * comp, UpdateCompositionData * ucompo)
   _post_start_composition_update (comp, ucompo->seqnum, ucompo->reason);
 
   /* Get current so that it represent the duration it was
-   * before commiting children */
+   * before committing children */
   curpos = query_ancestors_position (comp);
 
   if (!_commit_all_values (comp, ucompo->reason)) {
     GST_DEBUG_OBJECT (comp, "Nothing to commit, leaving");
 
-    g_signal_emit (comp, _signals[COMMITED_SIGNAL], 0, FALSE);
+    g_signal_emit (comp, _signals[COMMITTED_SIGNAL], 0, FALSE);
     _post_start_composition_update_done (comp, ucompo->seqnum, ucompo->reason);
 
     return;
@@ -2700,7 +2701,7 @@ _commit_func (NleComposition * comp, UpdateCompositionData * ucompo)
 
     update_start_stop_duration (comp);
 
-    g_signal_emit (comp, _signals[COMMITED_SIGNAL], 0, TRUE);
+    g_signal_emit (comp, _signals[COMMITTED_SIGNAL], 0, TRUE);
 
   } else {
     gboolean reverse;
@@ -2726,7 +2727,7 @@ _commit_func (NleComposition * comp, UpdateCompositionData * ucompo)
       GST_INFO_OBJECT (comp, "No new stack set, we can go and keep acting on"
           " our children");
 
-      g_signal_emit (comp, _signals[COMMITED_SIGNAL], 0, TRUE);
+      g_signal_emit (comp, _signals[COMMITTED_SIGNAL], 0, TRUE);
     }
   }
 
@@ -3624,7 +3625,7 @@ _nle_composition_add_object (NleComposition * comp, NleObject * object)
         "inpoint", (GstClockTime) 0,
         "duration", (GstClockTimeDiff) NLE_OBJECT_STOP (comp), NULL);
 
-    GST_INFO_OBJECT (object, "Used as expandable, commiting now");
+    GST_INFO_OBJECT (object, "Used as expandable, committing now");
     nle_object_commit (NLE_OBJECT (object), FALSE);
   }
 
@@ -3657,7 +3658,7 @@ _nle_composition_add_object (NleComposition * comp, NleObject * object)
   priv->objects_stop = g_list_insert_sorted
       (priv->objects_stop, object, (GCompareFunc) objects_stop_compare);
 
-  /* Now the object is ready to be commited and then used */
+  /* Now the object is ready to be committed and then used */
 
 beach:
   return ret;

@@ -1901,7 +1901,7 @@ again:
     g_assert (offset >= map_info.size);
     /* Warning and still consider the frame is complete */
     GST_WARNING_OBJECT (self, "Exhaust the buffer but still incomplete frame,"
-        " should not happend in %s alignment",
+        " should not happened in %s alignment",
         gst_av1_parse_alignment_to_string (self->in_align));
   }
 
@@ -2237,7 +2237,7 @@ gst_av1_parse_handle_frame (GstBaseParse * parse,
 
   if (self->in_align == GST_AV1_PARSE_ALIGN_TEMPORAL_UNIT
       && self->detect_annex_b) {
-    /* Only happend at the first time of handle_frame, try to
+    /* Only happened at the first time of handle_frame, try to
        recognize the annex b stream format. */
     if (gst_av1_parse_detect_stream_format (parse, frame)) {
       GST_INFO_OBJECT (self, "Input alignment %s",

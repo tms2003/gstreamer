@@ -2089,7 +2089,7 @@ _transfer_child (GESClip * from_clip, GESClip * to_clip,
   if (!ges_container_add (GES_CONTAINER (to_clip),
           GES_TIMELINE_ELEMENT (child)))
     GST_ERROR ("%" GES_FORMAT " could not add child %p while"
-        " transfering, this should never happen", GES_ARGS (to_clip), child);
+        " transferring, this should never happen", GES_ARGS (to_clip), child);
   to_clip->priv->allow_any_track = FALSE;
   ges_timeline_set_moving_track_elements (timeline, FALSE);
 
@@ -2729,7 +2729,7 @@ ges_clip_create_track_elements (GESClip * clip, GESTrackType type)
   klass = GES_CLIP_GET_CLASS (clip);
 
   if (!(klass->create_track_elements)) {
-    GST_WARNING ("no GESClip::create_track_elements implentation");
+    GST_WARNING ("no GESClip::create_track_elements implementation");
     return NULL;
   }
 
@@ -3476,7 +3476,7 @@ ges_clip_split_full (GESClip * clip, guint64 position, GError ** error)
     return NULL;
   }
 
-  GST_DEBUG_OBJECT (clip, "Spliting at %" GST_TIME_FORMAT,
+  GST_DEBUG_OBJECT (clip, "Splitting at %" GST_TIME_FORMAT,
       GST_TIME_ARGS (position));
 
   /* Create the new Clip */

@@ -957,7 +957,7 @@ gst_vaapi_window_wayland_render (GstVaapiWindow * window,
   if (!ret)
     return FALSE;
 
-  /* if need_vpp is set then the vpp happend */
+  /* if need_vpp is set then the vpp happened */
   if (priv->need_vpp) {
     width = window->width;
     height = window->height;

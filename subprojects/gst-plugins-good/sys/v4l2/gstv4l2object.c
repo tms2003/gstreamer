@@ -5809,7 +5809,7 @@ gst_v4l2_object_get_buffer_pool (GstV4l2Object * v4l2object)
  * be returned. If the poll was interrupted, %GST_FLOW_FLUSHING is returned.
  * If there was no read or write indicator, %GST_V4L2_FLOW_LAST_BUFFER is
  * returned. It may also return %GST_FLOW_ERROR if some unexpected error
- * occured.
+ * occurred.
  *
  * Returns: GST_FLOW_OK if buffers are ready to be queued or dequeued.
  */

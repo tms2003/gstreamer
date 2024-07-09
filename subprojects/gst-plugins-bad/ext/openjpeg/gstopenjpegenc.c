@@ -1,4 +1,4 @@
-/* 
+/*
  * Copyright (C) 2012 Collabora Ltd.
  *     Author: Sebastian Dröge <sebastian.droege@collabora.co.uk>
  * Copyright (C) 2013 Sebastian Dröge <slomo@circular-chaos.org>
@@ -1346,7 +1346,7 @@ gst_openjpeg_enc_encode_frame_single (GstVideoEncoder * encoder,
     gst_openjpeg_enc_encode_stripe (GST_ELEMENT (self), message);
     if (message->last_error != OPENJPEG_ERROR_NONE) {
       GST_WARNING_OBJECT
-          (self, "An error occured %d during the JPEG encoding",
+          (self, "An error occurred %d during the JPEG encoding",
           message->last_error);
       gst_video_codec_frame_unref (frame);
       self->last_error = message->last_error;

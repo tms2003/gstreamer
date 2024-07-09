@@ -190,7 +190,7 @@ ges_smart_adder_class_init (GESSmartAdderClass * klass)
   gst_element_class_add_static_pad_template (element_class, &sink_template);
   gst_element_class_set_static_metadata (element_class, "GES Smart adder",
       "Generic/Audio",
-      "Use adder making use of GES informations",
+      "Use adder making use of GES information",
       "Thibault Saunier <thibault.saunier@collabora.com>");
 
   element_class->request_new_pad = GST_DEBUG_FUNCPTR (_request_new_pad);

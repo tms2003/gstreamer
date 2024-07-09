@@ -82,7 +82,7 @@ G_BEGIN_DECLS
  */
 #define GST_ADAPTIVE_DEMUX_FLOW_RESTART_FRAGMENT GST_FLOW_CUSTOM_SUCCESS_2
 
-/* The live stream has lost synchronization and the demuxer needs to be resetted */
+/* The live stream has lost synchronization and the demuxer needs to be reset */
 #define GST_ADAPTIVE_DEMUX_FLOW_LOST_SYNC GST_FLOW_CUSTOM_SUCCESS_2 + 1
 
 /* The stream sub-class is busy and can't supply information for
@@ -209,20 +209,20 @@ struct _GstAdaptiveDemuxPeriod
   gint ref_count;
 
   GstAdaptiveDemux *demux;
-  
+
   /* TRUE if the streams of this period were prepared and can be started */
   gboolean prepared;
 
 
   /* TRUE if there is another period after this one */
   gboolean has_next_period;
-  
+
   /* An increasing unique identifier for the period.
    *
    * Note: unrelated to dash period id (which can be identical across
    * periods) */
   guint period_num;
-  
+
   /* The list of GstAdaptiveDemux2Stream (ref hold) */
   GList *streams;
 
@@ -264,7 +264,7 @@ struct _GstAdaptiveDemux
 
   /* Period used for input */
   GstAdaptiveDemuxPeriod *input_period;
-  
+
   GstSegment segment;
   gdouble instant_rate_multiplier; /* 1.0 by default, or from instant-rate seek */
 

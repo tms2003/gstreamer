@@ -37,7 +37,7 @@ main (int argc, char **argv)
     ges_layer_add_clip (layer, clip);
   }
 
-  /* Commiting the timeline is always necessary for changes
+  /* Committing the timeline is always necessary for changes
    * inside it to be taken into account by the Non Linear Engine */
   ges_timeline_commit (timeline);
 

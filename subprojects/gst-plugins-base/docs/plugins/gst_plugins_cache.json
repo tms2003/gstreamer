@@ -9915,7 +9915,7 @@
                         "writable": true
                     },
                     "force-sw-decoders": {
-                        "blurb": "Use only sofware decoders to process streams",
+                        "blurb": "Use only software decoders to process streams",
                         "conditionally-available": false,
                         "construct": false,
                         "construct-only": false,
@@ -11922,7 +11922,7 @@
                         "writable": true
                     },
                     "force-sw-decoders": {
-                        "blurb": "Use only sofware decoders to process streams",
+                        "blurb": "Use only software decoders to process streams",
                         "conditionally-available": false,
                         "construct": false,
                         "construct-only": false,

@@ -110,7 +110,7 @@ _track_changed_cb (GESTrackElement * track_element,
   }
 
   if (ges_track_element_get_track (track_element) == NULL) {
-    GST_DEBUG_OBJECT (self, "Neighboor %" GST_PTR_FORMAT
+    GST_DEBUG_OBJECT (self, "Neighbor %" GST_PTR_FORMAT
         " removed from track ... auto destructing", track_element);
 
     g_signal_emit (self, auto_transition_signals[DESTROY_ME], 0);

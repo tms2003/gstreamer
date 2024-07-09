@@ -114,7 +114,7 @@ enum
   ARG_LAST,
   TRACK_ELEMENT_ADDED,
   TRACK_ELEMENT_REMOVED,
-  COMMITED,
+  COMMITTED,
   LAST_SIGNAL
 };
 
@@ -362,10 +362,10 @@ composition_duration_cb (GstElement * composition,
 }
 
 static void
-composition_commited_cb (GstElement * composition, gboolean changed,
+composition_committed_cb (GstElement * composition, gboolean changed,
     GESTrack * self)
 {
-  g_signal_emit (self, ges_track_signals[COMMITED], 0);
+  g_signal_emit (self, ges_track_signals[COMMITTED], 0);
 }
 
 /* Internal */
@@ -851,7 +851,7 @@ ges_track_class_init (GESTrackClass * klass)
    * this will be emitted whenever the underlying #nlecomposition has been
    * committed (see #nlecomposition::commited).
    */
-  ges_track_signals[COMMITED] =
+  ges_track_signals[COMMITTED] =
       g_signal_new ("commited", G_TYPE_FROM_CLASS (klass),
       G_SIGNAL_RUN_LAST, 0, NULL, NULL, NULL, G_TYPE_NONE, 0);
 
@@ -879,7 +879,7 @@ ges_track_init (GESTrack * self)
   g_signal_connect (G_OBJECT (self->priv->composition), "notify::duration",
       G_CALLBACK (composition_duration_cb), self);
   g_signal_connect (G_OBJECT (self->priv->composition), "commited",
-      G_CALLBACK (composition_commited_cb), self);
+      G_CALLBACK (composition_committed_cb), self);
 }
 
 /**

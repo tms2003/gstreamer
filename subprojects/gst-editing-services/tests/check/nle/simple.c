@@ -440,7 +440,7 @@ test_one_under_another_full (void)
   nle_composition_add (GST_BIN (comp), source1);
   nle_composition_add (GST_BIN (comp), source2);
   check_start_stop_duration (comp, 0, 0 * GST_SECOND, 0 * GST_SECOND);
-  /* Now commiting changes */
+  /* Now committing changes */
   commit_and_wait (comp, &ret);
   check_start_stop_duration (comp, 0, 3 * GST_SECOND, 3 * GST_SECOND);
   check_start_stop_duration (source1, 0, 2 * GST_SECOND, 2 * GST_SECOND);

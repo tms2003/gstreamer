@@ -73,7 +73,7 @@ intr_handler (gpointer user_data)
 {
   Application *app = user_data;
 
-  g_print ("Bail out! Got interupted.\n");
+  g_print ("Bail out! Got interrupted.\n");
 
   g_subprocess_force_exit (app->subproc);
 

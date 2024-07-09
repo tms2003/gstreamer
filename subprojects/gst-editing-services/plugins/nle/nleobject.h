@@ -104,7 +104,7 @@ struct _NleObject
   gboolean pending_active;
 
   gboolean commit_needed;
-  gboolean commiting; /* Set to TRUE during the commiting time only */
+  gboolean commiting; /* Set to TRUE during the committing time only */
 
   gboolean expandable;
 

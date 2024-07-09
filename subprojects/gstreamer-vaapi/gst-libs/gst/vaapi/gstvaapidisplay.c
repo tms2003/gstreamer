@@ -2131,7 +2131,7 @@ gst_vaapi_display_get_vendor_string (GstVaapiDisplay * display)
  * gst_vaapi_display_has_opengl:
  * @display: a #GstVaapiDisplay
  *
- * Returns wether the @display that was created does support OpenGL
+ * Returns whether the @display that was created does support OpenGL
  * context to be attached.
  *
  * This function is thread safe.
