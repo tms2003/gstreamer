@@ -793,9 +793,17 @@ gboolean  gst_tag_list_take    (GstTagList ** old_taglist,
 /**
  * GST_TAG_TRACK_GAIN:
  *
- * track gain in db (double)
+ * track gain in dB (double)
  */
 #define GST_TAG_TRACK_GAIN             "replaygain-track-gain"
+/**
+ * GST_TAG_TRACK_GAIN_R128:
+ *
+ * track gain in dB (double)
+ * 
+ * Since: 1.26
+ */
+#define GST_TAG_TRACK_GAIN_R128        "r128-track-gain"
 /**
  * GST_TAG_TRACK_PEAK:
  *
@@ -805,9 +813,17 @@ gboolean  gst_tag_list_take    (GstTagList ** old_taglist,
 /**
  * GST_TAG_ALBUM_GAIN:
  *
- * album gain in db (double)
+ * album gain in dB (double)
  */
 #define GST_TAG_ALBUM_GAIN             "replaygain-album-gain"
+/**
+ * GST_TAG_ALBUM_GAIN_R128:
+ *
+ * track gain in dB (double)
+ * 
+ * Since: 1.26
+ */
+#define GST_TAG_ALBUM_GAIN_R128        "r128-album-gain"
 /**
  * GST_TAG_ALBUM_PEAK:
  *
