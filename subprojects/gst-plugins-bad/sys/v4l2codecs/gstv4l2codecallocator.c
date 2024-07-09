@@ -146,6 +146,8 @@ gst_v4l2_codec_allocator_release (GstMiniObject * mini_object)
 {
   GstMemory *mem = GST_MEMORY_CAST (mini_object);
   GstV4l2CodecAllocator *self = GST_V4L2_CODEC_ALLOCATOR (mem->allocator);
+  GstV4l2Decoder *decoder = self->decoder;
+  GstPadDirection direction = self->direction;
   GstV4l2CodecBuffer *buf;
 
   GST_OBJECT_LOCK (self);
@@ -154,9 +156,15 @@ gst_v4l2_codec_allocator_release (GstMiniObject * mini_object)
   gst_memory_ref (mem);
 
   if (gst_v4l2_codec_buffer_release_mem (buf)) {
-    GST_DEBUG_OBJECT (self, "Placing back buffer %i into pool", buf->index);
-    g_queue_push_tail (&self->pool, buf);
-    g_cond_signal (&self->buffer_cond);
+    if (self->detached) {
+      GST_DEBUG_OBJECT (self, "Detached pool freeing buffer %d", buf->index);
+      gst_v4l2_decoder_remove_buffer (decoder, direction, buf->index);
+      gst_v4l2_codec_buffer_free (buf);
+    } else {
+      GST_DEBUG_OBJECT (self, "Placing back buffer %i into pool", buf->index);
+      g_queue_push_tail (&self->pool, buf);
+      g_cond_signal (&self->buffer_cond);
+    }
   }
 
   GST_OBJECT_UNLOCK (self);
@@ -173,28 +181,27 @@ gst_v4l2_codec_allocator_prepare (GstV4l2CodecAllocator * self)
 {
   GstV4l2Decoder *decoder = self->decoder;
   GstPadDirection direction = self->direction;
-  gint ret;
   guint i;
 
-  ret = gst_v4l2_decoder_request_buffers (decoder, direction, self->pool_size);
-  if (ret < self->pool_size) {
-    if (ret >= 0)
-      GST_ERROR_OBJECT (self,
-          "%i buffer was needed, but only %i could be allocated",
-          self->pool_size, ret);
-    goto failed;
-  }
+  GST_DEBUG_OBJECT (self, "Try to create %d buffers", self->pool_size);
 
   for (i = 0; i < self->pool_size; i++) {
-    GstV4l2CodecBuffer *buf = gst_v4l2_codec_buffer_new (GST_ALLOCATOR (self),
-        decoder, direction, i);
+    GstV4l2CodecBuffer *buf;
+    gint index = gst_v4l2_decoder_create_buffer (decoder, direction);
+    if (index < 0) {
+      GST_ERROR_OBJECT (self, "Failed to create buffer (ret =%d)", index);
+      goto failed;
+    }
+
+    buf =
+        gst_v4l2_codec_buffer_new (GST_ALLOCATOR (self), decoder, direction,
+        index);
     g_queue_push_tail (&self->pool, buf);
   }
 
   return TRUE;
 
 failed:
-  gst_v4l2_decoder_request_buffers (decoder, direction, 0);
   return FALSE;
 }
 
@@ -208,10 +215,14 @@ static void
 gst_v4l2_codec_allocator_dispose (GObject * object)
 {
   GstV4l2CodecAllocator *self = GST_V4L2_CODEC_ALLOCATOR (object);
+  GstV4l2Decoder *decoder = self->decoder;
+  GstPadDirection direction = self->direction;
   GstV4l2CodecBuffer *buf;
 
-  while ((buf = g_queue_pop_head (&self->pool)))
+  while ((buf = g_queue_pop_head (&self->pool))) {
+    gst_v4l2_decoder_remove_buffer (decoder, direction, buf->index);
     gst_v4l2_codec_buffer_free (buf);
+  }
 
   if (self->decoder) {
     gst_v4l2_codec_allocator_detach (self);
@@ -345,10 +356,10 @@ gst_v4l2_codec_allocator_get_pool_size (GstV4l2CodecAllocator * self)
 void
 gst_v4l2_codec_allocator_detach (GstV4l2CodecAllocator * self)
 {
+
   GST_OBJECT_LOCK (self);
   if (!self->detached) {
     self->detached = TRUE;
-    gst_v4l2_decoder_request_buffers (self->decoder, self->direction, 0);
   }
   GST_OBJECT_UNLOCK (self);
 }

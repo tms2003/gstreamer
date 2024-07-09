@@ -78,6 +78,7 @@ struct _GstV4l2Decoder
   GstVecDeque *request_pool;
   GstVecDeque *pending_requests;
   guint version;
+  GstVideoInfo *info;
 
   enum v4l2_buf_type src_buf_type;
   enum v4l2_buf_type sink_buf_type;
@@ -90,6 +91,7 @@ struct _GstV4l2Decoder
 
   /* detected features */
   gboolean supports_holding_capture;
+  gboolean supports_remove_buffer;
 };
 
 G_DEFINE_TYPE_WITH_CODE (GstV4l2Decoder, gst_v4l2_decoder, GST_TYPE_OBJECT,
@@ -167,6 +169,10 @@ gst_v4l2_decoder_open (GstV4l2Decoder * self)
 {
   gint ret;
   struct v4l2_capability querycap;
+  struct v4l2_remove_buffers remove_bufs = {
+    .index = 0,
+    .count = 0,
+  };
   guint32 capabilities;
 
   self->media_fd = open (self->media_device, 0);
@@ -210,6 +216,12 @@ gst_v4l2_decoder_open (GstV4l2Decoder * self)
     gst_v4l2_decoder_close (self);
     return FALSE;
   }
+
+  self->supports_remove_buffer = TRUE;
+  remove_bufs.type = self->sink_buf_type;
+  ret = ioctl (self->video_fd, VIDIOC_REMOVE_BUFS, &remove_bufs);
+  if (ret < 0 && errno == ENOTTY)
+    self->supports_remove_buffer = FALSE;
 
   self->opened = TRUE;
 
@@ -531,7 +543,32 @@ gst_v4l2_decoder_enum_src_formats (GstV4l2Decoder * self,
 
   GST_DEBUG_OBJECT (self, "Probed caps: %" GST_PTR_FORMAT, caps);
 
-  return caps;
+  return gst_v4l2_sort_caps (caps);
+}
+
+gboolean
+gst_v4l2_decoder_remove_buffer (GstV4l2Decoder * self,
+    GstPadDirection direction, guint index)
+{
+  gint ret;
+  struct v4l2_remove_buffers remove_bufs = {
+    .type = direction_to_buffer_type (self, direction),
+    .index = index,
+    .count = 1,
+  };
+
+  if (!self->supports_remove_buffer)
+    return TRUE;
+
+  GST_DEBUG_OBJECT (self, "remove buffers %d from index %d", remove_bufs.count,
+      remove_bufs.index);
+  ret = ioctl (self->video_fd, VIDIOC_REMOVE_BUFS, &remove_bufs);
+  if (ret < 0) {
+    GST_ERROR_OBJECT (self, "VIDIOC_REMOVE_BUF failed: %s", g_strerror (errno));
+    return FALSE;
+  }
+
+  return TRUE;
 }
 
 gboolean
@@ -611,6 +648,10 @@ gst_v4l2_decoder_select_src_format (GstV4l2Decoder * self, GstCaps * caps,
       gst_video_format_to_string (vinfo->finfo->format),
       vinfo->width, vinfo->height);
 
+  if (self->info)
+    gst_video_info_free (self->info);
+  self->info = gst_video_info_copy (vinfo);
+
   return TRUE;
 }
 
@@ -639,32 +680,44 @@ gst_v4l2_decoder_set_output_state (GstVideoDecoder * decoder,
 }
 
 gint
-gst_v4l2_decoder_request_buffers (GstV4l2Decoder * self,
-    GstPadDirection direction, guint num_buffers)
+gst_v4l2_decoder_create_buffer (GstV4l2Decoder * self,
+    GstPadDirection direction)
 {
-  gint ret;
-  struct v4l2_requestbuffers reqbufs = {
-    .count = num_buffers,
+  int ret;
+  struct v4l2_create_buffers createbufs = {
+    .count = 1,
     .memory = V4L2_MEMORY_MMAP,
-    .type = direction_to_buffer_type (self, direction),
   };
 
-  GST_DEBUG_OBJECT (self, "Requesting %u buffers", num_buffers);
+  if (direction == GST_PAD_SINK) {
+    createbufs.format.type = self->sink_buf_type;
+  } else {
+    createbufs.format.type = self->src_buf_type;
+  }
 
-  ret = ioctl (self->video_fd, VIDIOC_REQBUFS, &reqbufs);
+  ret = ioctl (self->video_fd, VIDIOC_G_FMT, &createbufs.format);
   if (ret < 0) {
-    GST_ERROR_OBJECT (self, "VIDIOC_REQBUFS failed: %s", g_strerror (errno));
+    GST_ERROR_OBJECT (self, "VIDIOC_G_FMT failed: %s", g_strerror (errno));
+    return FALSE;
+  }
+
+  GST_DEBUG_OBJECT (self, "Creating 1 buffer");
+
+  ret = ioctl (self->video_fd, VIDIOC_CREATE_BUFS, &createbufs);
+  if (ret < 0) {
+    GST_ERROR_OBJECT (self, "VIDIOC_CREATE_BUFS failed: %s",
+        g_strerror (errno));
     return ret;
   }
 
   if (direction == GST_PAD_SINK) {
-    if (reqbufs.capabilities & V4L2_BUF_CAP_SUPPORTS_M2M_HOLD_CAPTURE_BUF)
+    if (createbufs.capabilities & V4L2_BUF_CAP_SUPPORTS_M2M_HOLD_CAPTURE_BUF)
       self->supports_holding_capture = TRUE;
     else
       self->supports_holding_capture = FALSE;
   }
 
-  return reqbufs.count;
+  return createbufs.index;
 }
 
 gboolean

@@ -44,6 +44,8 @@ struct _GstVp9Picture
   /* raw data and size (does not have ownership) */
   const guint8 * data;
   gsize size;
+
+  gboolean check_strides;
 };
 
 GST_CODECS_API
