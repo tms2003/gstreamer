@@ -1,0 +1,20 @@
+GStreamer Codec2 wrapper plugin
+--------------------------
+
+ This plugin wraps available Android Codec2 components and makes
+ them available as standard GStreamer elements.
+
+License:
+--------
+
+  This package and its existing (old) contents are licensend under
+BSD-3-Clause, and the existing contents had already been released to
+https://source.codeaurora.org. All new code written will be dual
+licensed to BSD and the GNU Lesser General Public License (LGPL).
+
+Dependencies:
+-------------
+
+ * GStreamer core
+ * gst-plugins-base
+ * gst-plugins-bad
