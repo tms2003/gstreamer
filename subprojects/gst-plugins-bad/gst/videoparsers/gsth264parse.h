@@ -51,6 +51,12 @@ GType gst_h264_parse_get_type (void);
 typedef struct _GstH264Parse GstH264Parse;
 typedef struct _GstH264ParseClass GstH264ParseClass;
 
+typedef enum {
+  GST_H264_PARSE_SKIP_FRAME_NONE,
+  GST_H264_PARSE_SKIP_FRAME_NON_IDR,
+  GST_H264_PARSE_SKIP_FRAME_B,
+} GstH264ParseSkipFrame;
+
 struct _GstH264Parse
 {
   GstBaseParse baseparse;
@@ -168,6 +174,8 @@ struct _GstH264Parse
 
   /* For forward predicted trickmode */
   gboolean discard_bidirectional;
+
+  GstH264ParseSkipFrame skip_frame;
 };
 
 struct _GstH264ParseClass

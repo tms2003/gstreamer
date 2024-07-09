@@ -1,0 +1,16 @@
+meta,
+    args = {
+         "videotestsrc is-live=true ! video/x-raw,width=320,height=240,framerate=10/1 ! videoconvert ! x264enc tune=zerolatency key-int-max=5 ! h264parse ! fakesink sync=true",
+    },
+    configs = {
+       "$(validateflow), pad=h264parse0:src, buffers-checksum=as-id, ignored-event-types={tag, caps}",
+    }
+
+crank-clock, repeat=10
+
+checkpoint, text="Setting skip-frame to non-idr on h264parse, only keyframes should be output, ie. 2 frames per second"
+set-properties, h264parse0::skip-frame="non-idr"
+
+crank-clock, repeat=10
+
+stop

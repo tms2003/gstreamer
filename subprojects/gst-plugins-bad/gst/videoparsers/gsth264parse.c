@@ -37,14 +37,47 @@
 GST_DEBUG_CATEGORY (h264_parse_debug);
 #define GST_CAT_DEFAULT h264_parse_debug
 
+/**
+ * GstH264ParseSkipFrame:
+ * @GST_H264_PARSE_SKIP_FRAME_NONE: No frames are skipped
+ * @GST_H264_PARSE_SKIP_FRAME_NON_IDR: Non-IDR frames are skipped
+ * @GST_H264_PARSE_SKIP_FRAME_B_FRAMES: B-frames are skipped
+ *
+ * Which types of frames to skip.
+ *
+ * Since: 1.24
+ */
+#define GST_TYPE_H264_PARSE_SKIP_FRAME (gst_h264_parse_skip_frame_get_type())
+static GType
+gst_h264_parse_skip_frame_get_type (void)
+{
+  static GType drop_type = 0;
+
+  static const GEnumValue drop_types[] = {
+    {GST_H264_PARSE_SKIP_FRAME_NONE, "No Frames Skipped", "none"},
+    {GST_H264_PARSE_SKIP_FRAME_NON_IDR, "Non-IDR Frames Skipped", "non-idr"},
+    {GST_H264_PARSE_SKIP_FRAME_B, "B-Frames Skipped", "b-frames"},
+    {0, NULL, NULL}
+  };
+
+
+  if (!drop_type) {
+    drop_type = g_enum_register_static ("GstH264ParseDropMode", drop_types);
+  }
+
+  return drop_type;
+}
+
 #define DEFAULT_CONFIG_INTERVAL      (0)
 #define DEFAULT_UPDATE_TIMECODE       FALSE
+#define DEFAULT_SKIP_FRAME            GST_H264_PARSE_SKIP_FRAME_NONE
 
 enum
 {
   PROP_0,
   PROP_CONFIG_INTERVAL,
   PROP_UPDATE_TIMECODE,
+  PROP_SKIP_FRAME,
 };
 
 enum
@@ -173,6 +206,19 @@ gst_h264_parse_class_init (GstH264ParseClass * klass)
           "VUI and pic_struct_present_flag of VUI must be non-zero",
           DEFAULT_UPDATE_TIMECODE, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
+  /**
+   * GstH264Parse:skip-frame:
+   *
+   * Mode to skip frames based on their type.
+   *
+   * Since: 1.24
+   */
+  g_object_class_install_property (gobject_class, PROP_SKIP_FRAME,
+      g_param_spec_enum ("skip-frame", "Skip Frame",
+          "Which types of frames to skip",
+          GST_TYPE_H264_PARSE_SKIP_FRAME, DEFAULT_SKIP_FRAME,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
   /* Override BaseParse vfuncs */
   parse_class->start = GST_DEBUG_FUNCPTR (gst_h264_parse_start);
   parse_class->stop = GST_DEBUG_FUNCPTR (gst_h264_parse_stop);
@@ -191,6 +237,8 @@ gst_h264_parse_class_init (GstH264ParseClass * klass)
       "Codec/Parser/Converter/Video",
       "Parses H.264 streams",
       "Mark Nauwelaerts <mark.nauwelaerts@collabora.co.uk>");
+
+  gst_type_mark_as_plugin_api (GST_TYPE_H264_PARSE_SKIP_FRAME, 0);
 }
 
 static void
@@ -2783,12 +2831,17 @@ gst_h264_parse_parse_frame (GstBaseParse * parse, GstBaseParseFrame * frame)
         gst_h264_parse_get_duration (h264parse, h264parse->frame_start);
   }
 
-  if (h264parse->keyframe)
+  if (h264parse->keyframe) {
     GST_BUFFER_FLAG_UNSET (buffer, GST_BUFFER_FLAG_DELTA_UNIT);
-  else
-    GST_BUFFER_FLAG_SET (buffer, GST_BUFFER_FLAG_DELTA_UNIT);
+  } else {
+    if (h264parse->skip_frame == GST_H264_PARSE_SKIP_FRAME_NON_IDR)
+      goto discard;
 
-  if (h264parse->discard_bidirectional && h264parse->bidirectional)
+    GST_BUFFER_FLAG_SET (buffer, GST_BUFFER_FLAG_DELTA_UNIT);
+  }
+
+  if ((h264parse->skip_frame == GST_H264_PARSE_SKIP_FRAME_B
+          || h264parse->discard_bidirectional) && h264parse->bidirectional)
     goto discard;
 
   if (h264parse->header)
@@ -2823,7 +2876,7 @@ done:
   return GST_FLOW_OK;
 
 discard:
-  GST_DEBUG_OBJECT (h264parse, "Discarding bidirectional frame");
+  GST_DEBUG_OBJECT (h264parse, "Discarding frame as requested");
   frame->flags |= GST_BASE_PARSE_FRAME_FLAG_DROP;
   gst_h264_parse_reset_frame (h264parse);
   goto done;
@@ -3842,7 +3895,6 @@ gst_h264_parse_event (GstBaseParse * parse, GstEvent * event)
         h264parse->discard_bidirectional = TRUE;
       }
 
-
       h264parse->last_report = GST_CLOCK_TIME_NONE;
 
       res = GST_BASE_PARSE_CLASS (parent_class)->sink_event (parse, event);
@@ -3908,6 +3960,9 @@ gst_h264_parse_set_property (GObject * object, guint prop_id,
     case PROP_UPDATE_TIMECODE:
       parse->update_timecode = g_value_get_boolean (value);
       break;
+    case PROP_SKIP_FRAME:
+      parse->skip_frame = g_value_get_enum (value);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -3928,6 +3983,9 @@ gst_h264_parse_get_property (GObject * object, guint prop_id,
       break;
     case PROP_UPDATE_TIMECODE:
       g_value_set_boolean (value, parse->update_timecode);
+      break;
+    case PROP_SKIP_FRAME:
+      g_value_set_enum (value, parse->skip_frame);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
