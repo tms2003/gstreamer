@@ -17,8 +17,7 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#ifndef __GST_V4L2_DECODER_H__
-#define __GST_V4L2_DECODER_H__
+#pragma once
 
 #include <gst/gst.h>
 #include <gst/video/video.h>
@@ -141,6 +140,8 @@ void              gst_v4l2_decoder_set_render_delay (GstV4l2Decoder * self,
 
 guint             gst_v4l2_decoder_get_render_delay (GstV4l2Decoder * self);
 
+gboolean          gst_v4l2_decoder_in_doc_mode (GstV4l2Decoder * self);
+
 
 GstV4l2Request *  gst_v4l2_request_ref (GstV4l2Request * request);
 
@@ -161,5 +162,3 @@ GstBuffer *       gst_v4l2_request_dup_pic_buf (GstV4l2Request * request);
 gint              gst_v4l2_request_get_fd (GstV4l2Request * request);
 
 G_END_DECLS
-
-#endif /* __GST_V4L2_DECODER_H__ */

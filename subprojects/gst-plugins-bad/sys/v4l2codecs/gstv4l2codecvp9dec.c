@@ -22,6 +22,9 @@
 #include <config.h>
 #endif
 
+#define GST_USE_UNSTABLE_API
+#include <gst/codecs/gstvp9decoder.h>
+
 #include "gstv4l2codecallocator.h"
 #include "gstv4l2codecalphadecodebin.h"
 #include "gstv4l2codecpool.h"
@@ -32,6 +35,11 @@
 
 GST_DEBUG_CATEGORY_STATIC (v4l2_vp9dec_debug);
 #define GST_CAT_DEFAULT v4l2_vp9dec_debug
+
+#define GST_TYPE_V4L2_CODEC_VP9_DEC \
+  (gst_v4l2_codec_vp9_dec_get_type())
+#define GST_V4L2_CODEC_VP9_DEC(obj) \
+  (G_TYPE_CHECK_INSTANCE_CAST((obj),GST_TYPE_V4L2_CODEC_VP9_DEC,GstV4l2CodecVp9Dec))
 
 /* Used to mark picture that have been outputed */
 #define FLAG_PICTURE_HOLDS_BUFFER GST_MINI_OBJECT_FLAG_LAST
@@ -70,6 +78,15 @@ GST_STATIC_PAD_TEMPLATE (GST_VIDEO_DECODER_SRC_NAME,
     GST_PAD_SRC, GST_PAD_ALWAYS,
     GST_STATIC_CAPS (SRC_CAPS));
 
+typedef struct _GstV4l2CodecVp9Dec GstV4l2CodecVp9Dec;
+typedef struct _GstV4l2CodecVp9DecClass GstV4l2CodecVp9DecClass;
+
+struct _GstV4l2CodecVp9DecClass
+{
+  GstVp9DecoderClass parent_class;
+  GstV4l2CodecDevice *device;
+};
+
 struct _GstV4l2CodecVp9Dec
 {
   GstVp9Decoder parent;
@@ -101,6 +118,8 @@ struct _GstV4l2CodecVp9Dec
   guint subsampling_x;
   guint subsampling_y;
 };
+
+static GType gst_v4l2_codec_vp9_dec_get_type (void);
 
 G_DEFINE_ABSTRACT_TYPE (GstV4l2CodecVp9Dec, gst_v4l2_codec_vp9_dec,
     GST_TYPE_VP9_DECODER);
@@ -1232,10 +1251,13 @@ gst_v4l2_codec_vp9_dec_register (GstPlugin * plugin, GstV4l2Decoder * decoder,
     GstV4l2CodecDevice * device, guint rank)
 {
   gchar *element_name;
-  GstCaps *src_caps, *alpha_caps;
+  GstCaps *src_caps = NULL, *alpha_caps;
 
   GST_DEBUG_CATEGORY_INIT (v4l2_vp9dec_debug, "v4l2codecs-vp9dec", 0,
       "V4L2 stateless VP9 decoder");
+
+  if (gst_v4l2_decoder_in_doc_mode (decoder))
+    goto register_element;
 
   if (!gst_v4l2_decoder_set_sink_fmt (decoder, V4L2_PIX_FMT_VP9_FRAME,
           320, 240, 8))
@@ -1248,6 +1270,7 @@ gst_v4l2_codec_vp9_dec_register (GstPlugin * plugin, GstV4l2Decoder * decoder,
     goto done;
   }
 
+register_element:
   gst_v4l2_decoder_register (plugin, GST_TYPE_V4L2_CODEC_VP9_DEC,
       (GClassInitFunc) gst_v4l2_codec_vp9_dec_subclass_init,
       gst_mini_object_ref (GST_MINI_OBJECT (device)),
@@ -1259,7 +1282,8 @@ gst_v4l2_codec_vp9_dec_register (GstPlugin * plugin, GstV4l2Decoder * decoder,
 
   alpha_caps = gst_caps_from_string ("video/x-raw,format={I420, NV12}");
 
-  if (gst_caps_can_intersect (src_caps, alpha_caps))
+  if (gst_v4l2_decoder_in_doc_mode (decoder) ||
+      gst_caps_can_intersect (src_caps, alpha_caps))
     gst_v4l2_codec_alpha_decode_bin_register (plugin,
         (GClassInitFunc) gst_v4l2_codec_vp9_alpha_decode_bin_subclass_init,
         element_name, "v4l2slvp9%salphadecodebin", device, rank);
@@ -1267,5 +1291,6 @@ gst_v4l2_codec_vp9_dec_register (GstPlugin * plugin, GstV4l2Decoder * decoder,
   gst_caps_unref (alpha_caps);
 
 done:
-  gst_caps_unref (src_caps);
+  if (src_caps)
+    gst_caps_unref (src_caps);
 }

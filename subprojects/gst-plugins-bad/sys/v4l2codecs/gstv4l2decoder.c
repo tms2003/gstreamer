@@ -90,6 +90,9 @@ struct _GstV4l2Decoder
 
   /* detected features */
   gboolean supports_holding_capture;
+
+  /* special state for doc generator */
+  gboolean doc_mode;
 };
 
 G_DEFINE_TYPE_WITH_CODE (GstV4l2Decoder, gst_v4l2_decoder, GST_TYPE_OBJECT,
@@ -133,7 +136,6 @@ static void
 gst_v4l2_decoder_class_init (GstV4l2DecoderClass * klass)
 {
   GObjectClass *gobject_class = G_OBJECT_CLASS (klass);
-
   gobject_class->finalize = gst_v4l2_decoder_finalize;
   gobject_class->get_property = gst_v4l2_decoder_get_property;
   gobject_class->set_property = gst_v4l2_decoder_set_property;
@@ -153,6 +155,9 @@ gst_v4l2_decoder_new (GstV4l2CodecDevice * device)
       "media-device", device->media_device_path,
       "video-device", device->video_device_path, NULL);
 
+  if (!g_strcmp0 (device->name, "docdec-proc"))
+    decoder->doc_mode = TRUE;
+
   return gst_object_ref_sink (decoder);
 }
 
@@ -168,6 +173,11 @@ gst_v4l2_decoder_open (GstV4l2Decoder * self)
   gint ret;
   struct v4l2_capability querycap;
   guint32 capabilities;
+
+  if (self->doc_mode) {
+    self->opened = TRUE;
+    return TRUE;
+  }
 
   self->media_fd = open (self->media_device, 0);
   if (self->media_fd < 0) {
@@ -301,6 +311,19 @@ gst_v4l2_decoder_enum_sink_fmt (GstV4l2Decoder * self, gint i,
   gint ret;
 
   g_return_val_if_fail (self->opened, FALSE);
+
+  if (self->doc_mode) {
+    guint32 all_fmt[] = {
+      V4L2_PIX_FMT_H264_SLICE, V4L2_PIX_FMT_HEVC_SLICE, V4L2_PIX_FMT_VP8_FRAME,
+      V4L2_PIX_FMT_MPEG2_SLICE, V4L2_PIX_FMT_VP9_FRAME, V4L2_PIX_FMT_AV1_FRAME,
+    };
+
+    if (i >= G_N_ELEMENTS (all_fmt))
+      return FALSE;
+
+    *out_fmt = all_fmt[i];
+    return TRUE;
+  }
 
   ret = ioctl (self->video_fd, VIDIOC_ENUM_FMT, &fmtdesc);
   if (ret < 0) {
@@ -1186,6 +1209,18 @@ guint
 gst_v4l2_decoder_get_render_delay (GstV4l2Decoder * self)
 {
   return self->render_delay;
+}
+
+/**
+ * gst_v4l2_decoder_in_doc_mode:
+ * @slef: a #GstV4l2Decoder pointer
+ *
+ * Returns: %TRUE if running in documenetation genetator mode
+ */
+gboolean
+gst_v4l2_decoder_in_doc_mode (GstV4l2Decoder * self)
+{
+  return self->doc_mode;
 }
 
 GstV4l2Request *

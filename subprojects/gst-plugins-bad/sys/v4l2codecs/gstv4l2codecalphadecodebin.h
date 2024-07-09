@@ -18,19 +18,9 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#ifndef __GST_V4L2_CODEC_ALPHA_DECODE_BIN_H__
-#define __GST_V4L2_CODEC_ALPHA_DECODE_BIN_H__
+#pragma once
 
-#include <gst/gst.h>
 #include <gstv4l2decoder.h>
-
-/* When wrapping, use the original rank plus this offset. The ad-hoc rules is
- * that hardware implementation will use PRIMARY+1 or +2 to override the
- * software decoder, so the offset must be large enough to jump over those.
- * This should also be small enough so that a marginal (64) or secondary
- * wrapper does not cross the PRIMARY line.
- */
-#define GST_V4L2_CODEC_ALPHA_DECODE_BIN_RANK_OFFSET 10
 
 G_BEGIN_DECLS
 
@@ -47,11 +37,8 @@ struct _GstV4l2CodecAlphaDecodeBinClass
 void gst_v4l2_codec_alpha_decode_bin_register (GstPlugin * plugin,
                                                GClassInitFunc class_init,
                                                gconstpointer class_data,
-                                               const gchar * element_name_tmpl, 
+                                               const gchar * element_name_tmpl,
                                                GstV4l2CodecDevice * device,
                                                guint rank);
 
-
-
 G_END_DECLS
-#endif /* __GST_V4L2_CODEC_ALPHA_DECODE_BIN_H__ */

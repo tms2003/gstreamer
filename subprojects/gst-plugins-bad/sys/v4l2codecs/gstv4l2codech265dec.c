@@ -22,6 +22,9 @@
 #include <config.h>
 #endif
 
+#define GST_USE_UNSTABLE_API
+#include <gst/codecs/gsth265decoder.h>
+
 #include "gstv4l2codecallocator.h"
 #include "gstv4l2codech265dec.h"
 #include "gstv4l2codecpool.h"
@@ -36,6 +39,11 @@
 
 GST_DEBUG_CATEGORY_STATIC (v4l2_h265dec_debug);
 #define GST_CAT_DEFAULT v4l2_h265dec_debug
+
+#define GST_TYPE_V4L2_CODEC_H265_DEC \
+  (gst_v4l2_codec_h265_dec_get_type())
+#define GST_V4L2_CODEC_H265_DEC(obj) \
+  (G_TYPE_CHECK_INSTANCE_CAST((obj),GST_TYPE_V4L2_CODEC_H265_DEC,GstV4l2CodecH265Dec))
 
 enum
 {
@@ -65,6 +73,15 @@ static GstStaticPadTemplate src_template =
 GST_STATIC_PAD_TEMPLATE (GST_VIDEO_DECODER_SRC_NAME,
     GST_PAD_SRC, GST_PAD_ALWAYS,
     GST_STATIC_CAPS (SRC_CAPS));
+
+typedef struct _GstV4l2CodecH265Dec GstV4l2CodecH265Dec;
+typedef struct _GstV4l2CodecH265DecClass GstV4l2CodecH265DecClass;
+
+struct _GstV4l2CodecH265DecClass
+{
+  GstH265DecoderClass parent_class;
+  GstV4l2CodecDevice *device;
+};
 
 struct _GstV4l2CodecH265Dec
 {
@@ -113,6 +130,8 @@ struct _GstV4l2CodecH265Dec
   gint crop_rect_width, crop_rect_height;
   gint crop_rect_x, crop_rect_y;
 };
+
+static GType gst_v4l2_codec_h265_dec_get_type (void);
 
 G_DEFINE_ABSTRACT_TYPE (GstV4l2CodecH265Dec, gst_v4l2_codec_h265_dec,
     GST_TYPE_H265_DECODER);
@@ -1707,11 +1726,14 @@ void
 gst_v4l2_codec_h265_dec_register (GstPlugin * plugin, GstV4l2Decoder * decoder,
     GstV4l2CodecDevice * device, guint rank)
 {
-  GstCaps *src_caps;
+  GstCaps *src_caps = NULL;
   guint version;
 
   GST_DEBUG_CATEGORY_INIT (v4l2_h265dec_debug, "v4l2codecs-h265dec", 0,
       "V4L2 stateless h265 decoder");
+
+  if (gst_v4l2_decoder_in_doc_mode (decoder))
+    goto register_element;
 
   if (!gst_v4l2_decoder_set_sink_fmt (decoder, V4L2_PIX_FMT_HEVC_SLICE,
           320, 240, 8))
@@ -1735,6 +1757,7 @@ gst_v4l2_codec_h265_dec_register (GstPlugin * plugin, GstV4l2Decoder * decoder,
     goto done;
   }
 
+register_element:
   gst_v4l2_decoder_register (plugin, GST_TYPE_V4L2_CODEC_H265_DEC,
       (GClassInitFunc) gst_v4l2_codec_h265_dec_subclass_init,
       gst_mini_object_ref (GST_MINI_OBJECT (device)),
@@ -1742,5 +1765,6 @@ gst_v4l2_codec_h265_dec_register (GstPlugin * plugin, GstV4l2Decoder * decoder,
       "v4l2sl%sh265dec", device, rank, NULL);
 
 done:
-  gst_caps_unref (src_caps);
+  if (src_caps)
+    gst_caps_unref (src_caps);
 }

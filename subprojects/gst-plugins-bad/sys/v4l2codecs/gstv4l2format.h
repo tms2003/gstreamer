@@ -17,8 +17,7 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#ifndef __GST_V4L2_FORMAT_H__
-#define __GST_V4L2_FORMAT_H__
+#pragma once
 
 #include <gst/gst.h>
 #include <gst/video/video.h>
@@ -37,5 +36,3 @@ gboolean   gst_v4l2_format_to_video_format (guint32 pix_fmt,
 
 gboolean   gst_v4l2_format_from_video_format (GstVideoFormat format,
                                               guint32 * out_pix_fmt);
-
-#endif /* __GST_V4L2_FORMAT_H__ */
