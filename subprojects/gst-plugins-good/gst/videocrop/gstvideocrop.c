@@ -398,49 +398,6 @@ gst_video_crop_transform_planar (GstVideoCrop * vcrop,
   }
 }
 
-static void
-gst_video_crop_transform_semi_planar (GstVideoCrop * vcrop,
-    GstVideoFrame * in_frame, GstVideoFrame * out_frame, gint x, gint y)
-{
-  gint width, height;
-  gint crop_top, crop_left;
-  guint8 *y_out, *uv_out;
-  guint8 *y_in, *uv_in;
-  guint i, dx;
-
-  width = GST_VIDEO_FRAME_WIDTH (out_frame);
-  height = GST_VIDEO_FRAME_HEIGHT (out_frame);
-  crop_left = vcrop->crop_left + x;
-  crop_top = vcrop->crop_top + y;
-
-  /* Y plane */
-  y_in = GST_VIDEO_FRAME_PLANE_DATA (in_frame, 0);
-  y_out = GST_VIDEO_FRAME_PLANE_DATA (out_frame, 0);
-
-  /* UV plane */
-  uv_in = GST_VIDEO_FRAME_PLANE_DATA (in_frame, 1);
-  uv_out = GST_VIDEO_FRAME_PLANE_DATA (out_frame, 1);
-
-  y_in += crop_top * GST_VIDEO_FRAME_PLANE_STRIDE (in_frame, 0) + crop_left;
-  dx = width;
-
-  for (i = 0; i < height; ++i) {
-    memcpy (y_out, y_in, dx);
-    y_in += GST_VIDEO_FRAME_PLANE_STRIDE (in_frame, 0);
-    y_out += GST_VIDEO_FRAME_PLANE_STRIDE (out_frame, 0);
-  }
-
-  uv_in += (crop_top / 2) * GST_VIDEO_FRAME_PLANE_STRIDE (in_frame, 1);
-  uv_in += GST_ROUND_DOWN_2 (crop_left);
-  dx = GST_ROUND_UP_2 (width);
-
-  for (i = 0; i < GST_ROUND_UP_2 (height) / 2; i++) {
-    memcpy (uv_out, uv_in, dx);
-    uv_in += GST_VIDEO_FRAME_PLANE_STRIDE (in_frame, 1);
-    uv_out += GST_VIDEO_FRAME_PLANE_STRIDE (out_frame, 1);
-  }
-}
-
 static GstFlowReturn
 gst_video_crop_transform_frame (GstVideoFilter * vfilter,
     GstVideoFrame * in_frame, GstVideoFrame * out_frame)
@@ -473,9 +430,6 @@ gst_video_crop_transform_frame (GstVideoFilter * vfilter,
       break;
     case VIDEO_CROP_PIXEL_FORMAT_PLANAR:
       gst_video_crop_transform_planar (vcrop, in_frame, out_frame, x, y);
-      break;
-    case VIDEO_CROP_PIXEL_FORMAT_SEMI_PLANAR:
-      gst_video_crop_transform_semi_planar (vcrop, in_frame, out_frame, x, y);
       break;
     default:
       g_assert_not_reached ();
@@ -847,6 +801,9 @@ gst_video_crop_set_info (GstVideoFilter * vfilter, GstCaps * in,
     case GST_VIDEO_FORMAT_GRAY16_LE:
     case GST_VIDEO_FORMAT_GRAY16_BE:
     case GST_VIDEO_FORMAT_AYUV:
+    case GST_VIDEO_FORMAT_RGBA64_BE:
+    case GST_VIDEO_FORMAT_RGBA64_LE:
+    case GST_VIDEO_FORMAT_RGB10A2_LE:
       crop->packing = VIDEO_CROP_PIXEL_FORMAT_PACKED_SIMPLE;
       break;
     case GST_VIDEO_FORMAT_YVYU:
@@ -898,11 +855,15 @@ gst_video_crop_set_info (GstVideoFilter * vfilter, GstCaps * in,
     case GST_VIDEO_FORMAT_GBRA_12BE:
     case GST_VIDEO_FORMAT_GBRA_12LE:
     case GST_VIDEO_FORMAT_Y41B:
-      crop->packing = VIDEO_CROP_PIXEL_FORMAT_PLANAR;
-      break;
     case GST_VIDEO_FORMAT_NV12:
     case GST_VIDEO_FORMAT_NV21:
-      crop->packing = VIDEO_CROP_PIXEL_FORMAT_SEMI_PLANAR;
+    case GST_VIDEO_FORMAT_P010_10BE:
+    case GST_VIDEO_FORMAT_P010_10LE:
+    case GST_VIDEO_FORMAT_P012_BE:
+    case GST_VIDEO_FORMAT_P012_LE:
+    case GST_VIDEO_FORMAT_P016_BE:
+    case GST_VIDEO_FORMAT_P016_LE:
+      crop->packing = VIDEO_CROP_PIXEL_FORMAT_PLANAR;
       break;
     default:
       goto unknown_format;
