@@ -1295,6 +1295,10 @@ rtp_session_set_callbacks (RTPSession * sess, RTPSessionCallbacks * callbacks,
     sess->callbacks.notify_nack = callbacks->notify_nack;
     sess->notify_nack_user_data = user_data;
   }
+  if (callbacks->notify_rpsi) {
+    sess->callbacks.notify_rpsi = callbacks->notify_rpsi;
+    sess->notify_rpsi_user_data = user_data;
+  }
   if (callbacks->notify_twcc) {
     sess->callbacks.notify_twcc = callbacks->notify_twcc;
     sess->notify_twcc_user_data = user_data;
@@ -2919,6 +2923,36 @@ rtp_session_process_fir (RTPSession * sess, guint32 sender_ssrc,
 }
 
 static void
+rtp_session_process_rpsi (RTPSession * sess, guint32 sender_ssrc,
+    guint32 media_ssrc, guint8 * fci_data, guint fci_length)
+{
+  RTPSource *src;
+  guint8 pb;
+  guint8 pt;
+  guint8 data_length_in_bits;
+
+  if (!sess->callbacks.notify_rpsi)
+    return;
+
+  if (fci_length < 4)
+    return;
+
+  src = find_source (sess, sender_ssrc);
+  if (!src)
+    return;
+
+  pb = fci_data[0];
+  pt = fci_data[1] & 0x7F;      /* Leftmost bit is ignored */
+  data_length_in_bits = fci_length * 32 - pb;
+
+  RTP_SESSION_UNLOCK (sess);
+  sess->callbacks.notify_rpsi (sess, sender_ssrc, media_ssrc, pt, fci_data + 2,
+      data_length_in_bits, sess->notify_rpsi_user_data);
+  RTP_SESSION_LOCK (sess);
+
+}
+
+static void
 rtp_session_process_nack (RTPSession * sess, guint32 sender_ssrc,
     guint32 media_ssrc, guint8 * fci_data, guint fci_length,
     GstClockTime current_time)
@@ -3065,6 +3099,7 @@ rtp_session_process_feedback (RTPSession * sess, GstRTCPPacket * packet,
   if ((src && src->internal) ||
       /* PSFB FIR puts the media ssrc inside the FCI */
       (type == GST_RTCP_TYPE_PSFB && fbtype == GST_RTCP_PSFB_TYPE_FIR) ||
+      (type == GST_RTCP_TYPE_PSFB && fbtype == GST_RTCP_PSFB_TYPE_RPSI) ||
       /* TWCC is for all sources, so a single media-ssrc is not enough */
       (type == GST_RTCP_TYPE_RTPFB && fbtype == GST_RTCP_RTPFB_TYPE_TWCC)) {
     switch (type) {
@@ -3081,6 +3116,10 @@ rtp_session_process_feedback (RTPSession * sess, GstRTCPPacket * packet,
               src->stats.recv_fir_count++;
             rtp_session_process_fir (sess, sender_ssrc, fci_data, fci_length,
                 current_time);
+            break;
+          case GST_RTCP_PSFB_TYPE_RPSI:
+            rtp_session_process_rpsi (sess, sender_ssrc, media_ssrc,
+                fci_data, fci_length);
             break;
           default:
             break;
@@ -3931,6 +3970,76 @@ reported:
       GUINT_TO_POINTER (data->source->ssrc));
 }
 
+static void
+session_rpsi (const gchar * key, RTPSource * source, ReportData * data)
+{
+  RTPSession *sess = data->sess;
+  GstRTCPBuffer *rtcp = &data->rtcpbuf;
+  GstRTCPPacket *packet = &data->packet;
+  guint16 len, msg_len, pb;
+  guint8 *rpsi_data;
+  guint i;
+
+  if (!sess->have_rpsi)
+    return;
+
+  if (!gst_rtcp_buffer_add_packet (rtcp, GST_RTCP_TYPE_PSFB, packet))
+    return;
+
+  gst_rtcp_packet_fb_set_type (packet, GST_RTCP_PSFB_TYPE_RPSI);
+  gst_rtcp_packet_fb_set_sender_ssrc (packet, data->source->ssrc);
+  gst_rtcp_packet_fb_set_media_ssrc (packet, source->ssrc);
+
+  len = gst_rtcp_packet_fb_get_fci_length (packet);
+  msg_len = GST_ROUND_UP_4 (2 + sess->rpsi_payload_lenght);
+  /* padding in bits */
+  pb = (msg_len - 2 - sess->rpsi_payload_lenght) * 8;
+
+  if (!gst_rtcp_packet_fb_set_fci_length (packet, len + msg_len)) {
+    /* exit because the packet is full, will put next request in a
+     * further packet */
+    GST_WARNING ("message too long");
+    return;
+  }
+
+  rpsi_data = gst_rtcp_packet_fb_get_fci (packet);
+
+  rpsi_data[0] = pb;
+  rpsi_data[1] = sess->rpsi_pt;
+  for (i = 0; i < sess->rpsi_payload_lenght && i < 32; i++) {
+    rpsi_data[2 + i] = sess->rpsi_payload[i];
+  }
+
+  sess->have_rpsi = FALSE;
+}
+
+gboolean
+rtp_session_rpsi (RTPSession * sess, guint8 pt, guint8 * data, guint lenght)
+{
+  gint i;
+
+  RTP_SESSION_LOCK (sess);
+  if (sess->have_rpsi)
+    goto failed;
+
+  sess->rpsi_pt = pt;
+  sess->rpsi_payload_lenght = lenght;
+  for (i = 0; i < sess->rpsi_payload_lenght && i < 32; i++)
+    sess->rpsi_payload[i] = data[i];
+
+  sess->have_rpsi = TRUE;
+  RTP_SESSION_UNLOCK (sess);
+
+  rtp_session_send_rtcp (sess, 5 * GST_SECOND);
+
+  return TRUE;
+
+failed:
+  RTP_SESSION_UNLOCK (sess);
+
+  return FALSE;
+}
+
 /* construct FIR */
 static void
 session_add_fir (const gchar * key, RTPSource * source, ReportData * data)
@@ -4563,6 +4672,10 @@ generate_rtcp (const gchar * key, RTPSource * source, ReportData * data)
   if (data->have_pli)
     g_hash_table_foreach (sess->ssrcs[sess->mask_idx],
         (GHFunc) session_pli, data);
+
+  if (sess->have_rpsi)
+    g_hash_table_foreach (sess->ssrcs[sess->mask_idx],
+        (GHFunc) session_rpsi, data);
 
   if (data->have_nack)
     g_hash_table_foreach (sess->ssrcs[sess->mask_idx],

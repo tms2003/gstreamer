@@ -318,6 +318,9 @@ static void gst_rtp_session_notify_nack (RTPSession * sess,
     guint16 seqnum, guint16 blp, guint32 ssrc, gpointer user_data);
 static void gst_rtp_session_notify_twcc (RTPSession * sess,
     GstStructure * twcc_packets, GstStructure * twcc_stats, gpointer user_data);
+static void gst_rtp_session_notify_rpsi (RTPSession * sess, guint32 sender_ssrc,
+    guint32 media_ssrc, guint8 pt, guint8 * data,
+    guint32 length_in_bits, gpointer user_data);
 static void gst_rtp_session_reconfigure (RTPSession * sess, gpointer user_data);
 static void gst_rtp_session_notify_early_rtcp (RTPSession * sess,
     gpointer user_data);
@@ -343,6 +346,7 @@ static RTPSessionCallbacks callbacks = {
   gst_rtp_session_request_time,
   gst_rtp_session_notify_nack,
   gst_rtp_session_notify_twcc,
+  gst_rtp_session_notify_rpsi,
   gst_rtp_session_reconfigure,
   gst_rtp_session_notify_early_rtcp
 };
@@ -1944,6 +1948,15 @@ gst_rtp_session_event_recv_rtp_src (GstPad * pad, GstObject * parent,
         if (rtp_session_request_nack (rtpsession->priv->session, ssrc, seqnum,
                 max_delay * GST_MSECOND))
           forward = FALSE;
+      } else if (gst_structure_has_name (s,
+              "GstReferencePictureSelectionIndication")) {
+        guint pt;
+        guint64 bit_string;
+        if (gst_structure_get_uint (s, "payload", &pt)
+            && gst_structure_get_uint64 (s, "bit_string", &bit_string)) {
+          rtp_session_rpsi (rtpsession->priv->session, pt,
+              (guint8 *) & bit_string, sizeof (guint64));
+        }
       }
       break;
     default:
@@ -3010,6 +3023,31 @@ gst_rtp_session_notify_twcc (RTPSession * sess,
   }
 
   g_object_notify (G_OBJECT (rtpsession), "twcc-stats");
+}
+
+static void
+gst_rtp_session_notify_rpsi (RTPSession * sess, guint32 sender_ssrc,
+    guint32 media_ssrc, guint8 pt, guint8 * data,
+    guint32 length_in_bits, gpointer user_data)
+{
+  GstRtpSession *rtpsession = GST_RTP_SESSION (user_data);
+  GstEvent *event;
+  GstPad *send_rtp_sink;
+
+  GST_RTP_SESSION_LOCK (rtpsession);
+  if ((send_rtp_sink = rtpsession->send_rtp_sink))
+    gst_object_ref (send_rtp_sink);
+  GST_RTP_SESSION_UNLOCK (rtpsession);
+
+  if (!send_rtp_sink)
+    return;
+
+  event = gst_event_new_custom (GST_EVENT_CUSTOM_UPSTREAM,
+      gst_structure_new ("GstReferencePictureSelectionIndication",
+          "payload", G_TYPE_UINT, pt,
+          "bit_string", G_TYPE_UINT64, (guint64) (*data), NULL));
+  gst_pad_push_event (send_rtp_sink, event);
+  gst_object_unref (send_rtp_sink);
 }
 
 static void

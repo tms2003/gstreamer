@@ -22,6 +22,7 @@
 
 #include <gst/base/gstadapter.h>
 #include <gst/rtp/gstrtpbasedepayload.h>
+#include "gstrtpvp8parse.h"
 
 G_BEGIN_DECLS
 
@@ -68,10 +69,15 @@ struct _GstRtpVP8Depay
   gint last_width;
   gint last_height;
   guint last_picture_id;
+  guint golden_frame_picture_id;
+  guint alternate_frame_picture_id;
 
   gboolean wait_for_keyframe;
   gboolean request_keyframe;
   gboolean last_pushed_was_lost_event;
+
+  GstRtpVP8Parse parsed_header;
+  guint8 pt;
 };
 
 GType gst_rtp_vp8_depay_get_type (void);

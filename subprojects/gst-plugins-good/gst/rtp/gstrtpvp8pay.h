@@ -21,6 +21,7 @@
 #define __GST_RTP_VP8_PAY_H__
 
 #include <gst/rtp/gstrtpbasepayload.h>
+#include "gstrtpvp8parse.h"
 
 G_BEGIN_DECLS
 
@@ -55,15 +56,12 @@ struct _GstRtpVP8PayClass
 struct _GstRtpVP8Pay
 {
   GstRTPBasePayload parent;
-  gboolean is_keyframe;
-  gint n_partitions;
-  /* Treat frame header & tag & partition size block as the first partition,
-   * folowed by max. 8 data partitions. last offset is the end of the buffer */
-  guint partition_offset[10];
-  guint partition_size[9];
+  GstRtpVP8Parse parsed_header;
   GstVP8RtpPayPictureIDMode picture_id_mode;
   gint picture_id_offset;
   gint picture_id;
+  gint golden_frame_picture_id;
+  gint alternate_frame_picture_id;
   gboolean temporal_scalability_fields_present;
   guint8 tl0picidx;
 };
