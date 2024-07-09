@@ -36,11 +36,13 @@ enum
 };
 
 #define DEFAULT_SKIP_FIRST_BYTES	0
+#define DEFAULT_TTS_MODE FALSE
 
 enum
 {
   PROP_0,
-  PROP_SKIP_FIRST_BYTES
+  PROP_SKIP_FIRST_BYTES,
+  PROP_TTS_MODE
 };
 
 static GstStaticPadTemplate gst_rtp_mp2t_depay_src_template =
@@ -119,12 +121,19 @@ gst_rtp_mp2t_depay_class_init (GstRtpMP2TDepayClass * klass)
           "The amount of bytes that need to be skipped at the beginning of the payload",
           0, G_MAXUINT, 0, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
+  g_object_class_install_property (gobject_class, PROP_TTS_MODE,
+      g_param_spec_boolean ("tts",
+          "Enable TTS Mode",
+          "Treat initial 4 bytes in input buffer as additional timestamp",
+          DEFAULT_TTS_MODE, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
 }
 
 static void
 gst_rtp_mp2t_depay_init (GstRtpMP2TDepay * rtpmp2tdepay)
 {
   rtpmp2tdepay->skip_first_bytes = DEFAULT_SKIP_FIRST_BYTES;
+  rtpmp2tdepay->tts_mode = DEFAULT_TTS_MODE;
 }
 
 static gboolean
@@ -147,6 +156,61 @@ gst_rtp_mp2t_depay_setcaps (GstRTPBaseDepayload * depayload, GstCaps * caps)
   gst_caps_unref (srccaps);
 
   return res;
+}
+
+/**
+ * gst_rtp_tts_buffer_get_payload_subbuffer:
+ * @rtp: the RTP packet
+ * @offset: the offset in the payload
+ * @len: the length in the payload
+ *
+ * Create a subbuffer of the payload of the RTP packet in @buffer. @offset bytes
+ * are skipped in the payload and the subbuffer will be of size @len.
+ * If @len is -1 the total payload starting from @offset is subbuffered.
+ *
+ * Returns: A new buffer with the specified data of the payload.
+ */
+static GstBuffer *
+gst_rtp_tts_buffer_get_payload_subbuffer (GstRTPBuffer * rtp, guint offset,
+    guint len)
+{
+  guint poffset, plen, ts_pkts;
+  gint i = 0;
+  guint8 tmp_buf[188];
+  GstBuffer *outbuf;
+
+  plen = gst_rtp_buffer_get_payload_len (rtp);
+  /* we can't go past the length */
+  if (G_UNLIKELY (offset > plen))
+    goto wrong_offset;
+
+  /* apply offset */
+  poffset = gst_rtp_buffer_get_header_len (rtp) + offset;
+  plen -= offset;
+
+  /* see if we need to shrink the buffer based on @len */
+  if (len != -1 && len < plen)
+    plen = len;
+
+  ts_pkts = (guint) (plen / 192);
+  outbuf = gst_buffer_new_allocate (NULL, 188 * ts_pkts, NULL);
+  GST_BUFFER_PTS (outbuf) = GST_BUFFER_PTS (rtp->buffer);
+
+  for (i = 0; i < ts_pkts; i++) {
+    /* Extract TS data */
+    gst_buffer_extract (rtp->buffer, poffset + i * 192 + 4, tmp_buf, 188);
+    GST_DEBUG ("Filling  %u'th TS packet. Signature:%02X", i, tmp_buf[0]);
+    gst_buffer_fill (outbuf, i * 188, tmp_buf, 188);
+  }
+  /* TODO: Use the additional timestamp from each packet for resynchronization. */
+  return outbuf;
+
+  /* ERRORS */
+wrong_offset:
+  {
+    g_warning ("offset=%u should be less than plen=%u", offset, plen);
+    return NULL;
+  }
 }
 
 static GstBuffer *
@@ -172,7 +236,12 @@ gst_rtp_mp2t_depay_process (GstRTPBaseDepayload * depayload, GstRTPBuffer * rtp)
    * For MPEG2 Transport Streams the RTP payload will contain an integral
    * number of MPEG transport packets.
    */
-  leftover = payload_len % 188;
+  if (rtpmp2tdepay->tts_mode) {
+    leftover = payload_len % 192;
+  } else {
+    leftover = payload_len % 188;
+  }
+
   if (G_UNLIKELY (leftover)) {
     GST_WARNING ("We don't have an integral number of buffers (leftover: %d)",
         leftover);
@@ -180,9 +249,15 @@ gst_rtp_mp2t_depay_process (GstRTPBaseDepayload * depayload, GstRTPBuffer * rtp)
     payload_len -= leftover;
   }
 
-  outbuf =
-      gst_rtp_buffer_get_payload_subbuffer (rtp,
-      rtpmp2tdepay->skip_first_bytes, payload_len);
+  if (rtpmp2tdepay->tts_mode) {
+    outbuf =
+        gst_rtp_tts_buffer_get_payload_subbuffer (rtp,
+        rtpmp2tdepay->skip_first_bytes, payload_len);
+  } else {
+    outbuf =
+        gst_rtp_buffer_get_payload_subbuffer (rtp,
+        rtpmp2tdepay->skip_first_bytes, payload_len);
+  }
 
   if (outbuf) {
     GST_DEBUG ("gst_rtp_mp2t_depay_chain: pushing buffer of size %"
@@ -214,6 +289,9 @@ gst_rtp_mp2t_depay_set_property (GObject * object, guint prop_id,
     case PROP_SKIP_FIRST_BYTES:
       rtpmp2tdepay->skip_first_bytes = g_value_get_uint (value);
       break;
+    case PROP_TTS_MODE:
+      rtpmp2tdepay->tts_mode = g_value_get_boolean (value);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -231,6 +309,9 @@ gst_rtp_mp2t_depay_get_property (GObject * object, guint prop_id,
   switch (prop_id) {
     case PROP_SKIP_FIRST_BYTES:
       g_value_set_uint (value, rtpmp2tdepay->skip_first_bytes);
+      break;
+    case PROP_TTS_MODE:
+      g_value_set_boolean (value, rtpmp2tdepay->tts_mode);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);

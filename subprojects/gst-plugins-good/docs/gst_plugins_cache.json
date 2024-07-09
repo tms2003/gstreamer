@@ -15763,7 +15763,19 @@
                         "readable": true,
                         "type": "guint",
                         "writable": true
-                    }
+                    },
+                    "tts": {
+                        "blurb": "Treat initial 4 bytes in input buffer as additional timestamp",
+                        "conditionally-available": false,
+                        "construct": false,
+                        "construct-only": false,
+                        "controllable": false,
+                        "default": "false",
+                        "mutable": "null",
+                        "readable": true,
+                        "type": "gboolean",
+                        "writable": true
+		    }
                 },
                 "rank": "secondary"
             },

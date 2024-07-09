@@ -44,6 +44,7 @@ struct _GstRtpMP2TDepay
   GstRTPBaseDepayload depayload;
 
   guint8 skip_first_bytes;
+  gboolean tts_mode;
 };
 
 struct _GstRtpMP2TDepayClass
