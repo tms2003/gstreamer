@@ -3344,6 +3344,24 @@ single_queue_underrun_cb (GstDataQueue * dq, GstSingleQueue * sq)
             "queue is filled, bumping its max visible to %d",
             oq->max_size.visible);
         gst_data_queue_limits_changed (oq->queue);
+      } else {
+        if (!sq->is_sparse && mq->use_interleave) {
+          /* In paused status, every single queue need receive
+           * enough data and it should allow the full queue continue
+           * pushing data if other queue is empty if they are in the
+           * same thread. One example is that the queue will wait if
+           * it has finished pre-roll and it's full. While other queues
+           * can not push data if they are in the same thread. And it
+           * will cause hang if the queue has no enough data to sink
+           * to finish pre-roll. */
+          GstState cur_state;
+          gst_element_get_state (GST_ELEMENT (mq), &cur_state, NULL, 0);
+          if (cur_state == GST_STATE_PAUSED) {
+            if (sq->thread == oq->thread) {
+              gst_data_queue_limits_changed (oq->queue);
+            }
+          }
+        }
       }
     }
     if (!gst_data_queue_is_empty (oq->queue) || oq->is_sparse)
@@ -3401,6 +3419,30 @@ single_queue_check_full (GstDataQueue * dataq, guint visible, guint bytes,
         res = FALSE;
     } else
       res |= IS_FILLED (sq, time, sq->cur_time);
+  }
+
+  if (res) {
+    if (mq->use_interleave) {
+      /* In paused status, every single queue need receive
+       * enough data and it should allow the full queue continue
+       * pushing data if other queue is empty if they are in the
+       * same thread. One example is that the queue will wait if
+       * it has finished pre-roll and it's full. While other queues
+       * can not push data if they are in the same thread. And it
+       * will cause hang if the queue has no enough data to sink
+       * to finish pre-roll. */
+      GstState cur_state;
+      gst_element_get_state (GST_ELEMENT (mq), &cur_state, NULL, 0);
+      if (cur_state == GST_STATE_PAUSED) {
+        GList *tmp;
+        for (tmp = mq->queues; tmp; tmp = tmp->next) {
+          GstSingleQueue *oq = (GstSingleQueue *) tmp->data;
+          if (!oq->cur_time && oq->thread == sq->thread && !oq->is_sparse) {
+            res = FALSE;
+          }
+        }
+      }
+    }
   }
 done:
   gst_object_unref (mq);
