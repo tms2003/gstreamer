@@ -99,6 +99,9 @@ guint64         gst_util_uint64_scale_int_round (guint64 val, gint num, gint den
 GST_API
 guint64         gst_util_uint64_scale_int_ceil  (guint64 val, gint num, gint denom);
 
+GST_API
+guint64         gst_util_uint64_update          (guint64 *value, guint64 new_value, guint8 valid_bits);
+
 /**
  * GST_SEQNUM_INVALID:
  *

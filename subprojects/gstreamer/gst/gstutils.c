@@ -825,6 +825,73 @@ gst_util_uint64_scale_int_ceil (guint64 val, gint num, gint denom)
 }
 
 /**
+ * gst_util_uint64_update:
+ * @value: (inout): A pointer to a guint64 (such as a #GstClockTime) to update.
+ * @new_value: The new value for @value.
+ * @valid_bits: Number of valid bits in @new_value.
+ *
+ * Update the @value field with @new_value, taking overflows into account.
+ * For the first call of the method, @value should point to a location with a
+ * value of -1, e.g. #GST_CLOCK_TIME_NONE. This is used when a counter is
+ * received with too few bits and can thus wraparound (e.g. 32bits timestamp or
+ * seqnum).
+ *
+ * This function is able to handle both forward and backward @new_value taking
+ * into account:
+ *   - wraparound making sure that the returned value is properly increased.
+ *   - unwraparound making sure that the returned value is properly decreased.
+ *
+ * In the case @new_value goes backward @value is not update.
+ *
+ * Returns: The updated value or 0 if the result can't go anywhere backwards.
+ * Since: 1.26
+ */
+
+guint64
+gst_util_uint64_update(guint64 *value, guint64 new_value, guint8 valid_bits)
+{
+  guint64 overflow = G_GUINT64_CONSTANT (1) << valid_bits;
+  guint64 mask = overflow - 1;
+  guint64 thresold = overflow >> 1;
+  guint64 old_value = *value;
+
+  g_return_val_if_fail (value != NULL, 0);
+  g_return_val_if_fail (valid_bits < 64, 0);
+
+  new_value &= mask;
+
+  if (old_value != -1) {
+    /* Add previous overflows */
+    new_value += old_value & ~mask;
+
+    if (new_value < old_value) {
+      /* If it goes backward by more than our thresold, it means an overlow
+       * happened. */
+      guint64 diff = old_value - new_value;
+      if (diff > thresold)
+        new_value += overflow;
+    } else {
+      /* If it goes forward by more than our thresold, it means an overlow
+       * previously happend but new_value is from before it happened. */
+      guint64 diff = new_value - old_value;
+      if (diff > thresold) {
+        if (new_value >= overflow)
+          new_value -= overflow;
+        else
+          new_value = 0;
+      }
+    }
+    /* Stored value can only go forward. */
+    if (new_value > old_value)
+      *value = new_value;
+  } else {
+    *value = new_value;
+  }
+
+  return new_value;
+}
+
+/**
  * gst_util_seqnum_next:
  *
  * Return a constantly incrementing sequence number.
