@@ -2065,7 +2065,7 @@ record_pcr (MpegTSPacketizer2 * packetizer, MpegTSPCR * pcrtable,
   }
   /* If PCR diff is greater than 500ms, create new group */
   if (G_UNLIKELY (corpcr - current->pending[current->last].pcr >
-          500 * PCR_MSECOND)) {
+          packetizer->timeout_ms * PCR_MSECOND)) {
     GST_DEBUG ("New PCR more than 500ms away, handling discont");
     /* Take values from current and put them in the current group (closing it) */
     /* Create new group with pcr/offset just after the current group
