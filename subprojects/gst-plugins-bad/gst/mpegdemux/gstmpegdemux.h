@@ -130,7 +130,6 @@ struct _GstPsDemux
   gint64 mux_rate;
   guint64 first_scr;
   guint64 last_scr;
-  guint64 first_dts;
   guint64 base_time;
   guint64 current_scr;
   guint64 next_scr;
@@ -143,7 +142,11 @@ struct _GstPsDemux
   guint64 cur_scr_offset;
 
   guint64 first_pts;
+  guint64 first_dts;
+  guint64 last_dts;
   guint64 last_pts;
+  guint64 first_dts_offset;
+  guint64 last_dts_offset;
 
   gint16 psm[GST_PS_DEMUX_MAX_PSM];
 

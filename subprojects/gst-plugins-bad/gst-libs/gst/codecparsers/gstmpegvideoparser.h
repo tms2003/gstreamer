@@ -564,6 +564,11 @@ void     gst_mpeg_video_quant_matrix_get_raster_from_zigzag (guint8 out_quant[64
 GST_CODEC_PARSERS_API
 void     gst_mpeg_video_quant_matrix_get_zigzag_from_raster (guint8 out_quant[64],
                                                              const guint8 quant[64]);
+GST_CODEC_PARSERS_API
+const gchar * gst_mpeg_video_picture_start_code_to_string (guint8 psc);
+
+GST_CODEC_PARSERS_API
+const gchar * gst_mpeg_video_picture_type_to_string (guint8 pct);
 
 G_END_DECLS
 

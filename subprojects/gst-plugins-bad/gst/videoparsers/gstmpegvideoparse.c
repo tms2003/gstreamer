@@ -378,66 +378,6 @@ gst_mpegv_parse_process_config (GstMpegvParse * mpvparse, GstMapInfo * info,
   return TRUE;
 }
 
-/* FIXME : Move these functions to libgstcodecparser for usage by
- * more elements/code */
-#ifndef GST_DISABLE_GST_DEBUG
-static const gchar *
-picture_start_code_name (guint8 psc)
-{
-  guint i;
-  const struct
-  {
-    guint8 psc;
-    const gchar *name;
-  } psc_names[] = {
-    {
-        0x00, "Picture Start"}, {
-        0xb0, "Reserved"}, {
-        0xb1, "Reserved"}, {
-        0xb2, "User Data Start"}, {
-        0xb3, "Sequence Header Start"}, {
-        0xb4, "Sequence Error"}, {
-        0xb5, "Extension Start"}, {
-        0xb6, "Reserved"}, {
-        0xb7, "Sequence End"}, {
-        0xb8, "Group Start"}, {
-        0xb9, "Program End"}
-  };
-  if (psc < 0xB0 && psc > 0)
-    return "Slice Start";
-
-  for (i = 0; i < G_N_ELEMENTS (psc_names); i++)
-    if (psc_names[i].psc == psc)
-      return psc_names[i].name;
-
-  return "UNKNOWN";
-};
-
-static const gchar *
-picture_type_name (guint8 pct)
-{
-  guint i;
-  const struct
-  {
-    guint8 pct;
-    const gchar *name;
-  } pct_names[] = {
-    {
-        0, "Forbidden"}, {
-        1, "I Frame"}, {
-        2, "P Frame"}, {
-        3, "B Frame"}, {
-        4, "DC Intra Coded (Shall Not Be Used!)"}
-  };
-
-  for (i = 0; i < G_N_ELEMENTS (pct_names); i++)
-    if (pct_names[i].pct == pct)
-      return pct_names[i].name;
-
-  return "Reserved/Unknown";
-}
-#endif /* GST_DISABLE_GST_DEBUG */
-
 static void
 parse_packet_extension (GstMpegvParse * mpvparse, GstMapInfo * info, guint off)
 {
@@ -494,7 +434,7 @@ gst_mpegv_parse_process_sc (GstMpegvParse * mpvparse,
   gboolean ret = FALSE, checkconfig = TRUE;
 
   GST_LOG_OBJECT (mpvparse, "process startcode %x (%s) offset:%d", packet->type,
-      picture_start_code_name (packet->type), off);
+      gst_mpeg_video_picture_start_code_to_string (packet->type), off);
 
   *need_more = FALSE;
 
@@ -579,7 +519,8 @@ gst_mpegv_parse_process_sc (GstMpegvParse * mpvparse,
     if (gst_mpeg_video_packet_parse_picture_header (&header, &mpvparse->pichdr))
       GST_LOG_OBJECT (mpvparse, "picture_coding_type %d (%s), ending"
           "frame of size %d", mpvparse->pichdr.pic_type,
-          picture_type_name (mpvparse->pichdr.pic_type), off - 4);
+          gst_mpeg_video_picture_type_to_string (mpvparse->pichdr.pic_type),
+          off - 4);
     else
       GST_LOG_OBJECT (mpvparse, "Couldn't parse picture at offset %d",
           mpvparse->pic_offset);

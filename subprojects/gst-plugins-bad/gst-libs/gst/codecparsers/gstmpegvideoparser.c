@@ -521,9 +521,8 @@ gst_mpeg_video_packet_parse_sequence_display_extension (const GstMpegVideoPacket
  * Since: 1.2
  */
 gboolean
-    gst_mpeg_video_packet_parse_sequence_scalable_extension
-    (const GstMpegVideoPacket * packet,
-    GstMpegVideoSequenceScalableExt * seqscaleext)
+gst_mpeg_video_packet_parse_sequence_scalable_extension (const
+    GstMpegVideoPacket * packet, GstMpegVideoSequenceScalableExt * seqscaleext)
 {
   GstBitReader br;
 
@@ -1068,4 +1067,80 @@ gst_mpeg_video_quant_matrix_get_zigzag_from_raster (guint8 out_quant[64],
 
   for (i = 0; i < 64; i++)
     out_quant[i] = quant[mpeg_zigzag_8x8[i]];
+}
+
+/**
+ * gst_mpeg_video_picture_start_code_to_string:
+ * @psc: a picture start code
+ *
+ * Returns the descriptive name for the picture start code.
+ *
+ * Returns: the name for picture start code.
+ *
+ * Since: 1.20
+ */
+const gchar *
+gst_mpeg_video_picture_start_code_to_string (guint8 psc)
+{
+  guint i;
+  const struct
+  {
+    guint8 psc;
+    const gchar *name;
+  } psc_names[] = {
+    {
+        0x00, "Picture Start"}, {
+        0xb0, "Reserved"}, {
+        0xb1, "Reserved"}, {
+        0xb2, "User Data Start"}, {
+        0xb3, "Sequence Header Start"}, {
+        0xb4, "Sequence Error"}, {
+        0xb5, "Extension Start"}, {
+        0xb6, "Reserved"}, {
+        0xb7, "Sequence End"}, {
+        0xb8, "Group Start"}, {
+        0xb9, "Program End"}
+  };
+  if (psc < 0xB0 && psc > 0)
+    return "Slice Start";
+
+  for (i = 0; i < G_N_ELEMENTS (psc_names); i++)
+    if (psc_names[i].psc == psc)
+      return psc_names[i].name;
+
+  return "UNKNOWN";
+};
+
+/**
+ * gst_mpeg_video_picture_type_to_string:
+ * @psc: a picture type
+ *
+ * Returns the descriptive name for the picture type.
+ *
+ * Returns: the name for picture type.
+ *
+ * Since: 1.20
+ */
+const gchar *
+gst_mpeg_video_picture_type_to_string (guint8 pct)
+{
+  guint i;
+  const struct
+  {
+    guint8 pct;
+    const gchar *name;
+  } pct_names[] = {
+    {
+        0, "Forbidden"}, {
+        1, "I Frame"}, {
+        2, "P Frame"}, {
+        3, "B Frame"}, {
+        4, "DC Intra Coded (Shall Not Be Used!)"}
+  };
+
+  for (i = 0; i < G_N_ELEMENTS (pct_names); i++)
+    if (pct_names[i].pct == pct)
+      return pct_names[i].name;
+
+  return "Reserved/Unknown";
 }
