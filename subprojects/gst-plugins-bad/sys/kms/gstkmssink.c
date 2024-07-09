@@ -1887,7 +1887,6 @@ gst_kms_sink_show_frame (GstVideoSink * vsink, GstBuffer * buf)
   GstVideoCropMeta *crop;
   GstVideoRectangle src = { 0, };
   gint video_width, video_height;
-  GstVideoRectangle dst = { 0, };
   GstVideoRectangle result;
   GstFlowReturn res;
 
@@ -1898,13 +1897,9 @@ gst_kms_sink_show_frame (GstVideoSink * vsink, GstBuffer * buf)
   if (buf) {
     buffer = gst_kms_sink_get_input_buffer (self, buf);
     vinfo = &self->vinfo;
-    video_width = src.w = GST_VIDEO_SINK_WIDTH (self);
-    video_height = src.h = GST_VIDEO_SINK_HEIGHT (self);
   } else if (self->last_buffer) {
     buffer = gst_buffer_ref (self->last_buffer);
     vinfo = &self->last_vinfo;
-    video_width = src.w = self->last_width;
-    video_height = src.h = self->last_height;
   }
 
   /* Make sure buf is not used accidentally */
@@ -1925,37 +1920,35 @@ gst_kms_sink_show_frame (GstVideoSink * vsink, GstBuffer * buf)
   }
 
   if ((crop = gst_buffer_get_video_crop_meta (buffer))) {
-    GstVideoInfo cropped_vinfo = *vinfo;
-
-    cropped_vinfo.width = crop->width;
-    cropped_vinfo.height = crop->height;
-
-    if (!gst_kms_sink_calculate_display_ratio (self, &cropped_vinfo, &src.w,
-            &src.h))
-      goto no_disp_ratio;
-
     src.x = crop->x;
     src.y = crop->y;
-  }
-
-  dst.w = self->render_rect.w;
-  dst.h = self->render_rect.h;
-
-retry_set_plane:
-  gst_video_sink_center_rect (src, dst, &result, self->can_scale);
-
-  result.x += self->render_rect.x;
-  result.y += self->render_rect.y;
-
-  if (crop) {
     src.w = crop->width;
     src.h = crop->height;
   } else {
-    src.w = video_width;
-    src.h = video_height;
+    src.w = GST_VIDEO_INFO_WIDTH(vinfo);
+    src.h = GST_VIDEO_INFO_HEIGHT(vinfo);
   }
 
-  /* handle out of screen case */
+retry_set_plane:
+  if (!self->can_scale) {
+    gst_video_sink_center_rect (src, self->render_rect, &result, FALSE);
+  } else {
+    GstVideoRectangle s;
+
+    /* This uses the negatiated input size, but with a correction for PAR
+     * mismatch. This means s might not represent the actual video resolution, but
+     * it does have the right aspect ratio, which is all what counts when we will
+     * proportionally scale to fit th render_rect anyway. */
+    s.w = GST_VIDEO_SINK_WIDTH (self);
+    s.h = GST_VIDEO_SINK_HEIGHT (self);
+
+    gst_video_sink_center_rect (s, self->render_rect, &result, TRUE);
+  }
+
+  /* handle out of screen case - can only happen when render_rect is not
+   * entirely inside of the display.
+   * TODO: This fix does not keep aspect ratio (in can_scale case) and does not
+   * handle a render rect that is entirely outside of the display. */
   if ((result.x + result.w) > self->hdisplay)
     result.w = self->hdisplay - result.x;
 
@@ -1967,7 +1960,8 @@ retry_set_plane:
     goto sync_frame;
   }
 
-  /* to make sure it can be show when driver don't support scale */
+  /* gst_video_sink_center_rect applies clipping to result, but this needs to be
+   * applied to src too (but when can_scale, clipping should never happen). */
   if (!self->can_scale) {
     src.w = result.w;
     src.h = result.h;
@@ -2026,18 +2020,12 @@ set_plane_failed:
   {
     GST_OBJECT_UNLOCK (self);
     GST_DEBUG_OBJECT (self, "result = { %d, %d, %d, %d} / "
-        "src = { %d, %d, %d %d } / dst = { %d, %d, %d %d }", result.x, result.y,
-        result.w, result.h, src.x, src.y, src.w, src.h, dst.x, dst.y, dst.w,
-        dst.h);
+        "src = { %d, %d, %d %d } / render_rect = { %d, %d, %d, %d }",
+        result.x, result.y, result.w, result.h, src.x, src.y, src.w, src.h,
+        self->render_rect.x, self->render_rect.y, self->render_rect.w,
+        self->render_rect.h);
     GST_ELEMENT_ERROR (self, RESOURCE, FAILED,
         (NULL), ("drmModeSetPlane failed: %s (%d)", g_strerror (errno), errno));
-    goto bail;
-  }
-no_disp_ratio:
-  {
-    GST_OBJECT_UNLOCK (self);
-    GST_ELEMENT_ERROR (self, CORE, NEGOTIATION, (NULL),
-        ("Error calculating the output display ratio of the video."));
     goto bail;
   }
 }
