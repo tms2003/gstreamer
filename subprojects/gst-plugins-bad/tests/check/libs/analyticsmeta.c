@@ -936,6 +936,67 @@ GST_START_TEST (test_add_tracking_meta)
 
 GST_END_TEST;
 
+GST_START_TEST (test_add_segmentation_meta)
+{
+  /* Verify we can add tracking relatable meta to relation meta */
+  GstBuffer *vbuf, *mbuf;
+  GstAnalyticsRelationMetaInitParams init_params = { 5, 150 };
+  GstAnalyticsRelationMeta *rmeta;
+  GstBufferPool *vpool, *mpool;
+  GstCaps *caps;
+  GstStructure *config;
+  GstVideoInfo vinfo, minfo;
+  GstAnalyticsSegmentationMtd smtd;
+
+  /* Create a pool for video frames */
+  gst_video_info_init (&vinfo);
+  vpool = gst_video_buffer_pool_new ();
+  config = gst_buffer_pool_get_config (vpool);
+  gst_video_info_set_format (&vinfo, GST_VIDEO_FORMAT_RGBA, 32, 32);
+  caps = gst_video_info_to_caps (&vinfo);
+  gst_buffer_pool_config_set_params (config, caps, vinfo.size, 0, 0);
+  gst_buffer_pool_set_config (vpool, config);
+  gst_buffer_pool_set_active (vpool, TRUE);
+
+  fail_unless (gst_buffer_pool_acquire_buffer (vpool, &vbuf, NULL) ==
+      GST_FLOW_OK);
+
+  rmeta = gst_buffer_add_analytics_relation_meta_full (vbuf, &init_params);
+
+  /* Create pool for segmentation masks */
+  gst_video_info_init (&minfo);
+  gst_video_info_set_format (&minfo, GST_VIDEO_FORMAT_GRAY8, 32, 32);
+  mpool = gst_buffer_pool_new ();
+  config = gst_buffer_pool_get_config (mpool);
+  gst_buffer_pool_config_set_params (config, NULL, minfo.size, 0, 1);
+  gst_buffer_pool_set_config (mpool, config);
+  gst_buffer_pool_set_active (mpool, TRUE);
+
+  fail_unless (gst_buffer_pool_acquire_buffer (mpool, &mbuf, NULL) ==
+      GST_FLOW_OK);
+
+  gst_buffer_add_video_meta (mbuf, GST_VIDEO_FRAME_FLAG_NONE,
+      GST_VIDEO_FORMAT_GRAY8, 32, 32);
+
+  gst_analytics_relation_meta_add_segmentation_mtd (rmeta, mbuf,
+      GST_SEGMENTATION_TYPE_INSTANCE, &smtd);
+
+  /* This _unref will return vbuf to vpool and also mbuf to mpool */
+  gst_buffer_unref (vbuf);
+
+  /* This will succeed because mbuf was returned to the pool */
+  fail_unless (gst_buffer_pool_acquire_buffer (mpool, &mbuf, NULL) ==
+      GST_FLOW_OK);
+
+  gst_buffer_unref (mbuf);
+  gst_buffer_pool_set_active (mpool, FALSE);
+  gst_object_unref (mpool);
+  gst_buffer_pool_set_active (vpool, FALSE);
+  gst_object_unref (vpool);
+}
+
+GST_END_TEST;
+
 static Suite *
 analyticmeta_suite (void)
 {
@@ -946,6 +1007,7 @@ analyticmeta_suite (void)
   TCase *tc_chain_od;
   TCase *tc_chain_od_cls;
   TCase *tc_chain_tracking;
+  TCase *tc_chain_segmentation;
 
   s = suite_create ("Analytic Meta Library");
 
@@ -978,6 +1040,10 @@ analyticmeta_suite (void)
   tc_chain_tracking = tcase_create ("Tracking Mtd");
   suite_add_tcase (s, tc_chain_tracking);
   tcase_add_test (tc_chain_tracking, test_add_tracking_meta);
+
+  tc_chain_segmentation = tcase_create ("Segmentation Mtd");
+  suite_add_tcase (s, tc_chain_segmentation);
+  tcase_add_test (tc_chain_segmentation, test_add_segmentation_meta);
   return s;
 }
 
