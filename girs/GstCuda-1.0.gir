@@ -340,7 +340,7 @@ This method is conceptually identical to gst_buffer_pool_set_active method.</doc
         </array>
       </field>
     </record>
-    <record name="CudaAllocatorPrivate" c:type="GstCudaAllocatorPrivate" disguised="1">
+    <record name="CudaAllocatorPrivate" c:type="GstCudaAllocatorPrivate" disguised="1" opaque="1">
       <source-position filename="../subprojects/gst-plugins-bad/gst-libs/gst/cuda/gstcudamemory.h"/>
     </record>
     <class name="CudaBufferPool" c:symbol-prefix="cuda_buffer_pool" c:type="GstCudaBufferPool" version="1.22" parent="Gst.BufferPool" glib:type-name="GstCudaBufferPool" glib:get-type="gst_cuda_buffer_pool_get_type" glib:type-struct="CudaBufferPoolClass">
@@ -374,7 +374,7 @@ This method is conceptually identical to gst_buffer_pool_set_active method.</doc
         <type name="Gst.BufferPoolClass" c:type="GstBufferPoolClass"/>
       </field>
     </record>
-    <record name="CudaBufferPoolPrivate" c:type="GstCudaBufferPoolPrivate" disguised="1">
+    <record name="CudaBufferPoolPrivate" c:type="GstCudaBufferPoolPrivate" disguised="1" opaque="1">
       <source-position filename="../subprojects/gst-plugins-bad/gst-libs/gst/cuda/gstcudabufferpool.h"/>
     </record>
     <class name="CudaContext" c:symbol-prefix="cuda_context" c:type="GstCudaContext" version="1.22" parent="Gst.Object" glib:type-name="GstCudaContext" glib:get-type="gst_cuda_context_get_type" glib:type-struct="CudaContextClass">
@@ -494,14 +494,14 @@ so all CUDA functions that operate on the current context are affected.</doc>
           </instance-parameter>
         </parameters>
       </method>
-      <property name="cuda-device-id" writable="1" construct-only="1" transfer-ownership="none">
+      <property name="cuda-device-id" writable="1" construct-only="1" transfer-ownership="none" default-value="0">
         <type name="guint" c:type="guint"/>
       </property>
-      <property name="os-handle" version="1.24" transfer-ownership="none">
+      <property name="os-handle" version="1.24" transfer-ownership="none" default-value="FALSE">
         <doc xml:space="preserve" filename="../subprojects/gst-plugins-bad/gst-libs/gst/cuda/gstcudacontext.cpp">OS handle supportability in virtual memory management</doc>
         <type name="gboolean" c:type="gboolean"/>
       </property>
-      <property name="virtual-memory" version="1.24" transfer-ownership="none">
+      <property name="virtual-memory" version="1.24" transfer-ownership="none" default-value="FALSE">
         <doc xml:space="preserve" filename="../subprojects/gst-plugins-bad/gst-libs/gst/cuda/gstcudacontext.cpp">Virtual memory management supportability</doc>
         <type name="gboolean" c:type="gboolean"/>
       </property>
@@ -518,7 +518,7 @@ so all CUDA functions that operate on the current context are affected.</doc>
         <type name="Gst.ObjectClass" c:type="GstObjectClass"/>
       </field>
     </record>
-    <record name="CudaContextPrivate" c:type="GstCudaContextPrivate" disguised="1">
+    <record name="CudaContextPrivate" c:type="GstCudaContextPrivate" disguised="1" opaque="1">
       <source-position filename="../subprojects/gst-plugins-bad/gst-libs/gst/cuda/gstcudacontext.h"/>
     </record>
     <record name="CudaGraphicsResource" c:type="GstCudaGraphicsResource" version="1.22">
@@ -847,16 +847,16 @@ CUDA stream is in use</doc>
     </record>
     <enumeration name="CudaMemoryAllocMethod" version="1.24" glib:type-name="GstCudaMemoryAllocMethod" glib:get-type="gst_cuda_memory_alloc_method_get_type" c:type="GstCudaMemoryAllocMethod">
       <doc xml:space="preserve" filename="../subprojects/gst-plugins-bad/gst-libs/gst/cuda/gstcudamemory.h">CUDA memory allocation method</doc>
-      <member name="unknown" value="0" c:identifier="GST_CUDA_MEMORY_ALLOC_UNKNOWN" version="1.24" glib:nick="unknown">
+      <member name="unknown" value="0" c:identifier="GST_CUDA_MEMORY_ALLOC_UNKNOWN" version="1.24" glib:nick="unknown" glib:name="GST_CUDA_MEMORY_ALLOC_UNKNOWN">
       </member>
-      <member name="malloc" value="1" c:identifier="GST_CUDA_MEMORY_ALLOC_MALLOC" version="1.24" glib:nick="malloc">
+      <member name="malloc" value="1" c:identifier="GST_CUDA_MEMORY_ALLOC_MALLOC" version="1.24" glib:nick="malloc" glib:name="GST_CUDA_MEMORY_ALLOC_MALLOC">
         <doc xml:space="preserve" filename="../subprojects/gst-plugins-bad/gst-libs/gst/cuda/gstcudamemory.h">Memory allocated via cuMemAlloc or cuMemAllocPitch</doc>
       </member>
-      <member name="mmap" value="2" c:identifier="GST_CUDA_MEMORY_ALLOC_MMAP" version="1.24" glib:nick="mmap">
+      <member name="mmap" value="2" c:identifier="GST_CUDA_MEMORY_ALLOC_MMAP" version="1.24" glib:nick="mmap" glib:name="GST_CUDA_MEMORY_ALLOC_MMAP">
         <doc xml:space="preserve" filename="../subprojects/gst-plugins-bad/gst-libs/gst/cuda/gstcudamemory.h">Memory allocated via cuMemCreate and cuMemMap</doc>
       </member>
     </enumeration>
-    <record name="CudaMemoryPrivate" c:type="GstCudaMemoryPrivate" disguised="1">
+    <record name="CudaMemoryPrivate" c:type="GstCudaMemoryPrivate" disguised="1" opaque="1">
       <source-position filename="../subprojects/gst-plugins-bad/gst-libs/gst/cuda/gstcudamemory.h"/>
     </record>
     <bitfield name="CudaMemoryTransfer" c:type="GstCudaMemoryTransfer">
@@ -977,7 +977,7 @@ inactive.</doc>
         </array>
       </field>
     </record>
-    <record name="CudaPoolAllocatorPrivate" c:type="GstCudaPoolAllocatorPrivate" disguised="1">
+    <record name="CudaPoolAllocatorPrivate" c:type="GstCudaPoolAllocatorPrivate" disguised="1" opaque="1">
       <source-position filename="../subprojects/gst-plugins-bad/gst-libs/gst/cuda/gstcudamemory.h"/>
     </record>
     <enumeration name="CudaQuarkId" version="1.22" c:type="GstCudaQuarkId">
@@ -1055,7 +1055,7 @@ failure</doc>
         </parameters>
       </method>
     </record>
-    <record name="CudaStreamPrivate" c:type="GstCudaStreamPrivate" disguised="1">
+    <record name="CudaStreamPrivate" c:type="GstCudaStreamPrivate" disguised="1" opaque="1">
       <source-position filename="../subprojects/gst-plugins-bad/gst-libs/gst/cuda/gstcudastream.h"/>
     </record>
     <function-macro name="IS_CUDA_ALLOCATOR" c:identifier="GST_IS_CUDA_ALLOCATOR" introspectable="0">
