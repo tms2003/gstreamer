@@ -955,6 +955,14 @@ gst_matroska_mux_handle_sink_event (GstCollectPads * pads,
         gst_matroska_mux_build_vobsub_private (context, clut);
       }
     }
+    case GST_EVENT_PROTECTION:{
+      const char *system_id, *origin;
+      GstBuffer *init_data;
+      gst_event_parse_protection (event, &system_id, &init_data, &origin);
+      gst_structure_set (context->protection_info, "kid", GST_TYPE_BUFFER,
+          init_data, NULL);
+      gst_event_unref (event);
+    }
       /* fall through */
     default:
       break;
@@ -1148,6 +1156,10 @@ gst_matroska_mux_video_pad_setcaps (GstPad * pad, GstCaps * caps)
   structure = gst_caps_get_structure (caps, 0);
 
   mimetype = gst_structure_get_name (structure);
+  if (!strcmp (mimetype, "application/x-webm-enc")) {
+    mimetype = gst_structure_get_string (structure, "original-media-type");
+    context->protection_info = gst_structure_copy (structure);
+  }
 
   interlace_mode = gst_structure_get_string (structure, "interlace-mode");
   if (interlace_mode != NULL) {
@@ -2036,6 +2048,10 @@ gst_matroska_mux_audio_pad_setcaps (GstPad * pad, GstCaps * caps)
 
   structure = gst_caps_get_structure (caps, 0);
   mimetype = gst_structure_get_name (structure);
+  if (!strcmp (mimetype, "application/x-webm-enc")) {
+    mimetype = gst_structure_get_string (structure, "original-media-type");
+    context->protection_info = gst_structure_copy (structure);
+  }
 
   /* general setup */
   gst_structure_get_int (structure, "rate", &samplerate);
@@ -2826,6 +2842,75 @@ gst_matroska_mux_write_colour (GstMatroskaMux * mux,
   gst_ebml_write_master_finish (ebml, master);
 }
 
+static gboolean
+gst_matroska_mux_track_protection (GstEbmlWrite * ebml,
+    GstStructure * protection_info)
+{
+  const gchar *field = NULL;
+  guint encryption_algorithm, cipher_mode, encoding_scope = 0;
+  GstBuffer *kid = NULL;
+  GstMapInfo map = GST_MAP_INFO_INIT;
+
+  field = gst_structure_get_string (protection_info, "encryption-algorithm");
+  if (strcmp (field, "AES") == 0) {
+    encryption_algorithm = 5;
+  } else {
+    GST_ERROR ("Unsupported encryption algorithm %s", field);
+    return FALSE;
+  }
+  field = gst_structure_get_string (protection_info, "cipher-mode");
+  if (strcmp (field, "CTR") == 0) {
+    cipher_mode = 1;
+  } else {
+    GST_ERROR ("Unsupported cipher mode");
+    return FALSE;
+  }
+  field = gst_structure_get_string (protection_info, "encoding-scope");
+  if (strcmp (field, "frame") == 0) {
+    encoding_scope = 1;
+  } else {
+    GST_ERROR ("Unsupported encoding scope");
+    return FALSE;
+  }
+
+  gst_structure_get (protection_info, "kid", GST_TYPE_BUFFER, &kid, NULL);
+  if (kid) {
+    if (!gst_buffer_map (kid, &map, GST_MAP_READ)) {
+      GST_ERROR ("Failed to map kid buffer");
+      return FALSE;
+    }
+  } else {
+    GST_ERROR ("Missing key id");
+    return FALSE;
+  }
+
+  guint64 content_encodings =
+      gst_ebml_write_master_start (ebml, GST_MATROSKA_ID_CONTENTENCODINGS);
+  guint64 encoding =
+      gst_ebml_write_master_start (ebml, GST_MATROSKA_ID_CONTENTENCODING);
+  gst_ebml_write_uint (ebml, GST_MATROSKA_ID_CONTENTENCODINGORDER, 0);
+  gst_ebml_write_uint (ebml, GST_MATROSKA_ID_CONTENTENCODINGSCOPE,
+      encoding_scope);
+  gst_ebml_write_uint (ebml, GST_MATROSKA_ID_CONTENTENCODINGTYPE, 1);
+  guint64 enc =
+      gst_ebml_write_master_start (ebml, GST_MATROSKA_ID_CONTENTENCRYPTION);
+  gst_ebml_write_uint (ebml, GST_MATROSKA_ID_CONTENTENCALGO,
+      encryption_algorithm);
+  gst_ebml_write_binary (ebml, GST_MATROSKA_ID_CONTENTENCKEYID, map.data,
+      gst_buffer_get_size (kid));
+  guint64 settings =
+      gst_ebml_write_master_start (ebml, GST_MATROSKA_ID_CONTENTENCAESSETTINGS);
+  gst_ebml_write_uint (ebml, GST_MATROSKA_ID_AESSETTINGSCIPHERMODE,
+      cipher_mode);
+  gst_ebml_write_master_finish (ebml, settings);
+  gst_ebml_write_master_finish (ebml, enc);
+  gst_ebml_write_master_finish (ebml, encoding);
+  gst_ebml_write_master_finish (ebml, content_encodings);
+
+  gst_buffer_unmap (kid, &map);
+  return TRUE;
+}
+
 /**
  * gst_matroska_mux_track_header:
  * @mux: #GstMatroskaMux
@@ -2982,7 +3067,13 @@ gst_matroska_mux_track_header (GstMatroskaMux * mux,
       break;
   }
 
-  GST_DEBUG_OBJECT (mux, "Wrote track header. Codec %s", context->codec_id);
+  if (context->protection_info
+      && gst_matroska_mux_track_protection (ebml, context->protection_info)) {
+    GST_DEBUG_OBJECT (mux, "Wrote encrypted track header. Codec %s",
+        context->codec_id);
+  } else {
+    GST_DEBUG_OBJECT (mux, "Wrote track header. Codec %s", context->codec_id);
+  }
 
   gst_ebml_write_ascii (ebml, GST_MATROSKA_ID_CODECID, context->codec_id);
   if (context->codec_priv)
@@ -4015,6 +4106,8 @@ gst_matroska_mux_write_data (GstMatroskaMux * mux, GstMatroskaPad * collect_pad,
   gint flags = 0;
   GstClockTime buffer_timestamp;
   GstAudioClippingMeta *cmeta = NULL;
+  guint8 *protection = NULL;
+  guint protection_size = 0;
 
   /* write data */
   pad = GST_MATROSKAMUX_PAD_CAST (collect_pad->collect.pad);
@@ -4039,6 +4132,104 @@ gst_matroska_mux_write_data (GstMatroskaMux * mux, GstMatroskaPad * collect_pad,
     /* Remove the 'Frame container atom' header' */
     buf = gst_buffer_make_writable (buf);
     gst_buffer_resize (buf, 8, gst_buffer_get_size (buf) - 8);
+  }
+
+  /* for encrypted tracks we need to prefix the signal byte, the iv and the subsamples */
+  gboolean encrypted = FALSE;
+  guint iv_size = 0, subsample_count = 0;
+  GstBuffer *iv = NULL, *subsamples = NULL;
+  GstProtectionMeta *protection_meta = gst_buffer_get_protection_meta (buf);
+  if (protection_meta) {
+    GstStructure *info = protection_meta->info;
+    if (!gst_structure_get_boolean (info, "encrypted", &encrypted)) {
+      GST_ERROR ("GstProtection does not have an encrypted field");
+      return GST_FLOW_OK;
+    }
+    if (!gst_structure_get_uint (info, "iv_size", &iv_size)) {
+      GST_ERROR ("GstProtection does not have an iv_size field");
+      return GST_FLOW_OK;
+    }
+    if (!gst_structure_get_uint (info, "subsample_count", &subsample_count)) {
+      GST_ERROR ("GstProtection does not have a subsample_count field");
+      return GST_FLOW_OK;
+    }
+    if (iv_size && iv_size != 8) {
+      GST_ERROR ("Invalid iv_size");
+      return GST_FLOW_OK;
+    }
+    if (iv_size) {
+      gst_structure_get (info, "iv", GST_TYPE_BUFFER, &iv, NULL);
+      if (!iv || gst_buffer_get_size (iv) != iv_size) {
+        GST_ERROR ("GstProtection does not have an iv field");
+        return GST_FLOW_OK;
+      }
+    }
+    if (subsample_count) {
+      gst_structure_get (info, "subsamples", GST_TYPE_BUFFER, &subsamples,
+          NULL);
+      if (!subsamples
+          || (gst_buffer_get_size (subsamples) != (subsample_count * 6))) {
+        GST_ERROR ("GstProtection does not have a subsamples field");
+        return GST_FLOW_OK;
+      }
+    }
+  }
+  if (collect_pad->track->protection_info) {
+    GstMapInfo map = GST_MAP_INFO_INIT;
+    GstByteReader reader = GST_BYTE_READER_INIT (NULL, subsample_count * 6);
+    GstByteWriter writer;
+    guint16 cenc_clear = 0;
+    guint32 cenc_enc = 0, offset = 0;
+    guint8 signal_byte = 0;
+    guint8 num_partitions = 0;
+    gboolean error = FALSE;
+    if (encrypted) {
+      signal_byte |= GST_MATROSKA_BLOCK_ENCRYPTED;
+    }
+    if (subsample_count) {
+      if (!gst_buffer_map (subsamples, &map, GST_MAP_READ)) {
+        GST_ERROR ("Failed to map subsample buffer");
+        g_free (protection);
+        return GST_FLOW_OK;
+      }
+      reader.data = map.data;
+      if (!gst_byte_reader_peek_uint16_be (&reader, &cenc_clear)) {
+        GST_ERROR ("Failed to read clear partition length");
+        g_free (protection);
+        return GST_FLOW_OK;
+      }
+      num_partitions = subsample_count * 2 - 1;
+      if (!cenc_clear) {
+        num_partitions -= 1;
+      }
+      signal_byte |= GST_MATROSKA_BLOCK_PARTITIONED;
+    }
+    protection_size = 1 + iv_size + (num_partitions > 0) + num_partitions * 4;
+    protection = g_malloc (protection_size);
+    gst_byte_writer_init_with_data (&writer, protection, protection_size,
+        FALSE);
+    error |= !gst_byte_writer_put_uint8 (&writer, signal_byte);
+    if (iv) {
+      error |= !gst_byte_writer_put_buffer (&writer, iv, 0, iv_size);
+    }
+    if (subsamples) {
+      error |= !gst_byte_writer_put_uint8 (&writer, num_partitions);
+      for (int i = 0; i < subsample_count; i++) {
+        error |= !gst_byte_reader_get_uint16_be (&reader, &cenc_clear);
+        error |= !gst_byte_reader_get_uint32_be (&reader, &cenc_enc);
+        if (offset) {
+          error |= !gst_byte_writer_put_uint32_be (&writer, offset);
+        }
+        offset += cenc_clear;
+        error |= !gst_byte_writer_put_uint32_be (&writer, offset);
+        offset += cenc_enc;
+      }
+    }
+    if (error) {
+      GST_ERROR ("Failed to write protection data");
+      g_free (protection);
+      return GST_FLOW_OK;
+    }
   }
 
   buffer_timestamp =
@@ -4255,9 +4446,14 @@ gst_matroska_mux_write_data (GstMatroskaMux * mux, GstMatroskaPad * collect_pad,
         relative_timestamp, flags);
     gst_ebml_write_set_cache (ebml, 0x40);
     gst_ebml_write_buffer_header (ebml, GST_MATROSKA_ID_SIMPLEBLOCK,
-        gst_buffer_get_size (buf) + gst_buffer_get_size (hdr));
+        gst_buffer_get_size (buf) + gst_buffer_get_size (hdr) +
+        protection_size);
     gst_ebml_write_buffer (ebml, hdr);
     gst_ebml_write_flush_cache (ebml, FALSE, buffer_timestamp);
+    if (protection) {
+      GstBuffer *p_buf = gst_buffer_new_wrapped (protection, protection_size);
+      gst_ebml_write_buffer (ebml, p_buf);
+    }
     gst_ebml_write_buffer (ebml, buf);
 
     return gst_ebml_last_write_result (ebml);
@@ -4283,11 +4479,16 @@ gst_matroska_mux_write_data (GstMatroskaMux * mux, GstMatroskaPad * collect_pad,
     }
 
     gst_ebml_write_buffer_header (ebml, GST_MATROSKA_ID_BLOCK,
-        gst_buffer_get_size (buf) + gst_buffer_get_size (hdr));
+        gst_buffer_get_size (buf) + gst_buffer_get_size (hdr) +
+        protection_size);
     gst_ebml_write_buffer (ebml, hdr);
     gst_ebml_write_master_finish_full (ebml, blockgroup,
         gst_buffer_get_size (buf));
     gst_ebml_write_flush_cache (ebml, FALSE, buffer_timestamp);
+    if (protection) {
+      GstBuffer *p_buf = gst_buffer_new_wrapped (protection, protection_size);
+      gst_ebml_write_buffer (ebml, p_buf);
+    }
     gst_ebml_write_buffer (ebml, buf);
 
     return gst_ebml_last_write_result (ebml);
