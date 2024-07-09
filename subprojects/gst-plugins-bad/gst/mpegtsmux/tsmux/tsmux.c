@@ -100,6 +100,8 @@
  * so we have some slack to go backwards */
 #define CLOCK_BASE (TSMUX_CLOCK_FREQ * 10 * 360)
 
+typedef struct _TsPacket TsPacket;
+
 static gboolean tsmux_write_pat (TsMux * mux);
 static gboolean tsmux_write_pmt (TsMux * mux, TsMuxProgram * program);
 static gboolean tsmux_write_scte_null (TsMux * mux, TsMuxProgram * program);
@@ -110,6 +112,30 @@ static gint64 write_new_pcr (TsMux * mux, TsMuxStream * stream, gint64 cur_pcr,
 static gboolean tsmux_write_ts_header (TsMux * mux, guint8 * buf,
     TsMuxPacketInfo * pi, guint stream_avail, guint * payload_len_out,
     guint * payload_offset_out);
+static gboolean tsmux_get_buffer (TsMux * mux, GstBuffer ** buf);
+static gboolean tsmux_packet_out (TsMux * mux, TsPacket * pkt, gint64 pcr);
+
+typedef enum
+{
+  TS_PACKET_BUFFER = 0,
+  TS_PACKET_EMPTY,
+} TsPacketType;
+
+struct _TsPacket
+{
+  TsPacketType type;
+  GstBuffer *buf;
+  gsize size;
+};
+
+#define TS_PACKET_STUFFING { \
+  .type = TS_PACKET_EMPTY, \
+  .buf = NULL, \
+  .size = TSMUX_PACKET_LENGTH, \
+}
+static inline gboolean ts_packet_is_buffer (TsPacket * pkt);
+static inline void ts_packet_clear_buffer (TsPacket * pkt);
+static inline void ts_packet_set_pts (TsPacket * pkt, GstClockTime pts);
 
 static void
 tsmux_section_free (TsMuxSection * section)
@@ -163,6 +189,8 @@ tsmux_new (void)
   mux->new_stream_data = NULL;
 
   mux->first_pcr_ts = G_MININT64;
+
+  mux->bitrate_sparse = TSMUX_DEFAULT_BITRATE_SPARSE;
 
   return mux;
 }
@@ -867,19 +895,30 @@ tsmux_get_buffer (TsMux * mux, GstBuffer ** buf)
   return TRUE;
 }
 
-static gboolean
-tsmux_packet_out (TsMux * mux, GstBuffer * buf, gint64 pcr)
+static inline gboolean
+tsmux_packet_out_buffer (TsMux * mux, GstBuffer * buf, gint64 pcr)
 {
-  g_return_val_if_fail (buf, FALSE);
+  TsPacket pkt = {
+    .type = TS_PACKET_BUFFER,
+    .buf = buf,
+    .size = gst_buffer_get_size (buf),
+  };
+  return tsmux_packet_out (mux, &pkt, pcr);
+}
+
+static gboolean
+tsmux_packet_out (TsMux * mux, TsPacket * pkt, gint64 pcr)
+{
+  g_return_val_if_fail (pkt, FALSE);
 
   if (G_UNLIKELY (mux->write_func == NULL)) {
-    gst_buffer_unref (buf);
+    ts_packet_clear_buffer (pkt);
     return TRUE;
   }
 
   if (mux->bitrate) {
-    GST_BUFFER_PTS (buf) =
-        gst_util_uint64_scale (mux->n_bytes * 8, GST_SECOND, mux->bitrate);
+    ts_packet_set_pts (pkt,
+        gst_util_uint64_scale (mux->n_bytes * 8, GST_SECOND, mux->bitrate));
 
     /* Check and insert a PCR observation for each program if needed,
      * but only for programs that have written their SI at least once,
@@ -912,19 +951,24 @@ tsmux_packet_out (TsMux * mux, GstBuffer * buf, gint64 pcr)
           gst_buffer_unmap (pcr_buf, &map);
 
           stream->pi.flags &= TSMUX_PACKET_FLAG_PES_FULL_HEADER;
-          if (!tsmux_packet_out (mux, pcr_buf, new_pcr))
+          if (!tsmux_packet_out_buffer (mux, pcr_buf, new_pcr))
             goto error;
         }
       }
     }
   }
 
-  mux->n_bytes += gst_buffer_get_size (buf);
+  mux->n_bytes += pkt->size;
 
-  return mux->write_func (buf, mux->write_func_data, pcr);
+  if (!ts_packet_is_buffer (pkt)) {
+    ts_packet_clear_buffer (pkt);
+    return TRUE;
+  }
+
+  return mux->write_func (pkt->buf, mux->write_func_data, pcr);
 
 error:
-  gst_buffer_unref (buf);
+  ts_packet_clear_buffer (pkt);
   return FALSE;
 }
 
@@ -1245,7 +1289,7 @@ tsmux_section_write_packet (TsMux * mux, TsMuxSection * section)
     gst_buffer_unmap (buf, &map);
 
     /* Push the packet without PCR */
-    if (G_UNLIKELY (!tsmux_packet_out (mux, buf, -1)))
+    if (G_UNLIKELY (!tsmux_packet_out_buffer (mux, buf, -1)))
       goto done;
 
     section->pi.stream_avail -= len;
@@ -1493,12 +1537,85 @@ rewrite_si (TsMux * mux, gint64 cur_ts)
   return TRUE;
 }
 
+
+static inline gboolean
+ts_packet_is_buffer (TsPacket * pkt)
+{
+  return pkt->type == TS_PACKET_BUFFER;
+}
+
+static inline void
+ts_packet_clear_buffer (TsPacket * pkt)
+{
+  gst_clear_buffer (&pkt->buf);
+}
+
+static inline void
+ts_packet_set_pts (TsPacket * pkt, GstClockTime pts)
+{
+  if (ts_packet_is_buffer (pkt)) {
+    GST_BUFFER_PTS (pkt->buf) = pts;
+  }
+}
+
+static gboolean
+pad_stream_pcr (TsMux * mux, TsMuxStream * stream, gint64 pcr)
+{
+  GST_LOG ("Writing PCR-only packet on PID 0x%04x", stream->pi.pid);
+  GstBuffer *buf = NULL;
+  GstMapInfo map = GST_MAP_INFO_INIT;
+  if (!tsmux_get_buffer (mux, &buf))
+    return FALSE;
+
+  if (!gst_buffer_map (buf, &map, GST_MAP_WRITE)) {
+    gst_buffer_unref (buf);
+    return FALSE;
+  }
+
+  tsmux_write_ts_header (mux, map.data, &stream->pi, 0, NULL, NULL);
+  gst_buffer_unmap (buf, &map);
+
+  stream->pi.flags &= TSMUX_PACKET_FLAG_PES_FULL_HEADER;
+  return tsmux_packet_out_buffer (mux, buf, pcr);
+}
+
+static gboolean
+pad_stream_stuffing (TsMux * mux, TsMuxStream * stream, gint64 cur_ts,
+    gint64 pcr)
+{
+  GST_LOG ("Writing null stuffing packet");
+  if (!rewrite_si (mux, cur_ts)) {
+    return FALSE;
+  }
+
+  if (mux->bitrate_sparse) {
+    TsPacket pkt = TS_PACKET_STUFFING;
+    return tsmux_packet_out (mux, &pkt, pcr);
+  }
+
+  GstBuffer *buf = NULL;
+  GstMapInfo map = GST_MAP_INFO_INIT;
+  if (!tsmux_get_buffer (mux, &buf)) {
+    return FALSE;
+  }
+
+  if (!gst_buffer_map (buf, &map, GST_MAP_WRITE)) {
+    gst_buffer_unref (buf);
+    return FALSE;
+  }
+
+  tsmux_write_null_ts_header (map.data);
+  memset (map.data + TSMUX_HEADER_LENGTH, 0xFF, TSMUX_PAYLOAD_LENGTH);
+  gst_buffer_unmap (buf, &map);
+
+  stream->pi.flags &= TSMUX_PACKET_FLAG_PES_FULL_HEADER;
+  return tsmux_packet_out_buffer (mux, buf, pcr);
+}
+
 static gboolean
 pad_stream (TsMux * mux, TsMuxStream * stream, gint64 cur_ts)
 {
   guint64 bitrate;
-  GstBuffer *buf = NULL;
-  GstMapInfo map;
   gboolean ret = TRUE;
   GstClockTimeDiff diff;
   guint64 start_n_bytes;
@@ -1530,37 +1647,18 @@ pad_stream (TsMux * mux, TsMuxStream * stream, gint64 cur_ts)
         TSMUX_CLOCK_FREQ, diff);
 
     if (bitrate <= mux->bitrate) {
-      gint64 new_pcr;
+      gint64 new_pcr = write_new_pcr (mux, stream,
+          get_current_pcr (mux, cur_ts), get_next_pcr (mux, cur_ts));
 
-      if (!tsmux_get_buffer (mux, &buf))
-        goto done;
-
-      if (!gst_buffer_map (buf, &map, GST_MAP_WRITE)) {
-        gst_buffer_unref (buf);
-        goto done;
-      }
-
-      new_pcr = write_new_pcr (mux, stream, get_current_pcr (mux, cur_ts),
-          get_next_pcr (mux, cur_ts));
       if (new_pcr != -1) {
-        GST_LOG ("Writing PCR-only packet on PID 0x%04x", stream->pi.pid);
-        tsmux_write_ts_header (mux, map.data, &stream->pi, 0, NULL, NULL);
-      } else {
-        GST_LOG ("Writing null stuffing packet");
-        if (!rewrite_si (mux, cur_ts)) {
-          gst_buffer_unmap (buf, &map);
-          gst_buffer_unref (buf);
+        if (!pad_stream_pcr (mux, stream, new_pcr)) {
           goto done;
         }
-        tsmux_write_null_ts_header (map.data);
-        memset (map.data + TSMUX_HEADER_LENGTH, 0xFF, TSMUX_PAYLOAD_LENGTH);
+      } else {
+        if (!pad_stream_stuffing (mux, stream, cur_ts, new_pcr)) {
+          goto done;
+        }
       }
-
-      gst_buffer_unmap (buf, &map);
-
-      stream->pi.flags &= TSMUX_PACKET_FLAG_PES_FULL_HEADER;
-      if (!tsmux_packet_out (mux, buf, new_pcr))
-        goto done;
     }
   } while (bitrate < mux->bitrate);
 
@@ -1650,7 +1748,7 @@ tsmux_write_stream_packet (TsMux * mux, TsMuxStream * stream)
         gst_buffer_unmap (buf, &map);
         stream->program->pi.pid = stream->program->pcr_pid;
         stream->program->pi.flags &= TSMUX_PACKET_FLAG_PES_FULL_HEADER;
-        if (!tsmux_packet_out (mux, buf, new_pcr))
+        if (!tsmux_packet_out_buffer (mux, buf, new_pcr))
           return FALSE;
       }
     }
@@ -1683,7 +1781,7 @@ tsmux_write_stream_packet (TsMux * mux, TsMuxStream * stream)
   gst_buffer_unmap (buf, &map);
 
   GST_DEBUG ("Writing PES of size %d", (int) gst_buffer_get_size (buf));
-  res = tsmux_packet_out (mux, buf, new_pcr);
+  res = tsmux_packet_out_buffer (mux, buf, new_pcr);
 
   /* Reset all dynamic flags */
   stream->pi.flags &= TSMUX_PACKET_FLAG_PES_FULL_HEADER;
@@ -1930,4 +2028,10 @@ void
 tsmux_set_bitrate (TsMux * mux, guint64 bitrate)
 {
   mux->bitrate = bitrate;
+}
+
+void
+tsmux_set_bitrate_sparse (TsMux * mux, gboolean sparse)
+{
+  mux->bitrate_sparse = sparse;
 }

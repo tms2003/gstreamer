@@ -184,6 +184,8 @@ struct TsMux {
   guint64 bitrate;
   guint64 n_bytes;
 
+  gboolean bitrate_sparse;
+
   /* For the per-PID continuity counter */
   guint8 pid_packet_counts[8192];
 
@@ -203,6 +205,7 @@ guint 		tsmux_get_pat_interval          (TsMux *mux);
 void 		tsmux_resend_pat                (TsMux *mux);
 guint16		tsmux_get_new_pid 		(TsMux *mux);
 void    tsmux_set_bitrate       (TsMux *mux, guint64 bitrate);
+void    tsmux_set_bitrate_sparse (TsMux *mux, gboolean sparse);
 
 /* pid/program management */
 TsMuxProgram *	tsmux_program_new 		(TsMux *mux, gint prog_id);
