@@ -143,6 +143,7 @@ enum
   PROP_STATS,
   PROP_IDLE_TIMEOUT,
   PROP_NO_EOF_IS_ERROR,
+  PROP_EXTRA_CONNECT_ARGS,
 };
 
 #define DEFAULT_IDLE_TIMEOUT 0
@@ -236,6 +237,25 @@ gst_rtmp2_src_class_init (GstRtmp2SrcClass * klass)
           "If set, an error is raised if the connection is closed without receiving an EOF RTMP message first. "
           "If not set, those are reported using EOS", FALSE,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  /**
+   * GstRtmp2Src:extra-connect-args:
+   *
+   * Parse and append librtmp style connection arguments to the connection packet. It
+   * is common for authenticating with various servers but also allows to pass
+   * arbitrary data into the "connect" packet.
+   *
+   * The format is described in the Librtmp (3) man page under "Connection_Parameters"
+   * and it looks like this: "conn=S:myusername conn=S:somepassword"
+   *
+   * Since: 1.26
+   */
+  g_object_class_install_property (gobject_class, PROP_EXTRA_CONNECT_ARGS,
+      g_param_spec_string ("extra-connect-args",
+          "Librtmp style connection arguments",
+          "Librtmp-style connection arguments to be appended to the Connect packet",
+          NULL, (GParamFlags) (G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS)));
+
 
   GST_DEBUG_CATEGORY_INIT (gst_rtmp2_src_debug_category, "rtmp2src", 0,
       "debug category for rtmp2src element");
@@ -354,6 +374,12 @@ gst_rtmp2_src_set_property (GObject * object, guint property_id,
       self->no_eof_is_error = g_value_get_boolean (value);
       GST_OBJECT_UNLOCK (self);
       break;
+    case PROP_EXTRA_CONNECT_ARGS:
+      GST_OBJECT_LOCK (self);
+      g_free (self->location.extra_connect_args);
+      self->location.extra_connect_args = g_value_dup_string (value);
+      GST_OBJECT_UNLOCK (self);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
       break;
@@ -449,6 +475,11 @@ gst_rtmp2_src_get_property (GObject * object, guint property_id,
     case PROP_NO_EOF_IS_ERROR:
       GST_OBJECT_LOCK (self);
       g_value_set_boolean (value, self->no_eof_is_error);
+      GST_OBJECT_UNLOCK (self);
+      break;
+    case PROP_EXTRA_CONNECT_ARGS:
+      GST_OBJECT_LOCK (self);
+      g_value_set_string (value, self->location.extra_connect_args);
       GST_OBJECT_UNLOCK (self);
       break;
     default:
