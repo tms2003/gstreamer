@@ -1759,6 +1759,15 @@ _check_if_negotiation_is_needed (GstWebRTCBin * webrtc)
 
   GST_LOG_OBJECT (webrtc, "checking if negotiation is needed");
 
+  GST_OBJECT_LOCK (webrtc);
+  if (webrtc->priv->transceivers->len == 0) {
+    GST_INFO_OBJECT (webrtc,
+        "No sinkpads nor tranceivers... negotation not needed yet.");
+    GST_OBJECT_UNLOCK (webrtc);
+    return FALSE;
+  }
+  GST_OBJECT_UNLOCK (webrtc);
+
   /* We can't negotiate until we have received caps on all our sink pads,
    * as we will need the formats in our offer / answer */
   if (!_all_sinks_have_caps (webrtc)) {
