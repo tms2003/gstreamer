@@ -1,8 +1,11 @@
-kmssink_sources = [
+kms_sources = [
   'gstkmsallocator.c',
   'gstkmsbufferpool.c',
+  'gstkmscompositorpad.c',
+  'gstkmscompositor.c',
   'gstkmssink.c',
   'gstkmsutils.c',
+  'plugin.c'
 ]
 extra_deps = []
 
@@ -18,17 +21,17 @@ mathlib = cc.find_library('m', required : false)
 
 if libdrm_hdr_dep.found() and mathlib.found()
   cdata.set('HAVE_DRM_HDR', 1)
-  kmssink_sources += 'gstkmsedid.c'
+  kms_sources += 'gstkmsedid.c'
 endif
 
 if libdrm_dep.found()
-  gstkmssink = library('gstkms',
-    kmssink_sources,
+  gstkms = library('gstkms',
+    kms_sources,
     c_args : gst_plugins_bad_args,
     include_directories : [configinc],
     dependencies : [gstbase_dep, gstvideo_dep, gstallocators_dep, libdrm_dep, mathlib],
     install : true,
     install_dir : plugins_install_dir,
   )
-  plugins += [gstkmssink]
+  plugins += [gstkms]
 endif

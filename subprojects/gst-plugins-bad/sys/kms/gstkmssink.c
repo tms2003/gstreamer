@@ -477,28 +477,6 @@ gst_kms_sink_video_overlay_init (GstVideoOverlayInterface * iface)
   iface->set_render_rectangle = gst_kms_sink_set_render_rectangle;
 }
 
-static int
-kms_open (gchar ** driver)
-{
-  static const char *drivers[] = { "i915", "radeon", "nouveau", "vmwgfx",
-    "exynos", "amdgpu", "imx-drm", "imx-lcdif", "rockchip", "atmel-hlcdc",
-    "msm", "xlnx", "vc4", "meson", "stm", "sun4i-drm", "mxsfb-drm", "tegra",
-    "tidss", "xilinx_drm",      /* DEPRECATED. Replaced by xlnx */
-  };
-  int i, fd = -1;
-
-  for (i = 0; i < G_N_ELEMENTS (drivers); i++) {
-    fd = drmOpen (drivers[i], NULL);
-    if (fd >= 0) {
-      if (driver)
-        *driver = g_strdup (drivers[i]);
-      break;
-    }
-  }
-
-  return fd;
-}
-
 static drmModePlane *
 find_plane_for_crtc (int fd, drmModeRes * res, drmModePlaneRes * pres,
     int crtc_id)
@@ -658,68 +636,6 @@ find_main_monitor (int fd, drmModeRes * res)
     conn = drmModeGetConnector (fd, res->connectors[0]);
 
   return conn;
-}
-
-static void
-log_drm_version (GstKMSSink * self)
-{
-#ifndef GST_DISABLE_GST_DEBUG
-  drmVersion *v;
-
-  v = drmGetVersion (self->fd);
-  if (v) {
-    GST_INFO_OBJECT (self, "DRM v%d.%d.%d [%s — %s — %s]", v->version_major,
-        v->version_minor, v->version_patchlevel, GST_STR_NULL (v->name),
-        GST_STR_NULL (v->desc), GST_STR_NULL (v->date));
-    drmFreeVersion (v);
-  } else {
-    GST_WARNING_OBJECT (self, "could not get driver information: %s",
-        GST_STR_NULL (self->devname));
-  }
-#endif
-  return;
-}
-
-static gboolean
-get_drm_caps (GstKMSSink * self)
-{
-  gint ret;
-  guint64 has_dumb_buffer;
-  guint64 has_prime;
-  guint64 has_async_page_flip;
-
-  has_dumb_buffer = 0;
-  ret = drmGetCap (self->fd, DRM_CAP_DUMB_BUFFER, &has_dumb_buffer);
-  if (ret)
-    GST_WARNING_OBJECT (self, "could not get dumb buffer capability");
-  if (has_dumb_buffer == 0) {
-    GST_ERROR_OBJECT (self, "driver cannot handle dumb buffers");
-    return FALSE;
-  }
-
-  has_prime = 0;
-  ret = drmGetCap (self->fd, DRM_CAP_PRIME, &has_prime);
-  if (ret)
-    GST_WARNING_OBJECT (self, "could not get prime capability");
-  else {
-    self->has_prime_import = (gboolean) (has_prime & DRM_PRIME_CAP_IMPORT);
-    self->has_prime_export = (gboolean) (has_prime & DRM_PRIME_CAP_EXPORT);
-  }
-
-  has_async_page_flip = 0;
-  ret = drmGetCap (self->fd, DRM_CAP_ASYNC_PAGE_FLIP, &has_async_page_flip);
-  if (ret)
-    GST_WARNING_OBJECT (self, "could not get async page flip capability");
-  else
-    self->has_async_page_flip = (gboolean) has_async_page_flip;
-
-  GST_INFO_OBJECT (self,
-      "prime import (%s) / prime export (%s) / async page flip (%s)",
-      self->has_prime_import ? "✓" : "✗",
-      self->has_prime_export ? "✓" : "✗",
-      self->has_async_page_flip ? "✓" : "✗");
-
-  return TRUE;
 }
 
 static void
@@ -1045,8 +961,9 @@ gst_kms_sink_start (GstBaseSink * bsink)
   if (self->fd < 0)
     goto open_failed;
 
-  log_drm_version (self);
-  if (!get_drm_caps (self))
+  log_drm_version (GST_OBJECT (self), self->fd, self->devname);
+  if (!get_drm_caps (GST_OBJECT (self), self->fd, &self->has_prime_import,
+          &self->has_prime_export, &self->has_async_page_flip))
     goto bail;
 
   res = drmModeGetResources (self->fd);
@@ -2500,13 +2417,3 @@ gst_kms_sink_class_init (GstKMSSinkClass * klass)
 
   gst_video_overlay_install_properties (gobject_class, PROP_N);
 }
-
-static gboolean
-plugin_init (GstPlugin * plugin)
-{
-  return GST_ELEMENT_REGISTER (kmssink, plugin);
-}
-
-GST_PLUGIN_DEFINE (GST_VERSION_MAJOR, GST_VERSION_MINOR, kms,
-    GST_PLUGIN_DESC, plugin_init, VERSION, GST_LICENSE, GST_PACKAGE_NAME,
-    GST_PACKAGE_ORIGIN)

@@ -41,6 +41,13 @@ void           gst_video_calculate_device_ratio (guint dev_width,
 						 guint dev_height_mm,
 						 guint * dpy_par_n,
 						 guint * dpy_par_d);
+int			   kms_open (gchar ** driver);
+void 		   log_drm_version (GstObject * self, gint fd, gchar *devname);
+gboolean       get_drm_caps (GstObject * self,
+						 gint fd,
+						 gboolean * has_prime_import,
+						 gboolean * has_prime_export,
+						 gboolean * has_async_page_flip);
 
 G_END_DECLS
 
