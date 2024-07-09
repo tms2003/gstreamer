@@ -140,10 +140,10 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "../../../gst/gst_private.h"
+#include "gst/gst_private.h"
 #include <glib/gi18n-lib.h>
-#include "../../../gst/glib-compat-private.h"
-#include "gstbasetransform.h"
+#include "gst/glib-compat-private.h"
+#include <gst/base/gstbasetransform.h>
 
 GST_DEBUG_CATEGORY_STATIC (gst_base_transform_debug);
 #define GST_CAT_DEFAULT gst_base_transform_debug

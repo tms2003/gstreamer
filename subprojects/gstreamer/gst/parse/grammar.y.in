@@ -1,5 +1,5 @@
 %{
-#include "../gst_private.h"
+#include <gst/gst_private.h>
 
 #include <glib-object.h>
 #include <glib.h>
@@ -9,15 +9,15 @@
 
 #include <glib/gi18n-lib.h>
 
-#include "../gstconfig.h"
-#include "../gstparse.h"
-#include "../gstinfo.h"
-#include "../gsterror.h"
-#include "../gststructure.h"
-#include "../gsturi.h"
-#include "../gstutils.h"
-#include "../gstvalue.h"
-#include "../gstchildproxy.h"
+#include <gst/gstconfig.h>
+#include <gst/gstparse.h>
+#include <gst/gstinfo.h>
+#include <gst/gsterror.h>
+#include <gst/gststructure.h>
+#include <gst/gsturi.h>
+#include <gst/gstutils.h>
+#include <gst/gstvalue.h>
+#include <gst/gstchildproxy.h>
 #include "types.h"
 
 /* All error messages in this file are user-visible and need to be translated.

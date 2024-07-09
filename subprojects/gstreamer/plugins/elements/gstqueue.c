@@ -63,7 +63,7 @@
 #include "gstcoreelementselements.h"
 
 #include <glib/gi18n-lib.h>
-#include "../../gst/glib-compat-private.h"
+#include <gst/glib-compat-private.h>
 
 static GstStaticPadTemplate sinktemplate = GST_STATIC_PAD_TEMPLATE ("sink",
     GST_PAD_SINK,
