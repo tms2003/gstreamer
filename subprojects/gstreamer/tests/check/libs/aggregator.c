@@ -106,14 +106,24 @@ gst_test_aggregator_aggregate (GstAggregator * aggregator, gboolean timeout)
 
         if (testagg->do_flush_on_aggregate) {
           GstBuffer *popped_buf;
+          GstFormat format;
+
           buf = gst_aggregator_pad_peek_buffer (pad);
 
           GST_DEBUG_OBJECT (pad, "Flushing on aggregate");
 
           gst_pad_send_event (GST_PAD (pad), gst_event_new_flush_start ());
+          gst_pad_send_event (GST_PAD (pad), gst_event_new_flush_stop (FALSE));
+
           popped_buf = gst_aggregator_pad_pop_buffer (pad);
 
+          GST_OBJECT_LOCK (pad);
+          format = pad->segment.format;
+          GST_OBJECT_UNLOCK (pad);
+
           fail_unless (buf == popped_buf);
+          fail_unless (format == GST_FORMAT_TIME);
+
           gst_buffer_unref (buf);
           gst_buffer_unref (popped_buf);
         } else if (testagg->do_remove_pad_on_aggregate) {

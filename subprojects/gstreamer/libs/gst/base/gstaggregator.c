@@ -304,7 +304,6 @@ gst_aggregator_pad_reset_unlocked (GstAggregatorPad * aggpad)
   aggpad->priv->eos = FALSE;
   aggpad->priv->flow_return = GST_FLOW_OK;
   GST_OBJECT_LOCK (aggpad);
-  gst_segment_init (&aggpad->segment, GST_FORMAT_UNDEFINED);
   gst_segment_init (&aggpad->priv->head_segment, GST_FORMAT_UNDEFINED);
   GST_OBJECT_UNLOCK (aggpad);
   aggpad->priv->head_position = GST_CLOCK_TIME_NONE;
@@ -3595,6 +3594,7 @@ gst_aggregator_pad_init (GstAggregatorPad * pad)
   g_mutex_init (&pad->priv->lock);
 
   gst_aggregator_pad_reset_unlocked (pad);
+  gst_segment_init (&pad->segment, GST_FORMAT_UNDEFINED);
   pad->priv->negotiated = FALSE;
   pad->priv->emit_signals = DEFAULT_PAD_EMIT_SIGNALS;
 }
