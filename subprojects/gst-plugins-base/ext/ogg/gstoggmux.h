@@ -24,19 +24,33 @@
 #include <ogg/ogg.h>
 
 #include <gst/gst.h>
-#include <gst/base/gstcollectpads.h>
+#include <gst/base/base.h>
 #include "gstoggstream.h"
 
 G_BEGIN_DECLS
 
+#define GST_TYPE_OGG_MUX_PAD (gst_ogg_mux_pad_get_type())
+#define GST_OGG_MUX_PAD(obj) (G_TYPE_CHECK_INSTANCE_CAST((obj),GST_TYPE_OGG_MUX_PAD, GstOggMuxPad))
+#define GST_OGG_MUX_PAD_CAST(obj) ((GstOggMuxPad *)(obj))
+#define GST_OGG_MUX_PAD_CLASS(klass) (G_TYPE_CHECK_CLASS_CAST((klass),GST_TYPE_OGG_MUX_PAD, GstOggMuxPad))
+#define GST_IS_OGG_MUX_PAD(obj) (G_TYPE_CHECK_INSTANCE_TYPE((obj),GST_TYPE_OGG_MUX_PAD))
+#define GST_IS_OGG_MUX_PAD_CLASS(klass) (G_TYPE_CHECK_CLASS_TYPE((klass),GST_TYPE_OGG_MUX_PAD))
+
+typedef struct _GstOggMuxPad GstOggMuxPad;
+typedef struct _GstOggMuxPadClass GstOggMuxPadClass;
+
 #define GST_TYPE_OGG_MUX (gst_ogg_mux_get_type())
 #define GST_OGG_MUX(obj) (G_TYPE_CHECK_INSTANCE_CAST((obj),GST_TYPE_OGG_MUX, GstOggMux))
+#define GST_OGG_MUX_CAST(obj) ((GstOggMux *)(obj))
 #define GST_OGG_MUX_CLASS(klass) (G_TYPE_CHECK_CLASS_CAST((klass),GST_TYPE_OGG_MUX, GstOggMux))
 #define GST_IS_OGG_MUX(obj) (G_TYPE_CHECK_INSTANCE_TYPE((obj),GST_TYPE_OGG_MUX))
 #define GST_IS_OGG_MUX_CLASS(klass) (G_TYPE_CHECK_CLASS_TYPE((klass),GST_TYPE_OGG_MUX))
 
 typedef struct _GstOggMux GstOggMux;
 typedef struct _GstOggMuxClass GstOggMuxClass;
+
+// FIXME: rename GstOggPadData -> GstOggMuxPad (tpm)
+typedef GstOggMuxPad GstOggPadData;
 
 typedef enum
 {
@@ -46,9 +60,9 @@ typedef enum
 GstOggPadState;
 
 /* all information needed for one ogg stream */
-typedef struct
+struct _GstOggMuxPad
 {
-  GstCollectData collect;       /* we extend the CollectData */
+  GstAggregatorPad aggregator_pad;
 
   GstOggStream map;
   gboolean have_type;
@@ -83,8 +97,12 @@ typedef struct
   gint64  keyframe_granule;     /* granule of last preceding keyframe */
 
   GstTagList *tags;
-}
-GstOggPadData;
+};
+
+struct _GstOggMuxPadClass
+{
+  GstAggregatorPadClass aggregator_pad_class;
+};
 
 /**
  * GstOggMux:
@@ -93,13 +111,7 @@ GstOggPadData;
  */
 struct _GstOggMux
 {
-  GstElement element;
-
-  /* source pad */
-  GstPad *srcpad;
-
-  /* sinkpads */
-  GstCollectPads *collect;
+  GstAggregator aggregator;
 
   /* number of pads which have not received EOS */
   gint active_pads;
@@ -118,7 +130,6 @@ struct _GstOggMux
 
   /* need_headers */
   gboolean need_headers;
-  gboolean need_start_events;
 
   guint64 max_delay;
   guint64 max_page_delay;
@@ -135,10 +146,12 @@ struct _GstOggMux
 
 struct _GstOggMuxClass
 {
-  GstElementClass parent_class;
+  GstAggregatorClass aggregator_class;
 };
 
 GType gst_ogg_mux_get_type (void);
+
+GType gst_ogg_mux_pad_get_type (void);
 
 gboolean gst_ogg_mux_plugin_init (GstPlugin * plugin);
 
