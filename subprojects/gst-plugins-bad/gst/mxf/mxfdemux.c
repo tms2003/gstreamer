@@ -2489,9 +2489,16 @@ find_entry_for_offset (GstMXFDemux * demux, GstMXFDemuxEssenceTrack * etrack,
       " essence_container_offset:%" G_GINT64_FORMAT " partition body offset %"
       G_GINT64_FORMAT, offset, partition->partition.this_partition,
       partition->essence_container_offset, partition->partition.body_offset);
-  offset =
+  gint64 offset_calc =
       offset - partition->partition.this_partition -
       partition->essence_container_offset + partition->partition.body_offset;
+
+  // Guard against guint64 overflows if partition is large
+  if (offset_calc < 0) {
+    offset = 0;
+  } else {
+    offset = offset_calc;
+  }
 
   GST_LOG_OBJECT (demux, "stream offset %" G_GUINT64_FORMAT, offset);
 
