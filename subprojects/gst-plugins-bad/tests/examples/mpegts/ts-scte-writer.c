@@ -29,7 +29,9 @@ send_splice (GstElement * mux, gboolean out)
 
   /* Splice is at 5s for 30s */
   if (out)
-    sit = gst_mpegts_scte_splice_out_new (1, 5 * GST_SECOND, 30 * GST_SECOND);
+    sit =
+        gst_mpegts_scte_splice_out_new (1, 5 * GST_SECOND, 30 * GST_SECOND,
+        FALSE, 2, 0, 0);
   else
     sit = gst_mpegts_scte_splice_in_new (2, 35 * GST_SECOND);
 

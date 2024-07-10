@@ -570,7 +570,8 @@ gst_mpegts_scte_splice_in_new (guint32 event_id, GstClockTime splice_time)
  */
 GstMpegtsSCTESIT *
 gst_mpegts_scte_splice_out_new (guint32 event_id, GstClockTime splice_time,
-    GstClockTime duration)
+    GstClockTime duration, gboolean auto_return,
+    guint16 program_id, guint8 avail_num, guint8 avails_expected)
 {
   GstMpegtsSCTESIT *sit = gst_mpegts_scte_sit_new ();
   GstMpegtsSCTESpliceEvent *event = gst_mpegts_scte_splice_event_new ();
@@ -588,7 +589,12 @@ gst_mpegts_scte_splice_out_new (guint32 event_id, GstClockTime splice_time,
   if (duration != 0) {
     event->duration_flag = TRUE;
     event->break_duration = duration;
+    event->break_duration_auto_return = auto_return;
   }
+  event->unique_program_id = program_id;
+  event->avail_num = avail_num;
+  event->avails_expected = avails_expected;
+
   g_ptr_array_add (sit->splices, event);
 
   sit->is_running_time = TRUE;
