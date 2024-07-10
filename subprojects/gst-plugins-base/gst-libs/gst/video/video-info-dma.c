@@ -240,6 +240,36 @@ gst_video_info_dma_drm_new (void)
   return info;
 }
 
+static inline gboolean
+_format_is_dma_drm (const GstCaps * caps)
+{
+  GstStructure *structure;
+  const gchar *format;
+
+  structure = gst_caps_get_structure (caps, 0);
+  format = gst_structure_get_string (structure, "format");
+  return (g_strcmp0 (format, "DMA_DRM") == 0);
+}
+
+static inline gboolean
+_feature_is_dmabuf (const GstCaps * caps)
+{
+  GstCapsFeatures *features;
+
+  features = gst_caps_get_features (caps, 0);
+  return gst_caps_features_contains (features, GST_CAPS_FEATURE_MEMORY_DMABUF);
+}
+
+static inline gboolean
+_feature_is_sysmem (const GstCaps * caps)
+{
+  GstCapsFeatures *features;
+
+  features = gst_caps_get_features (caps, 0);
+  return gst_caps_features_is_equal (features,
+      GST_CAPS_FEATURES_MEMORY_SYSTEM_MEMORY);
+}
+
 /**
  * gst_video_is_dma_drm_caps:
  * @caps: a #GstCaps
@@ -254,24 +284,9 @@ gst_video_info_dma_drm_new (void)
 gboolean
 gst_video_is_dma_drm_caps (const GstCaps * caps)
 {
-  GstStructure *structure;
+  g_return_val_if_fail (gst_caps_is_fixed (caps), FALSE);
 
-  g_return_val_if_fail (caps != NULL, FALSE);
-
-  if (!gst_caps_is_fixed (caps))
-    return FALSE;
-
-  if (!gst_caps_features_contains (gst_caps_get_features (caps, 0),
-          GST_CAPS_FEATURE_MEMORY_DMABUF))
-    return FALSE;
-
-  structure = gst_caps_get_structure (caps, 0);
-
-  if (g_strcmp0 (gst_structure_get_string (structure, "format"),
-          "DMA_DRM") != 0)
-    return FALSE;
-
-  return TRUE;
+  return _feature_is_dmabuf (caps) && _format_is_dma_drm (caps);
 }
 
 /**
@@ -283,8 +298,10 @@ gst_video_is_dma_drm_caps (const GstCaps * caps)
  * and contains a new drm-format field. The value of drm-format field is
  * composed of a drm fourcc and a modifier, such as NV12:0x0100000000000002.
  *
+ * If DRM fourcc and modifier are invalid, then raw video caps are returned.
+ *
  * Returns: (transfer full) (nullable): a new #GstCaps containing the
- * info in @drm_info.
+ * info in @drm_info. %NULL if failed.
  *
  * Since: 1.24
  */
@@ -296,8 +313,6 @@ gst_video_info_dma_drm_to_caps (const GstVideoInfoDmaDrm * drm_info)
   gchar *str;
 
   g_return_val_if_fail (drm_info != NULL, NULL);
-  g_return_val_if_fail (drm_info->drm_fourcc != DRM_FORMAT_INVALID, NULL);
-  g_return_val_if_fail (drm_info->drm_modifier != DRM_FORMAT_MOD_INVALID, NULL);
 
   caps = gst_video_info_to_caps (&drm_info->vinfo);
   if (!caps) {
@@ -305,11 +320,20 @@ gst_video_info_dma_drm_to_caps (const GstVideoInfoDmaDrm * drm_info)
     return NULL;
   }
 
+  if (drm_info->drm_fourcc == DRM_FORMAT_INVALID
+      && drm_info->drm_modifier == DRM_FORMAT_MOD_INVALID)
+    return caps;
+
   gst_caps_set_features_simple (caps,
       gst_caps_features_from_string (GST_CAPS_FEATURE_MEMORY_DMABUF));
 
   str = gst_video_dma_drm_fourcc_to_string (drm_info->drm_fourcc,
       drm_info->drm_modifier);
+
+  if (!str) {
+    gst_caps_unref (caps);
+    return NULL;
+  }
 
   structure = gst_caps_get_structure (caps, 0);
   gst_structure_set (structure, "format", G_TYPE_STRING, "DMA_DRM",
@@ -325,9 +349,11 @@ gst_video_info_dma_drm_to_caps (const GstVideoInfoDmaDrm * drm_info)
  * @drm_info: (out caller-allocates): #GstVideoInfoDmaDrm
  * @caps: a #GstCaps
  *
- * Parse @caps and update @info. Please note that the @caps should be
- * a dma drm caps. The gst_video_is_dma_drm_caps() can be used to verify
- * it before calling this function.
+ * Parse @caps and update @info. Please note that the @caps should be a dma drm
+ * caps. The gst_video_is_dma_drm_caps() can be used to verify it before calling
+ * this function. If @caps are not DMA/DRM then @drm_info sets its DRM format
+ * and modifiers as invalid, while its video info as the raw one with
+ * gst_video_info_from_caps().
  *
  * Returns: TRUE if @caps could be parsed
  *
@@ -346,10 +372,14 @@ gst_video_info_dma_drm_from_caps (GstVideoInfoDmaDrm * drm_info,
   gboolean ret;
 
   g_return_val_if_fail (drm_info != NULL, FALSE);
-  g_return_val_if_fail (caps != NULL, FALSE);
+  g_return_val_if_fail (gst_caps_is_fixed (caps), FALSE);
 
-  if (!gst_video_is_dma_drm_caps (caps))
-    return FALSE;
+  if (!gst_video_is_dma_drm_caps (caps)) {
+    if (!_feature_is_sysmem (caps))
+      return FALSE;
+    gst_video_info_dma_drm_init (drm_info);
+    return gst_video_info_from_caps (&drm_info->vinfo, caps);
+  }
 
   GST_DEBUG ("parsing caps %" GST_PTR_FORMAT, caps);
 
@@ -406,9 +436,11 @@ out:
  * gst_video_info_dma_drm_new_from_caps:
  * @caps: a #GstCaps
  *
- * Parse @caps to generate a #GstVideoInfoDmaDrm. Please note that the
- * @caps should be a dma drm caps. The gst_video_is_dma_drm_caps() can
- * be used to verify it before calling this function.
+ * Parse @caps to generate a #GstVideoInfoDmaDrm. Please note that the @caps
+ * should be a dma drm caps. The gst_video_is_dma_drm_caps() can be used to
+ * verify it before calling this function. If @caps are not DMA/DRM then
+ * @drm_info sets its DRM format and modifiers as invalid, while its video info
+ * as the raw one with gst_video_info_from_caps().
  *
  * Returns: (transfer full) (nullable): A #GstVideoInfoDmaDrm,
  *   or %NULL if @caps couldn't be parsed.
@@ -420,19 +452,25 @@ gst_video_info_dma_drm_new_from_caps (const GstCaps * caps)
 {
   GstVideoInfoDmaDrm *ret;
 
-  g_return_val_if_fail (caps != NULL, NULL);
-
-  if (!gst_video_is_dma_drm_caps (caps))
-    return NULL;
+  g_return_val_if_fail (GST_IS_CAPS (caps), NULL);
 
   ret = gst_video_info_dma_drm_new ();
 
-  if (gst_video_info_dma_drm_from_caps (ret, caps)) {
-    return ret;
-  } else {
-    gst_video_info_dma_drm_free (ret);
-    return NULL;
+  if (!gst_video_is_dma_drm_caps (caps)) {
+    if (!_feature_is_sysmem (caps))
+      goto bail;
+    if (gst_video_info_from_caps (&ret->vinfo, caps))
+      return ret;
+    goto bail;
   }
+
+  if (gst_video_info_dma_drm_from_caps (ret, caps))
+    return ret;
+
+bail:
+  gst_video_info_dma_drm_free (ret);
+  return NULL;
+
 }
 
 /**
@@ -721,4 +759,26 @@ gst_video_dma_drm_fourcc_to_format (guint32 fourcc)
   GST_INFO ("No supported video format for fourcc %" GST_FOURCC_FORMAT,
       GST_FOURCC_ARGS (fourcc));
   return GST_VIDEO_FORMAT_UNKNOWN;
+}
+
+/**
+ * gst_video_info_dma_drm_is_equal:
+ * @drm_info: a #GstVideoInfoDmaDrm
+ * @other: a #GstVideoInfoDmaDrm
+ *
+ * Compares two #GstVideoInfoDmaDrm and returns whether they are equal or not
+ *
+ * Returns: %TRUE if @drm_info and @other are equal, else %FALSE.
+ */
+gboolean
+gst_video_info_dma_drm_is_equal (const GstVideoInfoDmaDrm * drm_info,
+    const GstVideoInfoDmaDrm * other)
+{
+  g_return_val_if_fail (drm_info && other, FALSE);
+
+  if (drm_info->drm_fourcc != other->drm_fourcc)
+    return FALSE;
+  if (drm_info->drm_modifier != other->drm_modifier)
+    return FALSE;
+  return gst_video_info_is_equal (&drm_info->vinfo, &other->vinfo);
 }

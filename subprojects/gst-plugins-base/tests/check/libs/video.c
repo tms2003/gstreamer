@@ -4187,7 +4187,7 @@ GST_START_TEST (test_info_dma_drm)
       "height=16, format=DMA_DRM, drm-format=ZZZZ:0xRGCSEz9ew80";
   GstCaps *caps, *ncaps;
   GstVideoInfo info;
-  GstVideoInfoDmaDrm drm_info;
+  GstVideoInfoDmaDrm drm_info, *pdrm_info;
   GstVideoInfo vinfo;
 
   caps = gst_caps_from_string (nondma_str);
@@ -4205,12 +4205,33 @@ GST_START_TEST (test_info_dma_drm)
   fail_unless (drm_info.drm_fourcc == 0x3231564e
       && drm_info.drm_modifier == 0x100000000000002);
 
+  pdrm_info = gst_video_info_dma_drm_new_from_caps (caps);
+  fail_unless (gst_video_info_dma_drm_is_equal (pdrm_info, &drm_info));
+  g_free (pdrm_info);
+
   fail_unless (gst_video_info_dma_drm_to_video_info (&drm_info, &info));
   fail_unless (GST_VIDEO_INFO_FORMAT (&info) == GST_VIDEO_FORMAT_NV12);
 
   ncaps = gst_video_info_dma_drm_to_caps (&drm_info);
   fail_unless (ncaps);
   fail_unless (gst_caps_is_equal (caps, ncaps));
+  gst_caps_unref (caps);
+  gst_caps_unref (ncaps);
+
+  caps = gst_caps_from_string (nondma_str);
+  fail_unless (gst_video_info_dma_drm_from_caps (&drm_info, caps));
+  fail_unless (drm_info.drm_fourcc == 0
+      && drm_info.drm_modifier == 0xffffffffffffff);
+
+  pdrm_info = gst_video_info_dma_drm_new_from_caps (caps);
+  fail_unless (gst_video_info_dma_drm_is_equal (pdrm_info, &drm_info));
+  g_free (pdrm_info);
+
+  fail_unless (gst_video_info_dma_drm_to_video_info (&drm_info, &info));
+  fail_unless (GST_VIDEO_INFO_FORMAT (&info) == GST_VIDEO_FORMAT_NV12);
+
+  ncaps = gst_video_info_dma_drm_to_caps (&drm_info);
+  fail_unless (ncaps);
   gst_caps_unref (caps);
   gst_caps_unref (ncaps);
 
