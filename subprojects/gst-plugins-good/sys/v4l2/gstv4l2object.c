@@ -1584,7 +1584,8 @@ gst_v4l2_object_v4l2fourcc_to_bare_struct (guint32 fourcc)
       structure = gst_structure_new_empty ("video/x-vp8");
       break;
     case V4L2_PIX_FMT_VP9:
-      structure = gst_structure_new_empty ("video/x-vp9");
+      structure = gst_structure_new ("video/x-vp9",
+          "alignment", G_TYPE_STRING, "super-frame", NULL);
       break;
     case V4L2_PIX_FMT_GREY:    /*  8  Greyscale     */
     case V4L2_PIX_FMT_Y16:
