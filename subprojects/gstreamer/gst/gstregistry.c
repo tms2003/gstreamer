@@ -1149,7 +1149,8 @@ clear_scan_context (GstRegistryScanContext * context)
 
 static gboolean
 gst_registry_scan_plugin_file (GstRegistryScanContext * context,
-    const gchar * filename, off_t file_size, time_t file_mtime)
+    const gchar * filename, off_t file_size, time_t file_mtime,
+    gboolean force_in_process)
 {
   gboolean changed = FALSE;
   GstPlugin *newplugin = NULL;
@@ -1166,7 +1167,8 @@ gst_registry_scan_plugin_file (GstRegistryScanContext * context,
     }
   }
 
-  if (context->helper_state == REGISTRY_SCAN_HELPER_RUNNING) {
+  if (context->helper_state == REGISTRY_SCAN_HELPER_RUNNING &&
+      !force_in_process) {
     GST_DEBUG ("Using scan-helper to load plugin %s", filename);
     if (!_priv_gst_plugin_loader_funcs.load (context->helper,
             filename, file_size, file_mtime)) {
@@ -1180,7 +1182,8 @@ gst_registry_scan_plugin_file (GstRegistryScanContext * context,
   }
 
   /* Check if the helper is disabled (or just got disabled above) */
-  if (context->helper_state == REGISTRY_SCAN_HELPER_DISABLED) {
+  if (context->helper_state == REGISTRY_SCAN_HELPER_DISABLED ||
+      force_in_process) {
     /* Load plugin the old fashioned way... */
 
     /* We don't use a GError here because a failure to load some shared
@@ -1264,6 +1267,36 @@ skip_directory (const gchar * parent_path, const gchar * dirent)
 }
 
 static gboolean
+needs_in_process_loading (const gchar * file_name)
+{
+#ifdef G_OS_WIN32
+  static const gchar *force_in_proc_list[] = {
+    /* If the application is complied with DirectX 12 Agility SDK,
+     * OS will try to find and load D3D12Core.dll from "D3D12SDKPath"
+     * exported location, instead of system library location
+     * (i.e., C:/Windows/System32).
+     *
+     * Note that the "D3D12SDKPath" is a relative path to .EXE, not .DLL.
+     * And it's exported in an application .EXE binary.
+     *
+     * Since different D3D12 runtime might cause different feature sets
+     * between in-process loaded one and done by our helper process,
+     * always load this plugin in the current process.
+     */
+    "libgstd3d12.dll",
+    "gstd3d12.dll",
+  };
+  guint i;
+
+  for (i = 0; i < G_N_ELEMENTS (force_in_proc_list); i++) {
+    if (g_strcasecmp (file_name, force_in_proc_list[i]) == 0)
+      return TRUE;
+  }
+#endif
+  return FALSE;
+}
+
+static gboolean
 gst_registry_scan_path_level (GstRegistryScanContext * context,
     const gchar * path, int level)
 {
@@ -1279,6 +1312,7 @@ gst_registry_scan_path_level (GstRegistryScanContext * context,
 
   while ((dirent = g_dir_read_name (dir))) {
     GStatBuf file_status;
+    gboolean force_in_process = FALSE;
 
     filename = g_build_filename (path, dirent, NULL);
     if (g_stat (filename, &file_status) < 0) {
@@ -1340,6 +1374,8 @@ gst_registry_scan_path_level (GstRegistryScanContext * context,
       continue;
     }
 
+    force_in_process = needs_in_process_loading (dirent);
+
     /* plug-ins are considered unique by basename; if the given name
      * was already seen by the registry, we ignore it */
     plugin = gst_registry_lookup_bn (context->registry, dirent);
@@ -1382,7 +1418,7 @@ gst_registry_scan_path_level (GstRegistryScanContext * context,
             env_vars_changed, deps_changed, plugin->filename, filename);
         gst_registry_remove_plugin (context->registry, plugin);
         changed |= gst_registry_scan_plugin_file (context, filename,
-            file_status.st_size, file_status.st_mtime);
+            file_status.st_size, file_status.st_mtime, force_in_process);
       }
       gst_object_unref (plugin);
 
@@ -1390,7 +1426,7 @@ gst_registry_scan_path_level (GstRegistryScanContext * context,
       GST_DEBUG_OBJECT (context->registry, "file %s not yet in registry",
           filename);
       changed |= gst_registry_scan_plugin_file (context, filename,
-          file_status.st_size, file_status.st_mtime);
+          file_status.st_size, file_status.st_mtime, force_in_process);
     }
 
     g_free (filename);
