@@ -439,24 +439,23 @@ and
 ## Ghost pads
 
 You can see from [Visualisation of a GstBin element without ghost
-pads](#visualisation-of-a-gstbin-------element-without-ghost-pads) how a
+pads](#visualisation-of-a-gstbin-element-without-ghost-pads) how a
 bin has no pads of its own. This is where "ghost pads" come into play.
 
-![Visualisation of a
-[`GstBin`](http://gstreamer.freedesktop.org/data/doc/gstreamer/stable/gstreamer/html/GstBin.html)
-element without ghost pads](images/bin-element-noghost.png "fig:")
+
+[![Visualisation of a GstBin element without ghost pads](subprojects/gst-docs/images/bin-element-noghost.png "Visualisation of a GstBin element without ghost pads")][refGstBin]
+
+[refGstBin]: https://gstreamer.freedesktop.org/data/doc/gstreamer/stable/gstreamer/html/GstBin.html
 
 A ghost pad is a pad from some element in the bin that can be accessed
 directly from the bin as well. Compare it to a symbolic link in UNIX
 filesystems. Using ghost pads on bins, the bin also has a pad and can
 transparently be used as an element in other parts of your code.
 
-![Visualisation of a
-[`GstBin`](http://gstreamer.freedesktop.org/data/doc/gstreamer/stable/gstreamer/html/GstBin.html)
-element with a ghost pad](images/bin-element-ghost.png "fig:")
+[![Visualisation of a GstBin element with a ghost pad](subprojects/gst-docs/images/bin-element-ghost.png "Visualisation of a GstBin element with a ghost pad")][refGstBin]
 
 [Visualisation of a GstBin element with a ghost
-pad](#visualisation-of-a-gstbin-------element-with-a-ghost-pad) is a
+pad](#visualisation-of-a-gstbin-element-with-a-ghost-pad) is a
 representation of a ghost pad. The sink pad of element one is now also a
 pad of the bin. Because ghost pads look and work like any other pads,
 they can be added to any type of elements, not just to a `GstBin`, just
