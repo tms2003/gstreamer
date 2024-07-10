@@ -1793,6 +1793,15 @@ gst_base_text_overlay_render_pangocairo (GstBaseTextOverlay * overlay,
   gint xpad = 0, ypad = 0;
   GstBuffer *buffer;
   GstMapInfo map;
+  gboolean background = FALSE;
+
+  if (overlay->want_shading && overlay->attach_compo_to_buffer) {
+    /* FIXME: When using composition meta we cannot render the proper blur
+     * effect as implemented by gst_base_text_overlay_shade_background().
+     * As stopgap we render a semi-transparent background instead.
+     */
+    background = TRUE;
+  }
 
   if (overlay->auto_adjust_size) {
     /* 640 pixel is default */
@@ -1847,6 +1856,9 @@ gst_base_text_overlay_render_pangocairo (GstBaseTextOverlay * overlay,
    * that is circular. That's why only half of it is used to offset */
   if (overlay->draw_outline)
     outline_offset = ceil (overlay->outline_offset);
+
+  if (background)
+    outline_offset += 6.0;
 
   if (overlay->halign == GST_BASE_TEXT_OVERLAY_HALIGN_LEFT ||
       overlay->halign == GST_BASE_TEXT_OVERLAY_HALIGN_RIGHT)
@@ -2017,6 +2029,14 @@ gst_base_text_overlay_render_pangocairo (GstBaseTextOverlay * overlay,
   cairo_paint (cr);
 
   cairo_set_operator (cr, CAIRO_OPERATOR_OVER);
+
+  if (background) {
+    cairo_save (cr);
+    cairo_set_source_rgba (cr, 0.0, 0.0, 0.0, overlay->shading_value / 255.0);
+    cairo_rectangle (cr, 0.0, 0.0, width, height);
+    cairo_fill (cr);
+    cairo_restore (cr);
+  }
 
   /* apply transformations */
   cairo_set_matrix (cr, &cairo_matrix);
@@ -2389,7 +2409,6 @@ gst_base_text_overlay_push_frame (GstBaseTextOverlay * overlay,
     GST_DEBUG_OBJECT (overlay, "Attaching text overlay image to video buffer");
     gst_buffer_add_video_overlay_composition_meta (video_frame,
         overlay->composition);
-    /* FIXME: emulate shaded background box if want_shading=true */
     goto done;
   }
 
