@@ -432,6 +432,10 @@ gst_rtp_h264_set_src_caps (GstRtpH264Depay * rtph264depay)
       rtph264depay->byte_stream ? "byte-stream" : "avc",
       "alignment", G_TYPE_STRING, rtph264depay->merge ? "au" : "nal", NULL);
 
+  if (rtph264depay->forward_framerate)
+    gst_caps_set_simple (srccaps, "framerate", GST_TYPE_FRACTION,
+        rtph264depay->fps_n, rtph264depay->fps_d, NULL);
+
   if (!rtph264depay->byte_stream) {
     GstBuffer *codec_data;
     GstMapInfo map;
@@ -765,6 +769,7 @@ gst_rtp_h264_depay_setcaps (GstRTPBaseDepayload * depayload, GstCaps * caps)
   GstBuffer *codec_data;
   GstMapInfo map;
   guint8 *ptr;
+  gdouble fps;
 
   rtph264depay = GST_RTP_H264_DEPAY (depayload);
 
@@ -774,6 +779,14 @@ gst_rtp_h264_depay_setcaps (GstRTPBaseDepayload * depayload, GstCaps * caps)
 
   /* Base64 encoded, comma separated config NALs */
   ps = gst_structure_get_string (structure, "sprop-parameter-sets");
+
+  /* Read and forward optional a-framerate */
+  if (gst_structure_get_double (structure, "a-framerate", &fps)) {
+    rtph264depay->forward_framerate = TRUE;
+    gst_util_double_to_fraction (fps, &rtph264depay->fps_n, &rtph264depay->fps_d);
+  } else {
+    rtph264depay->forward_framerate = FALSE;
+  }
 
   /* negotiate with downstream w.r.t. output format and alignment */
   gst_rtp_h264_depay_negotiate (rtph264depay);

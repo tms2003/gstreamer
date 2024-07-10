@@ -75,6 +75,11 @@ struct _GstRtpH264Depay
   gboolean wait_for_keyframe;
   gboolean request_keyframe;
   gboolean waiting_for_keyframe;
+
+  /* framerate */
+  gboolean forward_framerate;
+  gint fps_n;
+  gint fps_d;
 };
 
 struct _GstRtpH264DepayClass
