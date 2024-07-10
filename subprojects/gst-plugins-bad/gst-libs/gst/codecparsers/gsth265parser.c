@@ -3788,9 +3788,11 @@ get_extension_profile (H265ExtensionProfile * profiles, guint num,
       extra_constraints++;
     }
 
-    if (p.lower_bit_rate_constraint_flag_set
-        && !ptl->lower_bit_rate_constraint_flag)
-      continue;
+    /* if p.lower_bit_rate_constraint_flag_set == 0,
+       do not care about this flag. */
+    if (p.lower_bit_rate_constraint_flag_set &&
+        !ptl->lower_bit_rate_constraint_flag)
+      extra_constraints++;
 
     if (extra_constraints == 0) {
       result = p.profile;
